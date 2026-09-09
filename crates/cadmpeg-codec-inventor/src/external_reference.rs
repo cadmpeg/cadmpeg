@@ -148,7 +148,7 @@ fn parse_stream<'a>(
     document_kind: &DocumentKind,
 ) -> Result<UfrxDocument<'a>, CodecError> {
     let mut declaration = Cursor::new(source);
-    let schema = declaration.u16("schema")?;
+    let schema = declaration.u16()?;
     match parse_stream_grammar(ctx, source, stream, document_kind) {
         Ok(document) => Ok(document),
         Err(error) if !(11..=15).contains(&schema) => match error {
@@ -168,7 +168,7 @@ fn parse_stream_grammar<'a>(
     document_kind: &DocumentKind,
 ) -> Result<UfrxDocument<'a>, CodecError> {
     let mut cursor = Cursor::new(source);
-    let schema = cursor.u16("schema")?;
+    let schema = cursor.u16()?;
     let section_count = cursor.count16("section-version count", 256)?;
     if section_count < 5 {
         return Err(CodecError::Malformed(
@@ -181,7 +181,7 @@ fn parse_stream_grammar<'a>(
     )?;
     let mut section_versions = Vec::with_capacity(section_count);
     for _ in 0..section_count {
-        section_versions.push(cursor.u16("section version")?);
+        section_versions.push(cursor.u16()?);
     }
     let save_version = cursor.array::<8>("save version")?;
     cursor.take(8, "save FILETIME")?;
@@ -193,16 +193,16 @@ fn parse_stream_grammar<'a>(
     cursor.take(8, "origin version")?;
     cursor.take(8, "origin FILETIME")?;
     cursor.take(16, "database revision id")?;
-    cursor.u32("header padding")?;
+    cursor.u32()?;
     cursor.take(16, "internal document id")?;
     let original_file_name = cursor.utf16(ctx, "original file name", 65_536)?;
-    cursor.u16("part flags")?;
+    cursor.u16()?;
 
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
     ctx.charge_collection_items(lod_toc_count as u64, "admit UFRxDoc LOD table entries")?;
     for _ in 0..lod_toc_count {
-        cursor.u16("LOD value")?;
-        cursor.u16("LOD value")?;
+        cursor.u16()?;
+        cursor.u16()?;
         cursor.utf16(ctx, "LOD name", 65_536)?;
         cursor.take(2, "LOD state")?;
     }
@@ -232,7 +232,7 @@ fn parse_stream_grammar<'a>(
         false
     };
     let representation = if schema == 15 {
-        let prefix = cursor.u16("schema 15 representation prefix")?;
+        let prefix = cursor.u16()?;
         let active_representation = if assembly_representation {
             Some((
                 cursor.utf16(ctx, "active representation", 65_536)?,
@@ -244,15 +244,9 @@ fn parse_stream_grammar<'a>(
         Some(UfrxRepresentationState {
             prefix,
             active_representation,
-            secondary_active_lod_state: [
-                cursor.u16("secondary active LOD state")?,
-                cursor.u16("secondary active LOD state")?,
-            ],
+            secondary_active_lod_state: [cursor.u16()?, cursor.u16()?],
             active_model_state: cursor.utf16(ctx, "active model state", 65_536)?,
-            active_model_state_state: [
-                cursor.u16("active model-state state")?,
-                cursor.u16("active model-state state")?,
-            ],
+            active_model_state_state: [cursor.u16()?, cursor.u16()?],
         })
     } else {
         if section_versions[2] >= 12 {
@@ -261,19 +255,19 @@ fn parse_stream_grammar<'a>(
         if section_versions[2] >= 7 {
             cursor.take(4, "secondary active LOD state")?;
         }
-        cursor.u16("header version flags")?;
+        cursor.u16()?;
         None
     };
-    cursor.u32("highest occurrence id")?;
-    cursor.u16("next LOD id")?;
-    let invariant = cursor.u16("header invariant")?;
+    cursor.u32()?;
+    cursor.u16()?;
+    let invariant = cursor.u16()?;
     if invariant != 1 {
         return Err(CodecError::malformed(format_args!(
             "UFRxDoc header invariant is {invariant}, expected 1"
         )));
     }
-    cursor.u32("highest file-reference id")?;
-    cursor.u32("highest embedded-reference id")?;
+    cursor.u32()?;
+    cursor.u32()?;
     if section_versions[2] >= 13 {
         cursor.take(32, "document subtype ids")?;
     }
@@ -291,16 +285,16 @@ fn parse_stream_grammar<'a>(
 
     let reference_count = cursor.count32("external-reference count", 1_000_000)?;
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
-    cursor.u32("external-reference header state")?;
+    cursor.u32()?;
     ctx.charge_collection_items(reference_count as u64, "admit Inventor external references")?;
     let mut references = Vec::with_capacity(reference_count);
     for _ in 0..reference_count {
         let path = cursor.utf16(ctx, "external path", 65_536)?;
-        let library_id = cursor.i32("library id")?;
+        let library_id = cursor.i32()?;
         let library_name = cursor.utf16(ctx, "library name", 65_536)?;
-        cursor.u16("reference state")?;
+        cursor.u16()?;
         let display_prefix = cursor.peek_u32("reference display-name prefix")?;
-        if display_prefix & 0xffff_0000 != 0 && cursor.u16("reference display-name padding")? != 0 {
+        if display_prefix & 0xffff_0000 != 0 && cursor.u16()? != 0 {
             return Err(CodecError::Malformed(
                 "UFRxDoc reference display-name padding is nonzero".into(),
             ));
@@ -313,16 +307,9 @@ fn parse_stream_grammar<'a>(
         )?;
         let mut state_groups = Vec::with_capacity(state_count);
         for _ in 0..state_count {
-            state_groups.push([
-                cursor.u16("reference state group")?,
-                cursor.u16("reference state group")?,
-                cursor.u16("reference state group")?,
-            ]);
+            state_groups.push([cursor.u16()?, cursor.u16()?, cursor.u16()?]);
         }
-        let state = [
-            cursor.u16("reference state")?,
-            cursor.u16("reference state")?,
-        ];
+        let state = [cursor.u16()?, cursor.u16()?];
         let document_id = cursor.array("referenced document id")?;
         let database_id = cursor.array("referenced database id")?;
         references.push(InventorExternalReference {
@@ -334,10 +321,10 @@ fn parse_stream_grammar<'a>(
             state,
             document_id,
             database_id,
-            reference_id: cursor.u32("reference id")?,
-            occurrence_count: cursor.u32("reference occurrence count")?,
-            version: cursor.u32("reference version")?,
-            flags: cursor.u32("reference flags")?,
+            reference_id: cursor.u32()?,
+            occurrence_count: cursor.u32()?,
+            version: cursor.u32()?,
+            flags: cursor.u32()?,
         });
     }
     if section_versions[4] >= 2 && cursor.u8("external-reference terminator")? != 0 {
@@ -395,19 +382,19 @@ fn parse_embedded_references<'a>(
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
         let start = cursor.position();
-        let value_0 = cursor.u32("embedded-reference value")?;
-        let filetime = cursor.u64("embedded-reference FILETIME")?;
-        let value_1 = cursor.u32("embedded-reference value")?;
+        let value_0 = cursor.u32()?;
+        let filetime = cursor.u64()?;
+        let value_1 = cursor.u32()?;
         let extended_value = if section_version >= 7 {
-            Some(cursor.u32("embedded-reference extended value")?)
+            Some(cursor.u32()?)
         } else {
             None
         };
-        let value_2 = cursor.u32("embedded-reference value")?;
+        let value_2 = cursor.u32()?;
         let path = cursor.utf16(ctx, "embedded-reference path", 65_536)?;
-        let library_id = cursor.i32("embedded-reference library id")?;
+        let library_id = cursor.i32()?;
         let library_name = cursor.utf16(ctx, "embedded-reference library name", 65_536)?;
-        let state = cursor.u16("embedded-reference state")?;
+        let state = cursor.u16()?;
         let display_name = cursor.utf16(ctx, "embedded-reference display name", 65_536)?;
         let state_values = cursor.array("embedded-reference state values")?;
         let record = source
@@ -450,10 +437,10 @@ fn parse_occurrences<'a>(
     let mut occurrences = Vec::with_capacity(count);
     for _ in 0..count {
         let start = cursor.position();
-        let end_string_flag = cursor.u32("occurrence end-string flag")?;
-        let file_reference_id = cursor.u32("occurrence file-reference id")?;
-        let occurrence_id = cursor.u32("occurrence id")?;
-        let header_value = cursor.u32("occurrence header value")?;
+        let end_string_flag = cursor.u32()?;
+        let file_reference_id = cursor.u32()?;
+        let occurrence_id = cursor.u32()?;
+        let header_value = cursor.u32()?;
         let title_count = cursor.count32("occurrence title marker", 65_536)?;
         let title = if title_count == 0 {
             None
@@ -470,31 +457,19 @@ fn parse_occurrences<'a>(
                         "UFRxDoc occurrence extended-header padding exceeds eight words".into(),
                     ));
                 }
-                cursor.u16("occurrence extended-header padding")?;
+                cursor.u16()?;
                 padding_words += 1;
             }
             let marker_offset = cursor.position();
-            let marker = cursor.u16("occurrence extended-header marker")?;
+            let marker = cursor.u16()?;
             if marker != 0x2080 {
                 return Err(CodecError::malformed(format_args!(
                     "UFRxDoc occurrence extended-header marker at offset {marker_offset} is {marker:#06x}, expected 0x2080"
                 )));
             }
-            require_u32(
-                cursor.u32("occurrence extended-header state")?,
-                0,
-                "occurrence extended-header state",
-            )?;
-            require_u32(
-                cursor.u32("occurrence extended-header state")?,
-                1,
-                "occurrence extended-header state",
-            )?;
-            require_u32(
-                cursor.u32("occurrence extended-header state")?,
-                0,
-                "occurrence extended-header state",
-            )?;
+            require_u32(cursor.u32()?, 0, "occurrence extended-header state")?;
+            require_u32(cursor.u32()?, 1, "occurrence extended-header state")?;
+            require_u32(cursor.u32()?, 0, "occurrence extended-header state")?;
             padding_words
         } else {
             cursor.take(5, "occurrence header state")?;
@@ -524,7 +499,7 @@ fn parse_occurrences<'a>(
         });
     }
     if count == 0 {
-        cursor.u32("empty occurrence padding")?;
+        cursor.u32()?;
     }
     Ok(occurrences)
 }
@@ -533,16 +508,16 @@ fn parse_occurrence_section(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
-    cursor.u32("occurrence section value")?;
+    cursor.u32()?;
     let count = cursor.count32("occurrence section property count", 65_536)?;
     ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrence properties")?;
     for _ in 0..count {
         cursor.boolean("occurrence property presence")?;
         let tag = cursor.u8("occurrence property tag")?;
-        cursor.u32("occurrence property value")?;
+        cursor.u32()?;
         require_tag(cursor.u8("occurrence property repeated tag")?, tag)?;
         parse_occurrence_value(ctx, cursor, tag)?;
-        cursor.u32("occurrence property trailer")?;
+        cursor.u32()?;
     }
     Ok(())
 }
@@ -573,8 +548,8 @@ fn parse_occurrence_export(
     let count = cursor.peek_u32("occurrence export count")?;
     let next = cursor.peek_u32_at(4, "occurrence export discriminator")?;
     if matches!(count, 0x00ff_ffff | u32::MAX) {
-        cursor.u32("occurrence export sentinel")?;
-        if cursor.u32("occurrence export sentinel trailer")? != 0 {
+        cursor.u32()?;
+        if cursor.u32()? != 0 {
             return Err(CodecError::Malformed(
                 "UFRxDoc occurrence export sentinel trailer is nonzero".into(),
             ));
@@ -597,7 +572,7 @@ fn parse_occurrence_export(
             }
         }
     } else {
-        cursor.u32("occurrence export count")?;
+        cursor.u32()?;
     }
     Ok(())
 }
@@ -623,7 +598,7 @@ fn parse_occurrence_items(
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
             parse_occurrence_item_value(cursor, tag)?;
         }
-        cursor.u32("occurrence export item trailer")?;
+        cursor.u32()?;
     }
     Ok(())
 }
@@ -641,7 +616,7 @@ fn parse_occurrence_value(
             cursor.u8("occurrence property byte")?;
         }
         0x19 => {
-            cursor.u32("occurrence property integer")?;
+            cursor.u32()?;
         }
         0x02 | 0x03 | 0x11 | 0x12 | 0x13 | 0x15 | 0x16 | 0x17 | 0x18 | 0x1c | 0x1f | 0x20
         | 0x22 | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d => {
@@ -662,7 +637,7 @@ fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), C
             cursor.u8("occurrence export item byte")?;
         }
         0x19 => {
-            cursor.u32("occurrence export item integer")?;
+            cursor.u32()?;
         }
         0x12 | 0x16 | 0x17 | 0x18 | 0x23 | 0x24 | 0x25 | 0x2a => {
             cursor.take(16, "occurrence export item id")?;
@@ -705,11 +680,8 @@ fn parse_model_states<'a>(
     for _ in 0..count {
         let prefix = cursor.u8("model-state prefix")?;
         let name = cursor.utf16(ctx, "model-state name", 65_536)?;
-        let state = [
-            cursor.u16("model-state state")?,
-            cursor.u16("model-state state")?,
-        ];
-        let prefix_count = cursor.u32("model-state prefix count")?;
+        let state = [cursor.u16()?, cursor.u16()?];
+        let prefix_count = cursor.u32()?;
         let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
         ctx.charge_collection_items(
             parameter_count as u64,
@@ -720,10 +692,10 @@ fn parse_model_states<'a>(
             parameters.push(UfrxModelStateParameter {
                 name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
                 tag: cursor.u8("model-state parameter tag")?,
-                kind: cursor.u16("model-state parameter kind")?,
-                state: cursor.u16("model-state parameter state")?,
+                kind: cursor.u16()?,
+                state: cursor.u16()?,
                 value: cursor.utf16(ctx, "model-state parameter value", 65_536)?,
-                trailer: cursor.u16("model-state parameter trailer")?,
+                trailer: cursor.u16()?,
             });
         }
         let suffix_start = cursor.position();
@@ -753,7 +725,7 @@ fn parse_schema_table(
     source: View<'_>,
 ) -> Result<(u16, Vec<u16>), CodecError> {
     let mut cursor = Cursor::new(source);
-    let schema = cursor.u16("schema")?;
+    let schema = cursor.u16()?;
     let section_count = cursor.count16("section-version count", 256)?;
     ctx.charge_collection_items(
         section_count as u64,
@@ -761,7 +733,7 @@ fn parse_schema_table(
     )?;
     let mut section_versions = Vec::with_capacity(section_count);
     for _ in 0..section_count {
-        section_versions.push(cursor.u16("section version")?);
+        section_versions.push(cursor.u16()?);
     }
     Ok((schema, section_versions))
 }
@@ -792,19 +764,19 @@ impl<'a> Cursor<'a> {
         Ok(self.take(1, field)?[0])
     }
 
-    fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+    fn u16(&mut self) -> Result<u16, CodecError> {
         Ok(self.view.req_u16_le()?)
     }
 
-    fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+    fn u32(&mut self) -> Result<u32, CodecError> {
         Ok(self.view.req_u32_le()?)
     }
 
-    fn i32(&mut self, _field: &str) -> Result<i32, CodecError> {
+    fn i32(&mut self) -> Result<i32, CodecError> {
         Ok(self.view.req_i32_le()?)
     }
 
-    fn u64(&mut self, _field: &str) -> Result<u64, CodecError> {
+    fn u64(&mut self) -> Result<u64, CodecError> {
         Ok(self.view.req_u64_le()?)
     }
 
@@ -835,7 +807,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn count16(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
-        let value = self.u16(field)? as usize;
+        let value = self.u16()? as usize;
         if value > maximum {
             return Err(CodecError::malformed(format_args!(
                 "UFRxDoc {field} exceeds {maximum}"
@@ -846,7 +818,7 @@ impl<'a> Cursor<'a> {
 
     fn count32(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
         let offset = self.position();
-        let value = usize::try_from(self.u32(field)?)
+        let value = usize::try_from(self.u32()?)
             .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is too large")))?;
         if value > maximum {
             return Err(CodecError::malformed(format_args!(

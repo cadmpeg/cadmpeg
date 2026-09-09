@@ -655,20 +655,20 @@ fn parse_parameter(
     version: u8,
 ) -> Result<PmDcParameterPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("parameter header value")?;
-    let header_id = cursor.u16("parameter header id")?;
-    let next = cursor.reference("parameter next reference")?;
-    let flags = cursor.u32("parameter flags")?;
-    let context = cursor.reference("parameter context reference")?;
-    let source_index = cursor.u32("parameter source index")?;
+    let header_value = cursor.u32()?;
+    let header_id = cursor.u16()?;
+    let next = cursor.reference()?;
+    let flags = cursor.u32()?;
+    let context = cursor.reference()?;
+    let source_index = cursor.u32()?;
     let name = cursor.utf16(ctx, "parameter name")?;
-    let name_value = cursor.u32("parameter name value")?;
-    let unit = cursor.reference("parameter unit reference")?;
-    let formula = cursor.reference("parameter formula reference")?;
+    let name_value = cursor.u32()?;
+    let unit = cursor.reference()?;
+    let formula = cursor.reference()?;
     let nominal_value = cursor.f64("parameter nominal value")?;
     let model_value = cursor.f64("parameter model value")?;
-    let tolerance = cursor.u16("parameter tolerance")?;
-    let terminal_value = cursor.i16("parameter terminal value")?;
+    let tolerance = cursor.u16()?;
+    let terminal_value = cursor.i16()?;
     cursor.finish("parameter")?;
     Ok(PmDcParameterPayload {
         save_version_major: version,
@@ -695,9 +695,9 @@ fn expression_header(
     source: View<'_>,
 ) -> Result<(Cursor<'_>, u32, u16, PmDcReference), CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("expression header value")?;
-    let header_id = cursor.u16("expression header id")?;
-    let unit = cursor.reference("expression unit reference")?;
+    let header_value = cursor.u32()?;
+    let header_id = cursor.u16()?;
+    let unit = cursor.reference()?;
     Ok((cursor, header_value, header_id, unit))
 }
 
@@ -707,8 +707,8 @@ fn parse_value_expression(
 ) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let value = cursor.f64("literal expression value")?;
-    let value_type = cursor.u16("literal expression type")?;
-    let state = cursor.u32("literal expression state")?;
+    let value_type = cursor.u16()?;
+    let state = cursor.u32()?;
     cursor.finish("literal expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -728,7 +728,7 @@ fn parse_reference_expression(
     version: u8,
 ) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
-    let operand = cursor.reference("parameter-reference operand")?;
+    let operand = cursor.reference()?;
     cursor.finish("parameter-reference expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -745,7 +745,7 @@ fn parse_unary_expression(
     operation: PmDcUnaryOperation,
 ) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
-    let operand = cursor.reference("unary expression operand")?;
+    let operand = cursor.reference()?;
     cursor.finish("unary expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -762,8 +762,8 @@ fn parse_binary_expression(
     operation: PmDcBinaryOperation,
 ) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
-    let left = cursor.reference("binary expression left operand")?;
-    let right = cursor.reference("binary expression right operand")?;
+    let left = cursor.reference()?;
+    let right = cursor.reference()?;
     cursor.finish("binary expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -784,12 +784,12 @@ fn parse_unit_definition(
     version: u8,
 ) -> Result<PmDcUnitPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("unit header value")?;
-    let header_id = cursor.u16("unit header id")?;
+    let header_value = cursor.u32()?;
+    let header_id = cursor.u16()?;
     let numerators = cursor.reference_array(ctx, "unit numerators")?;
     let denominators = cursor.reference_array(ctx, "unit denominators")?;
-    let visible = cursor.u8("unit visibility")? != 0;
-    let derived = cursor.reference("unit derived reference")?;
+    let visible = cursor.u8()? != 0;
+    let derived = cursor.reference()?;
     cursor.finish("unit")?;
     Ok(PmDcUnitPayload {
         save_version_major: version,
@@ -812,8 +812,8 @@ fn parse_base_unit(
     scale_to_internal: f64,
 ) -> Result<PmDcUnitPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("base-unit header value")?;
-    let header_id = cursor.u16("base-unit header id")?;
+    let header_value = cursor.u32()?;
+    let header_id = cursor.u16()?;
     let magnitude = cursor.f64("base-unit magnitude")?;
     let factor = cursor.f64("base-unit factor")?;
     cursor.finish("base unit")?;
@@ -874,28 +874,22 @@ impl Cursor<'_> {
         ctx: &DecodeContext<'_>,
         field: &str,
     ) -> Result<PmDcPairedReferenceList<[u16; 2]>, CodecError> {
-        let marker = [
-            self.u16(&format!("{field} marker 0"))?,
-            self.u16(&format!("{field} marker 1"))?,
-        ];
+        let marker = [self.u16()?, self.u16()?];
         if marker != [3, 0x3000] {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} marker is {marker:?}"
             )));
         }
-        let count = self.u32(&format!("{field} count"))? as usize;
+        let count = self.u32()? as usize;
         ctx.charge_collection_items(count as u64, "admit Inventor PmDc unit references")?;
         let metadata = if count == 0 {
             None
         } else {
-            Some([
-                self.u16(&format!("{field} metadata 0"))?,
-                self.u16(&format!("{field} metadata 1"))?,
-            ])
+            Some([self.u16()?, self.u16()?])
         };
         let mut references = Vec::with_capacity(count);
-        for index in 0..count {
-            references.push(self.reference(&format!("{field} reference {index}"))?);
+        for _ in 0..count {
+            references.push(self.reference()?);
         }
         PmDcPairedReferenceList::new(metadata, references).ok_or_else(|| {
             CodecError::Malformed(

@@ -467,12 +467,12 @@ fn parse_sketch(
 ) -> Result<PmDcSketchPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("sketch state")? as i32;
-    let count_value = cursor.u32("sketch count value")?;
+    let state = cursor.u32()? as i32;
+    let count_value = cursor.u32()?;
     let entities = reference_list(ctx, &mut cursor, 8, "sketch entity array")?;
-    let transform = cursor.reference("sketch transform reference")?;
-    let direction = cursor.reference("sketch direction reference")?;
-    let values = [cursor.u32("sketch value 0")?, cursor.u32("sketch value 1")?];
+    let transform = cursor.reference()?;
+    let direction = cursor.reference()?;
+    let values = [cursor.u32()?, cursor.u32()?];
     let auxiliary = (cursor.remaining() != 0)
         .then(|| reference_list(ctx, &mut cursor, 2, "sketch auxiliary list"))
         .transpose()?;
@@ -498,8 +498,8 @@ fn parse_entity(
 ) -> Result<PmDcSketchEntityPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let entity_flags = cursor.u32("sketch-entity flags")?;
-    let sketch = cursor.reference("sketch-entity owner")?;
+    let entity_flags = cursor.u32()?;
+    let sketch = cursor.reference()?;
     let kind = match type_id {
         POINT_TYPE => parse_point(ctx, &mut cursor)?,
         LINE_TYPE => parse_line(ctx, &mut cursor)?,
@@ -543,7 +543,7 @@ fn parse_point(
         PointTail::Absent
     } else {
         PointTail::Present {
-            state: cursor.u32("point state")?,
+            state: cursor.u32()?,
             associations: reference_list(ctx, cursor, 2, "point association list")?,
         }
     };
@@ -563,9 +563,7 @@ fn edge_prefix(
 ) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
     let points = reference_list(ctx, cursor, 2, &format!("{field} point list"))?;
     let mut auxiliary = Vec::new();
-    if cursor.remaining() >= fixed_tail.saturating_add(8)
-        && cursor.peek_u32(&format!("{field} auxiliary marker"))? == 0x3000_0002
-    {
+    if cursor.remaining() >= fixed_tail.saturating_add(8) && cursor.peek_u32()? == 0x3000_0002 {
         auxiliary.push(reference_list(
             ctx,
             cursor,
@@ -573,10 +571,7 @@ fn edge_prefix(
             &format!("{field} auxiliary list 0"),
         )?);
     } else if cursor.remaining() >= fixed_tail.saturating_add(16) {
-        let gate = [
-            cursor.u32(&format!("{field} list gate 0"))?,
-            cursor.u32(&format!("{field} list gate 1"))?,
-        ];
+        let gate = [cursor.u32()?, cursor.u32()?];
         if gate != [1, 0] {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} list gate is {gate:?}"
@@ -588,9 +583,7 @@ fn edge_prefix(
             2,
             &format!("{field} auxiliary list 0"),
         )?);
-        if cursor.remaining() >= fixed_tail.saturating_add(8)
-            && cursor.peek_u32(&format!("{field} second auxiliary marker"))? == 0x3000_0002
-        {
+        if cursor.remaining() >= fixed_tail.saturating_add(8) && cursor.peek_u32()? == 0x3000_0002 {
             auxiliary.push(reference_list(
                 ctx,
                 cursor,
@@ -628,9 +621,9 @@ fn parse_circle(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
     let (points, auxiliary) = edge_prefix(ctx, cursor, 13, "circle")?;
-    let center = cursor.reference("circle center")?;
+    let center = cursor.reference()?;
     let radius = cursor.f64("circle radius")?;
-    let state = cursor.u8("circle state")?;
+    let state = cursor.u8()?;
     if radius <= 0.0 {
         return Err(CodecError::Malformed(
             "Inventor PmDc circle radius is not positive".into(),
@@ -650,11 +643,11 @@ fn parse_ellipse(
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
     let (points, auxiliary) = edge_prefix(ctx, cursor, 37, "ellipse")?;
-    let center = cursor.reference("ellipse center")?;
+    let center = cursor.reference()?;
     let major_direction = point2(cursor, "ellipse major direction")?;
     let major_radius = cursor.f64("ellipse major radius")?;
     let minor_radius = cursor.f64("ellipse minor radius")?;
-    let state = cursor.u8("ellipse state")?;
+    let state = cursor.u8()?;
     if major_radius <= 0.0 || minor_radius <= 0.0 {
         return Err(CodecError::Malformed(
             "Inventor PmDc ellipse radius is not positive".into(),
@@ -674,12 +667,12 @@ fn parse_ellipse(
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
+    let prefix_present = cursor.peek_u32()? == TRANSFORM_PREFIX;
     if prefix_present {
-        cursor.u32("transform prefix")?;
+        cursor.u32()?;
     }
-    let value_mask = cursor.u16("transform value mask")?;
-    let zero_mask = cursor.u16("transform zero mask")?;
+    let value_mask = cursor.u16()?;
+    let zero_mask = cursor.u16()?;
     let matrix = CompactMatrix::try_new(value_mask, zero_mask, |_| {
         cursor.f64("transform explicit value")
     })?;
@@ -695,11 +688,11 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload
 fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let entity_flags = cursor.u32("direction flags")?;
+    let entity_flags = cursor.u32()?;
     let parameter = cursor.f64("direction parameter")?;
     let extension = match cursor.remaining() {
         24 => None,
-        28 => Some(cursor.u32("direction extension")?),
+        28 => Some(cursor.u32()?),
         remaining => {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc direction has {remaining} bytes before its vector"
@@ -723,24 +716,16 @@ fn map_header(
     cursor: &mut Cursor<'_>,
     field: &str,
 ) -> Result<(usize, Option<[u32; 2]>), CodecError> {
-    let marker = [
-        cursor.u16(&format!("{field} marker kind"))?,
-        cursor.u16(&format!("{field} marker form"))?,
-    ];
+    let marker = [cursor.u16()?, cursor.u16()?];
     if marker != [6, 0x3000] {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} marker is {marker:?}"
         )));
     }
-    let count = cursor.u32(&format!("{field} count"))? as usize;
+    let count = cursor.u32()? as usize;
     ctx.charge_collection_items(count as u64, "admit Inventor sketch constraint map")?;
     let metadata = (count != 0)
-        .then(|| {
-            Ok::<_, CodecError>([
-                cursor.u32(&format!("{field} metadata 0"))?,
-                cursor.u32(&format!("{field} metadata 1"))?,
-            ])
-        })
+        .then(|| Ok::<_, CodecError>([cursor.u32()?, cursor.u32()?]))
         .transpose()?;
     Ok((count, metadata))
 }
@@ -753,7 +738,7 @@ fn reference_scalar_map(
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
         entries.push((
-            cursor.reference(&format!("constraint scalar-map key {index}"))?,
+            cursor.reference()?,
             cursor.f64(&format!("constraint scalar-map value {index}"))?,
         ));
     }
@@ -768,11 +753,8 @@ fn reference_pair_map(
 ) -> Result<PmDcReferencePairMap, CodecError> {
     let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
     let mut entries = Vec::with_capacity(count);
-    for index in 0..count {
-        entries.push((
-            cursor.reference(&format!("constraint reference-map key {index}"))?,
-            cursor.reference(&format!("constraint reference-map value {index}"))?,
-        ));
+    for _ in 0..count {
+        entries.push((cursor.reference()?, cursor.reference()?));
     }
     PmDcReferencePairMap::new(metadata, entries).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc pair map metadata disagrees with length".into())
@@ -785,8 +767,8 @@ fn parse_constraint_header(
     version: u8,
 ) -> Result<PmDcConstraintHeader, CodecError> {
     let content = content_header(cursor)?;
-    let state = cursor.u32("constraint state")? as i32;
-    let group = cursor.reference("constraint group")?;
+    let state = cursor.u32()? as i32;
+    let group = cursor.reference()?;
     let (scalar_map, reference_map) = if version <= 16 {
         (
             PmDcReferenceScalarMap::new(None, Vec::new()).expect("empty scalar map"),
@@ -804,7 +786,7 @@ fn parse_constraint_header(
         group,
         scalar_map,
         reference_map,
-        parameter: cursor.reference("constraint parameter")?,
+        parameter: cursor.reference()?,
     })
 }
 
@@ -818,39 +800,39 @@ fn parse_constraint(
     let header = parse_constraint_header(ctx, &mut cursor, version)?;
     let kind = match type_id {
         COINCIDENT_TYPE => PmDcSketchConstraintKind::Coincident {
-            first: cursor.reference("coincident first entity")?,
-            second: cursor.reference("coincident second entity")?,
+            first: cursor.reference()?,
+            second: cursor.reference()?,
         },
         PARALLEL_TYPE => PmDcSketchConstraintKind::Parallel {
-            first: cursor.reference("parallel first entity")?,
-            second: cursor.reference("parallel second entity")?,
-            orientation: cursor.u16("parallel orientation")?,
+            first: cursor.reference()?,
+            second: cursor.reference()?,
+            orientation: cursor.u16()?,
         },
         PERPENDICULAR_TYPE => PmDcSketchConstraintKind::Perpendicular {
-            first: cursor.reference("perpendicular first entity")?,
-            second: cursor.reference("perpendicular second entity")?,
-            orientation: cursor.u16("perpendicular orientation")?,
+            first: cursor.reference()?,
+            second: cursor.reference()?,
+            orientation: cursor.u16()?,
         },
         TANGENT_TYPE => PmDcSketchConstraintKind::Tangent {
-            first: cursor.reference("tangent first entity")?,
-            second: cursor.reference("tangent second entity")?,
+            first: cursor.reference()?,
+            second: cursor.reference()?,
             extension: (cursor.remaining() == 4)
-                .then(|| cursor.u32("tangent extension"))
+                .then(|| cursor.u32())
                 .transpose()?,
         },
         HORIZONTAL_TYPE => PmDcSketchConstraintKind::Horizontal {
-            entity: cursor.reference("horizontal entity")?,
-            state: cursor.u8("horizontal state")?,
+            entity: cursor.reference()?,
+            state: cursor.u8()?,
         },
         VERTICAL_TYPE => PmDcSketchConstraintKind::Vertical {
-            entity: cursor.reference("vertical entity")?,
-            state: cursor.u8("vertical state")?,
+            entity: cursor.reference()?,
+            state: cursor.u8()?,
         },
         HORIZONTAL_DISTANCE_TYPE | VERTICAL_DISTANCE_TYPE => {
-            let first = cursor.reference("distance first entity")?;
-            let second = cursor.reference("distance second entity")?;
-            let parameter = cursor.reference("distance parameter")?;
-            let values = u32_array::<4>(&mut cursor, "distance values")?;
+            let first = cursor.reference()?;
+            let second = cursor.reference()?;
+            let parameter = cursor.reference()?;
+            let values = u32_array::<4>(&mut cursor)?;
             if type_id == HORIZONTAL_DISTANCE_TYPE {
                 PmDcSketchConstraintKind::HorizontalDistance {
                     first,
@@ -868,22 +850,22 @@ fn parse_constraint(
             }
         }
         RADIUS_TYPE => PmDcSketchConstraintKind::Radius {
-            state: cursor.u32("radius state")?,
-            entity: cursor.reference("radius entity")?,
-            values: u32_array::<4>(&mut cursor, "radius values")?,
+            state: cursor.u32()?,
+            entity: cursor.reference()?,
+            values: u32_array::<4>(&mut cursor)?,
         },
         DIAMETER_TYPE => PmDcSketchConstraintKind::Diameter {
-            reference: cursor.reference("diameter reference")?,
-            entity: cursor.reference("diameter entity")?,
-            values: u32_array::<4>(&mut cursor, "diameter values")?,
+            reference: cursor.reference()?,
+            entity: cursor.reference()?,
+            values: u32_array::<4>(&mut cursor)?,
         },
         CIRCLE_CENTER_TYPE => PmDcSketchConstraintKind::CircleCenter {
-            entity: cursor.reference("circle-center entity")?,
-            center: cursor.reference("circle-center point")?,
+            entity: cursor.reference()?,
+            center: cursor.reference()?,
         },
         EQUAL_RADIUS_TYPE => PmDcSketchConstraintKind::EqualRadius {
-            first: cursor.reference("equal-radius first entity")?,
-            second: cursor.reference("equal-radius second entity")?,
+            first: cursor.reference()?,
+            second: cursor.reference()?,
         },
         _ => unreachable!("caller selects a supported sketch constraint"),
     };
@@ -895,10 +877,10 @@ fn parse_constraint(
     })
 }
 
-fn u32_array<const N: usize>(cursor: &mut Cursor<'_>, field: &str) -> Result<[u32; N], CodecError> {
+fn u32_array<const N: usize>(cursor: &mut Cursor<'_>) -> Result<[u32; N], CodecError> {
     let mut values = [0; N];
-    for (index, value) in values.iter_mut().enumerate() {
-        *value = cursor.u32(&format!("{field} {index}"))?;
+    for value in &mut values {
+        *value = cursor.u32()?;
     }
     Ok(values)
 }
