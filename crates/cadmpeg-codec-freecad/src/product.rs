@@ -796,6 +796,7 @@ impl RealWidth {
     }
 }
 
+#[derive(Clone, Copy)]
 struct RealPosition<'a> {
     view: View<'a>,
     offset: usize,
