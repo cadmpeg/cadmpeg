@@ -24,9 +24,6 @@ pub(crate) struct AttributeIndex<'a> {
     face_group_ordinals: HashMap<String, usize>,
     edge_group_ordinals: HashMap<String, usize>,
     sketch_ordinals: HashMap<String, usize>,
-    body_group_count: usize,
-    face_group_count: usize,
-    edge_group_count: usize,
     body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
     face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
     edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
@@ -185,24 +182,6 @@ impl<'a> AttributeIndex<'a> {
             vertex_timestamps,
             vertex_timestamp_ordinals
         );
-        let body_group_count = target
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body_links.contains_key(body.id.as_str()))
-            .count();
-        let face_group_count = target
-            .model
-            .faces
-            .iter()
-            .filter(|face| face_tags.contains_key(face.id.as_str()))
-            .count();
-        let edge_group_count = target
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
-            .count();
         let body_group_ordinals = target
             .model
             .bodies
@@ -241,9 +220,6 @@ impl<'a> AttributeIndex<'a> {
             face_group_ordinals,
             edge_group_ordinals,
             sketch_ordinals,
-            body_group_count,
-            face_group_count,
-            edge_group_count,
             body_links,
             face_tags,
             edge_tags,
@@ -261,6 +237,18 @@ impl<'a> AttributeIndex<'a> {
             body_keys,
             assigned_body_keys,
         })
+    }
+
+    fn body_group_count(&self) -> usize {
+        self.body_group_ordinals.len()
+    }
+
+    fn face_group_count(&self) -> usize {
+        self.face_group_ordinals.len()
+    }
+
+    fn edge_group_count(&self) -> usize {
+        self.edge_group_ordinals.len()
     }
 
     fn timestamp(
@@ -385,9 +373,9 @@ fn timestamp_attribute_ordinal(
 fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
     source_less_color_count(target)
         + source_less_name_count(target)
-        + index.body_group_count
-        + index.face_group_count
-        + index.edge_group_count
+        + index.body_group_count()
+        + index.face_group_count()
+        + index.edge_group_count()
         + index.coedge_sketch_links.len()
 }
 
@@ -529,7 +517,7 @@ fn face_persistent_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
+            + index.body_group_count()
             + ordinal,
     )
     .map(Some)
@@ -609,8 +597,8 @@ pub(crate) fn edge_persistent_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
-            + index.face_group_count
+            + index.body_group_count()
+            + index.face_group_count()
             + ordinal,
     )
     .map(Some)
@@ -664,9 +652,9 @@ fn coedge_sketch_attribute_ref(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + index.body_group_count
-            + index.face_group_count
-            + index.edge_group_count
+            + index.body_group_count()
+            + index.face_group_count()
+            + index.edge_group_count()
             + preceding,
     )
     .map(Some)
