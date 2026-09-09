@@ -62,16 +62,27 @@ enum BinaryValue {
 #[derive(Debug)]
 struct BinaryDirectory {
     offset: u32,
+    entity_type: i64,
+    parameter_pointer: i64,
     values: [BinaryValue; 16],
 }
 
 impl BinaryDirectory {
-    fn entity_type(&self) -> Result<i64, CodecError> {
-        integer_value(&self.values[0], "Directory entity type")
+    fn new(offset: u32, values: [BinaryValue; 16]) -> Result<Self, CodecError> {
+        Ok(Self {
+            offset,
+            entity_type: integer_value(&values[0], "Directory entity type")?,
+            parameter_pointer: pointer_value(&values[1], "Directory Parameter Data")?,
+            values,
+        })
     }
 
-    fn parameter_pointer(&self) -> Result<i64, CodecError> {
-        pointer_value(&self.values[1], "Directory Parameter Data")
+    fn entity_type(&self) -> i64 {
+        self.entity_type
+    }
+
+    fn parameter_pointer(&self) -> i64 {
+        self.parameter_pointer
     }
 }
 
@@ -593,10 +604,7 @@ fn read_directory(
             *value = one_value(&mut stream, "Directory")?;
         }
         stream.finish()?;
-        let record = BinaryDirectory { offset, values };
-        record.entity_type()?;
-        record.parameter_pointer()?;
-        records.push(record);
+        records.push(BinaryDirectory::new(offset, values)?);
         cursor = body_end;
     }
     Ok(records)
@@ -918,7 +926,7 @@ fn normalize_directory_and_parameters(
         let directory_index = *directory_by_offset
             .get(&directory_pointer)
             .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
-        if directory[directory_index].entity_type()? != parameter.entity_type {
+        if directory[directory_index].entity_type() != parameter.entity_type {
             return Err(malformed(
                 "Binary Directory and Parameter entity types disagree",
             ));
@@ -957,7 +965,7 @@ fn normalize_directory_and_parameters(
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     for (directory_index, directory_record) in directory.iter().enumerate() {
-        let pointer = directory_record.parameter_pointer()?;
+        let pointer = directory_record.parameter_pointer();
         if pointer < 0 {
             return Err(malformed(
                 "Binary Directory Parameter Data pointer is negative",
