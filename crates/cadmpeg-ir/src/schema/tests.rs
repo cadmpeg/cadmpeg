@@ -71,11 +71,11 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Fillet {

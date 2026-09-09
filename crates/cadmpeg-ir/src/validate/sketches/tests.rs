@@ -552,11 +552,11 @@ fn sketch_feature_ownership_and_order_are_validated() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
@@ -588,11 +588,11 @@ fn sketch_feature_ownership_and_order_are_validated() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Sketch {
@@ -639,11 +639,11 @@ fn sketch_profile_subselections_are_bounds_checked() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
@@ -724,11 +724,11 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::SpatialSketch {

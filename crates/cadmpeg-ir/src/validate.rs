@@ -213,11 +213,11 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Sketch {
@@ -259,7 +259,7 @@ mod tests {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
                         outputs: crate::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: crate::features::DistinctMembers::default(),
                     definition: FeatureDefinition::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     },
@@ -287,7 +287,7 @@ mod tests {
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
