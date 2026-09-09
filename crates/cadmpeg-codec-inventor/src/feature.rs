@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature, FeatureDefinition,
-    FeatureId, FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, Length,
-    LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
+    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature,
+    FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup, HoleKind,
+    HolePlacement, Length, LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1117,16 +1117,18 @@ fn project_extrusion(
         direction = direction.scale(-1.0);
     }
     let length = length_parameter(source, 4, index)?;
-    let taper = angle_parameter(source, 5, index)?;
+    let taper = cadmpeg_ir::features::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if length.0 > 0.0 => LinearTermination::Blind { length },
+        1 if length.get() > 0.0 => LinearTermination::Blind {
+            length: cadmpeg_ir::features::NonZeroLength::new(length.get())?,
+        },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
         _ => return None,
     };
     let side = ExtrudeSide {
         termination,
-        draft: (taper.0 != 0.0).then_some(taper),
+        draft: (taper.get() != 0.0).then_some(taper),
     };
     let extent = if boolean(source, 7, index)? {
         ExtrudeExtent::Symmetric { side }
@@ -1139,30 +1141,29 @@ fn project_extrusion(
         ordinal: u64::from(label.index),
         name: Some(label.name.as_str().to_owned()),
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: DistinctMembers::default(),
         source_properties: boolean_properties(source, &[20, 22], index),
         source_tag: Some("extrude".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::SketchSelection {
-                sketch: sketch_id,
-                selections,
+        source_content: FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
+                direction: ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    source: Some(ExtrusionDirectionSource::Custom),
+                },
+                start: ExtrudeStart::ProfilePlane,
+                extent,
+                op,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            direction: ExtrudeDirection::Explicit {
-                vector: direction,
-                source: Some(ExtrusionDirectionSource::Custom),
-            },
-            start: ExtrudeStart::ProfilePlane,
-            extent,
-            op,
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: Some(source.id()),
     };
     Some((feature, result))
@@ -1223,7 +1224,10 @@ fn project_fillet(
             Some(FilletGroup {
                 edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
-                    radius: length_reference(&source.identity.segment_token, radius.index, index)?,
+                    radius: cadmpeg_ir::features::PositiveLength::new(
+                        length_reference(&source.identity.segment_token, radius.index, index)?
+                            .get(),
+                    )?,
                 },
                 tangency_weight: None,
             })
@@ -1239,13 +1243,17 @@ fn project_fillet(
             ordinal: u64::from(label.index),
             name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: DistinctMembers::default(),
             source_properties: boolean_properties(source, &[2, 3, 4, 5, 8], index),
             source_tag: Some("fillet".into()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Fillet { groups },
+            source_content: FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Fillet {
+                    groups: groups.try_into().ok()?,
+                },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -1278,21 +1286,25 @@ fn project_chamfer(
             ordinal: u64::from(label.index),
             name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: DistinctMembers::default(),
             source_properties: boolean_properties(source, &[6, 9], index),
             source_tag: Some("chamfer".into()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Chamfer {
-                groups: vec![ChamferGroup {
-                    edges: EdgeSelection::Native(edges.id()),
-                    spec: ChamferSpec::Distance {
-                        distance: length_parameter(source, 2, index)?,
-                    },
-                }],
-                flip_direction: boolean(source, 5, index)?,
-            },
+            source_content: FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Chamfer {
+                    groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                        edges: EdgeSelection::Native(edges.id()),
+                        spec: ChamferSpec::Distance {
+                            distance: cadmpeg_ir::features::PositiveLength::new(
+                                length_parameter(source, 2, index)?.get(),
+                            )?,
+                        },
+                    }),
+                    flip_direction: boolean(source, 5, index)?,
+                },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -1315,27 +1327,29 @@ fn project_hole(
     let head_angle = angle_parameter(source, 5, index)?;
     let point_angle = angle_parameter(source, 6, index)?;
     let kind = match hole_form {
-        0 if point_angle.0 == 0.0 => HoleKind::Simple,
+        0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: point_angle,
+            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
         },
         1 => HoleKind::Countersink {
-            diameter: head_diameter,
-            angle: head_angle,
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            angle: cadmpeg_ir::features::InteriorAngle::new(head_angle.get())?,
         },
-        2 if point_angle.0 == 0.0 => HoleKind::Counterbore {
-            diameter: head_diameter,
-            depth: head_depth,
+        2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: head_diameter,
-            depth: head_depth,
-            drill_point_angle: point_angle,
+            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
+            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if depth.0 > 0.0 => LinearTermination::Blind { length: depth },
+        1 if depth.get() > 0.0 => LinearTermination::Blind {
+            length: cadmpeg_ir::features::NonZeroLength::new(depth.get())?,
+        },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
         _ => return None,
@@ -1381,36 +1395,42 @@ fn project_hole(
             ordinal: u64::from(label.index),
             name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hole".into()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Hole {
-                profile: None,
-                profile_filter: None,
-                face: None,
-                direction: None,
-                placements: Some(vec![HolePlacement::Directed {
-                    position: Point3::new(
-                        transform.matrix.rows()[0][3] * 10.0,
-                        transform.matrix.rows()[1][3] * 10.0,
-                        transform.matrix.rows()[2][3] * 10.0,
-                    ),
-                    direction,
-                }]),
-                construction: cadmpeg_ir::features::HoleConstruction::Form {
-                    kind,
-                    specification: None,
+            source_content: FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Hole {
+                    profile: None,
+                    profile_filter: None,
+                    face: None,
+                    direction: None,
+                    placements: Some(vec![HolePlacement::Directed {
+                        position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            transform.matrix.rows()[0][3] * 10.0,
+                            transform.matrix.rows()[1][3] * 10.0,
+                            transform.matrix.rows()[2][3] * 10.0,
+                        ))?,
+                        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    }]),
+                    shape: cadmpeg_ir::features::HoleShape::new(
+                        cadmpeg_ir::features::HoleConstruction::Form {
+                            kind,
+                            specification: None,
+                        },
+                        None,
+                        Some(cadmpeg_ir::features::PositiveLength::new(diameter.get())?),
+                    )
+                    .ok()?,
+
+                    extent: Some(extent),
+                    bottom: None,
+                    taper_angle: None,
+                    allow_multi_profile_faces: None,
                 },
-                exit_kind: None,
-                diameter: Some(diameter),
-                extent: Some(extent),
-                bottom: None,
-                taper_angle: None,
-                allow_multi_profile_faces: None,
-            },
+            ),
             native_ref: Some(source.id()),
         },
         result,
@@ -1446,19 +1466,20 @@ fn feature_result(
         source.identity.segment_token, source.identity.record_ordinal
     ))
     .expect("identity grammar");
-    let result = FeatureResultTopology {
-        id: FeatureResultTopologyId::mint(format!(
+    let result = FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!(
             "inventor:design:feature-result#{}-{}",
             source.identity.segment_token, source.identity.record_ordinal
         ))
         .expect("identity grammar"),
-        output_of: feature_id.clone(),
+        feature_id.clone(),
         bodies,
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
-        native_ref: Some(collection.id()),
-    };
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Some(collection.id()),
+    )
+    .ok()?;
     Some((feature_id, result))
 }
 
@@ -1575,7 +1596,7 @@ fn length_parameter(
 fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
     let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Length(value) if value.0.is_finite() && value.0 >= 0.0 => Some(*value),
+        ParameterValue::Length(value) if value.get() >= 0.0 => Some(*value),
         _ => None,
     }
 }
@@ -1591,7 +1612,7 @@ fn angle_parameter(
         reference.index.checked_sub(1)?,
     ))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Angle(value) if value.0.is_finite() => Some(*value),
+        ParameterValue::Angle(value) => Some(*value),
         _ => None,
     }
 }
@@ -1881,7 +1902,7 @@ mod tests {
             expression: String::new(),
             display: None,
             value: Some(value),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),
@@ -2074,7 +2095,10 @@ mod tests {
     #[test]
     fn projects_generated_fillet_and_chamfer() {
         let raw_radius = raw_parameter(20);
-        let neutral_radius = neutral_parameter(&raw_radius, ParameterValue::Length(Length(2.5)));
+        let neutral_radius = neutral_parameter(
+            &raw_radius,
+            ParameterValue::Length(Length::new(2.5).expect("finite length fixture")),
+        );
         let fillet_properties = vec![
             test_property(
                 1,
@@ -2163,15 +2187,17 @@ mod tests {
         );
         let (projected, result) = project_fillet(&fillet, &label, &index).expect("fillet");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Fillet { groups }
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: Length(2.5) })
+                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
         ));
-        assert_eq!(result.bodies, vec![fillet_properties[8].id()]);
+        assert_eq!(result.bodies(), vec![fillet_properties[8].id()]);
 
         let raw_distance = raw_parameter(40);
-        let neutral_distance =
-            neutral_parameter(&raw_distance, ParameterValue::Length(Length(1.25)));
+        let neutral_distance = neutral_parameter(
+            &raw_distance,
+            ParameterValue::Length(Length::new(1.25).expect("finite length fixture")),
+        );
         let chamfer_properties = vec![
             test_property(
                 31,
@@ -2237,11 +2263,11 @@ mod tests {
         );
         let (projected, _) = project_chamfer(&chamfer, &label, &index).expect("chamfer");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Chamfer {
                 groups,
                 flip_direction: true
-            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: Length(1.25) })
+            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
         ));
     }
 
@@ -2250,8 +2276,14 @@ mod tests {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
-            neutral_parameter(&raw_length, ParameterValue::Length(Length(12.0))),
-            neutral_parameter(&raw_taper, ParameterValue::Angle(Angle(0.1))),
+            neutral_parameter(
+                &raw_length,
+                ParameterValue::Length(Length::new(12.0).expect("finite length fixture")),
+            ),
+            neutral_parameter(
+                &raw_taper,
+                ParameterValue::Angle(Angle::new(0.1).expect("finite angle fixture")),
+            ),
         ];
         let raw_sketch = Located::new(
             crate::sketch::PmDcSketchPayload {
@@ -2407,24 +2439,24 @@ mod tests {
         );
         let (projected, _) = project_extrusion(&feature, &label, &index).expect("extrusion");
         assert!(matches!(
-            projected.definition,
+            projected.evaluation.definition(),
             FeatureDefinition::Extrude {
                 direction: ExtrudeDirection::Explicit {
-                    vector: Vector3 { z: -1.0, .. },
+                    vector: geometry_1,
                     ..
                 },
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: Length(12.0)
+                            length: actual_length
                         },
-                        draft: Some(Angle(0.1)),
+                        draft: Some(actual_draft),
                         ..
                     }
                 },
                 op: BooleanOp::NewBody,
                 ..
-            }
+            } if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -2432,12 +2464,12 @@ mod tests {
     fn projects_generated_hole() {
         let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
         let neutral_parameters = [
-            ParameterValue::Length(Length(5.0)),
-            ParameterValue::Length(Length(20.0)),
-            ParameterValue::Length(Length(9.0)),
-            ParameterValue::Length(Length(3.0)),
-            ParameterValue::Angle(Angle(1.5)),
-            ParameterValue::Angle(Angle(2.0)),
+            ParameterValue::Length(Length::new(5.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(20.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(9.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(3.0).expect("finite length fixture")),
+            ParameterValue::Angle(Angle::new(1.5).expect("finite angle fixture")),
+            ParameterValue::Angle(Angle::new(2.0).expect("finite angle fixture")),
         ]
         .into_iter()
         .zip(&raw_parameters)
@@ -2556,28 +2588,26 @@ mod tests {
         );
         let (projected, _) = project_hole(&feature, &label, &index).expect("hole");
         assert!(matches!(
-            projected.definition,
-            FeatureDefinition::Hole {
+            projected.evaluation.definition(), FeatureDefinition::Hole {
                 placements,
-                construction: cadmpeg_ir::features::HoleConstruction::Form {
-                    kind: HoleKind::CounterboreDrilled {
-                        diameter: Length(9.0),
-                        depth: Length(3.0),
-                        drill_point_angle: Angle(2.0)
-                    },
-                    ..
-                },
-                diameter: Some(Length(5.0)),
+                shape,
+
                 extent: Some(LinearTermination::ThroughAll),
                 ..
-            } if matches!(
+            } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: HoleKind::CounterboreDrilled {
+                        diameter: actual_diameter,
+                        depth: actual_depth,
+                        drill_point_angle: actual_drill_point_angle
+                    },
+                    ..
+                }, Some(actual_diameter_2),) if (matches!(
                 placements.as_deref(),
                 Some([HolePlacement::Directed {
-                    position: Point3 { x: 10.0, y: 20.0, z: 30.0 },
-                    direction: Vector3 { z: -1.0, .. }
+                    position: geometry_1,
+                    direction: geometry_2
                 }])
-            )
-        ));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
     }
 
     #[test]

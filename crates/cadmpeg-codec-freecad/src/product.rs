@@ -317,7 +317,13 @@ pub(crate) fn transfer_neutral(
                 .copied()
                 .unwrap_or([1.0; 3]);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
-            let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
+            let scale: [f64; 3] =
+                std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
+            let [x, y, z] = scale.map(|value| {
+                cadmpeg_ir::features::FiniteReal::new(value)
+                    .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
+            });
+            let scale = [x?, y?, z?];
             let copy_on_change = record.copy_on_change().map(|policy| CopyOnChange {
                 policy: copy_on_change_policy(policy),
                 source: record.copy_on_change_source().map(definition_id),
@@ -367,15 +373,15 @@ pub(crate) fn transfer_neutral(
                 scale,
                 name: Some(record.object.clone()),
                 visible: None,
-                link: Some(LinkState {
-                    linked_subelements: record.linked_subelements().to_vec(),
-                    element_component: record
+                link: LinkState::new(
+                    record.linked_subelements().to_vec(),
+                    record
                         .element_objects()
                         .get(index)
                         .map(|object| definition_id(object)),
-                    claim_child: record.claim_child(),
+                    record.claim_child(),
                     copy_on_change,
-                }),
+                ),
                 native_ref: Some(record.object.clone()),
             });
         }
@@ -469,7 +475,7 @@ pub(crate) fn transfer_neutral(
             ordinal: 0,
             transform: Transform::from_rows(local_transform).expect("affine transform"),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
             name: Some(object.clone()),
             visible: None,
             link: None,

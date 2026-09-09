@@ -377,6 +377,9 @@ macro_rules! declare_model {
                 let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
                     .into_iter()
                     .map(FeatureReadWire::into_parts)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(serde::de::Error::custom)?
+                    .into_iter()
                     .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
@@ -778,23 +781,9 @@ fn reconcile_feature_parents(
         .collect::<HashMap<_, _>>();
     let mut tree_parents = HashMap::<crate::features::FeatureId, crate::features::FeatureId>::new();
     for parent in &model.features {
-        let FeatureDefinition::TreeNode {
-            children,
-            active_child,
-            ..
-        } = &parent.definition
-        else {
+        let FeatureDefinition::TreeNode { children, .. } = parent.evaluation.definition() else {
             continue;
         };
-        if active_child
-            .as_ref()
-            .is_some_and(|active| !children.contains(active))
-        {
-            return Err(format!(
-                "feature `{}` has an active child outside its child list",
-                parent.id
-            ));
-        }
         for child in children {
             if let Some(previous) = tree_parents.insert(child.clone(), parent.id.clone()) {
                 return Err(format!(
@@ -849,7 +838,7 @@ impl Model {
     ) -> Option<&crate::features::FeatureId> {
         self.features.iter().find_map(|candidate| {
             let crate::features::FeatureDefinition::TreeNode { children, .. } =
-                &candidate.definition
+                candidate.evaluation.definition()
             else {
                 return None;
             };

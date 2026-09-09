@@ -107,8 +107,11 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         0,
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: vec![child_id.clone()],
-            active_child: Some(child_id.clone()),
+            children: crate::features::TreeChildren::new(
+                vec![child_id.clone()],
+                Some(child_id.clone()),
+            )
+            .unwrap(),
         },
     );
     let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry);
@@ -157,8 +160,8 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 0,
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::History,
-                    children: vec![child_id.clone()],
-                    active_child: None,
+                    children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
+                        .unwrap(),
                 },
             ),
             Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
@@ -439,8 +442,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 0,
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::SolidBodies,
-                    children: Vec::new(),
-                    active_child: None,
+                    children: crate::features::TreeChildren::default(),
                 },
             ),
             Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),

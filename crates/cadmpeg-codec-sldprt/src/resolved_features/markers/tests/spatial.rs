@@ -356,17 +356,19 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch { sketch: None },
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -379,7 +381,7 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
             if sketch.as_str() == "sldprt:model:spatial-sketch#spatial"
     ));
@@ -459,17 +461,19 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch { sketch: None },
+        ),
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]).unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -482,7 +486,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
             if sketch.as_str() == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));

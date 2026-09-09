@@ -284,9 +284,10 @@ fn arc_carriers_use_trim_vertices() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length(2.0),
-                start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-                end_angle: Angle(std::f64::consts::PI),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(-std::f64::consts::FRAC_PI_2)
+                    .expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
             })
             .expect("valid test fixture")
         )
@@ -342,9 +343,10 @@ fn arc_carriers_use_trim_vertices() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length(2.0),
-                start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-                end_angle: Angle(std::f64::consts::PI),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(-std::f64::consts::FRAC_PI_2)
+                    .expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
             })
             .expect("valid test fixture")
         )

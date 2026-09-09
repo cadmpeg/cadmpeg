@@ -117,13 +117,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match mode {
                 WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
-                    if !depth.0.is_finite() || depth.0 <= 0.0 {
+                    if !depth.get().is_finite() || depth.get() <= 0.0 {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid wrap depth",
                             feature.id
                         )));
                     }
-                    parameters.insert("Depth".into(), format_length_mm(depth.0));
+                    parameters.insert("Depth".into(), format_length_mm(depth.get()));
                 }
                 WrapMode::Scribe => {
                     parameters.remove("Depth");

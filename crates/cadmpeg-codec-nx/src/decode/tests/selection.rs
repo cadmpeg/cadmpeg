@@ -1080,16 +1080,18 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: kind.into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: kind.into(),
+                    parameters: Default::default(),
+                },
+            ),
             native_ref: None,
         });
     }
@@ -1098,15 +1100,17 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ordinal: 3,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+            },
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1114,16 +1118,18 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ordinal: 10,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DeleteBody {
-            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DeleteBody {
+                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            },
+        ),
         native_ref: None,
     });
     for (ordinal, definition) in [
@@ -1152,13 +1158,13 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             ordinal: ordinal as u64 + 4,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -1167,17 +1173,19 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ordinal: 9,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Block {
-            dimensions: None,
-            placement: None,
-            op: BooleanOp::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Block {
+                dimensions: None,
+                placement: None,
+                op: BooleanOp::Unresolved,
+            },
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1185,29 +1193,36 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ordinal: 11,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-            sections: Vec::new(),
-            path: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            mode: cadmpeg_ir::features::SweepMode::Unresolved,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::new(
+                    cadmpeg_ir::features::SweepSection::Unresolved(None),
+                    Vec::new(),
+                    cadmpeg_ir::features::SweepMode::Unresolved,
+                )
+                .unwrap(),
+
+                path: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            },
+        ),
         native_ref: None,
     });
     ir.model.configurations.extend([
@@ -1220,7 +1235,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            bodies: ConfigurationBodies::Resolved(Default::default()),
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,
@@ -1283,9 +1298,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         profiles: Default::default(),
         native_ref: None,
     });
-    ir.model.features[2].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-    };
+    ir.model.features[2]
+        .evaluation
+        .set_definition(FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+        })
+        .unwrap();
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
 
@@ -1306,16 +1324,23 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             ordinal: 0,
             name: Some("active".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body],
-            definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                construction: None,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::DatumPoint {
+                    position: cadmpeg_ir::features::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    construction: None,
+                },
+                vec![body],
+            )
+            .unwrap(),
             native_ref: None,
         },
         Feature {
@@ -1323,16 +1348,21 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             ordinal: 1,
             name: Some("inactive".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
-                construction: None,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::DatumPoint {
+                    position: cadmpeg_ir::features::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    construction: None,
+                },
+            ),
             native_ref: None,
         },
         Feature {
@@ -1340,16 +1370,18 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             ordinal: 2,
             name: Some("inactive-native".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "DELETE".into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "DELETE".into(),
+                    parameters: Default::default(),
+                },
+            ),
             native_ref: None,
         },
         Feature {
@@ -1357,15 +1389,17 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             ordinal: 3,
             name: Some("inactive-datum-csys".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumCoordinateSystem,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumCoordinateSystem,
+                },
+            ),
             native_ref: None,
         },
         Feature {
@@ -1373,15 +1407,17 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             ordinal: 4,
             name: Some("inactive-sketch".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                },
+            ),
             native_ref: None,
         },
     ]);
@@ -1403,18 +1439,22 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             ordinal: 0,
             name: Some("Retained history input".into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body.clone()],
-            definition: FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Resolved {
-                    bodies: vec![body],
-                    native: "nx:segment-body-bindings".into(),
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: vec![body.clone()],
+                        native: "nx:segment-body-bindings".into(),
+                    },
                 },
-            },
+                vec![body.clone()],
+            )
+            .unwrap(),
             native_ref: None,
         },
         Feature {
@@ -1422,16 +1462,18 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             ordinal: 1,
             name: Some("unresolved".into()),
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "DELETE".into(),
-                parameters: Default::default(),
-            },
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "DELETE".into(),
+                    parameters: Default::default(),
+                },
+            ),
             native_ref: None,
         },
     ]);
@@ -1465,16 +1507,18 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties,
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            },
+        ),
         native_ref: None,
     });
 
@@ -1497,16 +1541,18 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            },
+        ),
         native_ref: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1544,23 +1590,25 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         ordinal: 0,
         name: Some("TRIMMED_SH".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("TRIMMED_SH".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TrimSurface {
-            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:entity#face",
-            )
-            .expect("identity grammar")]),
-            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId::mint(
-                "test:model:entity#edge",
-            )
-            .expect("identity grammar")]),
-            keep: TrimRegion::Inside,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::TrimSurface {
+                faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                    "test:model:entity#face",
+                )
+                .expect("identity grammar")]),
+                tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId::mint(
+                    "test:model:entity#edge",
+                )
+                .expect("identity grammar")]),
+                keep: TrimRegion::Inside,
+            },
+        ),
         native_ref: None,
     });
 
@@ -1592,16 +1640,18 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties,
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED,
+            },
+        ),
         native_ref: None,
     };
 

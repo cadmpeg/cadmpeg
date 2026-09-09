@@ -138,7 +138,7 @@ fn spatial_relation_point_line_entities(
     entities: &mut Vec<SpatialSketchEntity>,
 ) -> Option<(SpatialSketchEntityId, SpatialSketchEntityId)> {
     let expected = match parameter.value.as_ref()? {
-        cadmpeg_ir::features::ParameterValue::Length(length) => length.0.abs(),
+        cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
         _ => return None,
     };
     let mut point_markers = lane
@@ -258,7 +258,7 @@ pub(crate) fn project_spatial_relation_bindings(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -378,7 +378,7 @@ pub(crate) fn project_relation_point_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -802,7 +802,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -891,11 +891,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                     FeatureInputRelationFamily::LineLineDistance
                     | FeatureInputRelationFamily::PointLineDistance,
                     cadmpeg_ir::features::ParameterValue::Length(expected),
-                ) => expected.0,
+                ) => expected.get(),
                 (
                     FeatureInputRelationFamily::Angle,
                     cadmpeg_ir::features::ParameterValue::Angle(expected),
-                ) => expected.0,
+                ) => expected.get(),
                 _ => continue,
             };
             if !expected.is_finite() || expected < 0.0 {
@@ -1357,7 +1357,7 @@ pub(crate) fn project_relation_solved_point_geometry(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -1546,7 +1546,8 @@ pub(crate) fn project_relation_solved_point_geometry(
                         }
                         _ => unreachable!("relation family was filtered above"),
                     };
-                    same_dimension_length(measured, distance.0).then_some(quantize(point, QUANTUM))
+                    same_dimension_length(measured, distance.get())
+                        .then_some(quantize(point, QUANTUM))
                 })
                 .collect::<Vec<_>>();
             candidates.sort_unstable();
@@ -2315,7 +2316,7 @@ pub(crate) fn project_relation_bindings(
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -2727,10 +2728,10 @@ fn relation_parameter_matches_display_scalar(
     match family {
         FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
             Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
-                same_dimension_angle(value.0, scalar.value)
+                same_dimension_angle(value.get(), scalar.value)
             }
             Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                same_dimension_angle(*value, scalar.value)
+                same_dimension_angle(value.get(), scalar.value)
             }
             _ => false,
         },
@@ -2742,7 +2743,7 @@ fn relation_parameter_matches_display_scalar(
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             match parameter.value.as_ref() {
                 Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
-                    same_dimension_length(value.0, scalar.value * 1000.0)
+                    same_dimension_length(value.get(), scalar.value * 1000.0)
                 }
                 Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
                     crate::history::exact_integer_f64(*value)
@@ -2751,7 +2752,7 @@ fn relation_parameter_matches_display_scalar(
                 // An untyped native real is still in the source scalar's SI
                 // units until relation typing applies the family unit.
                 Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                    same_dimension_length(*value, scalar.value)
+                    same_dimension_length(value.get(), scalar.value)
                 }
                 _ => false,
             }
@@ -2848,15 +2849,19 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch.clone(),
+                    )),
+                },
+            ),
             native_ref: Some("feature-native".into()),
         };
         let marker = |id: &str, ordinal: u32, offset: u64, coordinates_m| {
@@ -2945,8 +2950,8 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "7mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(7.0))),
-            dependencies: Vec::new(),
+            value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("terminal".into()),
@@ -3031,15 +3036,19 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch_id.clone(),
+                    )),
+                },
+            ),
             native_ref: Some(FEATURE.into()),
         };
         let point = |id: &str, ordinal: u32, offset: u64, u: f64, v: f64| {
@@ -3161,8 +3170,8 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "5mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(5.0))),
-            dependencies: Vec::new(),
+            value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3482,15 +3491,17 @@ mod relation_geometry_tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::SpatialSketch {
-                sketch: Some(sketch.id.clone()),
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::SpatialSketch {
+                    sketch: Some(sketch.id.clone()),
+                },
+            ),
             native_ref: Some(FEATURE.into()),
         };
         let parameter = cadmpeg_ir::features::DesignParameter {
@@ -3500,8 +3511,8 @@ mod relation_geometry_tests {
             name: "distance".into(),
             expression: "6.5mm".into(),
             display: None,
-            value: Some(ParameterValue::Length(Length(6.5))),
-            dependencies: Vec::new(),
+            value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),

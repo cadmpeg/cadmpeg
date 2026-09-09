@@ -616,13 +616,16 @@ impl<'a> Builder<'a> {
                         faces.push(face);
                     }
                 }
-                ir.model.shells.push(Shell {
-                    id: component_id.clone(),
-                    region: region.clone(),
-                    faces,
-                    wire_edges: Vec::new(),
-                    free_vertices: Vec::new(),
-                });
+                ir.model.shells.push(
+                    Shell::new(
+                        component_id.clone(),
+                        region.clone(),
+                        faces,
+                        Vec::new(),
+                        Vec::new(),
+                    )
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                );
                 self.bind_topology(
                     TextShapeKind::Shell,
                     shape_index,
@@ -674,24 +677,30 @@ impl<'a> Builder<'a> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                ir.model.shells.push(Shell {
-                    id: shell_id.clone(),
-                    region: region.clone(),
-                    faces,
-                    wire_edges,
-                    free_vertices: vec![vertex],
-                });
+                ir.model.shells.push(
+                    Shell::new(
+                        shell_id.clone(),
+                        region.clone(),
+                        faces,
+                        wire_edges,
+                        vec![vertex],
+                    )
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                );
                 return Ok(vec![shell_id]);
             }
             _ => {}
         }
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region.clone(),
-            faces,
-            wire_edges,
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            Shell::new(
+                shell_id.clone(),
+                region.clone(),
+                faces,
+                wire_edges,
+                Vec::new(),
+            )
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+        );
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(
                 shape.kind(),

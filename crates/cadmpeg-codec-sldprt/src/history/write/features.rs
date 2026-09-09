@@ -288,7 +288,7 @@ pub(crate) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let sketch_sources = features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => parent_sources
@@ -350,13 +350,14 @@ pub(crate) fn sync_neutral_features(
                 &mut parameters,
             );
         }
-        if feature.outputs.is_empty() {
+        if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
                 properties.remove("Scope");
             }
         } else {
             let scope = feature
-                .outputs
+                .evaluation
+                .outputs()
                 .iter()
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
@@ -451,7 +452,7 @@ pub(crate) fn sync_neutral_features(
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
-    let projected_features = project_features_with_native_inputs(native);
+    let projected_features = project_features_with_native_inputs(native)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -471,7 +472,7 @@ pub(crate) fn sync_neutral_features(
             .get(&projected_id)
             .is_some_and(|projected| {
                 if feature.native_ref.is_some() {
-                    projected.dependencies == expected
+                    projected.dependencies.as_slice() == expected
                 } else {
                     expected
                         .iter()

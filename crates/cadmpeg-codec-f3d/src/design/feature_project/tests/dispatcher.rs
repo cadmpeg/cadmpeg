@@ -56,22 +56,18 @@ fn dispatcher_projects_datum_feature_scopes() {
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
 
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::DatumCoordinateSystem { origin, .. }
-            if *origin == Point3::new(10.0, 20.0, 30.0)
+        features[0].evaluation.definition(),
+        FeatureDefinition::DatumCoordinateSystem { frame }
+            if frame.origin() == Point3::new(10.0, 20.0, 30.0)
     ));
     assert!(matches!(
-        &features[1].definition,
-        FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } if *origin == Point3::new(10.0, 20.0, 30.0)
-            && *normal == Vector3::new(0.0, 0.0, 1.0)
-            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+        features[1].evaluation.definition(),
+        FeatureDefinition::DatumPlane { frame } if frame.origin() == Point3::new(10.0, 20.0, 30.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
     assert!(matches!(
-        &features[2].definition,
+        features[2].evaluation.definition(),
         FeatureDefinition::DatumPoint { position, construction }
             if *position == Point3::new(40.0, 50.0, 60.0) && construction.is_none()
     ));
@@ -104,7 +100,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         bodies,
         center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
         factors,
-    } = &features[0].definition
+    } = features[0].evaluation.definition()
     else {
         panic!("scale feature with explicit center");
     };
@@ -121,7 +117,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     assert!(matches!(
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform(uniform)
-            if (*uniform - 2.5).abs() < f64::EPSILON
+            if (uniform.get() - 2.5).abs() < f64::EPSILON
     ));
 }
 
@@ -137,14 +133,10 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } if *origin == Point3::new(0.0, 0.0, 0.0)
-            && *normal == Vector3::new(0.0, 0.0, 1.0)
-            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+        features[0].evaluation.definition(),
+        FeatureDefinition::DatumPlane { frame } if frame.origin() == Point3::new(0.0, 0.0, 0.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
     ));
 }
 
@@ -188,7 +180,9 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     }
 
     let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
-    let FeatureDefinition::DatumThreePointPlane { points, .. } = &features[0].definition else {
+    let FeatureDefinition::DatumThreePointPlane { points, .. } =
+        features[0].evaluation.definition()
+    else {
         panic!("three-point datum plane")
     };
     assert!(matches!(
@@ -278,7 +272,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let FeatureDefinition::DatumPoint {
         construction: Some(construction),
         ..
-    } = &point.definition
+    } = point.evaluation.definition()
     else {
         panic!("typed datum-point construction");
     };
@@ -294,7 +288,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             }
         })
         .collect::<Vec<_>>();
-    assert_eq!(point.dependencies, plane_features);
+    assert_eq!(point.dependencies.as_slice(), plane_features);
 }
 
 #[test]
@@ -414,7 +408,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let FeatureDefinition::DatumPoint {
         construction: Some(construction),
         ..
-    } = &point.definition
+    } = point.evaluation.definition()
     else {
         panic!("typed datum-point construction")
     };
@@ -440,8 +434,8 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
     );
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
-    assert_eq!(native, &recipe_id);
-    assert_eq!(point.dependencies, [predecessor.id.clone()]);
+    assert_eq!(native.as_str(), &recipe_id);
+    assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
 }
 
 #[test]
@@ -746,15 +740,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             .find(|feature| feature.source_tag.as_deref() == Some(kind))
             .map_or_else(
                 || panic!("missing dispatched {kind} feature"),
-                |feature| feature.definition.clone(),
+                |feature| feature.evaluation.definition().clone(),
             )
     };
 
     assert_eq!(
         definition("BaseFlange"),
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: ProfileRef::Sketch(neutral_sketch_id(&placement).unwrap()),
-            thickness: Length(2.0),
+            profile: (ProfileRef::Sketch(neutral_sketch_id(&placement).unwrap()))
+                .try_into()
+                .unwrap(),
+            thickness: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         }
     );
@@ -771,7 +767,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             faces: FaceSelection::Native(scopes[2].id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(Length(0.1)),
+            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
         }
     );
     assert_eq!(
@@ -798,7 +794,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(Length(3.5)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(3.5).unwrap()),
             extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
         }
     );
@@ -816,27 +812,21 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
-            EdgeSelection::Historical {
-                state: state.clone(),
-                edges: vec![edge.clone()],
-                native: "selection".into(),
-            },
+            EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
+                .unwrap(),
         ),
-        PathRef::HistoricalEdges {
-            state: state.clone(),
-            edges: vec![edge.clone()],
-            native: "selection".into(),
-        }
+        PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
-            EdgeSelection::HistoricalPartial {
+            EdgeSelection::historical_partial(
                 state,
-                edges: vec![edge],
-                unresolved: vec!["operand".into()],
-                native: "selection".into(),
-            },
+                vec![edge],
+                vec!["operand".into()],
+                "selection".into()
+            )
+            .unwrap(),
         ),
         PathRef::Native("group".into())
     );
@@ -892,16 +882,18 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Form".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "Form".into(),
-            parameters: Default::default(),
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            cadmpeg_ir::features::FeatureDefinition::Native {
+                kind: "Form".into(),
+                parameters: Default::default(),
+            },
+        ),
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
@@ -921,7 +913,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     })
     .expect("legacy Form cage binding");
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Form {
             cages: vec![cages[0].id.clone()],
         }
@@ -969,16 +961,18 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Form".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "Form".into(),
-            parameters: Default::default(),
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            cadmpeg_ir::features::FeatureDefinition::Native {
+                kind: "Form".into(),
+                parameters: Default::default(),
+            },
+        ),
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
@@ -998,7 +992,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     })
     .expect("long Form cage binding");
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Form {
             cages: vec![cages[0].id.clone()],
         }

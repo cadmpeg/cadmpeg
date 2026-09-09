@@ -630,7 +630,7 @@ impl<'a> Builder<'a> {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
-                for face in &shell.faces {
+                for face in shell.faces() {
                     face_body.insert(face.as_str(), body);
                 }
             }
@@ -1189,7 +1189,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
+            if !transform.is_proper_rigid()
+                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+            {
                 continue;
             }
             let rows = transform.rows();
@@ -1287,7 +1289,9 @@ impl<'a> Builder<'a> {
                         return;
                     }
                 };
-                if !is_identity(&transform.rows()) || occurrence.scale != [1.0; 3] {
+                if !is_identity(&transform.rows())
+                    || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
                         format!(
@@ -1344,7 +1348,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
+            if !transform.is_proper_rigid()
+                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -1459,11 +1465,11 @@ impl<'a> Builder<'a> {
             let has_surface_topology = region.shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
-                    .is_some_and(|shell| !shell.faces.is_empty())
+                    .is_some_and(|shell| !shell.faces().is_empty())
             });
             let has_wire_topology = region.shells.iter().any(|shell_id| {
                 self.shells.get(shell_id.as_str()).is_some_and(|shell| {
-                    !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty()
+                    !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty()
                 })
             });
             let mixed_wire = body_kind == BodyKind::General && has_wire_topology;
@@ -1748,18 +1754,18 @@ impl<'a> Builder<'a> {
         }
         let mut connected_sets = Vec::new();
         for shell in shells {
-            if !shell.free_vertices.is_empty() {
+            if !shell.free_vertices().is_empty() {
                 self.loss(
                     StepLossCode::WireShellFreeVertices,
                     format!(
                         "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
                         shell.id,
-                        shell.free_vertices.len()
+                        shell.free_vertices().len()
                     ),
                 );
             }
             let edges = shell
-                .wire_edges
+                .wire_edges()
                 .iter()
                 .filter_map(|edge| self.emit_edge(edge.as_str()))
                 .collect::<Vec<_>>();
@@ -2055,7 +2061,11 @@ impl<'a> Builder<'a> {
 
     fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
         let shell = self.shells.get(shell_id).copied()?;
-        let face_ids: Vec<String> = shell.faces.iter().map(|f| f.as_str().to_owned()).collect();
+        let face_ids: Vec<String> = shell
+            .faces()
+            .iter()
+            .map(|f| f.as_str().to_owned())
+            .collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid) {
@@ -3601,7 +3611,7 @@ impl<'a> Builder<'a> {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
-                for edge_id in &shell.wire_edges {
+                for edge_id in shell.wire_edges() {
                     referenced_edges.insert(edge_id.as_str());
                     if let Some(edge) = self.edges.get(edge_id.as_str()).copied() {
                         referenced_vertices.insert(edge.start.as_str());
@@ -3610,11 +3620,11 @@ impl<'a> Builder<'a> {
                 }
                 referenced_vertices.extend(
                     shell
-                        .free_vertices
+                        .free_vertices()
                         .iter()
                         .map(cadmpeg_ir::ids::VertexId::as_str),
                 );
-                for face_id in &shell.faces {
+                for face_id in shell.faces() {
                     if !referenced_faces.insert(face_id.as_str()) {
                         continue;
                     }
@@ -4256,10 +4266,10 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|occurrence| {
                 let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
-                    usize::from(!link.linked_subelements.is_empty())
-                        + usize::from(link.element_component.is_some())
-                        + usize::from(link.claim_child.is_some())
-                        + link.copy_on_change.as_ref().map_or(0, |copy| {
+                    usize::from(!link.linked_subelements().is_empty())
+                        + usize::from(link.element_component().is_some())
+                        + usize::from(link.claim_child().is_some())
+                        + link.copy_on_change().map_or(0, |copy| {
                             1 + usize::from(copy.source.is_some())
                                 + usize::from(copy.group.is_some())
                                 + usize::from(copy.touched.is_some())

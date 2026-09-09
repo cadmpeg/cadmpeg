@@ -190,7 +190,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 result: entity.clone(),
                 source_reversed: false,
             }],
-            distance: Length(2.0),
+            distance: Length::new(2.0).unwrap(),
             parameter: Some(OffsetParameter {
                 id: parameter.clone(),
                 negated: true,
@@ -402,7 +402,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             SketchConstraintId::mint("synthetic:test:constraint#point-coordinates").unwrap(),
             SketchConstraintDefinitionInput::PointCoordinateValues {
                 point: SketchLocus::Entity(midpoint.clone()),
-                values: [Length(2.0), Length(1.0)],
+                values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
             },
         ),
         (
@@ -411,7 +411,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
                 axis: SketchCoordinateAxis::U,
-                value: Length(2.0),
+                value: Length::new(2.0).unwrap(),
             },
         ),
         (
@@ -420,7 +420,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
                 first: SketchLocus::Entity(first.clone()),
                 second: SketchLocus::Entity(second.clone()),
                 axis: SketchCoordinateAxis::V,
-                value: Length(1.0),
+                value: Length::new(1.0).unwrap(),
             },
         ),
     ];
@@ -508,27 +508,24 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
-    let profile = ProfileRef::SketchRegions {
-        sketch: SketchId::mint("synthetic:test:sketch#region").unwrap(),
-        regions: vec![
-            SketchProfileRegion::Loops {
-                outer: 2,
-                holes: vec![3, 5],
-            },
-            SketchProfileRegion::Loops {
-                outer: 8,
-                holes: Vec::new(),
-            },
-            SketchProfileRegion::Trimmed {
-                outer_boundary: vec![SketchProfileBoundaryUse {
+    let profile = ProfileRef::sketch_regions(
+        SketchId::mint("synthetic:test:sketch#region").unwrap(),
+        vec![
+            SketchProfileRegion::loops(2, vec![3, 5]).unwrap(),
+            SketchProfileRegion::loops(8, Vec::new()).unwrap(),
+            SketchProfileRegion::trimmed(
+                vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
-                    parameter_range: [0.25, 0.75],
+                    parameter_range: crate::geometry::DirectedParameterRange::new([0.25, 0.75])
+                        .unwrap(),
                     reversed: true,
                 }],
-                hole_boundaries: Vec::new(),
-            },
+                Vec::new(),
+            )
+            .unwrap(),
         ],
-    };
+    )
+    .unwrap();
     let json = serde_json::to_value(&profile).expect("serialize sketch regions");
     assert_eq!(json["kind"], "sketch_regions");
     assert_eq!(json["value"]["regions"][0]["outer"], 2);
@@ -591,7 +588,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 center: Point3::new(1.0, 2.0, 3.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
                 reference_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: Length(4.0),
+                radius: Length::new(4.0).unwrap(),
             })
             .unwrap(),
         ));
@@ -647,8 +644,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         name: "spatial_distance".into(),
         expression: "2 mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(2.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
+        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -662,8 +659,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         name: "spatial_line_length".into(),
         expression: "sqrt(3) mm".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(3.0f64.sqrt()))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(3.0f64.sqrt()).unwrap())),
+        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -805,7 +802,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                         1.0 / 6.0f64.sqrt(),
                         1.0 / 6.0f64.sqrt(),
                     ),
-                    distance: Length(2.0),
+                    distance: Length::new(2.0).unwrap(),
                     parameter: Some(OffsetParameter {
                         id: distance.clone(),
                         negated: false,
@@ -1035,7 +1032,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .iter_mut()
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
-        .value = Some(ParameterValue::Length(Length(3.0)));
+        .value = Some(ParameterValue::Length(Length::new(3.0).unwrap()));
     let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new()).findings;
     assert!(invalid_distance_findings.iter().any(|finding| finding
         .message
@@ -1061,26 +1058,31 @@ fn spatial_sketch_paths_round_trip_through_json() {
     use crate::features::PathRef;
     use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
-    let path = PathRef::SpatialSketchCurves {
-        sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        curves: vec![
-            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap(),
-        ],
-    };
+    let path = PathRef::spatial_sketch_curves(
+        SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+        vec![SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#0").unwrap()],
+    )
+    .unwrap();
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
-    let native = PathRef::SpatialSketchSelection {
-        sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        selections: vec!["native:path-selection#0".into()],
-    };
+    let native = PathRef::spatial_sketch_selection(
+        SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+        vec!["native:path-selection#0".into()],
+    )
+    .unwrap();
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
 
 fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
-    crate::sketches::SketchPatternDirection::new(axis, crate::features::Length(2.0), None, None)
-        .unwrap()
+    crate::sketches::SketchPatternDirection::new(
+        axis,
+        crate::features::Length::new(2.0).unwrap(),
+        None,
+        None,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -1147,16 +1149,16 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
 
     let pattern = SketchCircularPattern::new(
         SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
-        Angle(1.0),
+        Angle::new(1.0).unwrap(),
         None,
         None,
         vec![
             SketchCircularPatternInstance {
-                angle: Angle(0.0),
+                angle: Angle::new(0.0).unwrap(),
                 entities: vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
             },
             SketchCircularPatternInstance {
-                angle: Angle(1.0),
+                angle: Angle::new(1.0).unwrap(),
                 entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
             },
         ],
@@ -1193,7 +1195,7 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
             result: SketchEntityId::mint("test:test:sketch-entity#result").unwrap(),
             source_reversed: false,
         }],
-        distance: Length(2.0),
+        distance: Length::new(2.0).unwrap(),
         parameter: Some(OffsetParameter {
             id: ParameterId::mint("test:test:parameter#offset").expect("identity grammar"),
             negated: true,
@@ -1224,24 +1226,24 @@ fn conic_bounds_keep_the_paired_wire_fields() {
     let cases = [
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, 2.0),
-            major_angle: Angle(0.25),
-            major_radius: Length(4.0),
-            minor_radius: Length(2.0),
-            bounds: Some([Angle(-0.5), Angle(1.5)]),
+            major_angle: Angle::new(0.25).unwrap(),
+            major_radius: Length::new(4.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
+            bounds: Some([Angle::new(-0.5).unwrap(), Angle::new(1.5).unwrap()]),
         })
         .unwrap(),
         SketchGeometry::try_from(SketchGeometryDefinition::Hyperbola {
             center: Point2::new(1.0, 2.0),
-            major_angle: Angle(0.25),
-            major_radius: Length(4.0),
-            minor_radius: Length(2.0),
+            major_angle: Angle::new(0.25).unwrap(),
+            major_radius: Length::new(4.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
             bounds: Some([-0.5, 1.5]),
         })
         .unwrap(),
         SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: Point2::new(1.0, 2.0),
-            axis_angle: Angle(0.25),
-            focal_length: Length(2.0),
+            axis_angle: Angle::new(0.25).unwrap(),
+            focal_length: Length::new(2.0).unwrap(),
             bounds: Some([-0.5, 1.5]),
         })
         .unwrap(),
@@ -1288,11 +1290,11 @@ fn text_placement_keeps_the_paired_wire_fields() {
         text: crate::products::NonEmptyString::new("cadmpeg").unwrap(),
         font_family: crate::products::NonEmptyString::new("sans").unwrap(),
         font_weight: crate::sketches::SketchFontWeight::Regular,
-        height: Length(4.0),
+        height: Length::new(4.0).unwrap(),
         width_factor: None,
         placement: Some(TextPlacement {
             anchor: Point2::new(1.0, 2.0),
-            rotation: Angle(0.5),
+            rotation: Angle::new(0.5).unwrap(),
         }),
         horizontal_alignment: None,
         vertical_alignment: None,
@@ -1395,7 +1397,7 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
         first: 17,
         second: 18,
         difference: 19,
-        value: crate::features::Angle(0.5),
+        value: crate::features::Angle::new(0.5).unwrap(),
     };
     let wire = serde_json::to_value(&angle).unwrap();
     assert_eq!(
@@ -1442,7 +1444,7 @@ fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
             first: 17,
             second: 18,
             difference: 19,
-            value: crate::features::Angle(0.5),
+            value: crate::features::Angle::new(0.5).unwrap(),
         },
         SketchConstraintDefinitionInput::ScalarEquality {
             first: 17,
@@ -1726,32 +1728,26 @@ fn planar_geometry_admission_checks_each_numeric_family() {
         },
         Definition::Circle {
             center: point,
-            radius: Length(0.0),
-        },
-        Definition::Arc {
-            center: point,
-            radius: Length(1.0),
-            start_angle: Angle(f64::NAN),
-            end_angle: Angle(0.0),
+            radius: Length::new(0.0).unwrap(),
         },
         Definition::Ellipse {
             center: point,
-            major_angle: Angle(0.0),
-            major_radius: Length(1.0),
-            minor_radius: Length(2.0),
+            major_angle: Angle::new(0.0).unwrap(),
+            major_radius: Length::new(1.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
             bounds: None,
         },
         Definition::Hyperbola {
             center: point,
-            major_angle: Angle(0.0),
-            major_radius: Length(1.0),
-            minor_radius: Length(2.0),
+            major_angle: Angle::new(0.0).unwrap(),
+            major_radius: Length::new(1.0).unwrap(),
+            minor_radius: Length::new(2.0).unwrap(),
             bounds: Some([0.0, f64::INFINITY]),
         },
         Definition::Parabola {
             vertex: point,
-            axis_angle: Angle(0.0),
-            focal_length: Length(-1.0),
+            axis_angle: Angle::new(0.0).unwrap(),
+            focal_length: Length::new(-1.0).unwrap(),
             bounds: None,
         },
     ] {
@@ -1788,7 +1784,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
-            *radius = Length(-1.0);
+            *radius = Length::new(-1.0).unwrap();
         })
         .is_err());
     assert_eq!(geometry, original);
@@ -1797,7 +1793,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
-            *radius = Length(2.0);
+            *radius = Length::new(2.0).unwrap();
         })
         .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["radius"], 2.0);
@@ -1823,7 +1819,7 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
         };
         assert!(serde_json::from_value::<SketchGeometry>(invalid).is_err());
     }
-    for field in 0..4 {
+    for field in 0..3 {
         let mut definition = geometry.clone().into_definition();
         let SketchGeometryDefinition::Text {
             height,
@@ -1835,10 +1831,9 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
             panic!("placed text")
         };
         match field {
-            0 => *height = Length(f64::INFINITY),
+            0 => *height = Length::new(0.0).unwrap(),
             1 => *width_factor = Some(f64::NAN),
-            2 => placement.anchor.u = f64::INFINITY,
-            _ => placement.rotation.0 = f64::NAN,
+            _ => placement.anchor.u = f64::INFINITY,
         }
         assert!(SketchGeometry::try_from(definition).is_err());
     }
@@ -1899,35 +1894,27 @@ fn spatial_analytic_geometry_checks_separation_frames_and_angles() {
             center: origin,
             normal,
             reference_direction,
-            radius: Length(0.0),
+            radius: Length::new(0.0).unwrap(),
         },
         Definition::Circle {
             center: origin,
             normal: Vector3::new(0.0, 0.0, 2.0),
             reference_direction,
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
         Definition::Circle {
             center: origin,
             normal,
             reference_direction: normal,
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
         Definition::Arc {
             center: origin,
             normal,
             reference_direction,
-            radius: Length(1.0),
-            start_angle: Angle(1.0),
-            end_angle: Angle(1.0),
-        },
-        Definition::Arc {
-            center: origin,
-            normal,
-            reference_direction,
-            radius: Length(1.0),
-            start_angle: Angle(f64::INFINITY),
-            end_angle: Angle(1.0),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(1.0).unwrap(),
+            end_angle: Angle::new(1.0).unwrap(),
         },
     ] {
         assert!(SpatialSketchGeometry::try_from(definition).is_err());
@@ -1945,13 +1932,13 @@ fn spatial_analytic_geometry_checks_separation_frames_and_angles() {
             center: origin,
             normal: Vector3::new(0.0, 0.0, 1.0 + 0.5 * EPS_SPATIAL_FRAME_BOUNDARY),
             reference_direction,
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
         Definition::Circle {
             center: origin,
             normal,
             reference_direction: Vector3::new(1.0, 0.0, 0.5 * EPS_SPATIAL_FRAME_BOUNDARY),
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         },
     ] {
         assert!(SpatialSketchGeometry::try_from(definition).is_ok());
@@ -2004,7 +1991,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
             let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {
                 panic!("arc")
             };
-            *end_angle = Angle(-3.0);
+            *end_angle = Angle::new(-3.0).unwrap();
         })
         .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
@@ -2190,33 +2177,33 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
     let copy = SketchEntityId::mint("test:test:sketch-entity#copy").unwrap();
     let instances = vec![
         SketchCircularPatternInstance {
-            angle: Angle(0.0),
+            angle: Angle::new(0.0).unwrap(),
             entities: vec![seed.clone()],
         },
         SketchCircularPatternInstance {
-            angle: Angle(-1.0),
+            angle: Angle::new(-1.0).unwrap(),
             entities: vec![copy],
         },
     ];
     let admit = |angle, instances| {
-        SketchCircularPattern::new(center.clone(), Angle(angle), None, None, instances)
+        SketchCircularPattern::new(
+            center.clone(),
+            Angle::new(angle).unwrap(),
+            None,
+            None,
+            instances,
+        )
     };
     let pattern = admit(-1.0, instances.clone()).unwrap();
-    for angle in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(admit(angle, instances.clone()).is_none());
-        let mut invalid = instances.clone();
-        invalid[1].angle = Angle(angle);
-        assert!(admit(-1.0, invalid).is_none());
-    }
     let mut invalid = instances.clone();
-    invalid[0].angle = Angle(f64::MIN_POSITIVE);
+    invalid[0].angle = Angle::new(f64::MIN_POSITIVE).unwrap();
     assert!(admit(-1.0, invalid).is_none());
     for entity in [center, seed] {
         let mut invalid = instances.clone();
         invalid[1].entities[0] = entity;
         assert!(SketchCircularPattern::new(
             pattern.center().clone(),
-            Angle(-1.0),
+            Angle::new(-1.0).unwrap(),
             None,
             None,
             invalid
@@ -2254,13 +2241,14 @@ fn rectangular_pattern_admission_checks_directions_and_distinct_members() {
         [f64::NAN, 1.0],
         [1.0, f64::INFINITY],
     ] {
-        assert!(SketchPatternDirection::new(direction, Length(1.0), None, None).is_none());
+        assert!(
+            SketchPatternDirection::new(direction, Length::new(1.0).unwrap(), None, None).is_none()
+        );
     }
-    for spacing in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(SketchPatternDirection::new([1.0, 0.0], Length(spacing), None, None).is_none());
-    }
-    let first = SketchPatternDirection::new([1.0, 0.0], Length(-2.0), None, None).unwrap();
-    let second = SketchPatternDirection::new([0.0, 1.0], Length(0.0), None, None).unwrap();
+    let first =
+        SketchPatternDirection::new([1.0, 0.0], Length::new(-2.0).unwrap(), None, None).unwrap();
+    let second =
+        SketchPatternDirection::new([0.0, 1.0], Length::new(0.0).unwrap(), None, None).unwrap();
     let instance = SketchPatternInstance {
         entities: vec![SketchEntityId::mint("test:test:sketch-entity#seed").unwrap()],
     };
@@ -2390,7 +2378,7 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
         },
         Kind::Offset {
             pairs: vec![],
-            distance: Length(1.0),
+            distance: Length::new(1.0).unwrap(),
             parameter: None,
         },
         Kind::Offset {
@@ -2399,12 +2387,12 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
                 result: a.clone(),
                 source_reversed: false,
             }],
-            distance: Length(1.0),
+            distance: Length::new(1.0).unwrap(),
             parameter: None,
         },
         Kind::Offset {
             pairs: vec![pair.clone(), pair],
-            distance: Length(1.0),
+            distance: Length::new(1.0).unwrap(),
             parameter: None,
         },
         Kind::Group { elements: vec![] },
@@ -2454,8 +2442,8 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
 fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
     use crate::features::{Angle, Length};
     use crate::sketches::{
-        SketchConstraintDefinition, SketchConstraintDefinitionInput as Kind, SketchCoordinateAxis,
-        SketchEntityId, SketchLabelValue, SketchLocus, SketchOffsetPair,
+        SketchConstraintDefinition, SketchConstraintDefinitionInput as Kind, SketchEntityId,
+        SketchLabelValue, SketchLocus, SketchOffsetPair,
     };
 
     let a = SketchEntityId::mint("test:test:sketch-entity#a").unwrap();
@@ -2464,48 +2452,13 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
     let second = SketchLocus::End(b.clone());
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(SketchLabelValue::try_from(value).is_err());
-        for kind in [
-            Kind::DistanceLociValue {
-                first: first.clone(),
-                second: second.clone(),
-                distance: Length(value),
-                parameter: None,
-            },
-            Kind::PointCoordinateValues {
-                point: first.clone(),
-                values: [Length(0.0), Length(value)],
-            },
-            Kind::MidpointCoordinate {
-                first: first.clone(),
-                second: second.clone(),
-                axis: SketchCoordinateAxis::U,
-                value: Length(value),
-            },
-            Kind::Offset {
-                pairs: vec![SketchOffsetPair {
-                    source: a.clone(),
-                    result: b.clone(),
-                    source_reversed: false,
-                }],
-                distance: Length(value),
-                parameter: None,
-            },
-            Kind::PolarDistance {
-                first: first.clone(),
-                second: second.clone(),
-                distance: Length(1.0),
-                angle: Some(Angle(value)),
-                distance_parameter: None,
-            },
-        ] {
-            assert!(SketchConstraintDefinition::try_from(kind).is_err());
-        }
     }
+
     for kind in [
         Kind::DistanceLociValue {
             first: first.clone(),
             second: second.clone(),
-            distance: Length(-1.0),
+            distance: Length::new(-1.0).unwrap(),
             parameter: None,
         },
         Kind::Offset {
@@ -2514,7 +2467,7 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
                 result: b.clone(),
                 source_reversed: false,
             }],
-            distance: Length(0.0),
+            distance: Length::new(0.0).unwrap(),
             parameter: None,
         },
         Kind::Offset {
@@ -2523,47 +2476,50 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
                 result: b.clone(),
                 source_reversed: false,
             }],
-            distance: Length(-1.0),
+            distance: Length::new(-1.0).unwrap(),
             parameter: None,
         },
         Kind::AngleDifference {
             first: 1,
             second: 2,
             difference: 3,
-            value: Angle(std::f64::consts::TAU),
+            value: Angle::new(std::f64::consts::TAU).unwrap(),
         },
     ] {
         let wire = serde_json::to_value(&kind).unwrap();
         assert!(SketchConstraintDefinition::try_from(kind).is_err());
         assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
     }
-    for value in [-1.0, std::f64::consts::TAU, f64::NAN, f64::INFINITY] {
+    for value in [-1.0, std::f64::consts::TAU] {
         assert!(SketchConstraintDefinition::try_from(Kind::AngleDifference {
             first: 1,
             second: 2,
             difference: 3,
-            value: Angle(value)
+            value: Angle::new(value).unwrap()
         })
         .is_err());
     }
     for (distance, angle, valid) in [
         (-1.0, None, false),
-        (f64::INFINITY, Some(Angle(0.0)), false),
         (0.0, None, true),
-        (0.0, Some(Angle(0.0)), false),
+        (0.0, Some(Angle::new(0.0).unwrap()), false),
         (super::EPS_POLAR_DISTANCE_ZERO, None, true),
-        (super::EPS_POLAR_DISTANCE_ZERO, Some(Angle(0.0)), false),
+        (
+            super::EPS_POLAR_DISTANCE_ZERO,
+            Some(Angle::new(0.0).unwrap()),
+            false,
+        ),
         (2.0 * super::EPS_POLAR_DISTANCE_ZERO, None, false),
         (
             2.0 * super::EPS_POLAR_DISTANCE_ZERO,
-            Some(Angle(-1.0)),
+            Some(Angle::new(-1.0).unwrap()),
             true,
         ),
     ] {
         let kind = Kind::PolarDistance {
             first: first.clone(),
             second: second.clone(),
-            distance: Length(distance),
+            distance: Length::new(distance).unwrap(),
             angle,
             distance_parameter: None,
         };
@@ -2574,7 +2530,7 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
             first: 1,
             second: 2,
             difference: 3,
-            value: Angle(value),
+            value: Angle::new(value).unwrap(),
         })
         .unwrap();
         assert_eq!(
@@ -2691,16 +2647,16 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         sources: vec![a.clone()],
         results: vec![b.clone()],
         normal: Vector3::new(0.0, 0.0, 1.0),
-        distance: Length(1.0),
+        distance: Length::new(1.0).unwrap(),
         parameter: None,
     };
-    for distance in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+    for distance in [0.0, -1.0] {
         let mut kind = offset.clone();
         if let Kind::Offset {
             distance: value, ..
         } = &mut kind
         {
-            *value = Length(distance);
+            *value = Length::new(distance).unwrap();
         }
         invalid.push(kind);
     }

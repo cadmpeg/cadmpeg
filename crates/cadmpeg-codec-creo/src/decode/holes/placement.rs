@@ -2,7 +2,7 @@
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
 use crate::vecmath::normalize;
-use cadmpeg_ir::features::{Length, LinearTermination};
+use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -54,7 +54,7 @@ pub fn hole_extent_and_direction(
     Some((
         first_normal.map(|value| value * signed_length.signum()),
         LinearTermination::Blind {
-            length: Length(signed_length.abs()),
+            length: cadmpeg_ir::features::NonZeroLength::new(signed_length.abs())?,
         },
     ))
 }

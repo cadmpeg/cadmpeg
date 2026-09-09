@@ -87,15 +87,17 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature".into()),
     };
     let parameter = DesignParameter {
@@ -105,8 +107,8 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -127,16 +129,16 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
-    assert!(
-        matches!((entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
-            Some(SketchGeometryDefinition::Circle {
-                center,
-                radius: Length(2.0)
-            }) if *center == Point2::new(1.0, 2.0)
-        )
-    );
+    assert!(matches!(
+        entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle {
+            center,
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
+    ));
 
     let mut classless_lane = lane.clone();
     classless_lane.references[0].class_ref = None;
@@ -146,15 +148,15 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&classless_lane),
-    );
-    assert!(
-        matches!((classless_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
-            Some(SketchGeometryDefinition::Circle {
-                center,
-                radius: Length(2.0)
-            }) if *center == Point2::new(1.0, 2.0)
-        )
-    );
+    )
+    .unwrap();
+    assert!(matches!(
+        classless_entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle {
+            center,
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
+    ));
 
     let mut object_index_lane = lane.clone();
     object_index_lane.references[0].object_index = 1;
@@ -169,13 +171,13 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&object_index_lane),
-    );
-    assert!(
-        matches!((object_index_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
-            Some(SketchGeometryDefinition::Circle {
-                center,
-                radius: Length(2.0)
-            }) if *center == Point2::new(1.0, 2.0)
-        )
-    );
+    )
+    .unwrap();
+    assert!(matches!(
+        object_index_entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle {
+            center,
+            radius: actual_radius
+        }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
+    ));
 }

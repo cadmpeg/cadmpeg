@@ -23,6 +23,7 @@ use crate::records::topology::{
 };
 use crate::records::{DesignBodyBinding, DesignComponentNamingSpace};
 use cadmpeg_asm::kernel_header::RefWidth;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
@@ -781,7 +782,7 @@ pub(crate) fn bind_feature_outputs(
     scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
-) {
+) -> Result<(), CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in histories {
         let by_node = history
@@ -842,37 +843,48 @@ pub(crate) fn bind_feature_outputs(
             })
             .eq([true]);
         if transition_matches {
-            feature.outputs = outputs
-                .iter()
-                .filter_map(|slot| active.get(slot).cloned())
-                .collect();
-            bind_base_feature_output_selection(feature);
+            feature
+                .evaluation
+                .set_outputs(
+                    outputs
+                        .iter()
+                        .filter_map(|slot| active.get(slot).cloned())
+                        .collect(),
+                )
+                .map_err(CodecError::malformed)?;
+            bind_base_feature_output_selection(feature)?;
         }
     }
+    Ok(())
 }
 
-fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
-    if feature.outputs.is_empty() {
-        return;
+fn bind_base_feature_output_selection(
+    feature: &mut cadmpeg_ir::features::Feature,
+) -> Result<(), CodecError> {
+    if feature.evaluation.outputs().is_empty() {
+        return Ok(());
     }
-    let cadmpeg_ir::features::FeatureDefinition::BaseFeature { bodies } = &mut feature.definition
+    let cadmpeg_ir::features::FeatureDefinition::BaseFeature {
+        bodies: cadmpeg_ir::features::BodySelection::Native(native),
+    } = feature.evaluation.definition()
     else {
-        return;
+        return Ok(());
     };
-    let cadmpeg_ir::features::BodySelection::Native(native) = bodies else {
-        return;
-    };
-    let native = native.clone();
-    *bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: feature.outputs.clone(),
-        native,
-    };
+    feature
+        .evaluation
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Resolved {
+                bodies: feature.evaluation.outputs().clone(),
+                native: native.clone(),
+            },
+        })
+        .map_err(CodecError::malformed)
 }
 
 pub(crate) fn bind_sweep_result_modes(
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
     use cadmpeg_ir::topology::BodyKind;
 
@@ -881,23 +893,40 @@ pub(crate) fn bind_sweep_result_modes(
         .map(|body| (body.id.clone(), body.kind))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Sweep { mode, .. } = &mut feature.definition else {
-            continue;
-        };
-        if *mode != SweepMode::Unresolved || feature.outputs.is_empty() {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            if shape.mode() != SweepMode::Unresolved || feature.evaluation.outputs().is_empty() {
+                break 'feature_edit;
+            }
+            let output_kinds = feature
+                .evaluation
+                .outputs()
+                .iter()
+                .map(|output| body_kinds.get(output).copied())
+                .collect::<Option<Vec<_>>>();
+            let mode = match output_kinds.as_deref() {
+                Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => {
+                    SweepMode::Surface
+                }
+                Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => {
+                    SweepMode::NewBody
+                }
+                _ => SweepMode::Unresolved,
+            };
+            shape
+                .try_edit(|_, _, result| *result = mode)
+                .map_err(CodecError::malformed)?;
         }
-        let output_kinds = feature
-            .outputs
-            .iter()
-            .map(|output| body_kinds.get(output).copied())
-            .collect::<Option<Vec<_>>>();
-        *mode = match output_kinds.as_deref() {
-            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => SweepMode::Surface,
-            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => SweepMode::NewBody,
-            _ => SweepMode::Unresolved,
-        };
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Native history and neutral topology used to resolve feature body operands.
@@ -925,7 +954,7 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
 pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
     let scopes = inputs.scopes;
@@ -936,14 +965,16 @@ pub(crate) fn bind_feature_body_selections(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
-    bind_pattern_body_selections(features, inputs);
+    bind_pattern_body_selections(features, inputs)?;
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Pattern {
-                seeds,
-                pattern: cadmpeg_ir::features::PatternKind::Circular { count, .. },
-            } = &feature.definition
+            let FeatureDefinition::Pattern { seeds, pattern } = feature.evaluation.definition()
+            else {
+                return None;
+            };
+            let cadmpeg_ir::features::PatternTransform::Circular { count, .. } =
+                pattern.definition()
             else {
                 return None;
             };
@@ -958,214 +989,224 @@ pub(crate) fn bind_feature_body_selections(
                 return None;
             };
             let expected_count = usize::try_from(*count).ok()?;
-            if feature.outputs.len().checked_add(1) != Some(expected_count) {
+            if feature.evaluation.outputs().len().checked_add(1) != Some(expected_count) {
                 return None;
             }
             let slots = std::iter::once(historical_body_slot(seed_body.as_str()))
-                .chain(feature.outputs.iter().map(|body| stable_ref(body.as_str())))
+                .chain(
+                    feature
+                        .evaluation
+                        .outputs()
+                        .iter()
+                        .map(|body| stable_ref(body.as_str())),
+                )
                 .collect::<Option<BTreeSet<_>>>()?;
             (slots.len() == expected_count).then_some((feature.id.clone(), slots))
         })
         .collect::<HashMap<_, _>>();
 
     for feature in features {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let feature_id = feature.id.clone();
-        if matches!(feature.definition, FeatureDefinition::Pattern { .. }) {
-            continue;
-        }
-        if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
-                bind_body_recipe_body_selection(
-                    tools,
-                    &feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-                for cell in cells {
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                break 'feature_edit;
+            };
+            if matching_scopes.next().is_some() {
+                break 'feature_edit;
+            }
+            let feature_id = feature.id.clone();
+            if matches!(&definition, FeatureDefinition::Pattern { .. }) {
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::BoundaryFill { tools, cells } = &mut definition {
+                if let Some(previous_state_id) = scope.previous_history_state_id {
                     bind_body_recipe_body_selection(
-                        cell,
+                        tools,
                         &feature_id,
                         previous_state_id,
                         scope,
                         groups,
                         body_recipe_operands,
                     );
-                }
-            } else {
-                bind_direct_body_recipe_body_selection(tools, scope, inputs);
-                for cell in cells {
-                    bind_direct_body_recipe_body_selection(cell, scope, inputs);
-                }
-            }
-            continue;
-        }
-        if let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition {
-            let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id, scope.previous_history_state_id)
-            else {
-                bind_direct_body_recipe_body_selection(target, scope, inputs);
-                bind_direct_body_recipe_body_selection(tools, scope, inputs);
-                if matches!(
-                    tools,
-                    BodySelection::Native(_) | BodySelection::NativeSet(_)
-                ) {
-                    if let Some(local) = combine_external_local_tools(scope) {
-                        *tools = local;
-                    }
-                }
-                continue;
-            };
-            if let Some(local) = combine_external_local_tools(scope) {
-                *tools = local;
-            }
-            let BodySelection::Native(native) = target else {
-                continue;
-            };
-            let Some((history, state, _)) =
-                unique_history_state_pair(histories, state_id, previous_state_id)
-            else {
-                continue;
-            };
-            let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-            for history_state in &history.states {
-                history_states
-                    .entry(history_state.state_id)
-                    .and_modify(|state| *state = None)
-                    .or_insert(Some(history_state));
-            }
-            let Some(body) = singleton_revised_input_body_across_state_chain(
-                state,
-                previous_state_id,
-                &history_states,
-            ) else {
-                continue;
-            };
-            let prefix = feature_input_prefix(&feature_id, previous_state_id);
-            let input_state = crate::design::edge_resolve::feature_input_topology_id(
-                &feature_id,
-                previous_state_id,
-            );
-            *target = BodySelection::Historical {
-                state: input_state.clone(),
-                bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
-                native: native.clone(),
-            };
-            let Some(stream) = crate::ids::native_stream(&scope.id) else {
-                continue;
-            };
-            let Some(operation) = scope.combine_operation() else {
-                continue;
-            };
-            let mut native_tools = operation
-                .tools
-                .iter()
-                .map(|tool| format!("{stream}:design-record#{}", tool.record_index))
-                .collect::<Vec<_>>();
-            let current_history_source = historical_brep_source(&state.id);
-            let mut historical_tool_bodies = Vec::with_capacity(native_tools.len());
-            let mut direct_tool_bodies = Vec::with_capacity(native_tools.len());
-            for record_index in operation.tools.iter().map(|tool| tool.record_index) {
-                let mut matching = body_recipe_operands.iter().filter(|operand| {
-                    crate::ids::native_stream(&operand.id) == Some(stream)
-                        && operand.scope_record_index == scope.record_index
-                        && matches!(
-                            operand.owner,
-                            crate::records::topology::DesignOperandOwner::ScopeReference { .. }
-                        )
-                        && operand.record_index == record_index
-                });
-                let Some(operand) = matching.next() else {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                };
-                if matching.next().is_some() {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                }
-                if let Some(body) = operand.resolved_body_slot {
-                    let body = crate::ids::history_input_body_id(&prefix, body);
-                    if historical_tool_bodies.contains(&body) {
-                        historical_tool_bodies.clear();
-                        direct_tool_bodies.clear();
-                        break;
-                    }
-                    historical_tool_bodies.push(body);
-                    continue;
-                }
-                let Some(body) = unique_external_body_candidate(
-                    operand,
-                    current_history_source,
-                    bodies,
-                    regions,
-                    shells,
-                ) else {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                };
-                if direct_tool_bodies.contains(&body) {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                }
-                direct_tool_bodies.push(body);
-            }
-            if historical_tool_bodies.len() == native_tools.len() {
-                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
-                    historical_tool_bodies,
-                    native_tools,
-                ) else {
-                    continue;
-                };
-                *tools = BodySelection::HistoricalSet {
-                    state: input_state,
-                    members,
-                };
-            } else if direct_tool_bodies.len() == native_tools.len() {
-                *tools = if native_tools.len() == 1 {
-                    BodySelection::Resolved {
-                        bodies: direct_tool_bodies,
-                        native: native_tools.remove(0),
+                    for cell in cells {
+                        bind_body_recipe_body_selection(
+                            cell,
+                            &feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
                     }
                 } else {
-                    let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
-                        direct_tool_bodies,
-                        native_tools,
-                    ) else {
-                        continue;
-                    };
-                    BodySelection::ResolvedSet { members }
-                };
-            } else {
-                let tool_record_indices = operation
-                    .tools
-                    .iter()
-                    .map(|tool| tool.record_index)
-                    .collect::<Vec<_>>();
-                if let Some(tool_slots) = combine_recipe_family_tool_slots(
-                    stream,
-                    scope.record_index,
-                    &tool_record_indices,
-                    previous_state_id,
-                    body,
-                    body_recipe_operands,
-                    inputs.construction_recipes,
-                ) {
-                    let Ok(selection) =
+                    bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                    for cell in cells {
+                        bind_direct_body_recipe_body_selection(cell, scope, inputs);
+                    }
+                }
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Combine { operands, .. } = &mut definition {
+                operands
+                    .try_edit(|target, tools| {
+                        let (Some(state_id), Some(previous_state_id)) =
+                            (scope.history_state_id, scope.previous_history_state_id)
+                        else {
+                            bind_direct_body_recipe_body_selection(target, scope, inputs);
+                            bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                            if matches!(
+                                tools,
+                                BodySelection::Native(_) | BodySelection::NativeSet(_)
+                            ) {
+                                if let Some(local) = combine_external_local_tools(scope) {
+                                    *tools = local;
+                                }
+                            }
+                            return;
+                        };
+                        if let Some(local) = combine_external_local_tools(scope) {
+                            *tools = local;
+                        }
+                        let BodySelection::Native(native) = target else {
+                            return;
+                        };
+                        let Some((history, state, _)) =
+                            unique_history_state_pair(histories, state_id, previous_state_id)
+                        else {
+                            return;
+                        };
+                        let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+                        for history_state in &history.states {
+                            history_states
+                                .entry(history_state.state_id)
+                                .and_modify(|state| *state = None)
+                                .or_insert(Some(history_state));
+                        }
+                        let Some(body) = singleton_revised_input_body_across_state_chain(
+                            state,
+                            previous_state_id,
+                            &history_states,
+                        ) else {
+                            return;
+                        };
+                        let prefix = feature_input_prefix(&feature_id, previous_state_id);
+                        let input_state = crate::design::edge_resolve::feature_input_topology_id(
+                            &feature_id,
+                            previous_state_id,
+                        );
+                        *target = BodySelection::historical(
+                            input_state.clone(),
+                            vec![crate::ids::history_input_body_id(&prefix, body)],
+                            native.clone(),
+                        )
+                        .unwrap_or_else(|_| BodySelection::Native(native.clone()));
+                        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+                            return;
+                        };
+                        let Some(operation) = scope.combine_operation() else {
+                            return;
+                        };
+                        let mut native_tools = operation
+                            .tools
+                            .iter()
+                            .map(|tool| format!("{stream}:design-record#{}", tool.record_index))
+                            .collect::<Vec<_>>();
+                        let current_history_source = historical_brep_source(&state.id);
+                        let mut historical_tool_bodies = Vec::with_capacity(native_tools.len());
+                        let mut direct_tool_bodies = Vec::with_capacity(native_tools.len());
+                        for record_index in operation.tools.iter().map(|tool| tool.record_index) {
+                            let mut matching = body_recipe_operands.iter().filter(|operand| {
+                                crate::ids::native_stream(&operand.id) == Some(stream)
+                                    && operand.scope_record_index == scope.record_index
+                                    && matches!(
+                            operand.owner,
+                            crate::records::topology::DesignOperandOwner::ScopeReference { .. }
+                        ) && operand.record_index == record_index
+                            });
+                            let Some(operand) = matching.next() else {
+                                historical_tool_bodies.clear();
+                                direct_tool_bodies.clear();
+                                break;
+                            };
+                            if matching.next().is_some() {
+                                historical_tool_bodies.clear();
+                                direct_tool_bodies.clear();
+                                break;
+                            }
+                            if let Some(body) = operand.resolved_body_slot {
+                                let body = crate::ids::history_input_body_id(&prefix, body);
+                                if historical_tool_bodies.contains(&body) {
+                                    historical_tool_bodies.clear();
+                                    direct_tool_bodies.clear();
+                                    break;
+                                }
+                                historical_tool_bodies.push(body);
+                                continue;
+                            }
+                            let Some(body) = unique_external_body_candidate(
+                                operand,
+                                current_history_source,
+                                bodies,
+                                regions,
+                                shells,
+                            ) else {
+                                historical_tool_bodies.clear();
+                                direct_tool_bodies.clear();
+                                break;
+                            };
+                            if direct_tool_bodies.contains(&body) {
+                                historical_tool_bodies.clear();
+                                direct_tool_bodies.clear();
+                                break;
+                            }
+                            direct_tool_bodies.push(body);
+                        }
+                        if historical_tool_bodies.len() == native_tools.len() {
+                            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
+                                historical_tool_bodies,
+                                native_tools,
+                            ) else {
+                                return;
+                            };
+                            *tools = BodySelection::HistoricalSet {
+                                state: input_state,
+                                members,
+                            };
+                        } else if direct_tool_bodies.len() == native_tools.len() {
+                            *tools = if native_tools.len() == 1 {
+                                BodySelection::Resolved {
+                                    bodies: direct_tool_bodies,
+                                    native: native_tools.remove(0),
+                                }
+                            } else {
+                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
+                                    direct_tool_bodies,
+                                    native_tools,
+                                ) else {
+                                    return;
+                                };
+                                BodySelection::ResolvedSet { members }
+                            };
+                        } else {
+                            let tool_record_indices = operation
+                                .tools
+                                .iter()
+                                .map(|tool| tool.record_index)
+                                .collect::<Vec<_>>();
+                            if let Some(tool_slots) = combine_recipe_family_tool_slots(
+                                stream,
+                                scope.record_index,
+                                &tool_record_indices,
+                                previous_state_id,
+                                body,
+                                body_recipe_operands,
+                                inputs.construction_recipes,
+                            ) {
+                                let Ok(selection) =
                         cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
                             tool_slots
                                 .into_iter()
@@ -1174,24 +1215,26 @@ pub(crate) fn bind_feature_body_selections(
                             native_tools,
                         )
                     else {
-                        continue;
+                        return;
                     };
-                    *tools = BodySelection::HistoricalUnorderedSet {
-                        state: input_state,
-                        selection,
-                    };
-                    continue;
-                }
-                let dependency_sets = feature
-                    .dependencies
-                    .iter()
-                    .filter_map(|dependency| pattern_body_slots.get(dependency))
-                    .collect::<Vec<_>>();
-                if let [pattern_bodies] = dependency_sets.as_slice() {
-                    if let Some(tool_slots) =
-                        pattern_combine_tool_slots(pattern_bodies, body, native_tools.len())
-                    {
-                        let Ok(selection) =
+                                *tools = BodySelection::HistoricalUnorderedSet {
+                                    state: input_state,
+                                    selection,
+                                };
+                                return;
+                            }
+                            let dependency_sets = feature
+                                .dependencies
+                                .iter()
+                                .filter_map(|dependency| pattern_body_slots.get(dependency))
+                                .collect::<Vec<_>>();
+                            if let [pattern_bodies] = dependency_sets.as_slice() {
+                                if let Some(tool_slots) = pattern_combine_tool_slots(
+                                    pattern_bodies,
+                                    body,
+                                    native_tools.len(),
+                                ) {
+                                    let Ok(selection) =
                             cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
                                 tool_slots
                                     .into_iter()
@@ -1200,143 +1243,155 @@ pub(crate) fn bind_feature_body_selections(
                                 native_tools,
                             )
                         else {
-                            continue;
+                            return;
                         };
-                        *tools = BodySelection::HistoricalUnorderedSet {
-                            state: input_state,
-                            selection,
-                        };
-                    }
+                                    *tools = BodySelection::HistoricalUnorderedSet {
+                                        state: input_state,
+                                        selection,
+                                    };
+                                }
+                            }
+                        }
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Coil {
+                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                ..
+            } = &mut definition
+            {
+                if let Some(previous_state_id) = scope.previous_history_state_id {
+                    bind_body_recipe_body_selection(
+                        targets,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                } else {
+                    bind_direct_body_recipe_body_selection(targets, scope, inputs);
                 }
+                break 'feature_edit;
             }
-            continue;
-        }
-        if let FeatureDefinition::Coil {
-            result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
-            ..
-        } = &mut feature.definition
-        {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
-                bind_body_recipe_body_selection(
-                    targets,
-                    &feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-            } else {
-                bind_direct_body_recipe_body_selection(targets, scope, inputs);
-            }
-            continue;
-        }
-        if let FeatureDefinition::DeleteBody { bodies, .. } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
-                bind_body_recipe_body_selection(
-                    bodies,
-                    &feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-            } else {
-                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
-            }
-            continue;
-        }
-        if let FeatureDefinition::Scale { bodies, .. } = &mut feature.definition {
-            if let Some(previous_state_id) = scope.previous_history_state_id {
-                bind_body_recipe_body_selection(
-                    bodies,
-                    &feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-                if matches!(bodies, BodySelection::Native(_)) {
+            if let FeatureDefinition::DeleteBody { bodies, .. } = &mut definition {
+                if let Some(previous_state_id) = scope.previous_history_state_id {
+                    bind_body_recipe_body_selection(
+                        bodies,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                } else {
                     bind_direct_body_recipe_body_selection(bodies, scope, inputs);
                 }
-            } else {
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Scale { bodies, .. } = &mut definition {
+                if let Some(previous_state_id) = scope.previous_history_state_id {
+                    bind_body_recipe_body_selection(
+                        bodies,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                    if matches!(bodies, BodySelection::Native(_)) {
+                        bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                    }
+                } else {
+                    bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                }
+                break 'feature_edit;
+            }
+            let (bodies, proof) = match &mut definition {
+                FeatureDefinition::MoveBody { bodies, .. } => {
+                    (bodies, BodySelectionProof::TopologyStableRevision)
+                }
+                FeatureDefinition::Shell {
+                    bodies: Some(bodies),
+                    ..
+                } => (bodies, BodySelectionProof::RevisedInput),
+                FeatureDefinition::SplitBody { targets, .. } => {
+                    (targets, BodySelectionProof::RevisedInput)
+                }
+                _ => break 'feature_edit,
+            };
+            let BodySelection::Native(group_id) = bodies else {
+                break 'feature_edit;
+            };
+            let mut matching_groups = groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.scope_record_index == scope.record_index
+                    && group.role() == DesignOperandRole::BODIES_A
+                    && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
+            });
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some() || group.members().len() != 1 {
+                break 'feature_edit;
+            }
+            let (Some(state_id), Some(previous_state_id)) =
+                (scope.history_state_id, scope.previous_history_state_id)
+            else {
                 bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                break 'feature_edit;
+            };
+            let Some((history, state, _previous)) =
+                unique_history_state_pair(histories, state_id, previous_state_id)
+            else {
+                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                break 'feature_edit;
+            };
+            let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+            for history_state in &history.states {
+                history_states
+                    .entry(history_state.state_id)
+                    .and_modify(|state| *state = None)
+                    .or_insert(Some(history_state));
             }
-            continue;
-        }
-        let (bodies, proof) = match &mut feature.definition {
-            FeatureDefinition::MoveBody { bodies, .. } => {
-                (bodies, BodySelectionProof::TopologyStableRevision)
-            }
-            FeatureDefinition::Shell {
-                bodies: Some(bodies),
-                ..
-            } => (bodies, BodySelectionProof::RevisedInput),
-            FeatureDefinition::SplitBody { targets, .. } => {
-                (targets, BodySelectionProof::RevisedInput)
-            }
-            _ => continue,
-        };
-        let BodySelection::Native(group_id) = bodies else {
-            continue;
-        };
-        let mut matching_groups = groups.iter().filter(|group| {
-            group.id == *group_id
-                && group.scope_record_index == scope.record_index
-                && group.role() == DesignOperandRole::BODIES_A
-                && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() || group.members().len() != 1 {
-            continue;
-        }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
-        else {
-            bind_direct_body_recipe_body_selection(bodies, scope, inputs);
-            continue;
-        };
-        let Some((history, state, _previous)) =
-            unique_history_state_pair(histories, state_id, previous_state_id)
-        else {
-            bind_direct_body_recipe_body_selection(bodies, scope, inputs);
-            continue;
-        };
-        let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-        for history_state in &history.states {
-            history_states
-                .entry(history_state.state_id)
-                .and_modify(|state| *state = None)
-                .or_insert(Some(history_state));
-        }
-        let body = match proof {
-            BodySelectionProof::TopologyStableRevision => {
-                singleton_body_revision_across_state_chain(
-                    state,
+            let body = match proof {
+                BodySelectionProof::TopologyStableRevision => {
+                    singleton_body_revision_across_state_chain(
+                        state,
+                        previous_state_id,
+                        &history_states,
+                    )
+                }
+                BodySelectionProof::RevisedInput => {
+                    singleton_revised_input_body_across_state_chain(
+                        state,
+                        previous_state_id,
+                        &history_states,
+                    )
+                }
+            };
+            let Some(body) = body else {
+                break 'feature_edit;
+            };
+            let prefix = feature_input_prefix(&feature.id, previous_state_id);
+            *bodies = BodySelection::historical(
+                crate::design::edge_resolve::feature_input_topology_id(
+                    &feature.id,
                     previous_state_id,
-                    &history_states,
-                )
-            }
-            BodySelectionProof::RevisedInput => singleton_revised_input_body_across_state_chain(
-                state,
-                previous_state_id,
-                &history_states,
-            ),
-        };
-        let Some(body) = body else {
-            continue;
-        };
-        let prefix = feature_input_prefix(&feature.id, previous_state_id);
-        *bodies = BodySelection::Historical {
-            state: crate::design::edge_resolve::feature_input_topology_id(
-                &feature.id,
-                previous_state_id,
-            ),
-            bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
-            native: group_id.clone(),
-        };
+                ),
+                vec![crate::ids::history_input_body_id(&prefix, body)],
+                group_id.clone(),
+            )
+            .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
+        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn pattern_combine_tool_slots(
@@ -1481,10 +1536,7 @@ fn combine_external_local_tools(
     if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
         return None;
     }
-    Some(cadmpeg_ir::features::BodySelection::Local {
-        bodies,
-        native: scope.id.clone(),
-    })
+    cadmpeg_ir::features::BodySelection::local(bodies, scope.id.clone()).ok()
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {
@@ -1498,7 +1550,7 @@ fn historical_body_slot(id: &str) -> Option<i64> {
 fn bind_pattern_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, PatternSeed};
 
     let scopes = inputs.scopes;
@@ -1506,56 +1558,65 @@ fn bind_pattern_body_selections(
     let body_recipe_operands = inputs.body_recipe_operands;
 
     for feature in features {
-        let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition else {
-            continue;
-        };
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let matching_scopes = scopes
-            .iter()
-            .filter(|scope| scope.id == native_ref)
-            .collect::<Vec<_>>();
-        let [scope] = matching_scopes.as_slice() else {
-            continue;
-        };
-        let stream = crate::ids::native_stream(&scope.id);
-        let matching_groups = groups
-            .iter()
-            .filter(|group| {
-                group.scope_record_index == scope.record_index
-                    && group.role() == DesignOperandRole::BODIES_B
-                    && !group.members().is_empty()
-                    && crate::ids::native_stream(&group.id) == stream
-            })
-            .collect::<Vec<_>>();
-        let [group] = matching_groups.as_slice() else {
-            continue;
-        };
-        let selection = if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
-            selection
-        } else if seeds.is_empty() {
-            seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
-            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                unreachable!("the inserted pattern seed is a body selection")
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Pattern { seeds, .. } = &mut definition else {
+                break 'feature_edit;
             };
-            selection
-        } else {
-            continue;
-        };
-        if let Some(previous_state_id) = scope.previous_history_state_id {
-            bind_body_recipe_body_selection(
-                selection,
-                &feature.id,
-                previous_state_id,
-                scope,
-                groups,
-                body_recipe_operands,
-            );
-        } else {
-            bind_direct_body_recipe_body_selection(selection, scope, inputs);
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let matching_scopes = scopes
+                .iter()
+                .filter(|scope| scope.id == native_ref)
+                .collect::<Vec<_>>();
+            let [scope] = matching_scopes.as_slice() else {
+                break 'feature_edit;
+            };
+            let stream = crate::ids::native_stream(&scope.id);
+            let matching_groups = groups
+                .iter()
+                .filter(|group| {
+                    group.scope_record_index == scope.record_index
+                        && group.role() == DesignOperandRole::BODIES_B
+                        && !group.members().is_empty()
+                        && crate::ids::native_stream(&group.id) == stream
+                })
+                .collect::<Vec<_>>();
+            let [group] = matching_groups.as_slice() else {
+                break 'feature_edit;
+            };
+            let selection = if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
+                selection
+            } else if seeds.is_empty() {
+                seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
+                let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
+                    unreachable!("the inserted pattern seed is a body selection")
+                };
+                selection
+            } else {
+                break 'feature_edit;
+            };
+            if let Some(previous_state_id) = scope.previous_history_state_id {
+                bind_body_recipe_body_selection(
+                    selection,
+                    &feature.id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
+            } else {
+                bind_direct_body_recipe_body_selection(selection, scope, inputs);
+            }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn unique_external_body_candidate(
@@ -1573,7 +1634,7 @@ fn unique_external_body_candidate(
         .iter()
         .filter_map(|shell| {
             let body = body_by_region.get(&shell.region)?;
-            Some(shell.faces.iter().map(move |face| (face, *body)))
+            Some(shell.faces().iter().map(move |face| (face, *body)))
         })
         .flatten()
         .collect::<HashMap<_, _>>();
@@ -1681,17 +1742,15 @@ fn bind_body_recipe_body_selection(
         }
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = BodySelection::Historical {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        bodies: body_slots
+    *selection = BodySelection::historical(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        body_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
             .collect(),
-        native: group_id.clone(),
-    };
+        group_id.clone(),
+    )
+    .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
 }
 
 fn bind_direct_body_recipe_body_selection(
@@ -1771,7 +1830,7 @@ fn bind_direct_body_recipe_body_selection(
             };
             return;
         }
-        BodySelection::NativeSet(native) => native.clone(),
+        BodySelection::NativeSet(native) => native.to_vec(),
         _ => return,
     };
     if native_members.is_empty()
@@ -1903,7 +1962,7 @@ fn body_recipe_face_body_candidates(
         .iter()
         .filter_map(|shell| {
             let body = body_by_region.get(&shell.region)?;
-            Some(shell.faces.iter().map(move |face| (face, *body)))
+            Some(shell.faces().iter().map(move |face| (face, *body)))
         })
         .flatten()
         .collect::<std::collections::HashMap<_, _>>();
@@ -2037,72 +2096,46 @@ pub(crate) fn bind_feature_face_selections(
     entity_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let Some(state_id) = scope.history_state_id else {
-            continue;
-        };
-        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
-        else {
-            continue;
-        };
-        let Some((history, state, previous)) =
-            unique_history_state_pair(histories, state_id, previous_state_id)
-        else {
-            continue;
-        };
-        let Some(transition) = &state.transition else {
-            continue;
-        };
-        if transition.previous_state_id != Some(previous_state_id) {
-            continue;
-        }
-        let Some(_topology) = previous.topology() else {
-            continue;
-        };
-        let feature_id = feature.id.clone();
-        match &mut feature.definition {
-            cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
-                if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-                    bind_face_selection(
-                        face,
-                        scope,
-                        groups,
-                        operands,
-                        &transition.topology.faces.updated,
-                    );
-                    bind_entity_face_selection(
-                        face,
-                        &feature_id,
-                        previous_state_id,
-                        &history.id,
-                        scope,
-                        groups,
-                        entity_operands,
-                        input_topologies,
-                    );
-                }
-                let sides = match extent {
-                    cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
-                    | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
-                    cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
-                        vec![first, second]
-                    }
-                };
-                for side in sides {
-                    if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
-                        &mut side.termination
-                    {
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                break 'feature_edit;
+            };
+            if matching_scopes.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(state_id) = scope.history_state_id else {
+                break 'feature_edit;
+            };
+            let Some(previous_state_id) =
+                effective_scope_previous_history_state_id(scope, histories)
+            else {
+                break 'feature_edit;
+            };
+            let Some((history, state, previous)) =
+                unique_history_state_pair(histories, state_id, previous_state_id)
+            else {
+                break 'feature_edit;
+            };
+            let Some(transition) = &state.transition else {
+                break 'feature_edit;
+            };
+            if transition.previous_state_id != Some(previous_state_id) {
+                break 'feature_edit;
+            }
+            let Some(_topology) = previous.topology() else {
+                break 'feature_edit;
+            };
+            let feature_id = feature.id.clone();
+            match &mut definition {
+                cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
+                    if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
                         bind_face_selection(
                             face,
                             scope,
@@ -2110,14 +2143,63 @@ pub(crate) fn bind_feature_face_selections(
                             operands,
                             &transition.topology.faces.updated,
                         );
+                        bind_entity_face_selection(
+                            face,
+                            &feature_id,
+                            previous_state_id,
+                            &history.id,
+                            scope,
+                            groups,
+                            entity_operands,
+                            input_topologies,
+                        );
+                    }
+                    let sides = match extent {
+                        cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
+                        | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
+                        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+                            vec![first, second]
+                        }
+                    };
+                    for side in sides {
+                        if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
+                            &mut side.termination
+                        {
+                            bind_face_selection(
+                                face,
+                                scope,
+                                groups,
+                                operands,
+                                &transition.topology.faces.updated,
+                            );
+                        }
                     }
                 }
-            }
-            cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } => {
-                for seed in seeds {
-                    let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
-                        continue;
-                    };
+                cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } => {
+                    for seed in seeds {
+                        let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
+                            continue;
+                        };
+                        bind_face_selection(
+                            faces,
+                            scope,
+                            groups,
+                            operands,
+                            &transition.topology.faces.updated,
+                        );
+                        bind_entity_face_selection(
+                            faces,
+                            &feature_id,
+                            previous_state_id,
+                            &history.id,
+                            scope,
+                            groups,
+                            entity_operands,
+                            input_topologies,
+                        );
+                    }
+                }
+                cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
                     bind_face_selection(
                         faces,
                         scope,
@@ -2125,7 +2207,26 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
-                    bind_entity_face_selection(
+                }
+                cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
+                    bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                    bind_body_recipe_face_selection(
+                        faces,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::KnitSurface { faces, .. } => {
+                    bind_surface_stitch_face_selection(
                         faces,
                         &feature_id,
                         previous_state_id,
@@ -2136,69 +2237,37 @@ pub(crate) fn bind_feature_face_selections(
                         input_topologies,
                     );
                 }
+                cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
+                    bind_face_selection(
+                        targets,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Hole {
+                    face: Some(face), ..
+                } => {
+                    bind_hole_face_selection(
+                        face,
+                        &feature_id,
+                        previous_state_id,
+                        &history.id,
+                        scope,
+                        input_topologies,
+                    );
+                }
+                _ => {}
             }
-            cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
-                bind_face_selection(
-                    faces,
-                    scope,
-                    groups,
-                    operands,
-                    &transition.topology.faces.updated,
-                );
-            }
-            cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
-                bind_face_selection(
-                    faces,
-                    scope,
-                    groups,
-                    operands,
-                    &transition.topology.faces.updated,
-                );
-                bind_body_recipe_face_selection(
-                    faces,
-                    &feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-            }
-            cadmpeg_ir::features::FeatureDefinition::KnitSurface { faces, .. } => {
-                bind_surface_stitch_face_selection(
-                    faces,
-                    &feature_id,
-                    previous_state_id,
-                    &history.id,
-                    scope,
-                    groups,
-                    entity_operands,
-                    input_topologies,
-                );
-            }
-            cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
-                bind_face_selection(
-                    targets,
-                    scope,
-                    groups,
-                    operands,
-                    &transition.topology.faces.updated,
-                );
-            }
-            cadmpeg_ir::features::FeatureDefinition::Hole {
-                face: Some(face), ..
-            } => {
-                bind_hole_face_selection(
-                    face,
-                    &feature_id,
-                    previous_state_id,
-                    &history.id,
-                    scope,
-                    input_topologies,
-                );
-            }
-            _ => {}
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2401,15 +2470,10 @@ fn bind_entity_face_groups(
         })
         .collect::<Vec<_>>();
     for face in &faces {
-        if !topology.faces.contains(face) {
-            topology.faces.push(face.clone());
-        }
+        topology.faces.insert(face.clone());
     }
-    *selection = FaceSelection::Historical {
-        state: state_id,
-        faces,
-        native: native_id.to_owned(),
-    };
+    *selection = FaceSelection::historical(state_id, faces, native_id.to_owned())
+        .unwrap_or_else(|_| FaceSelection::Native(native_id.to_owned()));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2458,14 +2522,9 @@ fn bind_hole_face_selection(
         format!("{}:{source}:{}", source.len(), candidate.face_slot)
     };
     let face = crate::ids::history_input_face_id(&prefix, discriminator);
-    if !topology.faces.contains(&face) {
-        topology.faces.push(face.clone());
-    }
-    *selection = FaceSelection::Historical {
-        state: state_id,
-        faces: vec![face],
-        native: native_id.clone(),
-    };
+    topology.faces.insert(face.clone());
+    *selection = FaceSelection::historical(state_id, vec![face], native_id.clone())
+        .unwrap_or_else(|_| FaceSelection::Native(native_id.clone()));
 }
 
 pub(crate) fn bind_feature_path_selections(
@@ -2473,81 +2532,90 @@ pub(crate) fn bind_feature_path_selections(
     scopes: &[crate::records::feature::DesignParameterScope],
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::DesignEntitySelectionOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, SurfaceBoundary};
 
     for feature in features {
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let Some(previous_state_id) = scope.previous_history_state_id else {
-            continue;
-        };
-        let feature_id = feature.id.clone();
-        match &mut feature.definition {
-            FeatureDefinition::FilledSurface {
-                boundary: SurfaceBoundary::Path(path),
-                ..
-            } => bind_entity_selection_path(
-                path,
-                &feature_id,
-                previous_state_id,
-                scope,
-                groups,
-                operands,
-            ),
-            FeatureDefinition::Loft { guidance, .. } => {
-                let paths = match guidance {
-                    cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths,
-                    cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
-                        std::slice::from_mut(path)
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
+            };
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                break 'feature_edit;
+            };
+            if matching_scopes.next().is_some() {
+                break 'feature_edit;
+            }
+            let Some(previous_state_id) = scope.previous_history_state_id else {
+                break 'feature_edit;
+            };
+            let feature_id = feature.id.clone();
+            match &mut definition {
+                FeatureDefinition::FilledSurface {
+                    boundary: SurfaceBoundary::Path(path),
+                    ..
+                } => bind_entity_selection_path(
+                    path,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    operands,
+                ),
+                FeatureDefinition::Loft { guidance, .. } => {
+                    let paths = match guidance {
+                        cadmpeg_ir::features::LoftGuidance::Guides(paths) => paths,
+                        cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
+                            std::slice::from_mut(path)
+                        }
+                    };
+                    for path in paths {
+                        bind_entity_selection_path(
+                            path,
+                            &feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            operands,
+                        );
                     }
-                };
-                for path in paths {
-                    bind_entity_selection_path(
-                        path,
-                        &feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        operands,
-                    );
                 }
+                FeatureDefinition::Sweep {
+                    path, guide_rail, ..
+                } => {
+                    if let Some(path) = path {
+                        bind_entity_selection_path(
+                            path,
+                            &feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            operands,
+                        );
+                    }
+                    if let Some(guide_rail) = guide_rail {
+                        bind_entity_selection_path(
+                            &mut guide_rail.path,
+                            &feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            operands,
+                        );
+                    }
+                }
+                _ => {}
             }
-            FeatureDefinition::Sweep {
-                path, guide_rail, ..
-            } => {
-                if let Some(path) = path {
-                    bind_entity_selection_path(
-                        path,
-                        &feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        operands,
-                    );
-                }
-                if let Some(guide_rail) = guide_rail {
-                    bind_entity_selection_path(
-                        &mut guide_rail.path,
-                        &feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        operands,
-                    );
-                }
-            }
-            _ => {}
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn bind_entity_selection_path(
@@ -2603,17 +2671,15 @@ fn bind_entity_selection_path(
         edge_slots.push(edge_slot);
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *path = PathRef::HistoricalEdges {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        edges: edge_slots
+    *path = PathRef::historical_edges(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        edge_slots
             .into_iter()
             .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
             .collect(),
-        native: group_id.clone(),
-    };
+        group_id.clone(),
+    )
+    .unwrap_or_else(|_| PathRef::Native(group_id.clone()));
 }
 
 pub(crate) fn project_feature_input_topologies(
@@ -2657,26 +2723,34 @@ pub(crate) fn project_feature_input_topologies(
                     previous_state_id,
                 ),
                 input_of: feature.id.clone(),
-                bodies: topology
+                bodies: (topology
                     .bodies
                     .iter()
                     .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                    .collect(),
-                faces: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                faces: (topology
                     .faces
                     .iter()
                     .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
-                    .collect(),
-                edges: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                edges: (topology
                     .edges
                     .iter()
                     .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
-                    .collect(),
-                vertices: topology
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
+                vertices: (topology
                     .vertices
                     .iter()
                     .map(|slot| crate::ids::history_input_vertex_id(&prefix, slot))
-                    .collect(),
+                    .collect::<Vec<_>>())
+                .try_into()
+                .ok()?,
                 native_ref: Some(state.id.clone()),
             })
         })
@@ -6601,17 +6675,15 @@ fn bind_body_recipe_face_selection(
         }
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = FaceSelection::Historical {
-        state: crate::design::edge_resolve::feature_input_topology_id(
-            feature_id,
-            previous_state_id,
-        ),
-        faces: slots
+    *selection = FaceSelection::historical(
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
+        slots
             .into_iter()
             .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
             .collect(),
-        native: native.clone(),
-    };
+        native.clone(),
+    )
+    .unwrap_or_else(|_| FaceSelection::Native(native.clone()));
 }
 
 fn faces_in_topology(
@@ -8819,7 +8891,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .faces
+                    .faces()
                     .iter()
                     .map(cadmpeg_ir::ids::FaceId::as_str)
                     .collect(),
@@ -8829,7 +8901,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .wire_edges
+                    .wire_edges()
                     .iter()
                     .map(cadmpeg_ir::ids::EdgeId::as_str)
                     .collect(),
@@ -8839,7 +8911,7 @@ pub(crate) fn historical_topology(
             (
                 shell.id.as_str(),
                 shell
-                    .free_vertices
+                    .free_vertices()
                     .iter()
                     .map(cadmpeg_ir::ids::VertexId::as_str)
                     .collect(),

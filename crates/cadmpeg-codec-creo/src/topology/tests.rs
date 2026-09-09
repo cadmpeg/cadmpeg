@@ -496,9 +496,14 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
-    assert_eq!(feature.outputs, vec![model.bodies[0].id.clone()]);
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = &feature.definition else {
-        panic!("round definition: {:#?}", feature.definition);
+    assert_eq!(
+        *feature.evaluation.outputs(),
+        vec![model.bodies[0].id.clone()]
+    );
+    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
+        feature.evaluation.definition()
+    else {
+        panic!("round definition: {:#?}", feature.evaluation.definition());
     };
     let [cadmpeg_ir::features::FilletGroup { edges, .. }] = groups.as_slice() else {
         panic!("round groups: {groups:#?}");

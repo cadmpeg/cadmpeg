@@ -1358,7 +1358,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
     else {
         panic!("dimensioned carrier should remain an arc");
     };
-    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    let sweep = (end_angle.get() - start_angle.get()).rem_euclid(std::f64::consts::TAU);
     assert!(sweep <= std::f64::consts::PI + 1.0e-9);
 }
 
@@ -1522,8 +1522,8 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
         name: "radial".into(),
         expression: String::new(),
         display,
-        value: Some(ParameterValue::Length(Length(value))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(value).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1605,15 +1605,17 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some(feature_ref.into()),
     };
     let parameter = DesignParameter {
@@ -1623,8 +1625,8 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1646,14 +1648,14 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
-    assert!(
-        matches!((entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
-            Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
-                if *center == Point2::new(1.0, 2.0)
-        )
-    );
+    assert!(matches!(
+        entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle { center, radius: actual_radius })
+            if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
+    ));
     assert_eq!(entities[1].geometry_ref.as_deref(), Some("relation"));
 
     let mut ambiguous = entities[..1].to_vec();
@@ -1674,7 +1676,8 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
     assert_eq!(ambiguous.len(), 2);
 
     let mut missing = entities[..1].to_vec();
@@ -1685,7 +1688,8 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&missing_lane),
-    );
+    )
+    .unwrap();
     assert_eq!(missing.len(), 1);
 
     let mut implicit_lane = lane.clone();
@@ -1763,13 +1767,13 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&implicit_lane),
-    );
-    assert!(
-        matches!((implicit_entities.get(1).map(|entity| &entity.geometry)).map(cadmpeg_ir::SketchGeometry::definition),
-            Some(SketchGeometryDefinition::Circle { center, radius: Length(2.0) })
-                if *center == Point2::new(3.0, 4.0)
-        )
-    );
+    )
+    .unwrap();
+    assert!(matches!(
+        implicit_entities.get(1).map(|entity| entity.geometry.definition()),
+        Some(SketchGeometryDefinition::Circle { center, radius: actual_radius })
+            if (*center == Point2::new(3.0, 4.0)) && actual_radius.get() == 2.0
+    ));
 }
 
 #[test]

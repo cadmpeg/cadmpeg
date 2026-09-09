@@ -46,15 +46,17 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
@@ -462,15 +464,17 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
@@ -505,7 +509,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(5.0, 6.0),
-                radius: Length(10.0),
+                radius: Length::new(10.0).unwrap(),
             })
             .unwrap(),
         )
@@ -620,15 +624,17 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let sketch_record = Sketch {
@@ -838,15 +844,17 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+            },
+        ),
         native_ref: Some(format!("native-{id}")),
     };
     let mut features = vec![
@@ -864,8 +872,8 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         name: "D1".into(),
         expression: format!("<MOD-DIAM>{diameter}"),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(diameter))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -907,19 +915,20 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     )];
 
-    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
+    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters)
+        .unwrap();
 
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)), .. } if id == &sketch_id
     ));
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

@@ -50,7 +50,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
 
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.shells[0].faces.len(), 1);
+    assert_eq!(result.ir().model.shells[0].faces().len(), 1);
     assert!(!result
         .report()
         .losses

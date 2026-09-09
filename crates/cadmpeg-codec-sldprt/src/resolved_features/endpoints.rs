@@ -5072,9 +5072,9 @@ pub(super) fn minor_arc_geometry(
     }
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center,
-        radius: Length(radius),
-        start_angle: Angle(start_angle),
-        end_angle: Angle(end_angle),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(start_angle)?,
+        end_angle: Angle::new(end_angle)?,
     })
     .ok()
 }

@@ -161,7 +161,7 @@ pub(super) fn check_native_links(
         if let crate::features::FeatureDefinition::HelixNativeAxis {
             axis_native_ref: target,
             ..
-        } = &feature.definition
+        } = feature.evaluation.definition()
         {
             if !native_ids.contains(target.as_str()) {
                 findings.push(Finding {

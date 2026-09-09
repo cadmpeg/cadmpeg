@@ -14,7 +14,7 @@ use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
 };
 use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
+    BodySelection, FaceSelection, FeatureDefinition, PatternSeed, PatternTransform,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -105,7 +105,10 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
     else {
         panic!("mirror projects a pattern");
     };
-    assert!(matches!(pattern, PatternKind::Mirror { .. }));
+    assert!(matches!(
+        (pattern).definition(),
+        PatternTransform::Mirror { .. }
+    ));
     assert!(matches!(
         seeds.as_slice(),
         [PatternSeed::Bodies(BodySelection::Native(native))]

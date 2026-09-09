@@ -317,7 +317,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     transform.u_axis()[1],
                                     transform.u_axis()[2],
                                 ),
-                                radius: radius.0,
+                                radius: radius.get(),
                             }
                         }
                         ProfileGeometry::Nurbs { .. } => {
@@ -356,7 +356,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end_angle,
                             ..
                         } => Some(
-                            oriented_arc_parameterization(reversed, start_angle.0, end_angle.0).1,
+                            oriented_arc_parameterization(
+                                reversed,
+                                start_angle.get(),
+                                end_angle.get(),
+                            )
+                            .1,
                         ),
                         ProfileGeometry::Circle { .. } => Some(
                             oriented_arc_parameterization(reversed, 0.0, std::f64::consts::TAU).1,
@@ -674,13 +679,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             color: None,
             tolerance: None,
         });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: shell_faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                shell_faces,
+                Vec::new(),
+                Vec::new(),
+            ) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    continue;
+                }
+            },
+        );
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),

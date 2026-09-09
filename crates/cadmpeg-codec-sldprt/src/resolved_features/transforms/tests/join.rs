@@ -47,15 +47,17 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut reference = marker("reference", None);
@@ -416,7 +418,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-                angle: cadmpeg_ir::features::Angle(angle),
+                angle: cadmpeg_ir::features::Angle::new(angle).unwrap(),
             })
         );
         arc_angle.links.as_mut().unwrap().entries_mut()[0]
@@ -470,8 +472,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         name: id.into(),
         expression: String::new(),
         display,
-        value: Some(ParameterValue::Length(Length(2.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -576,7 +578,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         sketch_id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -657,15 +659,17 @@ fn line_handle_interior_points_identify_profile_entities() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut native_payload = vec![0; 81];
@@ -805,7 +809,7 @@ fn curve_handles_reject_point_geometry() {
     .unwrap();
     let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
-        radius: Length(1.0),
+        radius: Length::new(1.0).unwrap(),
     })
     .unwrap();
 
@@ -832,7 +836,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(10.0),
+            radius: Length::new(10.0).unwrap(),
         })
         .unwrap(),
     );
@@ -852,15 +856,17 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut native_payload = vec![0; 54];

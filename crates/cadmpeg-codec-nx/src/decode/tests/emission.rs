@@ -430,7 +430,7 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
 
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 0);
+    assert_eq!(result.ir().model.shells[0].free_vertices().len(), 0);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

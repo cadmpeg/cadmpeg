@@ -137,7 +137,7 @@ pub(in super::super) fn revolved_section_surface(
                     center: point(center),
                     axis: vector(axis),
                     ref_direction: vector(reference),
-                    radius: radius.0,
+                    radius: radius.get(),
                 })
             } else {
                 Some(SurfaceGeometry::Torus {
@@ -145,7 +145,7 @@ pub(in super::super) fn revolved_section_surface(
                     axis: vector(axis),
                     ref_direction: vector(reference),
                     major_radius,
-                    minor_radius: radius.0,
+                    minor_radius: radius.get(),
                 })
             }
         }
@@ -194,7 +194,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                     transform.u_axis()[1],
                     transform.u_axis()[2],
                 ),
-                radius: radius.0,
+                radius: radius.get(),
             })
         }
         _ => None,

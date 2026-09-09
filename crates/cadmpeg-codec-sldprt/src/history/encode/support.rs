@@ -9,7 +9,6 @@ use cadmpeg_ir::features::{
     BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
     PathRef, ProfileRef, VertexSelection,
 };
-use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
@@ -91,13 +90,12 @@ pub(super) fn write_native_selection(
 
 pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> {
     match selection {
-        FaceSelection::Native(native)
-        | FaceSelection::Resolved { native, .. }
-        | FaceSelection::Generated { native, .. }
+        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        FaceSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         FaceSelection::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
@@ -111,12 +109,11 @@ pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> 
 
 pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native)
-        | VertexSelection::Generated { native, .. }
-        | VertexSelection::Historical { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
+        VertexSelection::Native(native) | VertexSelection::Generated { native, .. } => {
+            Some(native.as_str().to_owned())
+        }
+        VertexSelection::Historical { native, .. } if !native.as_str().trim().is_empty() => {
+            Some(native.as_str().to_owned())
         }
         _ => None,
     }
@@ -124,13 +121,12 @@ pub(super) fn vertex_selection_value(selection: &VertexSelection) -> Option<Stri
 
 pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
-        EdgeSelection::Native(native)
-        | EdgeSelection::Resolved { native, .. }
-        | EdgeSelection::Generated { native, .. }
+        EdgeSelection::Native(native) | EdgeSelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
         }
+        EdgeSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
@@ -144,13 +140,13 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
 
 pub(super) fn body_selection_value(selection: &BodySelection) -> Option<String> {
     match selection {
-        BodySelection::Native(native)
-        | BodySelection::Resolved { native, .. }
-        | BodySelection::Generated { native, .. }
-        | BodySelection::Local { native, .. }
+        BodySelection::Native(native) | BodySelection::Resolved { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
+        }
+        BodySelection::Generated { native, .. } | BodySelection::Local { native, .. } => {
+            Some(native.as_str().to_owned())
         }
         BodySelection::Bodies(bodies) if !bodies.is_empty() => Some(
             bodies
@@ -242,29 +238,5 @@ pub(super) fn path_source(
                 .join(","),
         ),
         PathRef::Edges(_) | PathRef::Curves(_) => None,
-    }
-}
-
-pub(super) fn require_direction(
-    direction: Vector3,
-    feature: &FeatureId,
-    role: &str,
-) -> Result<(), CodecError> {
-    if direction.norm().is_finite() && direction.norm() > 0.0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a degenerate {role}"
-        )))
-    }
-}
-
-pub(super) fn require_count(count: u32, feature: &FeatureId) -> Result<(), CodecError> {
-    if count > 0 {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "SLDPRT feature {feature} has a zero pattern count"
-        )))
     }
 }

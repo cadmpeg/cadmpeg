@@ -9,7 +9,6 @@ use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
     SketchRelation, SketchRelationMember, SketchRelationReturnMember, SketchText,
 };
-use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
@@ -177,7 +176,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             second_reference: None,
             placement: Some(cadmpeg_ir::sketches::TextPlacement {
                 anchor: Point2::new(0.0, 0.0),
-                rotation: cadmpeg_ir::features::Angle(0.0),
+                rotation: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
             }),
         },
         raw_bytes: Vec::new(),
@@ -483,8 +482,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .any(|entity| matches!(*entity.geometry.definition(),
             SketchGeometryDefinition::Arc { start_angle, end_angle, .. }
-                if start_angle.0 == 0.0
-                    && end_angle.0 == -std::f64::consts::FRAC_PI_2
+                if start_angle.get() == 0.0
+                    && end_angle.get() == -std::f64::consts::FRAC_PI_2
         )));
     let nurbs = entities
         .iter()
@@ -1105,8 +1104,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 center,
                 normal,
                 reference_direction,
-                radius: Length(2.0),
-            } if center == Point3::new(13.0, 21.0, 32.0)
+                radius: actual_radius,
+            } if actual_radius.get() == 2.0 && center == Point3::new(13.0, 21.0, 32.0)
                 && normal == Vector3::new(0.0, 1.0, 0.0)
                 && reference_direction == Vector3::new(0.0, 0.0, 1.0)
         )));

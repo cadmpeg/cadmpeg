@@ -6,6 +6,8 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
+
 #[test]
 fn transfers_application_saved_rotated_conics_and_profile_chain() {
     let bytes = include_bytes!(concat!(
@@ -19,45 +21,45 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     assert_eq!(entities.len(), 7);
     assert!(matches!(*entities[0].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
-            start_angle: cadmpeg_ir::features::Angle(start),
-            end_angle: cadmpeg_ir::features::Angle(end),
+            start_angle: start,
+            end_angle: end,
             ..
-        } if (start - 0.65).abs() < 1.0e-12 && (end - 1.83).abs() < 1.0e-12
+        } if (start.get() - 0.65).abs() < 1.0e-12 && (end.get() - 1.83).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[3].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: Some([
-                cadmpeg_ir::features::Angle(start),
-                cadmpeg_ir::features::Angle(end),
+                start,
+                end,
             ]),
             ..
-        } if (angle - 0.53).abs() < 1.0e-12
-            && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
-            && (end - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
+        } if (angle.get() - 0.53).abs() < 1.0e-12
+            && (start.get() - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
+            && (end.get() - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[4].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: None,
             ..
-        } if (angle - 0.71).abs() < 1.0e-12
+        } if (angle.get() - 0.71).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[5].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: Some([start, end]),
             ..
-        } if (angle - 0.47).abs() < 1.0e-12
+        } if (angle.get() - 0.47).abs() < 1.0e-12
             && (start + 0.63).abs() < 1.0e-12
             && (end - 0.88).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[6].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
-            axis_angle: cadmpeg_ir::features::Angle(angle),
+            axis_angle: angle,
             bounds: Some([start, end]),
             ..
-        } if (angle - 0.67).abs() < 1.0e-12
+        } if (angle.get() - 0.67).abs() < 1.0e-12
             && (start + 2.1).abs() < 1.0e-12
             && (end - 2.4).abs() < 1.0e-12
     ));
@@ -66,7 +68,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         .model
         .shells
         .iter()
-        .any(|shell| shell.wire_edges.len() == 3));
+        .any(|shell| shell.wire_edges().len() == 3));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }
@@ -552,20 +554,20 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
     ));
     assert!(matches!(*entities[1].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
-            major_angle: cadmpeg_ir::features::Angle(angle),
+            major_angle: angle,
             bounds: None,
             ..
-        } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        } if (angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         *entities[2].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
             bounds: Some([
-                cadmpeg_ir::features::Angle(0.5),
-                cadmpeg_ir::features::Angle(1.5),
+                actual_bounds,
+                actual_bounds_2,
             ]),
             ..
-        }
+        } if actual_bounds.get() == 0.5 && actual_bounds_2.get() == 1.5
     ));
     assert!(matches!(
         *entities[3].geometry.definition(),
@@ -617,25 +619,25 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     assert!(matches!(
         *entities[2].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
-            focal_length: cadmpeg_ir::features::Length(2.0),
+            focal_length: actual_focal_length,
             bounds: None,
             ..
-        }
+        } if actual_focal_length.get() == 2.0
     ));
     assert!(matches!(
         *entities[3].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
-            focal_length: cadmpeg_ir::features::Length(2.5),
+            focal_length: actual_focal_length,
             bounds: Some([-2.0, 3.0]),
             ..
-        }
+        } if actual_focal_length.get() == 2.5
     ));
     assert!(matches!(*entities[4].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
-            start_angle: cadmpeg_ir::features::Angle(start),
-            end_angle: cadmpeg_ir::features::Angle(end),
+            start_angle: start,
+            end_angle: end,
             ..
-        } if (start - 0.8).abs() < 1.0e-12 && (end - 1.8).abs() < 1.0e-12
+        } if (start.get() - 0.8).abs() < 1.0e-12 && (end.get() - 1.8).abs() < 1.0e-12
     ));
     assert!(matches!(
         *entities[5].geometry.definition(),
@@ -777,7 +779,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1.0e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         result
@@ -788,7 +790,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1.0e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         constraint(6).definition.kind(),

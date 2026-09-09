@@ -361,14 +361,14 @@ fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
         .find(|feature| feature.name.as_deref() == Some("EXTRACT_BODY"))
         .expect("EXTRACT_BODY feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::ExtractBody {
             source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
         } if bodies.len() == 1
             && bodies[0].ends_with(":block#1")
             && native == "nx:om-object-index#1"
     ));
-    assert!(feature.outputs.is_empty());
+    assert!(feature.evaluation.outputs().is_empty());
     assert_valid(&result);
 }
 

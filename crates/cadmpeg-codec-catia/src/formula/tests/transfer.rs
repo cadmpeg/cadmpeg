@@ -28,7 +28,10 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.ordinal, 0);
     assert_eq!(input.expression, "35 mm");
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert!(input.dependencies.is_empty());
     assert_eq!(
         decoded
@@ -121,17 +124,26 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
 
     assert_eq!(input.name, "Thickness");
     assert_eq!(input.expression, "35 mm");
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
-    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Length(Length::new(33.0).unwrap()))
+    );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(
         decoded
             .report()
@@ -324,7 +336,7 @@ fn decode_transfers_a_closed_constant_formula() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(12.0)
+            cadmpeg_ir::features::Length::new(12.0).unwrap()
         ))
     );
     assert!(decoded
@@ -358,12 +370,32 @@ fn decode_transfers_linear_interpolation_formula() {
     let [start, end, fraction, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("linear interpolation parameters")
     };
-    assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
-    assert_eq!(end.value, Some(cadmpeg_ir::ParameterValue::Real(10.0)));
-    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
-    assert_eq!(output.value, Some(cadmpeg_ir::ParameterValue::Real(4.0)));
     assert_eq!(
-        output.dependencies,
+        start.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        end.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        fraction.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(0.25).unwrap()
+        ))
+    );
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(4.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        output.dependencies.as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -391,12 +423,32 @@ fn decode_transfers_cubic_interpolation_formula() {
     let [start, end, fraction, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("cubic interpolation parameters")
     };
-    assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
-    assert_eq!(end.value, Some(cadmpeg_ir::ParameterValue::Real(10.0)));
-    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
-    assert_eq!(output.value, Some(cadmpeg_ir::ParameterValue::Real(3.25)));
     assert_eq!(
-        output.dependencies,
+        start.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        end.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        fraction.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(0.25).unwrap()
+        ))
+    );
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(3.25).unwrap()
+        ))
+    );
+    assert_eq!(
+        output.dependencies.as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -427,24 +479,29 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
     assert_eq!(
         start.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(2.0)
+            cadmpeg_ir::features::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
         end.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(10.0)
+            cadmpeg_ir::features::Length::new(10.0).unwrap()
         ))
     );
-    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
+    assert_eq!(
+        fraction.value,
+        Some(cadmpeg_ir::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(0.25).unwrap()
+        ))
+    );
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length(4.0)
+            cadmpeg_ir::features::Length::new(4.0).unwrap()
         ))
     );
     assert_eq!(
-        output.dependencies,
+        output.dependencies.as_slice(),
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
     );
 }
@@ -473,8 +530,14 @@ fn decode_transfers_typed_integer_to_angle_formula() {
 
     assert_eq!(input.expression, "2");
     assert_eq!(input.value, Some(ParameterValue::Integer(2)));
-    assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Angle(Angle::new(0.5).unwrap()))
+    );
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
@@ -499,11 +562,24 @@ fn decode_transfers_dimensionless_real_formula() {
     };
 
     assert_eq!(input.expression, "2.5");
-    assert_eq!(input.value, Some(ParameterValue::Real(2.5)));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(2.5).unwrap()
+        ))
+    );
     assert_eq!(input.properties["value_type"], "Real");
-    assert_eq!(output.value, Some(ParameterValue::Real(1.25)));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(1.25).unwrap()
+        ))
+    );
     assert_eq!(output.properties["value_type"], "Real");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     for parameter in [input, output] {
         assert_eq!(
             decoded.source_fidelity().annotations.exactness()[parameter.id.as_str()].fields()
@@ -533,7 +609,10 @@ fn decode_transfers_an_unset_typed_formula_result() {
     };
 
     assert_eq!(output.value, None);
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(output.properties["value_type"], "LENGTH");
 }
@@ -563,7 +642,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.value, None);
     assert_eq!(output.properties["value_type"], "Boolean");
     assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
-    assert_eq!(output.dependencies, [x.id.clone(), y.id.clone()]);
+    assert_eq!(output.dependencies.as_slice(), [x.id.clone(), y.id.clone()]);
     assert_eq!(
         decoded
             .report()
@@ -603,7 +682,10 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(output.value, None);
     assert_eq!(output.expression, "#1_ /2+1mm");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
 }
@@ -667,7 +749,10 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(input.properties["value_type"], "String");
     assert_eq!(output.value, None);
     assert_eq!(output.expression, "#1_");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.properties["value_type"], "String");
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
@@ -734,7 +819,10 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
     };
 
     assert_eq!(input.expression, "0.25 rad");
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
 }
 
 #[test]
@@ -761,14 +849,24 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
         panic!("multi-input formula parameters")
     };
 
-    assert_eq!(width.value, Some(ParameterValue::Real(12.0)));
+    assert_eq!(
+        width.value,
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(12.0).unwrap()
+        ))
+    );
     assert_eq!([width.ordinal, count.ordinal, output.ordinal], [0, 1, 2]);
     assert_eq!(count.value, Some(ParameterValue::Integer(3)));
     assert_eq!(
-        output.dependencies,
+        output.dependencies.as_slice(),
         [width.id.clone(), count.id.clone()].as_slice()
     );
-    assert_eq!(output.value, Some(ParameterValue::Real(15.0)));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(15.0).unwrap()
+        ))
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
@@ -795,10 +893,19 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
         panic!("closed bare-symbol formula parameters")
     };
 
-    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        input.value,
+        Some(ParameterValue::Length(Length::new(35.0).unwrap()))
+    );
     assert_eq!(output.expression, "#1_-2mm");
-    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
-    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Length(Length::new(33.0).unwrap()))
+    );
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut excluded_ir = CadIr::empty();
@@ -841,14 +948,16 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert_eq!(
         width.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(12.0)
+            cadmpeg_ir::features::Length::new(12.0).unwrap()
         ))
     );
     assert!(width.dependencies.is_empty());
     assert_eq!(depth.name, "Depth");
     assert_eq!(
         depth.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(6.5))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(6.5).unwrap()
+        ))
     );
     assert!(depth.dependencies.is_empty());
     assert_eq!(
@@ -885,9 +994,15 @@ fn decode_transfers_a_chained_formula_definition_once() {
     };
 
     assert_eq!(intermediate.expression, "#1_ /2+1mm");
-    assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        intermediate.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert_eq!(output.expression, "#2_ /3+1mm");
-    assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&intermediate.id)
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
@@ -933,12 +1048,15 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert_eq!(
         intermediate.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length(2.0)
+            cadmpeg_ir::features::Length::new(2.0).unwrap()
         ))
     );
     assert!(intermediate.dependencies.is_empty());
     assert_eq!(output.expression, "#2_ /3+1mm");
-    assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&intermediate.id)
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
@@ -963,7 +1081,10 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     assert_eq!(input.name, "Input");
     assert_eq!(intermediate.name, "Intermediate");
     assert_eq!(intermediate.expression, "#1_ /2+1mm");
-    assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(
+        intermediate.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings

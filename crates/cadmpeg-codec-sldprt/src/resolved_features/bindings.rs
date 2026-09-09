@@ -30,7 +30,9 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
+use cadmpeg_ir::features::{
+    Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed, PatternTransform,
+};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
@@ -59,7 +61,7 @@ pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -120,12 +122,13 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern { seeds, pattern, .. } => {
-                        (pattern.is_unresolved(), seeds.is_empty())
-                    }
-                    _ => continue,
-                };
+                let (needs_plane, needs_seeds) =
+                    match model_features[model_index].evaluation.definition() {
+                        FeatureDefinition::Pattern { seeds, pattern, .. } => {
+                            (pattern.is_unresolved(), seeds.is_empty())
+                        }
+                        _ => continue,
+                    };
                 if !needs_plane && !needs_seeds {
                     continue;
                 }
@@ -195,12 +198,15 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let (needs_seed, needs_axis) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::UnresolvedCircular,
-                        ..
-                    } => (seeds.is_empty(), true),
+                let (needs_seed, needs_axis) = match model_features[model_index]
+                    .evaluation
+                    .definition()
+                {
+                    FeatureDefinition::Pattern { seeds, pattern }
+                        if matches!(pattern.definition(), PatternTransform::UnresolvedCircular) =>
+                    {
+                        (seeds.is_empty(), true)
+                    }
                     FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
                     _ => continue,
                 };
@@ -275,37 +281,47 @@ pub(crate) fn bind_pattern_inputs(
                 };
                 let object_start = usize::try_from(starts[start_index].0).ok();
                 let end = pattern_object_end();
-                if matches!(
-                    model_features[model_index].definition,
+                if matches!(&(model_features[model_index].evaluation.definition()),
                     FeatureDefinition::Pattern {
-                        pattern: PatternKind::UnresolvedLinear,
+                        pattern: admitted_pattern,
                         ..
-                    }
+                    } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
                             typed_linear_pattern_dimensions(feature, lane, start, end)
                         })
                     {
-                        if let FeatureDefinition::Pattern { pattern, .. } =
-                            &mut model_features[model_index].definition
-                        {
-                            *pattern = PatternKind::Linear {
+                        let mut definition =
+                            model_features[model_index].evaluation.definition().clone();
+                        if let FeatureDefinition::Pattern { pattern, .. } = &mut definition {
+                            *pattern = PatternKind::new(PatternTransform::Linear {
                                 direction: None,
                                 spacing,
                                 count,
                                 second: None,
-                            };
+                            })
+                            .map_err(|message| {
+                                cadmpeg_core::CodecError::Malformed(message.into())
+                            })?;
                         }
+                        model_features[model_index]
+                            .evaluation
+                            .set_definition(definition)
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                     }
                 }
-                let (needs_seed, needs_direction) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern {
-                        seeds,
-                        pattern: PatternKind::Linear { direction, .. },
-                    } => (seeds.is_empty(), direction.is_none()),
-                    _ => continue,
-                };
+                let (needs_seed, needs_direction) =
+                    match model_features[model_index].evaluation.definition() {
+                        FeatureDefinition::Pattern { seeds, pattern } => {
+                            let PatternTransform::Linear { direction, .. } = pattern.definition()
+                            else {
+                                continue;
+                            };
+                            (seeds.is_empty(), direction.is_none())
+                        }
+                        _ => continue,
+                    };
                 if !needs_seed && !needs_direction {
                     continue;
                 }
@@ -407,12 +423,14 @@ pub(crate) fn bind_pattern_inputs(
             let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                 continue;
             };
-            let (needs_seed, needs_path) = match &model_features[model_index].definition {
-                FeatureDefinition::Pattern {
-                    seeds,
-                    pattern: PatternKind::CurveDriven { path, .. },
-                    ..
-                } => (seeds.is_empty(), path.is_none()),
+            let (needs_seed, needs_path) = match model_features[model_index].evaluation.definition()
+            {
+                FeatureDefinition::Pattern { seeds, pattern } => {
+                    let PatternTransform::CurveDriven { path, .. } = pattern.definition() else {
+                        continue;
+                    };
+                    (seeds.is_empty(), path.is_none())
+                }
                 _ => continue,
             };
             if needs_seed {
@@ -440,7 +458,7 @@ pub(crate) fn bind_pattern_inputs(
             };
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &model_features[target_index].definition
+            } = model_features[target_index].evaluation.definition()
             else {
                 continue;
             };
@@ -464,13 +482,18 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(seed) {
-            model_features[index].dependencies.push(seed.clone());
+            model_features[index].dependencies.insert(seed.clone());
         }
-        if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Pattern { seeds, .. } = &mut definition {
             if seeds.is_empty() {
                 seeds.push(PatternSeed::Feature(seed.clone()));
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut paths_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, dependency, path) in curve_path_assignments {
@@ -484,17 +507,22 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if !model_features[index].dependencies.contains(dependency) {
-            model_features[index].dependencies.push(dependency.clone());
+            model_features[index]
+                .dependencies
+                .insert(dependency.clone());
         }
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::CurveDriven { path: slot, .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            if slot.is_none() {
-                *slot = Some(path.clone());
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut definition {
+            if let Some(slot) = pattern.curve_path_mut() {
+                if slot.is_none() {
+                    *slot = Some(path.clone());
+                }
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut linear_directions_by_pattern = HashMap::<usize, Vec<Vector3>>::new();
     for (index, direction) in linear_direction_assignments {
@@ -504,28 +532,28 @@ pub(crate) fn bind_pattern_inputs(
         }
     }
     for (index, candidates) in linear_directions_by_pattern {
-        if let FeatureDefinition::Pattern {
-            pattern: PatternKind::Linear {
+        let native = model_features[index]
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.iter().find(|feature| feature.id == native));
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut definition {
+            let mut transform = pattern.definition().clone();
+            let PatternTransform::Linear {
                 direction, second, ..
-            },
-            ..
-        } = &mut model_features[index].definition
-        {
+            } = &mut transform
+            else {
+                continue;
+            };
             match candidates.as_slice() {
                 [first] if direction.is_none() => *direction = Some(*first),
                 [first, second_direction] => {
-                    let native = model_features[index]
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| {
-                            history_features.iter().find(|feature| feature.id == native)
-                        });
                     let secondary = native.and_then(|feature| {
                         Some(cadmpeg_ir::features::LinearPatternDirection {
                             direction: *second_direction,
-                            spacing: Length(feature.parameters.get("D4").and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
-                            })?),
+                            spacing: Length::new(feature.parameters.get("D4").and_then(
+                                |value| crate::history::parse_positive_dimension_length_mm(value),
+                            )?)?,
                             count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
                         })
                     });
@@ -536,7 +564,13 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 _ => {}
             }
+            *pattern = PatternKind::new(transform)
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut mirror_planes_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, origin, normal) in mirror_plane_assignments {
@@ -549,14 +583,20 @@ pub(crate) fn bind_pattern_inputs(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut definition {
             if pattern.is_unresolved() {
-                *pattern = PatternKind::Mirror {
+                *pattern = PatternKind::new(PatternTransform::Mirror {
                     plane_origin: *origin,
                     plane_normal: *normal,
-                };
+                })
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
     for (index, seeds) in mirror_seed_assignments {
@@ -571,17 +611,22 @@ pub(crate) fn bind_pattern_inputs(
         };
         for seed in seeds {
             if !model_features[index].dependencies.contains(seed) {
-                model_features[index].dependencies.push(seed.clone());
+                model_features[index].dependencies.insert(seed.clone());
             }
         }
+        let mut definition = model_features[index].evaluation.definition().clone();
         if let FeatureDefinition::Pattern {
             seeds: seed_slots, ..
-        } = &mut model_features[index].definition
+        } = &mut definition
         {
             if seed_slots.is_empty() {
                 seed_slots.extend(seeds.iter().cloned().map(PatternSeed::Feature));
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut circular_axes_by_pattern = HashMap::<usize, Vec<(Point3, Vector3)>>::new();
     for (index, origin, direction) in circular_axis_assignments {
@@ -617,19 +662,30 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
-        if let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::UnresolvedCircular,
-            ..
-        } = &mut model_features[index].definition
-        {
-            *slot = PatternKind::Circular {
+        let mut definition = model_features[index].evaluation.definition().clone();
+        if let FeatureDefinition::Pattern { pattern: slot, .. } = &mut definition {
+            if !matches!(slot.definition(), PatternTransform::UnresolvedCircular) {
+                continue;
+            }
+            *slot = PatternKind::new(PatternTransform::Circular {
                 axis_origin: *axis_origin,
                 axis_dir: *axis_dir,
-                angle: Angle(angle),
+                angle: Angle::new(angle).ok_or_else(|| {
+                    cadmpeg_core::CodecError::Malformed(
+                        "SolidWorks projected angle must be finite".into(),
+                    )
+                })?,
                 count,
-            };
+            })
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
@@ -654,7 +710,7 @@ pub(crate) fn bind_mirror_surface_planes(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mirror_native_refs = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -683,67 +739,79 @@ pub(crate) fn bind_mirror_surface_planes(
         .collect::<HashMap<_, _>>();
 
     for feature in features {
-        let FeatureDefinition::Pattern { pattern, .. } = &mut feature.definition else {
-            continue;
-        };
-        if !pattern.is_unresolved() {
-            continue;
-        }
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        if !mirror_native_refs.contains(native_ref) {
-            continue;
-        }
-        let mut candidates = Vec::new();
-        for selection in lanes
-            .iter()
-            .filter(|lane| !is_supplemental_config_lane(lane))
-            .flat_map(|lane| &lane.surface_selections)
-            .filter(|selection| selection.feature_ref == native_ref)
-        {
-            let Some(component) = selection.components.last() else {
-                continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Pattern { pattern, .. } = &mut definition else {
+                break 'feature_edit;
             };
-            let Some(source) = View::u32_le_at(&component.type_signature, 4)
-                .and_then(|source| FeatureSourceId::try_from(source).ok())
-            else {
-                continue;
+            if !pattern.is_unresolved() {
+                break 'feature_edit;
+            }
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                break 'feature_edit;
             };
-            let Some(local) = component.local_id else {
-                continue;
+            if !mirror_native_refs.contains(native_ref) {
+                break 'feature_edit;
+            }
+            let mut candidates = Vec::new();
+            for selection in lanes
+                .iter()
+                .filter(|lane| !is_supplemental_config_lane(lane))
+                .flat_map(|lane| &lane.surface_selections)
+                .filter(|selection| selection.feature_ref == native_ref)
+            {
+                let Some(component) = selection.components.last() else {
+                    continue;
+                };
+                let Some(source) = View::u32_le_at(&component.type_signature, 4)
+                    .and_then(|source| FeatureSourceId::try_from(source).ok())
+                else {
+                    continue;
+                };
+                let Some(local) = component.local_id else {
+                    continue;
+                };
+                let Some([face_id]) = faces_by_identity.get(&(source, local)).map(Vec::as_slice)
+                else {
+                    continue;
+                };
+                let Some(surface) = faces_by_id
+                    .get(face_id)
+                    .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
+                else {
+                    continue;
+                };
+                let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
+                    continue;
+                };
+                if !candidates.contains(&plane) {
+                    candidates.push(plane);
+                }
+            }
+            let [(origin, normal)] = candidates.as_slice() else {
+                break 'feature_edit;
             };
-            let Some([face_id]) = faces_by_identity.get(&(source, local)).map(Vec::as_slice) else {
-                continue;
-            };
-            let Some(surface) = faces_by_id
-                .get(face_id)
-                .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
-            else {
-                continue;
-            };
-            let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
-                continue;
-            };
-            if !candidates.contains(&plane) {
-                candidates.push(plane);
+            if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
+                plane_origin: *origin,
+                plane_normal: *normal,
+            }) {
+                *pattern = admitted;
             }
         }
-        let [(origin, normal)] = candidates.as_slice() else {
-            continue;
-        };
-        *pattern = PatternKind::Mirror {
-            plane_origin: *origin,
-            plane_normal: *normal,
-        };
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn bind_sweep_adjacent_profiles(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -777,12 +845,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             if !matches!(
-                model_features[model_index].definition,
-                FeatureDefinition::Sweep {
-                    section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+                model_features[model_index].evaluation.definition(), FeatureDefinition::Sweep {
+                    shape,
                     ..
-                }
-            ) {
+                } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),)))
+            {
                 continue;
             }
             let Some((_, profile_feature)) = starts.get(index + 1) else {
@@ -796,7 +863,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             };
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &model_features[profile_index].definition
+            } = model_features[profile_index].evaluation.definition()
             else {
                 continue;
             };
@@ -808,7 +875,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
                 let FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(path)),
-                } = &model_features[path_index].definition
+                } = model_features[path_index].evaluation.definition()
                 else {
                     return None;
                 };
@@ -830,18 +897,22 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             continue;
         };
         let mut profile_bound = false;
+        let mut definition = model_features[index].evaluation.definition().clone();
         if let FeatureDefinition::Sweep {
-            section,
+            shape,
             path: path_slot,
             ..
-        } = &mut model_features[index].definition
+        } = &mut definition
         {
-            if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
-                *section = cadmpeg_ir::features::SweepSection::Profile(
-                    cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone()),
-                );
-                profile_bound = true;
-            }
+            shape
+                .try_edit(|section, _, _| {
+                    if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
+                        *section =
+                            cadmpeg_ir::features::SweepSection::Profile((sketch.clone()).into());
+                        profile_bound = true;
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if let Some((_, path)) = path {
                 if path_slot
                     .as_ref()
@@ -851,6 +922,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 }
             }
         }
+        model_features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
         if profile_bound
             && !model_features[index]
                 .dependencies
@@ -858,16 +934,18 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         {
             model_features[index]
                 .dependencies
-                .push(profile_dependency.clone());
+                .insert(profile_dependency.clone());
         }
         if let Some((path_dependency, _)) = path {
             if !model_features[index].dependencies.contains(path_dependency) {
                 model_features[index]
                     .dependencies
-                    .push(path_dependency.clone());
+                    .insert(path_dependency.clone());
             }
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn bind_scalar_operands(
@@ -1087,7 +1165,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
 ) {
     let unresolved = model_features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch:
                     cadmpeg_ir::features::SketchFeatureBinding::Unresolved

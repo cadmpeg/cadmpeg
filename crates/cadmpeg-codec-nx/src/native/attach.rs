@@ -12,12 +12,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    HolePlacement, Length, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode, ThickenSide,
-    TrimRegion, UnresolvedFamily,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
+    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
+    FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
+    HoleForm, HoleKind, HolePlacement, Length, LinearTermination, ParameterId, ParameterValue,
+    PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension,
+    ThickenSide, TreeChildren, TrimRegion, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -301,7 +301,13 @@ pub(crate) fn attach(
                 .find(|relation| relation.configuration == configuration.id);
             let bodies = if active_attribute_use.is_some() {
                 ConfigurationBodies::Resolved(
-                    ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+                    (ir.model
+                        .bodies
+                        .iter()
+                        .map(|body| body.id.clone())
+                        .collect::<Vec<_>>())
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
                 )
             } else {
                 ConfigurationBodies::Unresolved
@@ -1057,10 +1063,10 @@ fn attach_active_configuration_feature_states(
                 id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: feature.outputs.clone(),
+                        outputs: feature.evaluation.outputs().iter().cloned().collect(),
                     },
                     dependencies: feature.dependencies.clone(),
-                    definition: feature.definition.clone(),
+                    definition: feature.evaluation.definition().clone(),
                 },
             )
         })
@@ -1140,18 +1146,22 @@ fn attach_initial_segment_bodies(
         ordinal: ir.model.features.len() as u64,
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: DistinctMembers::default(),
         source_properties,
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: outputs.clone(),
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Resolved {
-                bodies: outputs,
-                native: "nx:segment-body-bindings".to_string(),
+        source_content: FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: outputs.clone(),
+                    native: "nx:segment-body-bindings".to_string(),
+                },
             },
-        },
+            outputs.clone(),
+        )
+        .ok()?,
         native_ref: None,
     });
     Some(id)
@@ -1165,7 +1175,7 @@ fn attach_feature_operations(
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
@@ -1372,7 +1382,7 @@ fn attach_feature_operations(
         .as_ref()
         .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
     {
-        body_writer_history.record_writer(None, None, &feature.outputs, &feature.id);
+        body_writer_history.record_writer(None, None, feature.evaluation.outputs(), &feature.id);
     }
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
@@ -2000,7 +2010,8 @@ fn attach_feature_operations(
                     resolution,
                     &bodies_by_object_index,
                 )
-            });
+            })
+            .transpose()?;
         let mut dependencies = Vec::new();
         let retained_operation_body_writes = body_writes_by_operation
             .get(label.id.as_str())
@@ -2023,12 +2034,14 @@ fn attach_feature_operations(
         if let (
             Some(operation),
             Some(resolution),
-            Some(FeatureDefinition::Combine { target, tools, .. }),
+            Some(FeatureDefinition::Combine { operands, .. }),
         ) = (
             booleans.get(label.id.as_str()),
             boolean_offset_store_resolution.as_ref(),
             boolean_definition.as_ref(),
         ) {
+            let target = operands.target();
+            let tools = operands.tools();
             if !matches!(resolution, BooleanOffsetStoreResolution::Unresolved) {
                 let offset_store_body_blocks = match resolution {
                     BooleanOffsetStoreResolution::Complete(blocks) => Some(blocks),
@@ -3360,14 +3373,17 @@ fn attach_feature_operations(
                     .find(|feature| feature.id == *id)
             }) {
                 initial_feature
-                    .outputs
-                    .retain(|body| !outputs.contains(body));
-                if let FeatureDefinition::BaseFeature {
-                    bodies: BodySelection::Resolved { bodies, .. },
-                } = &mut initial_feature.definition
-                {
-                    bodies.retain(|body| !outputs.contains(body));
-                }
+                    .evaluation
+                    .try_edit(|definition, initial_outputs| {
+                        initial_outputs.retain(|body| !outputs.contains(body));
+                        if let FeatureDefinition::BaseFeature {
+                            bodies: BodySelection::Resolved { bodies, .. },
+                        } = definition
+                        {
+                            bodies.retain(|body| !outputs.contains(body));
+                        }
+                    })
+                    .map_err(CodecError::malformed)?;
                 body_writer_history.retract_outputs(&initial_feature.id, &outputs);
             }
         }
@@ -3381,8 +3397,8 @@ fn attach_feature_operations(
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
-                center: *center,
-                radius: *radius,
+                center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+                radius: cadmpeg_ir::features::PositiveLength::new(radius.get())?,
                 op: sphere_op,
             })
         });
@@ -3424,9 +3440,11 @@ fn attach_feature_operations(
                                 .get(label.id.as_str())
                                 .map_or([].as_slice(), Vec::as_slice),
                         )
+                        .map(Ok)
                     })
             })
-            .flatten();
+            .flatten()
+            .transpose()?;
         let offset_projection = (label.value == "OFFSET")
             .then(|| offset_surface_feature_definition(ir, &outputs))
             .flatten();
@@ -3557,97 +3575,90 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
-        let definition = boolean_definition.unwrap_or_else(|| {
-            trim_body_projection
-                .or(delete_projection)
-                .or(extract_body_projection)
-                .or(sew_projection)
-                .or(extrude_projection)
-                .or_else(|| blend_projection.map(|(definition, _)| definition))
-                .or_else(|| thicken_projection.map(|(definition, _)| definition))
-                .or_else(|| offset_projection.map(|(definition, _)| definition))
-                .or(sphere_definition)
-                .or_else(|| {
-                    (label.value == "BREP")
-                        .then(|| brep_feature_definition(&outputs))
-                        .flatten()
-                })
-                .unwrap_or_else(|| {
-                    if let Some(sketch) = sketch {
-                        return FeatureDefinition::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                sketch,
-                            )),
-                        };
-                    }
-                    let mut definition = non_modeling_history_definition(
-                        &label.value,
-                        &label.objects.values(),
-                        &outputs,
-                        body_reference_occurrences_by_operation
+        let definition = if let Some(definition) = boolean_definition
+            .or(trim_body_projection)
+            .or(delete_projection)
+            .or(extract_body_projection)
+            .or(sew_projection)
+            .or(extrude_projection)
+            .or_else(|| blend_projection.map(|(definition, _)| definition))
+            .or_else(|| thicken_projection.map(|(definition, _)| definition))
+            .or_else(|| offset_projection.map(|(definition, _)| definition))
+            .or(sphere_definition)
+            .or_else(|| {
+                (label.value == "BREP")
+                    .then(|| brep_feature_definition(&outputs))
+                    .flatten()
+            }) {
+            definition
+        } else if let Some(sketch) = sketch {
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }
+        } else {
+            let mut definition = if let Some(definition) = non_modeling_history_definition(
+                &label.value,
+                &label.objects.values(),
+                &outputs,
+                body_reference_occurrences_by_operation
+                    .get(label.id.as_str())
+                    .map_or(0, Vec::len),
+                operation_body_operands_by_operation
+                    .get(label.id.as_str())
+                    .map_or(0, Vec::len),
+                operation_payload_string_records.len(),
+                &source_properties,
+            )
+            .or_else(|| {
+                body_writing_unresolved_feature_definition(&label.value, &source_properties)
+            }) {
+                definition
+            } else {
+                non_boolean_feature_definition_with_parameters(
+                    &label.value,
+                    &operation_payload_strings,
+                    block_dimension_values,
+                    block_placement,
+                    HoleProjection {
+                        placements: simple_hole_placements
                             .get(label.id.as_str())
-                            .map_or(0, Vec::len),
-                        operation_body_operands_by_operation
-                            .get(label.id.as_str())
-                            .map_or(0, Vec::len),
-                        operation_payload_string_records.len(),
-                        &source_properties,
-                    )
-                    .unwrap_or_else(|| {
-                        if let Some(definition) = body_writing_unresolved_feature_definition(
-                            &label.value,
-                            &source_properties,
-                        ) {
-                            return definition;
-                        }
-                        non_boolean_feature_definition_with_parameters(
-                            &label.value,
-                            &operation_payload_strings,
-                            block_dimension_values,
-                            block_placement,
-                            HoleProjection {
-                                placements: simple_hole_placements
+                            .cloned()
+                            .into_iter()
+                            .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
+                            .chain(blind_hole_placements.get(label.id.as_str()).cloned())
+                            .chain(
+                                hole_packages
+                                    .placements
                                     .get(label.id.as_str())
                                     .cloned()
-                                    .into_iter()
-                                    .chain(
-                                        counterbore_hole_placements.get(label.id.as_str()).cloned(),
-                                    )
-                                    .chain(blind_hole_placements.get(label.id.as_str()).cloned())
-                                    .chain(
-                                        hole_packages
-                                            .placements
-                                            .get(label.id.as_str())
-                                            .cloned()
-                                            .unwrap_or_default(),
-                                    )
-                                    .collect(),
-                                diameter: simple_hole_diameters
-                                    .get(label.id.as_str())
-                                    .or_else(|| hole_packages.diameters.get(label.id.as_str()))
-                                    .copied(),
-                                extent: blind_hole_depths
-                                    .get(label.id.as_str())
-                                    .copied()
-                                    .map(|length| LinearTermination::Blind { length }),
-                                counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
-                                chamfer: simple_hole_chamfers
-                                    .get(label.id.as_str())
-                                    .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                                    .copied(),
-                                grouped_simple_through: hole_packages
-                                    .outputs
-                                    .contains_key(label.id.as_str()),
-                            },
-                            native_parameters,
-                        )
-                    });
-                    if let FeatureDefinition::Block { op, .. } = &mut definition {
-                        *op = block_op;
-                    }
-                    definition
-                })
-        });
+                                    .unwrap_or_default(),
+                            )
+                            .collect(),
+                        diameter: simple_hole_diameters
+                            .get(label.id.as_str())
+                            .or_else(|| hole_packages.diameters.get(label.id.as_str()))
+                            .copied(),
+                        extent: blind_hole_depths
+                            .get(label.id.as_str())
+                            .copied()
+                            .map(|length| LinearTermination::Blind { length }),
+                        counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
+                        chamfer: simple_hole_chamfers
+                            .get(label.id.as_str())
+                            .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                            .copied(),
+                        grouped_simple_through: hole_packages
+                            .outputs
+                            .contains_key(label.id.as_str()),
+                    },
+                    native_parameters,
+                )?
+            };
+            if let FeatureDefinition::Block { op, .. } = &mut definition {
+                *op = block_op;
+            }
+            definition
+        };
         annotations
             .note(&id, &stream, label.source_offset)
             .tag("FEATURE_OPERATION");
@@ -3705,13 +3716,14 @@ fn attach_feature_operations(
             ordinal: base_ordinal + ordinal as u64,
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies,
+            dependencies: (dependencies).into_iter().collect(),
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
-            outputs,
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: Some(label.id.clone()),
         });
         if !deletes_body && !operation_body_writes.is_empty() {
@@ -3726,24 +3738,25 @@ fn attach_feature_operations(
                     body_write_group_partition_uses,
                     parasolid_group_members,
                 );
-                ir.model
-                    .feature_result_topologies
-                    .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId::mint(format!(
+                ir.model.feature_result_topologies.push(
+                    FeatureResultTopology::new(
+                        FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}-{:010}",
                             write.ordinal
                         ))
                         .expect("identity grammar"),
-                        output_of: id.clone(),
-                        bodies: vec![format!(
+                        id.clone(),
+                        vec![format!(
                             "nx:feature-history:body-identity#{:010}",
                             write.frame.body_identity()
                         )],
-                        faces: result_members.faces,
-                        edges: result_members.edges,
-                        vertices: result_members.vertices,
-                        native_ref: Some(write.id.clone()),
-                    });
+                        result_members.faces,
+                        result_members.edges,
+                        result_members.vertices,
+                        Some(write.id.clone()),
+                    )
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                );
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
@@ -3757,20 +3770,21 @@ fn attach_feature_operations(
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                ir.model
-                    .feature_result_topologies
-                    .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId::mint(format!(
+                ir.model.feature_result_topologies.push(
+                    FeatureResultTopology::new(
+                        FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}"
                         ))
                         .expect("identity grammar"),
-                        output_of: id.clone(),
-                        bodies: vec![local_id],
-                        faces: Vec::new(),
-                        edges: Vec::new(),
-                        vertices: Vec::new(),
-                        native_ref: Some(native_ref),
-                    });
+                        id.clone(),
+                        vec![local_id],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        Some(native_ref),
+                    )
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                );
             }
         }
     }
@@ -3801,7 +3815,7 @@ fn attach_feature_operations(
             .features
             .iter()
             .find(|feature| feature.id == initial_body_id)
-            .is_some_and(|feature| !feature.outputs.is_empty());
+            .is_some_and(|feature| !feature.evaluation.outputs().is_empty());
         if has_outputs {
             annotations
                 .derived(&initial_body_id, "outputs")
@@ -5177,7 +5191,7 @@ fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
                 .shells
                 .iter()
                 .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-            for face_id in &shell.faces {
+            for face_id in shell.faces() {
                 let face = ir
                     .model
                     .faces
@@ -5212,7 +5226,7 @@ fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec
         .iter()
         .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
     shell
-        .faces
+        .faces()
         .iter()
         .map(|face_id| {
             ir.model
@@ -5314,8 +5328,9 @@ fn blend_feature_definition(
                     RadiusSpec::Unresolved
                 }
             },
-            |radii| RadiusSpec::Constant {
-                radius: Length(radii[0]),
+            |radii| match cadmpeg_ir::features::PositiveLength::new(radii[0]) {
+                Some(radius) => RadiusSpec::Constant { radius },
+                None => RadiusSpec::UnresolvedConstant,
             },
         );
     let face_blend = matches!(family, NxBlendFamily::Face)
@@ -5345,8 +5360,12 @@ fn blend_feature_definition(
                     match (&first_faces, &second_faces) {
                         (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                             Some(FeatureDefinition::FaceBlend {
-                                first_faces,
-                                second_faces,
+                                operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                                    first_faces,
+                                    second_faces,
+                                )
+                                .ok()?,
+
                                 radius: radius.clone(),
                             })
                         }
@@ -5357,15 +5376,19 @@ fn blend_feature_definition(
         .flatten();
     let unresolved = match family {
         NxBlendFamily::Edge => FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius,
                 tangency_weight: None,
-            }],
+            }),
         },
         NxBlendFamily::Face => FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                FaceSelection::Unresolved,
+                FaceSelection::Unresolved,
+            )
+            .ok()?,
+
             radius,
         },
     };
@@ -5450,7 +5473,7 @@ fn offset_surface_feature_definition(
     Some((
         FeatureDefinition::OffsetSurface {
             faces,
-            distance: distance.map(Length),
+            distance: distance.and_then(Length::new),
         },
         supports,
     ))
@@ -5523,7 +5546,7 @@ fn thicken_feature_definition(
     Some((
         FeatureDefinition::Thicken {
             faces,
-            thickness: Some(Length(thickness)),
+            thickness: Some(cadmpeg_ir::features::PositiveLength::new(thickness)?),
             side,
         },
         supports,
@@ -5655,18 +5678,13 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
 
 pub(crate) fn feature_source_content(
     payload_strings: &[&crate::native::features::FeaturePayloadString],
-) -> Vec<FeatureSourceContent> {
+) -> cadmpeg_ir::features::FeatureContent {
     let mut content = payload_strings
         .iter()
-        .map(|value| {
-            (
-                value.source_offset,
-                FeatureSourceContent::Text(value.value.as_str().to_owned()),
-            )
-        })
+        .map(|value| (value.source_offset, value.value.as_str().to_owned()))
         .collect::<Vec<_>>();
     content.sort_by_key(|(offset, _)| *offset);
-    content.into_iter().map(|(_, content)| content).collect()
+    cadmpeg_ir::features::FeatureContent::text(content.into_iter().map(|(_, content)| content))
 }
 
 fn simple_hole_native_properties(
@@ -5947,7 +5965,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         && [center.x, center.y, center.z]
             .into_iter()
             .all(f64::is_finite))
-    .then_some((body, *center, Length(*radius)))
+    .then_some((body, *center, Length::new(*radius)?))
 }
 
 struct NewBodyEvidence<'a> {
@@ -6010,15 +6028,19 @@ fn body_writing_unresolved_feature_definition(
             family: UnresolvedFamily::Sphere,
         }),
         "BLEND" => Some(FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved,
                 tangency_weight: None,
-            }],
+            }),
         }),
         "FACE_BLEND" => Some(FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                FaceSelection::Unresolved,
+                FaceSelection::Unresolved,
+            )
+            .ok()?,
+
             radius: RadiusSpec::Unresolved,
         }),
         "DELETE FACE" => Some(FeatureDefinition::Unresolved {
@@ -6062,6 +6084,7 @@ fn non_boolean_feature_definition(
         },
         BTreeMap::new(),
     )
+    .unwrap()
 }
 
 /// Project one operation as a history node only when its bounded record has
@@ -6094,8 +6117,7 @@ fn non_modeling_history_definition(
         && operation_identity_only)
         .then_some(FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
+            children: TreeChildren::default(),
         })
 }
 
@@ -6112,8 +6134,8 @@ struct HoleProjection {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CounterboreDimensions {
-    diameter: Length,
-    depth: Length,
+    diameter: cadmpeg_ir::features::PositiveLength,
+    depth: cadmpeg_ir::features::PositiveLength,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -6123,20 +6145,24 @@ fn non_boolean_feature_definition_with_parameters(
     block_placement: Option<Transform>,
     hole: HoleProjection,
     native_parameters: BTreeMap<String, String>,
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
-        return FeatureDefinition::Native {
+        return Ok(FeatureDefinition::Native {
             kind: kind.into(),
             parameters: native_parameters,
-        };
+        });
     }
-    if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
-        return FeatureDefinition::Block {
-            dimensions: Some(dimensions.map(Length)),
-            placement: block_placement,
+    if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
+        kind,
+        block_dimensions
+            .map(|dimensions| dimensions.map(cadmpeg_ir::features::PositiveLength::new)),
+    ) {
+        return Ok(FeatureDefinition::Block {
+            dimensions: Some([length, width, height]),
+            placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
-        };
+        });
     }
     if let Some(op) = match kind {
         "UNITE" => Some(cadmpeg_ir::features::BooleanKind::Join),
@@ -6144,14 +6170,18 @@ fn non_boolean_feature_definition_with_parameters(
         "INTERSECT" => Some(cadmpeg_ir::features::BooleanKind::Intersect),
         _ => None,
     } {
-        return FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
+        return Ok(FeatureDefinition::Combine {
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Unresolved,
+                BodySelection::Unresolved,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             op,
             keep_tools: false,
-        };
+        });
     }
-    match kind {
+    Ok(match kind {
         "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         },
@@ -6191,13 +6221,11 @@ fn non_boolean_feature_definition_with_parameters(
             family: UnresolvedFamily::FreeformSurface,
         },
         "SWP104" => FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-            sections: Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::unresolved(None),
             path: None,
             path_extent: None,
             guide_rail: None,
             taper: None,
-            mode: SweepMode::Unresolved,
             orientation: None,
             transition: None,
             transformation: None,
@@ -6314,8 +6342,23 @@ fn non_boolean_feature_definition_with_parameters(
                 face: None,
                 direction: None,
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-                construction: cadmpeg_ir::features::HoleConstruction::Form {
-                    kind: match (measured_chamfer, hole_template) {
+                shape: cadmpeg_ir::features::HoleShape::new(
+                    cadmpeg_ir::features::HoleConstruction::Form {
+                        kind: match (measured_chamfer, hole_template) {
+                            (
+                                Some(chamfer),
+                                Some((
+                                    crate::native::features::holes::SimpleHoleForm::Simple,
+                                    crate::native::features::holes::SimpleHoleExtent::Through,
+                                    crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
+                                    crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
+                                )),
+                            ) => chamfer,
+                            _ => template_kind,
+                        },
+                        specification: None,
+                    },
+                    match (measured_chamfer, hole_template) {
                         (
                             Some(chamfer),
                             Some((
@@ -6324,24 +6367,15 @@ fn non_boolean_feature_definition_with_parameters(
                                 crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
                                 crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
                             )),
-                        ) => chamfer,
-                        _ => template_kind,
+                        ) => Some(chamfer),
+                        _ => template_exit_kind,
                     },
-                    specification: None,
-                },
-                exit_kind: match (measured_chamfer, hole_template) {
-                    (
-                        Some(chamfer),
-                        Some((
-                            crate::native::features::holes::SimpleHoleForm::Simple,
-                            crate::native::features::holes::SimpleHoleExtent::Through,
-                            crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                            crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                        )),
-                    ) => Some(chamfer),
-                    _ => template_exit_kind,
-                },
-                diameter: hole.diameter,
+                    hole.diameter.and_then(|diameter| {
+                        cadmpeg_ir::features::PositiveLength::new(diameter.get())
+                    }),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+
                 extent: hole.extent.or(template_extent),
                 bottom: None,
                 taper_angle: None,
@@ -6354,19 +6388,23 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             direction: None,
             placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: if hole.grouped_simple_through {
-                    hole.chamfer.unwrap_or(HoleKind::Simple)
-                } else {
-                    HoleKind::Unresolved(None)
+            shape: cadmpeg_ir::features::HoleShape::new(
+                cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: if hole.grouped_simple_through {
+                        hole.chamfer.unwrap_or(HoleKind::Simple)
+                    } else {
+                        HoleKind::Unresolved(None)
+                    },
+                    specification: None,
                 },
-                specification: None,
-            },
-            exit_kind: hole
-                .grouped_simple_through
-                .then_some(hole.chamfer)
-                .flatten(),
-            diameter: hole.diameter,
+                hole.grouped_simple_through
+                    .then_some(hole.chamfer)
+                    .flatten(),
+                hole.diameter
+                    .and_then(|diameter| cadmpeg_ir::features::PositiveLength::new(diameter.get())),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             extent: hole
                 .grouped_simple_through
                 .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll),
@@ -6387,31 +6425,43 @@ fn non_boolean_feature_definition_with_parameters(
         "SHELL" => shell_feature_definition(),
         "ENLARGE" => enlarge_feature_definition(),
         "CHAMFER" => FeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: EdgeSelection::Unresolved,
-                spec: ChamferSpec::Unresolved,
-            }],
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::ChamferGroup {
+                    edges: EdgeSelection::Unresolved,
+                    spec: ChamferSpec::Unresolved,
+                },
+            ),
             flip_direction: false,
         },
         "BLEND" => FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved,
                 tangency_weight: None,
-            }],
+            }),
         },
         "FACE_BLEND" => FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                FaceSelection::Unresolved,
+                FaceSelection::Unresolved,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             radius: RadiusSpec::Unresolved,
         },
         "SEW" => FeatureDefinition::SewBodies {
-            bodies: BodySelection::Unresolved,
+            bodies: BodySelection::Unresolved
+                .try_into()
+                .map_err(CodecError::malformed)?,
             gap_tolerance: None,
         },
         "TRIM BODY" => FeatureDefinition::TrimBodies {
-            targets: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
+            operands: cadmpeg_ir::features::TrimBodyOperands::new(
+                BodySelection::Unresolved,
+                BodySelection::Unresolved,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             keep: BodyTrimSide::Unresolved,
         },
         "EXTRUDE" => extrude_feature_definition(None, None, BooleanOp::Unresolved, &[]),
@@ -6431,18 +6481,22 @@ fn non_boolean_feature_definition_with_parameters(
         | "IDENTICAL INSTANCE OUTPUT"
         | "Instance Feature" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved,
+            pattern: PatternKind::UNRESOLVED,
         },
         "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
-            first: BodySelection::Unresolved,
-            second: BodySelection::Unresolved,
+            operands: cadmpeg_ir::features::SectionOperands::new(
+                BodySelection::Unresolved,
+                BodySelection::Unresolved,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             approximate: None,
         },
         _ => FeatureDefinition::Native {
             kind: kind.into(),
             parameters: native_parameters,
         },
-    }
+    })
 }
 
 /// Project a BREP operation as direct stored geometry when its result bodies
@@ -6877,7 +6931,7 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
-    blind_depths: BTreeMap<String, Length>,
+    blind_depths: BTreeMap<String, cadmpeg_ir::features::NonZeroLength>,
     counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
@@ -6911,7 +6965,7 @@ fn hole_body_projection(
         }
         for operation in operations {
             projected_outputs.insert(operation.clone(), vec![body.clone()]);
-            diameters.insert(operation, Length(radius * 2.0));
+            diameters.insert(operation, Length::new(radius * 2.0)?);
         }
     }
     Some(HoleBodyProjection {
@@ -6948,12 +7002,14 @@ fn counterbore_body_projection(
             return None;
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
         counterbores.insert(
             operation.clone(),
             CounterboreDimensions {
-                diameter: Length(witness.counterbore_radius * 2.0),
-                depth: Length(witness.depth),
+                diameter: cadmpeg_ir::features::PositiveLength::new(
+                    witness.counterbore_radius * 2.0,
+                )?,
+                depth: cadmpeg_ir::features::PositiveLength::new(witness.depth)?,
             },
         );
     }
@@ -6988,8 +7044,11 @@ fn blind_hole_body_projection(
             return None;
         };
         projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
-        blind_depths.insert(operation.clone(), Length(witness.depth));
+        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
+        blind_depths.insert(
+            operation.clone(),
+            cadmpeg_ir::features::NonZeroLength::new(witness.depth)?,
+        );
     }
     Some(HoleBodyProjection {
         outputs: projected_outputs,
@@ -7056,11 +7115,17 @@ fn counterbore_axis_placements_for_operations(
         let [witness] = witnesses.as_slice() else {
             return BTreeMap::new();
         };
+        let (Some(point), Some(direction)) = (
+            cadmpeg_ir::features::FinitePoint3::new(witness.line_origin),
+            cadmpeg_ir::features::FeatureDirection3::new(witness.axis),
+        ) else {
+            return BTreeMap::new();
+        };
         placements.insert(
             operation.clone(),
             HolePlacement::Axis {
-                origin: witness.line_origin,
-                axis: witness.axis,
+                origin: point,
+                axis: direction,
             },
         );
     }
@@ -7093,11 +7158,17 @@ fn blind_hole_axis_placements_for_operations(
         let [witness] = witnesses.as_slice() else {
             return BTreeMap::new();
         };
+        let (Some(point), Some(direction)) = (
+            cadmpeg_ir::features::FinitePoint3::new(witness.position),
+            cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
+        ) else {
+            return BTreeMap::new();
+        };
         placements.insert(
             operation.clone(),
             HolePlacement::Directed {
-                position: witness.position,
-                direction: witness.direction,
+                position: point,
+                direction,
             },
         );
     }
@@ -7132,9 +7203,12 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+        let (Some(origin), Some(axis)) = (
+            cadmpeg_ir::features::FinitePoint3::new(origin),
+            cadmpeg_ir::features::FeatureDirection3::new(axis),
+        ) else {
             return Vec::new();
-        }
+        };
         placements.push(HolePlacement::Axis { origin, axis });
     }
     placements.sort_by_key(hole_placement_key);
@@ -7935,10 +8009,17 @@ fn simple_hole_chamfers(
         {
             return BTreeMap::new();
         }
-        let treatment = HoleKind::Chamfer {
-            diameter: Length(2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64),
-            angle: Angle(included_angles.iter().sum::<f64>() / included_angles.len() as f64),
+        let (Some(diameter), Some(angle)) = (
+            cadmpeg_ir::features::PositiveLength::new(
+                2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64,
+            ),
+            cadmpeg_ir::features::InteriorAngle::new(
+                included_angles.iter().sum::<f64>() / included_angles.len() as f64,
+            ),
+        ) else {
+            return BTreeMap::new();
         };
+        let treatment = HoleKind::Chamfer { diameter, angle };
         treatments.extend(
             operations
                 .into_iter()
@@ -7995,11 +8076,15 @@ enum FeatureBodySelection {
     },
 }
 
+fn local_body_selection(bodies: Vec<String>, native: String) -> BodySelection {
+    BodySelection::local(bodies, native.clone()).unwrap_or(BodySelection::Native(native))
+}
+
 impl FeatureBodySelection {
     fn into_selection(self) -> BodySelection {
         match self {
             Self::Native(native) => BodySelection::Native(native),
-            Self::Local { bodies, native, .. } => BodySelection::Local { bodies, native },
+            Self::Local { bodies, native, .. } => local_body_selection(bodies, native),
             Self::Resolved { bodies, native, .. } => BodySelection::Resolved { bodies, native },
         }
     }
@@ -8155,13 +8240,13 @@ fn feature_body_set_selection(
     {
         return BodySelection::Resolved { bodies, native };
     }
-    BodySelection::Local {
-        bodies: roots
+    local_body_selection(
+        roots
             .iter()
             .map(|root| format!("nx:om-body-object#{root}"))
             .collect(),
         native,
-    }
+    )
 }
 
 fn atomic_disjoint_body_selections(
@@ -8247,14 +8332,12 @@ fn boolean_target_writer(
     definition: &FeatureDefinition,
     native_body: u32,
 ) -> (Option<u32>, Option<&str>) {
-    if let FeatureDefinition::Combine {
-        target: BodySelection::Local { bodies, .. },
-        ..
-    } = definition
-    {
-        if let [body] = bodies.as_slice() {
-            if offset_store_identity(body).is_some() {
-                return (None, Some(body.as_str()));
+    if let FeatureDefinition::Combine { operands, .. } = definition {
+        if let BodySelection::Local { bodies, .. } = operands.target() {
+            if let [body] = bodies.as_slice() {
+                if offset_store_identity(body).is_some() {
+                    return (None, Some(body.as_str()));
+                }
             }
         }
     }
@@ -8262,17 +8345,13 @@ fn boolean_target_writer(
 }
 
 fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyId> {
-    let Some(FeatureDefinition::Combine {
-        target: BodySelection::Resolved { bodies, .. },
-        ..
-    }) = definition
-    else {
+    let Some(FeatureDefinition::Combine { operands, .. }) = definition else {
         return None;
     };
-    let [body] = bodies.as_slice() else {
+    let BodySelection::Resolved { bodies, .. } = operands.target() else {
         return None;
     };
-    Some(body.clone())
+    bodies.first().cloned()
 }
 
 pub(crate) fn boolean_feature_definition(
@@ -8280,7 +8359,7 @@ pub(crate) fn boolean_feature_definition(
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_resolution: &BooleanOffsetStoreResolution,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let empty_offset_store_body_blocks = BTreeMap::new();
     let native_target = format!("nx:om-object-index#{}", operation.target.token.value());
     let native_tools = format!(
@@ -8325,9 +8404,10 @@ pub(crate) fn boolean_feature_definition(
             )
         }
     };
-    FeatureDefinition::Combine {
-        target,
-        tools,
+    Ok(FeatureDefinition::Combine {
+        operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
         op: match operation.kind {
             crate::native::features::FeatureBooleanKind::Unite => {
                 cadmpeg_ir::features::BooleanKind::Join
@@ -8340,7 +8420,7 @@ pub(crate) fn boolean_feature_definition(
             }
         },
         keep_tools: false,
-    }
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -8367,19 +8447,18 @@ fn delete_body_feature_definition(
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         ) {
-            FeatureBodySelection::Native(native) => BodySelection::Local {
-                bodies: vec![format!("nx:om-body-object#{body}")],
-                native,
-            },
+            FeatureBodySelection::Native(native) => {
+                local_body_selection(vec![format!("nx:om-body-object#{body}")], native)
+            }
             selection => selection.into_selection(),
         },
         DeleteBodyField::OffsetStore {
             object_index,
             data_block,
-        } => BodySelection::Local {
-            bodies: vec![data_block.to_string()],
-            native: format!("nx:om-object-index#{object_index}"),
-        },
+        } => local_body_selection(
+            vec![data_block.to_string()],
+            format!("nx:om-object-index#{object_index}"),
+        ),
     };
     FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
@@ -8398,10 +8477,10 @@ fn extract_body_feature_definition(
 ) -> FeatureDefinition {
     let source = body_object_index.map_or_else(
         || match offset_store_bodies {
-            [(object_index, data_block)] => BodySelection::Local {
-                bodies: vec![data_block.clone()],
-                native: format!("nx:om-object-index#{object_index}"),
-            },
+            [(object_index, data_block)] => local_body_selection(
+                vec![data_block.clone()],
+                format!("nx:om-object-index#{object_index}"),
+            ),
             _ => BodySelection::Unresolved,
         },
         |body| {
@@ -8456,9 +8535,9 @@ fn offset_store_trim_body_feature_definition(
                 && distinct_tool_blocks
                 && no_target_alias
             {
-                BodySelection::Local {
-                    bodies: tool_data_blocks,
-                    native: format!(
+                local_body_selection(
+                    tool_data_blocks,
+                    format!(
                         "nx:om-object-indices#{}",
                         operands
                             .iter()
@@ -8466,18 +8545,22 @@ fn offset_store_trim_body_feature_definition(
                             .collect::<Vec<_>>()
                             .join(",")
                     ),
-                }
+                )
             } else {
                 BodySelection::Unresolved
             }
         }
     };
     Some(FeatureDefinition::TrimBodies {
-        targets: BodySelection::Local {
-            bodies: vec![data_block.clone()],
-            native: format!("nx:om-object-index#{object_index}"),
-        },
-        tools,
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(
+            local_body_selection(
+                vec![data_block.clone()],
+                format!("nx:om-object-index#{object_index}"),
+            ),
+            tools,
+        )
+        .ok()?,
+
         keep: BodyTrimSide::Unresolved,
     })
 }
@@ -8544,12 +8627,12 @@ fn sew_body_feature_definition(
                 && !blocks.contains(&primary_data_block)
         });
         if let Some(blocks) = offset_store_participants {
-            BodySelection::Local {
-                bodies: std::iter::once(primary_data_block.to_string())
+            local_body_selection(
+                std::iter::once(primary_data_block.to_string())
                     .chain(blocks.iter().map(|block| (*block).to_string()))
                     .collect(),
-                native: native.clone(),
-            }
+                native,
+            )
         } else {
             BodySelection::Native(native.clone())
         }
@@ -8557,7 +8640,7 @@ fn sew_body_feature_definition(
         BodySelection::Native(native)
     };
     Some(FeatureDefinition::SewBodies {
-        bodies,
+        bodies: (bodies).try_into().ok()?,
         gap_tolerance: None,
     })
 }
@@ -8567,20 +8650,24 @@ fn trim_body_feature_definition(
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let native_target = format!("nx:om-object-index#{target_object_index}");
     if operands.is_empty() {
-        return FeatureDefinition::TrimBodies {
-            targets: feature_body_selection(
-                &[target_object_index],
-                body_alias_roots,
-                bodies_by_object_index,
-                native_target,
+        return Ok(FeatureDefinition::TrimBodies {
+            operands: cadmpeg_ir::features::TrimBodyOperands::new(
+                feature_body_selection(
+                    &[target_object_index],
+                    body_alias_roots,
+                    bodies_by_object_index,
+                    native_target,
+                )
+                .into_selection(),
+                BodySelection::Unresolved,
             )
-            .into_selection(),
-            tools: BodySelection::Unresolved,
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             keep: BodyTrimSide::Unresolved,
-        };
+        });
     }
     let tool_object_indices = operands
         .iter()
@@ -8597,11 +8684,15 @@ fn trim_body_feature_definition(
     if operands.iter().any(|operand| {
         operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
     }) {
-        return FeatureDefinition::TrimBodies {
-            targets: BodySelection::Native(native_target),
-            tools: BodySelection::Native(native_tools),
+        return Ok(FeatureDefinition::TrimBodies {
+            operands: cadmpeg_ir::features::TrimBodyOperands::new(
+                BodySelection::Native(native_target),
+                BodySelection::Native(native_tools),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             keep: BodyTrimSide::Unresolved,
-        };
+        });
     }
     let (targets, tools) = atomic_disjoint_body_selections(
         feature_body_selection(
@@ -8617,11 +8708,12 @@ fn trim_body_feature_definition(
             native_tools,
         ),
     );
-    FeatureDefinition::TrimBodies {
-        targets,
-        tools,
+    Ok(FeatureDefinition::TrimBodies {
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
         keep: BodyTrimSide::Unresolved,
-    }
+    })
 }
 
 fn feature_body_outputs(
@@ -8806,7 +8898,7 @@ pub(crate) fn attach_expression_parameters(
     declarations: &[crate::native::om::ExpressionDeclaration],
     parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     let declarations = declarations
         .iter()
         .map(|declaration| (declaration.id.as_str(), declaration))
@@ -8885,6 +8977,8 @@ pub(crate) fn attach_expression_parameters(
                 expression_parameter_id(&expression.id).map(FeatureSourceContent::Parameter)
             })
             .collect::<Vec<_>>();
+        let source_content = cadmpeg_ir::features::FeatureContent::try_from(source_content)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
         if !source_content.is_empty() {
             annotations
                 .derived(&feature_id, "source_content")
@@ -8895,17 +8989,18 @@ pub(crate) fn attach_expression_parameters(
             ordinal: base_ordinal + table_ordinal as u64,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hostglobalvariables".to_string()),
             source_text: None,
             source_content,
-            outputs: Vec::new(),
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::Equations,
-                children: Vec::new(),
-                active_child: None,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::Equations,
+                    children: TreeChildren::default(),
+                },
+            ),
             native_ref: None,
         });
         let mut parameter_ids =
@@ -8959,10 +9054,11 @@ pub(crate) fn attach_expression_parameters(
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
                     crate::native::expression_length_in_millimeters(&expression.unit, value.get())
-                        .map(|value| ParameterValue::Length(Length(value)))
+                        .and_then(Length::new)
+                        .map(ParameterValue::Length)
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle(value.get().to_radians())))
+                    Some(ParameterValue::Angle(Angle::new(value.get().to_radians())?))
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
@@ -9013,7 +9109,7 @@ pub(crate) fn attach_expression_parameters(
                 expression: expression.expression.clone(),
                 display: None,
                 value,
-                dependencies,
+                dependencies: dependencies.into_iter().collect(),
                 properties,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),

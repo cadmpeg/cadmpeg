@@ -84,8 +84,8 @@ fn length_parameter(value: f64) -> DesignParameter {
         name: "D1".into(),
         expression: value.to_string(),
         display: None,
-        value: Some(ParameterValue::Length(Length(value))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(value).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -121,8 +121,8 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -142,7 +142,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(1.0, 2.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -188,7 +188,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
+            radius: Length::new(2.0).unwrap(),
         })
         .unwrap(),
     );
@@ -244,8 +244,8 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1124,9 +1124,9 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -1201,9 +1201,9 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 52.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -1212,9 +1212,9 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 53.0),
-            radius: Length(10.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(10.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -1611,8 +1611,10 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
         name: "D1".into(),
         expression: "90deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1660,8 +1662,10 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
         name: "D1".into(),
         expression: "45deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1703,8 +1707,10 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
         name: "D1".into(),
         expression: "45deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1767,8 +1773,10 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
         name: "D1".into(),
         expression: "45deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1818,8 +1826,10 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
         name: "D1".into(),
         expression: "45deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1871,8 +1881,10 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
         name: "D1".into(),
         expression: "30deg".into(),
         display: None,
-        value: Some(ParameterValue::Angle(Angle(std::f64::consts::PI / 6.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Angle(
+            Angle::new(std::f64::consts::PI / 6.0).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

@@ -45,7 +45,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
+    BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
     Length, LinearTermination, ProfileRef, RadiusSpec, RevolveConstruction, UnresolvedFamily,
 };
@@ -104,7 +104,8 @@ pub(in super::super) fn thicken_feature_definition(
                 &result_surface_ids,
                 &available_features,
             ) {
-                FaceSelection::Generated { faces, native }
+                FaceSelection::generated(faces, native.clone())
+                    .unwrap_or(FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
             }
@@ -114,7 +115,8 @@ pub(in super::super) fn thicken_feature_definition(
     });
     IrFeatureDefinition::Thicken {
         faces,
-        thickness: offset.map(|(magnitude, _)| Length(magnitude)),
+        thickness: offset
+            .and_then(|(magnitude, _)| cadmpeg_ir::features::PositiveLength::new(magnitude)),
         side: offset.map(|(_, side)| side),
     }
 }
@@ -178,18 +180,18 @@ pub(in super::super) fn schema_feature_definition(
     feature_id: u32,
     schema_class: Option<SchemaClass>,
     kind: &str,
-) -> IrFeatureDefinition {
+) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
     if numbered_feature_name_has_family(kind, "Fill") {
-        return filled_surface_feature_definition(scan, ir, feature_id);
+        return Ok(filled_surface_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return thicken_feature_definition(scan, ir, feature_id);
+        return Ok(thicken_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return knit_surface_feature_definition(scan, feature_id);
+        return Ok(knit_surface_feature_definition(scan, feature_id));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
-        return definition;
+        return Ok(definition);
     }
     if schema_class == Some(SchemaClass::Section) {
         let sketch =
@@ -207,9 +209,9 @@ pub(in super::super) fn schema_feature_definition(
                     .any(|candidate| candidate.id == sketch)
                     .then_some(sketch)
             });
-        return IrFeatureDefinition::Sketch {
+        return Ok(IrFeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
-        };
+        });
     }
     if schema_class == Some(SchemaClass::Hole) {
         let stepped_form = stepped_hole_form(
@@ -278,7 +280,8 @@ pub(in super::super) fn schema_feature_definition(
                 &result_surface_ids,
                 &available_features,
             ) {
-                FaceSelection::Generated { faces, native }
+                FaceSelection::generated(faces, native.clone())
+                    .unwrap_or(FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
             }
@@ -331,7 +334,7 @@ pub(in super::super) fn schema_feature_definition(
                         hole.direction[1],
                         hole.direction[2],
                     )),
-                    Some(Length(2.0 * radius)),
+                    Length::new(2.0 * radius),
                     Some(hole.extent),
                     Some(HoleBottom::Flat),
                 )
@@ -342,12 +345,12 @@ pub(in super::super) fn schema_feature_definition(
                 !simple_form
                     && stepped_form.is_none()
                     && stepped_dimensions.is_none()
-                    && diameter
-                        .as_ref()
-                        .is_none_or(|diameter| approximately_equal(diameter.0, *drilled_diameter))
+                    && diameter.as_ref().is_none_or(|diameter| {
+                        approximately_equal(diameter.get(), *drilled_diameter)
+                    })
                     && extent.as_ref().is_none_or(|extent| {
                         matches!(extent, LinearTermination::Blind { length }
-                        if approximately_equal(length.0, *drilled_depth))
+                        if approximately_equal(length.get(), *drilled_depth))
                     })
             });
         let drilled_axis = (drilled_placement.is_none())
@@ -358,101 +361,126 @@ pub(in super::super) fn schema_feature_definition(
             .flatten();
         let placements = position
             .zip(direction)
-            .map(|(position, direction)| HolePlacement::Directed {
-                position,
-                direction,
+            .and_then(|(position, direction)| {
+                Some(HolePlacement::Directed {
+                    position: cadmpeg_ir::features::FinitePoint3::new(position)?,
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                })
             })
             .into_iter()
             .chain(stepped_axis)
             .chain(drilled_axis)
             .collect::<Vec<_>>();
-        return IrFeatureDefinition::Hole {
+        return Ok(IrFeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
             face,
             direction: None,
             placements: (!placements.is_empty()).then_some(placements),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: match (
-                    drilled_dimensions,
-                    simple_form,
-                    stepped_form,
-                    stepped_dimensions,
-                ) {
-                    (Some((_, drill_point_angle, _)), false, None, None) => {
-                        HoleKind::SimpleDrilled {
-                            drill_point_angle: Angle(drill_point_angle),
+            shape: cadmpeg_ir::features::HoleShape::new(
+                cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: match (
+                        drilled_dimensions,
+                        simple_form,
+                        stepped_form,
+                        stepped_dimensions,
+                    ) {
+                        (Some((_, drill_point_angle, _)), false, None, None) => {
+                            cadmpeg_ir::features::InteriorAngle::new(drill_point_angle)
+                                .map_or(HoleKind::Unresolved(None), |drill_point_angle| {
+                                    HoleKind::SimpleDrilled { drill_point_angle }
+                                })
                         }
-                    }
-                    (None, true, None, None) => HoleKind::Simple,
-                    (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
-                        HoleKind::Counterbore {
-                            diameter: Length(diameter),
-                            depth: Length(depth),
+                        (None, true, None, None) => HoleKind::Simple,
+                        (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+                            match (
+                                cadmpeg_ir::features::PositiveLength::new(diameter),
+                                cadmpeg_ir::features::PositiveLength::new(depth),
+                            ) {
+                                (Some(diameter), Some(depth)) => {
+                                    HoleKind::Counterbore { diameter, depth }
+                                }
+                                (diameter, depth) => {
+                                    HoleKind::PartialCounterbore { diameter, depth }
+                                }
+                            }
                         }
-                    }
-                    (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
-                        HoleKind::PartialCounterbore {
-                            diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
-                            depth: dimensions.map(|(_, _, depth)| Length(depth)),
+                        (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
+                            HoleKind::PartialCounterbore {
+                                diameter: dimensions.and_then(|(_, diameter, _)| {
+                                    cadmpeg_ir::features::PositiveLength::new(diameter)
+                                }),
+                                depth: dimensions.and_then(|(_, _, depth)| {
+                                    cadmpeg_ir::features::PositiveLength::new(depth)
+                                }),
+                            }
                         }
-                    }
-                    (_, _, form, _) => HoleKind::Unresolved(form),
+                        (_, _, form, _) => HoleKind::Unresolved(form),
+                    },
+                    specification: None,
                 },
-                specification: None,
-            },
-            exit_kind: None,
-            diameter: diameter
-                .or_else(|| drilled_dimensions.map(|(diameter, _, _)| Length(diameter)))
-                .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
+                None,
+                diameter
+                    .or_else(|| {
+                        drilled_dimensions.and_then(|(diameter, _, _)| Length::new(diameter))
+                    })
+                    .or_else(|| {
+                        stepped_dimensions.and_then(|(diameter, _, _)| Length::new(diameter))
+                    })
+                    .and_then(|diameter| cadmpeg_ir::features::PositiveLength::new(diameter.get())),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+
             extent: extent.or_else(|| {
-                drilled_dimensions.map(|(_, _, depth)| LinearTermination::Blind {
-                    length: Length(depth),
-                })
+                drilled_dimensions
+                    .and_then(|(_, _, depth)| cadmpeg_ir::features::NonZeroLength::new(depth))
+                    .map(|length| LinearTermination::Blind { length })
             }),
             bottom,
             taper_angle: None,
             allow_multi_profile_faces: None,
-        };
+        });
     }
     if schema_class == Some(SchemaClass::Round) {
         let mut observed_radii = round_observed_radii(scan, feature_id);
         observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
-        let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
-            || {
-                if differing_positive_lengths(&observed_radii) {
-                    RadiusSpec::UnresolvedVariable
-                } else {
-                    RadiusSpec::Unresolved
-                }
-            },
-            |radius| RadiusSpec::Constant {
-                radius: Length(radius),
-            },
-        );
-        return IrFeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+        let radius = round_constant_radius(scan, ir, feature_id)
+            .and_then(cadmpeg_ir::features::PositiveLength::new)
+            .map_or_else(
+                || {
+                    if differing_positive_lengths(&observed_radii) {
+                        RadiusSpec::UnresolvedVariable
+                    } else {
+                        RadiusSpec::Unresolved
+                    }
+                },
+                |radius| RadiusSpec::Constant { radius },
+            );
+        return Ok(IrFeatureDefinition::Fillet {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
                 radius,
                 tangency_weight: None,
-            }],
-        };
+            }),
+        });
     }
     if schema_class == Some(SchemaClass::Chamfer) {
-        return IrFeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: feature_edge_selection(scan, ir, feature_id)
-                    .unwrap_or(EdgeSelection::Unresolved),
-                spec: chamfer_constant_distance(scan, ir, feature_id).map_or_else(
-                    || ChamferSpec::Unresolved,
-                    |distance| ChamferSpec::Distance {
-                        distance: Length(distance),
-                    },
-                ),
-            }],
+        return Ok(IrFeatureDefinition::Chamfer {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::ChamferGroup {
+                    edges: feature_edge_selection(scan, ir, feature_id)
+                        .unwrap_or(EdgeSelection::Unresolved),
+                    spec: chamfer_constant_distance(scan, ir, feature_id)
+                        .and_then(cadmpeg_ir::features::PositiveLength::new)
+                        .map_or_else(
+                            || ChamferSpec::Unresolved,
+                            |distance| ChamferSpec::Distance { distance },
+                        ),
+                },
+            ),
             flip_direction: false,
-        };
+        });
     }
     if schema_class == Some(SchemaClass::Draft) {
         let neutral_plane = draft_neutral_plane_selection(scan, feature_id);
@@ -460,12 +488,12 @@ pub(in super::super) fn schema_feature_definition(
             plane: neutral_plane,
             pull: None,
         };
-        return IrFeatureDefinition::Draft {
+        return Ok(IrFeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             anchor,
             angle: None,
             outward: None,
-        };
+        });
     }
     if schema_class == Some(SchemaClass::Protrusion)
         && !feature_section_sweep_semantics_conflict(scan, feature_id)
@@ -487,7 +515,7 @@ pub(in super::super) fn schema_feature_definition(
                 },
             );
             let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
-            return circular_sweep_feature_definition(
+            return Ok(circular_sweep_feature_definition(
                 profile,
                 &sweep,
                 section_sweep_boolean_operation(
@@ -497,7 +525,7 @@ pub(in super::super) fn schema_feature_definition(
                     preceding_features_establish_body(ir),
                 ),
                 sweep_solid(output_kind),
-            );
+            ));
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
@@ -505,9 +533,12 @@ pub(in super::super) fn schema_feature_definition(
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-        return IrFeatureDefinition::Revolve {
+        return Ok(IrFeatureDefinition::Revolve {
             construction: RevolveConstruction::new(
-                profile,
+                profile
+                    .map(TryInto::try_into)
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 axis,
                 extent,
                 sweep_solid(output_kind),
@@ -521,7 +552,7 @@ pub(in super::super) fn schema_feature_definition(
                 output_kind.is_some(),
                 preceding_features_establish_body(ir),
             ),
-        };
+        });
     }
     let recipe = feature_recipe(scan, feature_id);
     if (!feature_section_sweep_semantics_conflict(scan, feature_id)
@@ -561,13 +592,18 @@ pub(in super::super) fn schema_feature_definition(
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
         let profile = profile
             .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
-        return IrFeatureDefinition::Extrude {
+        return Ok(IrFeatureDefinition::Extrude {
             profile,
             direction: direction.map_or(
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector,
-                    source: None,
+                |vector| {
+                    cadmpeg_ir::features::FeatureDirection3::new(vector).map_or(
+                        cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+                        |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                            vector,
+                            source: None,
+                        },
+                    )
                 },
             ),
             start: cadmpeg_ir::features::ExtrudeStart::default(),
@@ -578,11 +614,11 @@ pub(in super::super) fn schema_feature_definition(
             inner_wire_taper: None,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        };
+        });
     }
     if schema_class == Some(SchemaClass::DatumPlane) {
         if let Some(datum) = unique_feature_datum_plane(&scan.planes.datums, feature_id) {
-            return datum_plane_feature_definition(&datum.plane);
+            return Ok(datum_plane_feature_definition(&datum.plane));
         }
         if scan
             .planes
@@ -590,9 +626,9 @@ pub(in super::super) fn schema_feature_definition(
             .iter()
             .any(|datum| datum.feature_id == feature_id)
         {
-            return IrFeatureDefinition::Unresolved {
+            return Ok(IrFeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            };
+            });
         }
         let plane_ids = scan
             .surfaces
@@ -605,22 +641,22 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<BTreeSet<_>>();
         let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
         if plane_ids.len() > 1 {
-            return IrFeatureDefinition::Unresolved {
+            return Ok(IrFeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            };
+            });
         }
         if let [surface_id] = plane_ids.as_slice() {
             if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
-                return IrFeatureDefinition::Unresolved {
+                return Ok(IrFeatureDefinition::Unresolved {
                     family: UnresolvedFamily::DatumPlane,
-                };
+                });
             }
             if let Some(definition) = reconciled_datum_plane_definition(scan, ir, *surface_id) {
-                return definition;
+                return Ok(definition);
             }
-            return IrFeatureDefinition::Unresolved {
+            return Ok(IrFeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
-            };
+            });
         }
         let definitions = scan
             .features
@@ -636,21 +672,23 @@ pub(in super::super) fn schema_feature_definition(
                 {
                     if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
                         let origin: [f64; 3] = values[9..12].try_into().expect("three values");
-                        return IrFeatureDefinition::DatumPlane {
-                            origin: Point3::new(origin[0], origin[1], origin[2]),
-                            normal: Vector3::new(normal[0], normal[1], normal[2]),
-                            u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-                        };
+                        if let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                            Point3::new(origin[0], origin[1], origin[2]),
+                            Vector3::new(normal[0], normal[1], normal[2]),
+                            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                        ) {
+                            return Ok(IrFeatureDefinition::DatumPlane { frame });
+                        }
                     }
                 }
             }
         }
-        return IrFeatureDefinition::Unresolved {
+        return Ok(IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        };
+        });
     }
     if schema_class == Some(SchemaClass::SurfaceMerge) {
-        return knit_surface_feature_definition(scan, feature_id);
+        return Ok(knit_surface_feature_definition(scan, feature_id));
     }
     if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
         let definitions = scan
@@ -672,19 +710,21 @@ pub(in super::super) fn schema_feature_definition(
                         && dot(x_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL
                         && dot(y_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL;
                     if origin.into_iter().all(f64::is_finite) && orthogonal && right_handed {
-                        return IrFeatureDefinition::DatumCoordinateSystem {
-                            origin: Point3::new(origin[0], origin[1], origin[2]),
-                            x_axis: Vector3::new(x_axis[0], x_axis[1], x_axis[2]),
-                            y_axis: Vector3::new(y_axis[0], y_axis[1], y_axis[2]),
-                            z_axis: Vector3::new(z_axis[0], z_axis[1], z_axis[2]),
-                        };
+                        if let Some(frame) = cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                            Point3::new(origin[0], origin[1], origin[2]),
+                            Vector3::new(x_axis[0], x_axis[1], x_axis[2]),
+                            Vector3::new(y_axis[0], y_axis[1], y_axis[2]),
+                            Vector3::new(z_axis[0], z_axis[1], z_axis[2]),
+                        ) {
+                            return Ok(IrFeatureDefinition::DatumCoordinateSystem { frame });
+                        }
                     }
                 }
             }
         }
-        return IrFeatureDefinition::Unresolved {
+        return Ok(IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem,
-        };
+        });
     }
     if numbered_feature_name_has_family(kind, "Extrude")
         && !feature_is_sheet_extrusion(scan, feature_id)
@@ -696,7 +736,9 @@ pub(in super::super) fn schema_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return extrude_feature_definition_with_profile(scan, ir, feature_id, op);
+        return Ok(extrude_feature_definition_with_profile(
+            scan, ir, feature_id, op,
+        ));
     }
     if schema_class == Some(SchemaClass::Surface)
         && class_942_boundary_surface_entity_graph(
@@ -705,40 +747,46 @@ pub(in super::super) fn schema_feature_definition(
             &scan.surfaces.rows,
         )
     {
-        return IrFeatureDefinition::Unresolved {
+        return Ok(IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::BoundarySurface,
-        };
+        });
     }
     if schema_class.and_then(schema_operation_kind).is_none() {
         if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
         {
-            return definition;
+            return Ok(definition);
         }
         if let Some(definition) = unbounded_feature_plane_definition(scan, ir, feature_id) {
-            return definition;
+            return Ok(definition);
         }
     }
-    IrFeatureDefinition::Native {
+    Ok(IrFeatureDefinition::Native {
         kind: kind.into(),
         parameters: feature_parameters(scan, feature_id),
-    }
+    })
 }
 
 pub(in super::super) fn datum_plane_feature_definition(
     datum: &crate::datum::DatumPlane,
 ) -> IrFeatureDefinition {
     let normal = datum.normal();
-    IrFeatureDefinition::DatumPlane {
-        origin: Point3::new(
+    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::new(
             normal[0] * datum.offset,
             normal[1] * datum.offset,
             normal[2] * datum.offset,
         ),
-        normal: Vector3::new(normal[0], normal[1], normal[2]),
-        u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+        Vector3::new(normal[0], normal[1], normal[2]),
+        cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
             normal[0], normal[1], normal[2],
         )),
-    }
+    )
+    .map_or_else(
+        || IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
+        |frame| IrFeatureDefinition::DatumPlane { frame },
+    )
 }
 
 fn reconciled_datum_plane_definition(
@@ -770,9 +818,11 @@ fn reconciled_datum_plane_definition(
         })
         .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
     Some(IrFeatureDefinition::DatumPlane {
-        origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-        normal,
-        u_axis,
+        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            normal,
+            u_axis,
+        )?,
     })
 }
 
@@ -855,9 +905,9 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
 pub(in super::super) fn preceding_features_establish_body(ir: &CadIr) -> bool {
     ir.model.features.iter().any(|feature| {
         feature.suppressed != Some(true)
-            && (!feature.outputs.is_empty()
+            && (!feature.evaluation.outputs().is_empty()
                 || matches!(
-                    feature.definition,
+                    feature.evaluation.definition(),
                     IrFeatureDefinition::Extrude {
                         op: BooleanOp::NewBody,
                         ..

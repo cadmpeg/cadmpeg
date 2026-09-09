@@ -284,7 +284,7 @@ pub(crate) fn resolved_profile_face_group(
     Some(ProfileRef::HistoricalFaces {
         state,
         faces,
-        native: vec![native],
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -565,10 +565,10 @@ pub(crate) fn resolved_extrude_profile_face_group(
     else {
         return None;
     };
-    Some(ProfileRef::HistoricalFaces {
+    Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
         state,
         faces,
-        native: vec![native],
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -693,7 +693,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
         state,
         faces,
-        native: vec![native],
+        native: vec![native.as_str().to_owned()].try_into().ok()?,
     })
 }
 
@@ -882,19 +882,22 @@ fn historical_face_selection_with_native(
         .as_str()
         .split_once('#')
         .map_or(feature.as_str(), |(_, key)| key);
-    Some(FaceSelection::Historical {
-        state: feature_input_topology_id(&feature, previous_state_id),
-        faces: faces
-            .into_iter()
-            .map(|face| {
-                ids::history_input_face_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
-                    face,
-                )
-            })
-            .collect(),
-        native,
-    })
+    Some(
+        FaceSelection::historical(
+            feature_input_topology_id(&feature, previous_state_id),
+            faces
+                .into_iter()
+                .map(|face| {
+                    ids::history_input_face_id(
+                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        face,
+                    )
+                })
+                .collect(),
+            native.clone(),
+        )
+        .unwrap_or(FaceSelection::Native(native)),
+    )
 }
 
 /// Resolve `SplitFace` target groups whose bounded-face member run can include
@@ -1788,92 +1791,101 @@ pub(crate) fn bind_extrude_start_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition};
 
     for feature in features {
-        let FeatureDefinition::Extrude { profile, start, .. } = &mut feature.definition else {
-            continue;
-        };
-        let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
-            continue;
-        };
-        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
-            continue;
-        };
-        let ExtrudeStart::FromFace {
-            face: FaceSelection::Native(native),
-            offset,
-        } = start
-        else {
-            continue;
-        };
-        let retained_offset = *offset;
-        let mut matching_groups = resolution.groups.iter().filter(|group| group.id == *native);
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some()
-            || group.extrude_face_role() != Some(DesignExtrudeFaceRole::Start)
-        {
-            continue;
-        }
-        let Some(stream) = native_stream(&group.id) else {
-            continue;
-        };
-        let mut candidates = Vec::new();
-        for record_index in group.members().iter().map(|member| &member.value) {
-            let mut matching_operands = resolution.operands.iter().filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *record_index
-            });
-            let Some(operand) = matching_operands.next() else {
-                candidates.clear();
-                break;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Extrude { profile, start, .. } = &mut definition else {
+                break 'feature_edit;
             };
-            if matching_operands.next().is_some() {
-                candidates.clear();
-                break;
+            let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
+                break 'feature_edit;
+            };
+            let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+                break 'feature_edit;
+            };
+            let ExtrudeStart::FromFace {
+                face: FaceSelection::Native(native),
+                offset,
+            } = start
+            else {
+                break 'feature_edit;
+            };
+            let retained_offset = *offset;
+            let mut matching_groups = resolution.groups.iter().filter(|group| group.id == *native);
+            let Some(group) = matching_groups.next() else {
+                break 'feature_edit;
+            };
+            if matching_groups.next().is_some()
+                || group.extrude_face_role() != Some(DesignExtrudeFaceRole::Start)
+            {
+                break 'feature_edit;
             }
-            candidates.extend(face_operand_candidates(operand).iter().cloned());
-        }
-        candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        candidates.dedup();
-        if candidates.is_empty() {
-            if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
-                group,
-                resolution.operands,
-                resolution.faces,
-            ) {
-                candidates = geometry_candidates;
-            }
-        }
-        let coincident = candidates
-            .into_iter()
-            .filter(|candidate| {
-                face_coincident_with_sketch(
-                    candidate,
-                    sketch,
-                    resolution.faces,
-                    resolution.surfaces,
-                    resolution.linear_tolerance,
-                    resolution.angular_tolerance,
-                )
-            })
-            .collect::<Vec<_>>();
-        if let [face] = coincident.as_slice() {
-            if retain_face_operand_resolution(group, resolution.operands, face) {
-                *start = ExtrudeStart::FromFace {
-                    face: FaceSelection::Resolved {
-                        faces: vec![face.clone()],
-                        native: native.clone(),
-                    },
-                    offset: retained_offset,
+            let Some(stream) = native_stream(&group.id) else {
+                break 'feature_edit;
+            };
+            let mut candidates = Vec::new();
+            for record_index in group.members().iter().map(|member| &member.value) {
+                let mut matching_operands = resolution.operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *record_index
+                });
+                let Some(operand) = matching_operands.next() else {
+                    candidates.clear();
+                    break;
                 };
+                if matching_operands.next().is_some() {
+                    candidates.clear();
+                    break;
+                }
+                candidates.extend(face_operand_candidates(operand).iter().cloned());
+            }
+            candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+            candidates.dedup();
+            if candidates.is_empty() {
+                if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
+                    group,
+                    resolution.operands,
+                    resolution.faces,
+                ) {
+                    candidates = geometry_candidates;
+                }
+            }
+            let coincident = candidates
+                .into_iter()
+                .filter(|candidate| {
+                    face_coincident_with_sketch(
+                        candidate,
+                        sketch,
+                        resolution.faces,
+                        resolution.surfaces,
+                        resolution.linear_tolerance,
+                        resolution.angular_tolerance,
+                    )
+                })
+                .collect::<Vec<_>>();
+            if let [face] = coincident.as_slice() {
+                if retain_face_operand_resolution(group, resolution.operands, face) {
+                    *start = ExtrudeStart::FromFace {
+                        face: FaceSelection::Resolved {
+                            faces: vec![face.clone()],
+                            native: native.clone(),
+                        },
+                        offset: retained_offset,
+                    };
+                }
             }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Resolve a legacy Extrude target face from a unique forward planar face.
@@ -1887,65 +1899,74 @@ pub(crate) fn bind_extrude_target_faces(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, FeatureDefinition};
 
     for feature in features {
-        let FeatureDefinition::Extrude {
-            profile,
-            direction,
-            extent,
-            ..
-        } = &mut feature.definition
-        else {
-            continue;
-        };
-        let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
-            continue;
-        };
-        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
-            continue;
-        };
-        let Some((sketch_origin, profile_normal, _)) = sketch.resolved_placement() else {
-            continue;
-        };
-        let sweep_direction = match direction {
-            ExtrudeDirection::ProfileNormal => profile_normal,
-            ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
-            ExtrudeDirection::Explicit { vector, .. } => *vector,
-            ExtrudeDirection::Unresolved => continue,
-        };
-        if !sweep_direction.x.is_finite()
-            || !sweep_direction.y.is_finite()
-            || !sweep_direction.z.is_finite()
-            || sweep_direction.norm() <= 0.0
-        {
-            continue;
-        }
-        match extent {
-            ExtrudeExtent::OneSided { side } => bind_extrude_target_face(
-                &mut side.termination,
-                sketch_origin,
-                sweep_direction,
-                resolution,
-            ),
-            ExtrudeExtent::TwoSided { first, second } => {
-                bind_extrude_target_face(
-                    &mut first.termination,
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let FeatureDefinition::Extrude {
+                profile,
+                direction,
+                extent,
+                ..
+            } = &mut definition
+            else {
+                break 'feature_edit;
+            };
+            let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
+                break 'feature_edit;
+            };
+            let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+                break 'feature_edit;
+            };
+            let Some((sketch_origin, profile_normal, _)) = sketch.resolved_placement() else {
+                break 'feature_edit;
+            };
+            let sweep_direction = match direction {
+                ExtrudeDirection::ProfileNormal => profile_normal,
+                ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
+                ExtrudeDirection::Explicit { vector, .. } => vector.get(),
+                ExtrudeDirection::Unresolved => break 'feature_edit,
+            };
+            if !sweep_direction.x.is_finite()
+                || !sweep_direction.y.is_finite()
+                || !sweep_direction.z.is_finite()
+                || sweep_direction.norm() <= 0.0
+            {
+                break 'feature_edit;
+            }
+            match extent {
+                ExtrudeExtent::OneSided { side } => bind_extrude_target_face(
+                    &mut side.termination,
                     sketch_origin,
                     sweep_direction,
                     resolution,
-                );
-                bind_extrude_target_face(
-                    &mut second.termination,
-                    sketch_origin,
-                    sweep_direction.scale(-1.0),
-                    resolution,
-                );
+                ),
+                ExtrudeExtent::TwoSided { first, second } => {
+                    bind_extrude_target_face(
+                        &mut first.termination,
+                        sketch_origin,
+                        sweep_direction,
+                        resolution,
+                    );
+                    bind_extrude_target_face(
+                        &mut second.termination,
+                        sketch_origin,
+                        sweep_direction.scale(-1.0),
+                        resolution,
+                    );
+                }
+                ExtrudeExtent::Symmetric { .. } => {}
             }
-            ExtrudeExtent::Symmetric { .. } => {}
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn bind_extrude_target_face(
@@ -2149,23 +2170,9 @@ pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::fe
         .unit()
         .map(|field| field.value.as_str())
         .is_some_and(design_angle_unit))
-    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value()))
-}
-
-pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
-    use cadmpeg_ir::features::ChamferSpec;
-
-    match spec {
-        ChamferSpec::Distance { distance } => distance.0 > 0.0,
-        ChamferSpec::TwoDistances { first, second } => first.0 > 0.0 && second.0 > 0.0,
-        ChamferSpec::DistanceAngle { distance, angle } => {
-            distance.0 > 0.0 && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
-        }
-        ChamferSpec::Unresolved
-        | ChamferSpec::UnresolvedDistance
-        | ChamferSpec::UnresolvedTwoDistances
-        | ChamferSpec::UnresolvedDistanceAngle => false,
-    }
+    .then_some(cadmpeg_ir::features::Angle::new(
+        parameter.evaluated_value(),
+    )?)
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.
@@ -2511,7 +2518,7 @@ mod tests {
             state,
             feature_input_topology_id(&neutral_feature_id(&scope), 49)
         );
-        assert_eq!(native, group.id);
+        assert_eq!(native.as_str(), group.id);
         assert_eq!(
             faces
                 .iter()
@@ -2959,7 +2966,7 @@ mod tests {
                 state,
                 faces,
                 native,
-            }) if state == expected_state && faces == [expected_face] && native == [group.id]
+            }) if state == expected_state && faces.as_slice() == [expected_face] && native.as_slice() == [group.id]
         ));
     }
 
