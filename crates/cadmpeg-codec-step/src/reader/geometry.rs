@@ -19,7 +19,6 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -42,7 +41,7 @@ pub(super) struct GeometryData {
 
 pub(super) fn placement_transform(
     (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
-) -> Transform {
+) -> Option<Transform> {
     let y_axis = Vector3::new(
         z_axis.y * x_axis.z - z_axis.z * x_axis.y,
         z_axis.z * x_axis.x - z_axis.x * x_axis.z,
@@ -62,7 +61,7 @@ pub(super) fn placement_transform(
     rows[0][3] = origin.x;
     rows[1][3] = origin.y;
     rows[2][3] = origin.z;
-    Transform::from_rows(rows).expect("placement is affine")
+    Transform::from_rows(rows)
 }
 
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
@@ -162,8 +161,7 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         return None;
     }
     let periodic_domain = match geometry {
-        CurveGeometry::Circle(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
         CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
         CurveGeometry::Transformed { basis, .. } => {
             return edge_parameter_range(basis, start, end);
@@ -292,10 +290,7 @@ fn source_curve_parameter_scale(
     scale
 }
 
-pub(super) fn decode(
-    exchange: &Exchange,
-    ir: &mut CadIr,
-) -> Result<StageOutcome<GeometryData>, cadmpeg_core::CodecError> {
+pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
@@ -430,7 +425,7 @@ pub(super) fn decode(
         &mut typed,
         &mut warnings,
         &mut losses,
-    )?;
+    );
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -511,23 +506,7 @@ pub(super) fn decode(
         ir.model.points.push(Point {
             source_object: apll_point_names
                 .get(&id)
-                .map(|name| -> Result<_, cadmpeg_core::CodecError> {
-                    Ok(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
-                        name: name.clone(),
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    })
-                })
-                .transpose()?,
+                .map(|name| super::step_source_association(id, name.clone())),
             id: PointId::from(ids::data("point", id)),
             position,
         });
@@ -755,7 +734,6 @@ pub(super) fn decode(
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
-                .filter(|(_, radius)| radius.is_finite() && *radius > 0.0)
                 .and_then(|((center, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         center,
@@ -771,9 +749,6 @@ pub(super) fn decode(
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "ELLIPSE", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
                 .and_then(
                     |(((center, axis, reference_direction), first_radius), second_radius)| {
                         let first_radius = first_radius * record_scale;
@@ -803,7 +778,6 @@ pub(super) fn decode(
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
-                .filter(|(_, focal_distance)| focal_distance.is_finite() && *focal_distance > 0.0)
                 .and_then(|((vertex, axis, major_direction), focal_distance)| {
                     cadmpeg_ir::geometry::ParabolaCurve::try_new(
                         vertex,
@@ -819,9 +793,6 @@ pub(super) fn decode(
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number))
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
                 .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
                         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
@@ -1089,7 +1060,10 @@ pub(super) fn decode(
                             .collect::<Vec<_>>(),
                     ) {
                         Ok(segments) => segments,
-                        Err(_) => continue,
+                        Err(error) => {
+                            warnings.push(format!("COMPOSITE_CURVE #{id}: {error}"));
+                            continue;
+                        }
                     },
                     self_intersect,
                 },
@@ -1391,7 +1365,7 @@ pub(super) fn decode(
                     .map(SurfaceGeometry::Plane)
             }),
             "CYLINDRICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "CYLINDRICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
                         origin,
@@ -1403,9 +1377,8 @@ pub(super) fn decode(
                     .map(SurfaceGeometry::Cylinder)
                 }),
             "CONICAL_SURFACE" => placement
-                .zip(nonnegative(named_parameter(record, "CONICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
-                .filter(|(_, angle)| angle.is_finite())
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         origin,
@@ -1419,7 +1392,7 @@ pub(super) fn decode(
                     .map(SurfaceGeometry::Cone)
                 }),
             "SPHERICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "SPHERICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::SphereSurface::try_new(
                         center,
@@ -1431,8 +1404,8 @@ pub(super) fn decode(
                     .map(SurfaceGeometry::Sphere)
                 }),
             "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, surface_type, 2)))
-                .zip(positive(named_parameter(record, surface_type, 3)))
+                .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
+                .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
                         cadmpeg_ir::geometry::TorusSurface::try_new(
@@ -2097,7 +2070,7 @@ pub(super) fn decode(
             typed.insert(id);
         }
     }
-    Ok(StageOutcome {
+    StageOutcome {
         value: GeometryData {
             placements,
             transformation_operators,
@@ -2107,7 +2080,7 @@ pub(super) fn decode(
         warnings,
         losses,
         notes: Vec::new(),
-    })
+    }
 }
 
 fn decode_tessellated_curve_sets(
@@ -2117,7 +2090,7 @@ fn decode_tessellated_curve_sets(
     typed: &mut HashSet<u64>,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for (&id, record) in &exchange.records {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2176,25 +2149,11 @@ fn decode_tessellated_curve_sets(
             ir.model.curves.push(Curve {
                 id: CurveId::from(ids::data("curve", curve_key)),
                 geometry: CurveGeometry::Polyline(polyline),
-                source_object: Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                    name: source_name.clone(),
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
+                source_object: Some(super::step_source_association(id, source_name.clone())),
             });
         }
         typed.extend([id, coordinates_id]);
     }
-    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2248,7 +2207,7 @@ pub(super) fn associate_free_geometric_set_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for set in exchange.records.values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
@@ -2272,49 +2231,33 @@ pub(super) fn associate_free_geometric_set_members(
                     )
                 })
                 .filter(|name| !name.is_empty());
-            let association = || -> Result<_, cadmpeg_core::CodecError> {
-                Ok(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{member}"))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                    name: name.clone(),
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                })
-            };
+            let association = || super::step_source_association(member, name.clone());
             if let Some(index) = index.curves.get(&member) {
                 if owned.curves.contains(index) {
                     continue;
                 }
-                if ir.model.curves[index.0].source_object.is_none() {
-                    ir.model.curves[index.0].source_object = Some(association()?);
-                }
+                ir.model.curves[index.0]
+                    .source_object
+                    .get_or_insert_with(association);
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                if ir.model.points[index.0].source_object.is_none() {
-                    ir.model.points[index.0].source_object = Some(association()?);
-                }
+                ir.model.points[index.0]
+                    .source_object
+                    .get_or_insert_with(association);
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                if ir.model.surfaces[index.0].source_object.is_none() {
-                    ir.model.surfaces[index.0].source_object = Some(association()?);
-                }
+                ir.model.surfaces[index.0]
+                    .source_object
+                    .get_or_insert_with(association);
             }
         }
     }
-    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2328,7 +2271,7 @@ pub(super) fn associate_free_representation_members(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for representation in exchange.records.values().filter(|record| {
         record
             .partials
@@ -2354,44 +2297,30 @@ pub(super) fn associate_free_representation_members(
                     )
                 })
                 .filter(|name| !name.is_empty());
-            let association = || -> Result<_, cadmpeg_core::CodecError> {
-                Ok(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{member}"))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
-                    name: source_name.clone(),
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                })
-            };
+            let association = || super::step_source_association(member, source_name.clone());
             if let Some(index) = index.curves.get(&member) {
-                if !owned.curves.contains(index) && ir.model.curves[index.0].source_object.is_none()
-                {
-                    ir.model.curves[index.0].source_object = Some(association()?);
+                if !owned.curves.contains(index) {
+                    ir.model.curves[index.0]
+                        .source_object
+                        .get_or_insert_with(association);
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
-                if !owned.points.contains(index) && ir.model.points[index.0].source_object.is_none()
-                {
-                    ir.model.points[index.0].source_object = Some(association()?);
+                if !owned.points.contains(index) {
+                    ir.model.points[index.0]
+                        .source_object
+                        .get_or_insert_with(association);
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
-                if !owned.surfaces.contains(index)
-                    && ir.model.surfaces[index.0].source_object.is_none()
-                {
-                    ir.model.surfaces[index.0].source_object = Some(association()?);
+                if !owned.surfaces.contains(index) {
+                    ir.model.surfaces[index.0]
+                        .source_object
+                        .get_or_insert_with(association);
                 }
             }
         }
     }
-    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2404,11 +2333,11 @@ pub(super) fn associate_free_presentation_carriers(
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for (style_id, target) in exchange.records.iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses)?;
+        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         let mut targets = Vec::new();
@@ -2423,11 +2352,10 @@ pub(super) fn associate_free_presentation_carriers(
             if index.surfaces.contains_key(&target) {
                 associate_presentation_carrier(
                     exchange, ir, index, owned, target, plane_id, losses,
-                )?;
+                );
             }
         }
     }
-    Ok(())
 }
 
 fn associate_presentation_carrier(
@@ -2438,7 +2366,7 @@ fn associate_presentation_carrier(
     target: u64,
     source_id: u64,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let name = exchange
         .records
         .get(&target)
@@ -2454,36 +2382,28 @@ fn associate_presentation_carrier(
             )
         })
         .filter(|name| !name.is_empty());
-    let association = || -> Result<_, cadmpeg_core::CodecError> {
-        Ok(SourceObjectAssociation {
-            format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-            object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{source_id}"))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-            name: name.clone(),
-            color: None,
-            visible: None,
-            layer: None,
-            instance_path: Vec::new(),
-        })
-    };
+    let association = || super::step_source_association(source_id, name.clone());
     if let Some(index) = index.curves.get(&target) {
-        if !owned.curves.contains(index) && ir.model.curves[index.0].source_object.is_none() {
-            ir.model.curves[index.0].source_object = Some(association()?);
+        if !owned.curves.contains(index) {
+            ir.model.curves[index.0]
+                .source_object
+                .get_or_insert_with(association);
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
-        if !owned.points.contains(index) && ir.model.points[index.0].source_object.is_none() {
-            ir.model.points[index.0].source_object = Some(association()?);
+        if !owned.points.contains(index) {
+            ir.model.points[index.0]
+                .source_object
+                .get_or_insert_with(association);
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
-        if !owned.surfaces.contains(index) && ir.model.surfaces[index.0].source_object.is_none() {
-            ir.model.surfaces[index.0].source_object = Some(association()?);
+        if !owned.surfaces.contains(index) {
+            ir.model.surfaces[index.0]
+                .source_object
+                .get_or_insert_with(association);
         }
     }
-    Ok(())
 }
 
 fn collect_references(value: &Value, references: &mut Vec<u64>) {
@@ -2694,7 +2614,7 @@ pub(super) fn associate_topology_carriers(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for (edge_id, edge) in exchange.entities("EDGE_CURVE") {
         let Some(curve_step) = edge_curve_geometry_reference(edge)
             .and_then(|curve| curve_carrier_record(curve, exchange))
@@ -2708,18 +2628,8 @@ pub(super) fn associate_topology_carriers(
             continue;
         }
         if ir.model.curves[index.0].source_object.is_none() {
-            ir.model.curves[index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{edge_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.curves[index.0].source_object =
+                Some(super::step_source_association(edge_id, None));
         }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
@@ -2733,18 +2643,8 @@ pub(super) fn associate_topology_carriers(
             continue;
         }
         if ir.model.surfaces[index.0].source_object.is_none() {
-            ir.model.surfaces[index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{face_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.surfaces[index.0].source_object =
+                Some(super::step_source_association(face_id, None));
         }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -2758,21 +2658,10 @@ pub(super) fn associate_topology_carriers(
             continue;
         }
         if ir.model.points[index.0].source_object.is_none() {
-            ir.model.points[index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{vertex_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.points[index.0].source_object =
+                Some(super::step_source_association(vertex_id, None));
         }
     }
-    Ok(())
 }
 
 /// Associate the basis carrier owned by each valid replica with that replica.
@@ -2781,11 +2670,7 @@ pub(super) fn associate_topology_carriers(
 /// separate IR geometry entry because the transformed geometry stores the
 /// basis inline. The basis is still a real STEP dependency and must not be
 /// reported as an unowned carrier by generic IR validation.
-pub(super) fn associate_replica_bases(
-    exchange: &Exchange,
-    ir: &mut CadIr,
-    index: &CarrierIndex,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
     for (replica_id, record) in exchange.entities("CURVE_REPLICA") {
         let Some(parent_id) =
             named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
@@ -2796,18 +2681,8 @@ pub(super) fn associate_replica_bases(
             continue;
         };
         if ir.model.curves[parent_index.0].source_object.is_none() {
-            ir.model.curves[parent_index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{replica_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.curves[parent_index.0].source_object =
+                Some(super::step_source_association(replica_id, None));
         }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
@@ -2820,32 +2695,17 @@ pub(super) fn associate_replica_bases(
             continue;
         };
         if ir.model.surfaces[parent_index.0].source_object.is_none() {
-            ir.model.surfaces[parent_index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{replica_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.surfaces[parent_index.0].source_object =
+                Some(super::step_source_association(replica_id, None));
         }
     }
-    Ok(())
 }
 
 /// Associate surfaces referenced only as PCURVE supports with their STEP
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate
 /// support carrier.
-pub(super) fn associate_pcurve_supports(
-    exchange: &Exchange,
-    ir: &mut CadIr,
-    index: &CarrierIndex,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
     let owned_pcurves = ir
         .model
         .coedges
@@ -2887,21 +2747,10 @@ pub(super) fn associate_pcurve_supports(
             continue;
         };
         if ir.model.surfaces[surface_index.0].source_object.is_none() {
-            ir.model.surfaces[surface_index.0].source_object = Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{pcurve_id}"))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            });
+            ir.model.surfaces[surface_index.0].source_object =
+                Some(super::step_source_association(pcurve_id, None));
         }
     }
-    Ok(())
 }
 
 /// Associate surfaces listed by retained `SURFACE_CURVE` records.
@@ -2918,7 +2767,7 @@ pub(super) fn associate_surface_curve_supports(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let retained = retained_surface_curve_ids(exchange, index, owned);
     for (surface_curve_id, record) in
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
@@ -2931,20 +2780,8 @@ pub(super) fn associate_surface_curve_supports(
             .copied()
         {
             if ir.model.curves[curve_index.0].source_object.is_none() {
-                ir.model.curves[curve_index.0].source_object = Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
-                        "#{surface_curve_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                });
+                ir.model.curves[curve_index.0].source_object =
+                    Some(super::step_source_association(surface_curve_id, None));
             }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
@@ -2952,24 +2789,11 @@ pub(super) fn associate_surface_curve_supports(
                 continue;
             };
             if ir.model.surfaces[surface_index.0].source_object.is_none() {
-                ir.model.surfaces[surface_index.0].source_object = Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
-                        "#{surface_curve_id}"
-                    ))
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                    })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                });
+                ir.model.surfaces[surface_index.0].source_object =
+                    Some(super::step_source_association(surface_curve_id, None));
             }
         }
     }
-    Ok(())
 }
 
 fn retained_surface_curve_ids(
@@ -3692,8 +3516,7 @@ fn trimmed_curve_parameter_range(
 
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
-        CurveGeometry::Circle(_) => std::f64::consts::TAU,
-        CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
         CurveGeometry::Nurbs(curve) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
@@ -3785,8 +3608,7 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
             cache: Some(geometry),
             ..
         } => parameter_scale(geometry, angle_scale, linear_parameter_scale),
-        CurveGeometry::Circle(_) => angle_scale,
-        CurveGeometry::Ellipse(_) => angle_scale,
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => angle_scale,
         CurveGeometry::Line(_) => linear_parameter_scale,
         // A replica and the constructions that inherit a parent curve's
         // parameterization keep the parent's parameter units even when their
@@ -3794,14 +3616,14 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
         CurveGeometry::Transformed { basis, .. } => {
             parameter_scale(basis, angle_scale, linear_parameter_scale)
         }
-        CurveGeometry::Parabola(_) => 1.0,
-        CurveGeometry::Hyperbola(_) => 1.0,
-        CurveGeometry::Nurbs(_) => 1.0,
-        CurveGeometry::Polyline(_) => 1.0,
-        CurveGeometry::Degenerate(_) => 1.0,
-        CurveGeometry::Composite { .. } => 1.0,
-        CurveGeometry::Procedural { .. } => 1.0,
-        CurveGeometry::Unknown { .. } => 1.0,
+        CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline(_)
+        | CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => 1.0,
     }
 }
 
@@ -4136,11 +3958,15 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
     if values.len() != 3 {
         return None;
     }
-    Some(Point3::new(
+    let point = Point3::new(
         values[0].number()? * scale,
         values[1].number()? * scale,
         values[2].number()? * scale,
-    ))
+    );
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(point)
 }
 
 fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
@@ -4201,18 +4027,6 @@ fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
         values[1].number()? * scale,
         values[2].number()? * scale,
     ))
-}
-
-fn positive(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn nonnegative(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 #[derive(Clone, Copy)]
@@ -4455,7 +4269,7 @@ fn decode_pcurve_geometry(
                 "CIRCLE" => {
                     let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let radius = positive(named_parameter(record, "CIRCLE", 2))?;
+                    let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Circle(
                         cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius)
@@ -4465,8 +4279,10 @@ fn decode_pcurve_geometry(
                 "ELLIPSE" => {
                     let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
-                    let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
+                    let major_radius =
+                        named_parameter(record, "ELLIPSE", 2).and_then(Value::number)?;
+                    let minor_radius =
+                        named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
                         cadmpeg_ir::geometry::EllipsePcurve::try_new(
@@ -4482,7 +4298,8 @@ fn decode_pcurve_geometry(
                 "PARABOLA" => {
                     let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
                     let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
+                    let focal_distance =
+                        named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
                         cadmpeg_ir::geometry::ParabolaPcurve::try_new(
@@ -4497,8 +4314,10 @@ fn decode_pcurve_geometry(
                 "HYPERBOLA" => {
                     let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
-                    let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
+                    let major_radius =
+                        named_parameter(record, "HYPERBOLA", 2).and_then(Value::number)?;
+                    let minor_radius =
+                        named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
                         cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
@@ -4671,9 +4490,9 @@ fn trimmed_pcurve_parameterization(
 
 fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
     let period = match geometry {
-        PcurveGeometry::Circle(_) => std::f64::consts::TAU,
-        PcurveGeometry::Ellipse(_) => std::f64::consts::TAU,
-        PcurveGeometry::Harmonic(_) => std::f64::consts::TAU,
+        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
+            std::f64::consts::TAU
+        }
         PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
             nurbs.degree(),
             nurbs.knots(),
@@ -4754,10 +4573,10 @@ fn surface_geometry_parameter_scales(
 ) -> Option<[f64; 2]> {
     match geometry {
         SurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
-        SurfaceGeometry::Cylinder(_) => Some([angle_scale, length_scale]),
-        SurfaceGeometry::Cone(_) => Some([angle_scale, length_scale]),
-        SurfaceGeometry::Sphere(_) => Some([angle_scale, angle_scale]),
-        SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
+        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) => {
+            Some([angle_scale, length_scale])
+        }
+        SurfaceGeometry::Sphere(_) | SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
         SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
             ir,
@@ -4955,12 +4774,11 @@ fn directrix_geometry_parameter_scale(
             ..
         } => directrix_geometry_parameter_scale(ir, geometry, length_scale, angle_scale, active),
         CurveGeometry::Line(_) => Some(length_scale),
-        CurveGeometry::Circle(_) => Some(angle_scale),
-        CurveGeometry::Ellipse(_) => Some(angle_scale),
-        CurveGeometry::Parabola(_) => Some(1.0),
-        CurveGeometry::Hyperbola(_) => Some(1.0),
-        CurveGeometry::Nurbs(_) => Some(1.0),
-        CurveGeometry::Polyline(_) => Some(1.0),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some(angle_scale),
+        CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline(_) => Some(1.0),
         CurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
@@ -4984,9 +4802,9 @@ fn directrix_geometry_parameter_scale(
                 } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
                 _ => None,
             }),
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -4996,9 +4814,9 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
             cache: Some(geometry),
             ..
         } => surface_parameter_periods(geometry),
-        SurfaceGeometry::Cylinder(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Cone(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) | SurfaceGeometry::Sphere(_) => {
+            [Some(std::f64::consts::TAU), None]
+        }
         SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
         SurfaceGeometry::Nurbs(surface) => [
             surface
@@ -5023,10 +4841,10 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
                 .flatten(),
         ],
         SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
-        SurfaceGeometry::Plane(_) => [None, None],
-        SurfaceGeometry::Procedural { .. } => [None, None],
-        SurfaceGeometry::Polygonal(_) => [None, None],
-        SurfaceGeometry::Unknown { .. } => [None, None],
+        SurfaceGeometry::Plane(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal(_)
+        | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 

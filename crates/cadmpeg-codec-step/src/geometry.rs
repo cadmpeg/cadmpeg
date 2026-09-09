@@ -28,11 +28,11 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
         SurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
-        SurfaceGeometry::Plane(_) => true,
-        SurfaceGeometry::Cylinder(_) => true,
-        SurfaceGeometry::Cone(_) => true,
-        SurfaceGeometry::Sphere(_) => true,
-        SurfaceGeometry::Torus(_) => true,
+        SurfaceGeometry::Plane(_)
+        | SurfaceGeometry::Cylinder(_)
+        | SurfaceGeometry::Cone(_)
+        | SurfaceGeometry::Sphere(_)
+        | SurfaceGeometry::Torus(_) => true,
         SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal(_)
@@ -62,15 +62,15 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
         CurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && curve_is_supported(basis)
         }
-        CurveGeometry::Line(_) => true,
-        CurveGeometry::Circle(_) => true,
-        CurveGeometry::Ellipse(_) => true,
-        CurveGeometry::Parabola(_) => true,
-        CurveGeometry::Hyperbola(_) => true,
-        CurveGeometry::Degenerate(_) => true,
-        CurveGeometry::Composite { .. } => true,
-        CurveGeometry::Nurbs(_) => true,
-        CurveGeometry::Polyline(_) => true,
+        CurveGeometry::Line(_)
+        | CurveGeometry::Circle(_)
+        | CurveGeometry::Ellipse(_)
+        | CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline(_) => true,
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }
@@ -279,11 +279,11 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 &format!("'',{basis},{},.F.", real(*distance)),
             )
         }
-        PcurveGeometry::Harmonic(_) => return None,
-        PcurveGeometry::Hyperbolic(_) => return None,
-        PcurveGeometry::PolarHarmonic(_) => return None,
-        PcurveGeometry::PolarNurbs { .. } => return None,
-        PcurveGeometry::SphericalGreatCircle(_) => return None,
+        PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle(_) => return None,
     })
 }
 

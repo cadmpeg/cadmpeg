@@ -10,7 +10,6 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -365,20 +364,7 @@ pub(super) fn decode(
                 .find(|surface| surface.id.as_str() == surface_id.as_str())
             {
                 if surface.source_object.is_none() {
-                    surface.source_object = Some(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    });
+                    surface.source_object = Some(super::step_source_association(id, None));
                 }
             }
         }
@@ -418,23 +404,7 @@ pub(super) fn decode(
                 (!declared_items.contains(&id)
                     || unresolved_items.contains(&id)
                     || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
-                .then(|| -> Result<_, cadmpeg_core::CodecError> {
-                    Ok(SourceObjectAssociation {
-                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
-                        instance_path: Vec::new(),
-                    })
-                })
-                .transpose()?,
+                .then(|| super::step_source_association(id, None)),
             ),
         );
         typed.extend([id, coordinate_id]);
@@ -604,7 +574,7 @@ fn repositioned_placement(record: &RawRecord, geometry: &GeometryData) -> Option
         .placements
         .get(&placement_id)
         .copied()
-        .map(super::geometry::placement_transform)
+        .and_then(super::geometry::placement_transform)
 }
 
 fn tessellated_annotation_item(record: &RawRecord) -> Option<u64> {
