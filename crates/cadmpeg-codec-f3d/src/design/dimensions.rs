@@ -2691,7 +2691,7 @@ pub fn project_spatial_dimension_constraints(
                     });
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinitionInput::Native {
-                            native_kind: native_kind.to_string(),
+                            native_kind,
                             native_state,
                             parameter,
                             operands,
@@ -2770,7 +2770,9 @@ pub fn project_spatial_dimension_constraints(
             sketch,
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: parameter.source_kind().to_owned(),
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                        parameter.source_kind(),
+                    )?,
                     native_state: None,
                     parameter: Some(parameter_id),
                     operands: vec![SketchNativeOperand {

@@ -1112,7 +1112,8 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
             norm.is_finite() && (norm - 1.0).abs() <= EPS_SPATIAL_CONSTRAINT_UNIT
         };
         let valid = match &kind {
-            Kind::Native { .. } | Kind::LineLength { .. } => true,
+            Kind::Native { operands, .. } => !operands.is_empty(),
+            Kind::LineLength { .. } => true,
             Kind::Coincident { first, second }
             | Kind::Tangent { first, second }
             | Kind::PointDistance { first, second, .. }
@@ -1186,7 +1187,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
-        native_kind: String,
+        native_kind: NonEmptyString,
         /// Source relation state or subtype discriminator, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,

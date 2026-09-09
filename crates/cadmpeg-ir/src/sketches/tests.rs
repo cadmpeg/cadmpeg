@@ -2748,3 +2748,34 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
     assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
 }
+
+#[test]
+fn spatial_native_constraint_admission_requires_kind_and_operands() {
+    use super::{
+        SpatialSketchConstraintDefinition as Checked,
+        SpatialSketchConstraintDefinitionInput as Kind,
+    };
+    use serde_json::json;
+
+    let wire = json!({
+        "kind": "native", "native_kind": "relation",
+        "operands": [{"native_kind": "entity", "object_index": 1}]
+    });
+    let mut value: Checked = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+    let original = value.clone();
+    assert!(value
+        .edit(|kind| {
+            let Kind::Native { operands, .. } = kind else {
+                panic!("native relation")
+            };
+            operands.clear();
+        })
+        .is_err());
+    assert_eq!(value, original);
+    for (field, invalid) in [("native_kind", json!("")), ("operands", json!([]))] {
+        let mut rejected = wire.clone();
+        rejected[field] = invalid;
+        assert!(serde_json::from_value::<Checked>(rejected).is_err());
+    }
+}
