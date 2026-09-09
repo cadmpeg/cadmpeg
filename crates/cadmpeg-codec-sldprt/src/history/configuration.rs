@@ -464,7 +464,8 @@ pub(crate) fn project_configuration_sketch_states(
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     annotations: &mut cadmpeg_ir::Annotations,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::LossNote>, cadmpeg_core::CodecError> {
+    let mut losses = Vec::new();
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -567,6 +568,7 @@ pub(crate) fn project_configuration_sketch_states(
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
+            &mut losses,
         )?;
         crate::resolved_features::profiles::project_marker_backed_sketches(
             &mut features,
@@ -758,7 +760,7 @@ pub(crate) fn project_configuration_sketch_states(
         }
     }
 
-    Ok(())
+    Ok(losses)
 }
 
 pub(crate) fn inherit_configuration_shared_semantics(
