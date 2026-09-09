@@ -1176,12 +1176,6 @@ fn find_color(
                 let r = rgb.parameters.get(offset)?.number()?;
                 let g = rgb.parameters.get(offset + 1)?.number()?;
                 let b = rgb.parameters.get(offset + 2)?.number()?;
-                if ![r, g, b]
-                    .iter()
-                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-                {
-                    return None;
-                }
                 let name_value = if record.partials.len() == 1 {
                     rgb.parameters.first()
                 } else {
@@ -1259,11 +1253,10 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                if let Some(color) = candidate.color.with_alpha((1.0 - transparency) as f32) {
-                    candidate.color = color;
-                } else {
-                    result = None;
-                }
+                candidate.color = candidate
+                    .color
+                    .with_alpha((1.0 - transparency) as f32)
+                    .unwrap_or(candidate.color);
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
