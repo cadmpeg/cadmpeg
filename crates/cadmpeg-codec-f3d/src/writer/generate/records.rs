@@ -196,10 +196,10 @@ pub(crate) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.len())
+        let count = u32::try_from(body_map.entries.as_map().len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in &body_map.entries {
+        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }

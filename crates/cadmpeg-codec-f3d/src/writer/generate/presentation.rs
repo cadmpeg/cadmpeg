@@ -59,9 +59,23 @@ pub(crate) struct GeneratedBrowserNode {
     pub visible: bool,
 }
 
+/// A nonempty ordered map from ASM body keys to Design entity suffixes.
+pub(crate) struct GeneratedBodyMapEntries(BTreeMap<u64, u64>);
+
+impl GeneratedBodyMapEntries {
+    fn new(entries: BTreeMap<u64, u64>) -> Option<Self> {
+        (!entries.is_empty()).then_some(Self(entries))
+    }
+
+    /// The ordered body-map entries.
+    pub(crate) fn as_map(&self) -> &BTreeMap<u64, u64> {
+        &self.0
+    }
+}
+
 /// A generated body map and its registered identity.
 pub(crate) struct GeneratedBodyMap {
-    pub entries: BTreeMap<u64, u64>,
+    pub entries: GeneratedBodyMapEntries,
     pub record_index: u32,
     pub class_tag: crate::records::DesignClassTag,
 }
@@ -156,8 +170,12 @@ impl GeneratedDesignRegistry {
                 })?
         };
 
-        let body_map_record_index = (!body_map.is_empty())
-            .then(|| allocate_record_index(&mut used_record_indices, &mut next_record_index))
+        let body_map = GeneratedBodyMapEntries::new(body_map)
+            .map(|entries| {
+                let record_index =
+                    allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
+                Ok::<_, CodecError>((entries, record_index))
+            })
             .transpose()?;
         pending.sort_by_key(|(entity_suffix, _, _)| *entity_suffix);
         let mut browser_nodes = Vec::with_capacity(pending.len());
@@ -177,8 +195,8 @@ impl GeneratedDesignRegistry {
             .iter()
             .map(GeneratedDesignType::try_from)
             .collect::<Result<Vec<_>, _>>()?;
-        let body_map = body_map_record_index
-            .map(|record_index| {
+        let body_map = body_map
+            .map(|(entries, record_index)| {
                 let type_index = register_generated_type(
                     &mut types,
                     BODY_MAP_CARRIER_TYPE_GUID,
@@ -188,7 +206,7 @@ impl GeneratedDesignRegistry {
                     vec![u64::from(record_index)],
                 )?;
                 Ok::<_, CodecError>(GeneratedBodyMap {
-                    entries: body_map,
+                    entries,
                     record_index,
                     class_tag: dynamic_class_tag(type_index)?,
                 })
