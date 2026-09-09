@@ -412,3 +412,21 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
         .contains(&"iges_declared_version_flag=4".into()));
     assert!(summary.notes.contains(&"iges_effective_version=3.0".into()));
 }
+
+#[test]
+fn compressed_reserved_fields_use_fixed_directory_right_justification() {
+    let source = std::str::from_utf8(include_bytes!(
+        "../../tests/golden/fixtures/compressed_ascii_5_3.igs"
+    ))
+    .unwrap()
+    .replace("@16_@17_", "@16_LEFT@17_RIGHT");
+    let normalized = normalize_for_test(source.as_bytes()).unwrap();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(normalized), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert_eq!(
+        native.arenas()["entities"][0].fields()["reserved"],
+        serde_json::json!([b"    LEFT", b"   RIGHT"])
+    );
+}

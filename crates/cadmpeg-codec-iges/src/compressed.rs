@@ -418,23 +418,8 @@ fn field_i64(
     })
 }
 
-fn eight_columns(bytes: &[u8]) -> Result<[u8; 8], CodecError> {
-    if bytes.len() > 8 {
-        return Err(malformed("Directory field exceeds eight columns"));
-    }
-    let mut output = [b' '; 8];
-    output[8 - bytes.len()..].copy_from_slice(bytes);
-    Ok(output)
-}
-
-fn reserved_field(bytes: &[u8]) -> Result<[u8; 8], CodecError> {
-    let mut output = eight_columns(bytes)?;
-    output.rotate_left(8 - bytes.len());
-    Ok(output)
-}
-
 fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
-    eight_columns(value.to_string().as_bytes())
+    crate::directory::render_field(value.to_string().as_bytes())
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
@@ -483,78 +468,78 @@ fn append_directory_cards(
         .fields
         .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
     let first_fields = [
-        eight_columns(entity_type)?,
+        crate::directory::render_field(entity_type)?,
         fixed_number(i64::from(parameter_start))?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Structure)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LineFont)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Level)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::View)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Transform)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LabelDisplay)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Status)),
         )?,
     ];
     let second_fields = [
-        eight_columns(entity_type)?,
-        eight_columns(
+        crate::directory::render_field(entity_type)?,
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LineWeight)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Color)),
         )?,
-        eight_columns(entity.fields.get(CompressedField::ParameterLineCount))?,
-        eight_columns(
+        crate::directory::render_field(entity.fields.get(CompressedField::ParameterLineCount))?,
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Form)),
         )?,
-        reserved_field(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::ReservedFirst)),
         )?,
-        reserved_field(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::ReservedSecond)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Label)),
         )?,
-        eight_columns(
+        crate::directory::render_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),

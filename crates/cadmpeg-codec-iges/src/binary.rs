@@ -694,7 +694,6 @@ enum FieldRendering {
 }
 
 fn render_field(value: &BinaryValue, rendering: FieldRendering) -> Result<[u8; 8], CodecError> {
-    let mut field = [b' '; 8];
     let rendered = match rendering {
         FieldRendering::Status => match value {
             BinaryValue::Default => Vec::new(),
@@ -714,14 +713,7 @@ fn render_field(value: &BinaryValue, rendering: FieldRendering) -> Result<[u8; 8
             BinaryValue::String(value) => value.clone(),
         },
     };
-    if rendered.len() > field.len() {
-        return Err(malformed(
-            "Binary Directory field does not fit eight columns",
-        ));
-    }
-    let start = field.len() - rendered.len();
-    field[start..].copy_from_slice(&rendered);
-    Ok(field)
+    crate::directory::render_field(&rendered)
 }
 
 fn render_card(
