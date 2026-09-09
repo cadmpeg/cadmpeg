@@ -148,9 +148,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     losses.extend(reject_unsupported_native(ir)?);
 
     let mut entities = if has_brep_topology(ir) {
-        brep_entities(ir, version, validate_brep_topology(ir, version)?)?
+        brep_entities(validate_brep_topology(ir, version)?)?
     } else if has_trimmed_sheet_topology(ir) {
-        topology_entities(ir, version, validate_trimmed_sheet_topology(ir, version)?)?
+        topology_entities(validate_trimmed_sheet_topology(ir, version)?)?
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
@@ -595,6 +595,8 @@ fn is_native_surface_construction(
 }
 
 struct ValidatedTopology<'a> {
+    ir: &'a CadIr,
+    version: crate::IgesVersion,
     loops: BTreeMap<&'a str, &'a Loop>,
     coedges: BTreeMap<&'a str, &'a cadmpeg_ir::topology::Coedge>,
     pcurves: BTreeMap<&'a str, &'a Pcurve>,
@@ -606,6 +608,8 @@ fn validate_brep_topology(
     version: crate::IgesVersion,
 ) -> Result<ValidatedTopology<'_>, CodecError> {
     let topology = ValidatedTopology {
+        ir,
+        version,
         loops: ir
             .model
             .loops
@@ -1098,11 +1102,9 @@ fn validate_brep_topology(
     Ok(topology)
 }
 
-fn brep_entities(
-    ir: &CadIr,
-    version: crate::IgesVersion,
-    topology: ValidatedTopology<'_>,
-) -> Result<Vec<Entity>, CodecError> {
+fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecError> {
+    let ir = topology.ir;
+    let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let mut topology_point_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
@@ -1860,11 +1862,9 @@ fn same_float(left: f64, right: f64) -> bool {
     (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITE_DEGENERATE
 }
 
-fn topology_entities(
-    ir: &CadIr,
-    version: crate::IgesVersion,
-    topology: ValidatedTopology<'_>,
-) -> Result<Vec<Entity>, CodecError> {
+fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecError> {
+    let ir = topology.ir;
+    let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let topology_edge_ids = ir
         .model
@@ -2099,6 +2099,8 @@ fn validate_trimmed_sheet_topology(
     version: crate::IgesVersion,
 ) -> Result<ValidatedTopology<'_>, CodecError> {
     let topology = ValidatedTopology {
+        ir,
+        version,
         loops: ir
             .model
             .loops
