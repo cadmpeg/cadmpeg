@@ -148,9 +148,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     losses.extend(reject_unsupported_native(ir)?);
 
     let mut entities = if has_brep_topology(ir) {
-        brep_entities(ir, version)?
+        brep_entities(ir, version, validate_brep_topology(ir, version)?)?
     } else if has_trimmed_sheet_topology(ir) {
-        topology_entities(ir, version)?
+        topology_entities(ir, version, validate_trimmed_sheet_topology(ir, version)?)?
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
@@ -594,7 +594,48 @@ fn is_native_surface_construction(
     )
 }
 
-fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(), CodecError> {
+struct ValidatedTopology<'a> {
+    loops: BTreeMap<&'a str, &'a Loop>,
+    coedges: BTreeMap<&'a str, &'a cadmpeg_ir::topology::Coedge>,
+    pcurves: BTreeMap<&'a str, &'a Pcurve>,
+    surfaces: BTreeMap<&'a str, &'a cadmpeg_ir::geometry::Surface>,
+}
+
+fn validate_brep_topology(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<ValidatedTopology<'_>, CodecError> {
+    let topology = ValidatedTopology {
+        loops: ir
+            .model
+            .loops
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        coedges: ir
+            .model
+            .coedges
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        pcurves: ir
+            .model
+            .pcurves
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        surfaces: ir
+            .model
+            .surfaces
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+    };
+
     let bodies = ir
         .model
         .bodies
@@ -742,11 +783,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         face.id
                     )));
                 }
-                let surface = ir
-                    .model
+                let surface = topology
                     .surfaces
-                    .iter()
-                    .find(|surface| surface.id == face.surface)
+                    .get(face.surface.as_str())
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "IGES face {} references missing surface {}",
@@ -756,8 +796,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                 surface_entities_for_ir(ir, &surface.geometry, 0, version)?;
                 if matches!(surface.geometry, SurfaceGeometry::Cylinder(_))
                     && face.loops.iter().any(|loop_id| {
-                        let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
-                        else {
+                        let Some(loop_) = topology.loops.get(loop_id.as_str()).copied() else {
                             return false;
                         };
                         loop_.coedges().len() == 2
@@ -765,10 +804,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                                 .coedges()
                                 .iter()
                                 .filter_map(|coedge_id| {
-                                    ir.model
+                                    topology
                                         .coedges
-                                        .iter()
-                                        .find(|coedge| coedge.id == *coedge_id)
+                                        .get(coedge_id.as_str())
+                                        .copied()
                                         .map(|coedge| coedge.edge.as_str())
                                 })
                                 .collect::<std::collections::BTreeSet<_>>()
@@ -782,11 +821,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                     )));
                 }
                 for loop_id in &face.loops {
-                    let loop_ = ir
-                        .model
+                    let loop_ = topology
                         .loops
-                        .iter()
-                        .find(|loop_| loop_.id == *loop_id)
+                        .get(loop_id.as_str())
+                        .copied()
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "IGES face {} references missing loop {}",
@@ -806,11 +844,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         )));
                     }
                     for coedge_id in loop_.coedges() {
-                        let coedge = ir
-                            .model
+                        let coedge = topology
                             .coedges
-                            .iter()
-                            .find(|coedge| coedge.id == *coedge_id)
+                            .get(coedge_id.as_str())
+                            .copied()
                             .ok_or_else(|| {
                                 CodecError::malformed(format_args!(
                                     "IGES loop {} references missing coedge {}",
@@ -1011,11 +1048,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                 )));
             }
             ring.push(current.clone());
-            let coedge = ir
-                .model
+            let coedge = topology
                 .coedges
-                .iter()
-                .find(|coedge| coedge.id.as_str() == current)
+                .get(current.as_str())
+                .copied()
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "IGES radial ring references missing coedge {current}"
@@ -1036,10 +1072,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
         let senses = ring
             .iter()
             .map(|coedge_id| {
-                ir.model
+                topology
                     .coedges
-                    .iter()
-                    .find(|coedge| coedge.id.as_str() == coedge_id)
+                    .get(coedge_id.as_str())
+                    .copied()
                     .map(|coedge| coedge.sense)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
@@ -1059,11 +1095,14 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
             )));
         }
     }
-    Ok(())
+    Ok(topology)
 }
 
-fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>, CodecError> {
-    validate_brep_topology(ir, version)?;
+fn brep_entities(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    topology: ValidatedTopology<'_>,
+) -> Result<Vec<Entity>, CodecError> {
     let ignored_carriers = ignored_carrier_geometry(ir);
     let mut topology_point_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
@@ -1197,16 +1236,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
     let used_pcurve_ids = used_brep_pcurve_ids(ir);
     let mut pcurve_indices = BTreeMap::new();
     for pcurve_id in used_pcurve_ids {
-        let pcurve = ir
-            .model
-            .pcurves
-            .iter()
-            .find(|candidate| candidate.id.as_str() == pcurve_id)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES topology references missing pcurve {pcurve_id}"
-                ))
-            })?;
+        let pcurve = topology.pcurves[pcurve_id.as_str()];
         let index = entities.len();
         entities.push(pcurve_entity(ir, pcurve)?);
         pcurve_indices.insert(pcurve_id, index);
@@ -1266,30 +1296,10 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                     })?;
                 body_face_ids.push(face.id.clone());
                 for loop_id in &face.loops {
-                    let loop_ = ir
-                        .model
-                        .loops
-                        .iter()
-                        .find(|loop_| loop_.id == *loop_id)
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "IGES face {} references missing loop {}",
-                                face.id, loop_id
-                            ))
-                        })?;
+                    let loop_ = topology.loops[loop_id.as_str()];
                     body_loop_ids.push(loop_.id.clone());
                     for coedge_id in loop_.coedges() {
-                        let coedge = ir
-                            .model
-                            .coedges
-                            .iter()
-                            .find(|coedge| coedge.id == *coedge_id)
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "IGES loop {} references missing coedge {}",
-                                    loop_.id, coedge_id
-                                ))
-                            })?;
+                        let coedge = topology.coedges[coedge_id.as_str()];
                         body_edge_ids.insert(coedge.edge.as_str().to_owned());
                         let edge = ir
                             .model
@@ -1394,14 +1404,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
 
         let mut loop_indices = BTreeMap::new();
         for loop_id in &body_loop_ids {
-            let loop_ = ir
-                .model
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == *loop_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("IGES B-rep loop {loop_id} is missing"))
-                })?;
+            let loop_ = topology.loops[loop_id.as_str()];
             let face = ir
                 .model
                 .faces
@@ -1413,17 +1416,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                         loop_.id, loop_.face
                     ))
                 })?;
-            let surface = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == face.surface)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "IGES B-rep face {} references missing surface {}",
-                        face.id, face.surface
-                    ))
-                })?;
+            let surface = topology.surfaces[face.surface.as_str()];
             let use_count = loop_
                 .coedges()
                 .len()
@@ -1431,17 +1424,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 .ok_or_else(|| CodecError::Malformed("IGES loop use count overflows".into()))?;
             let mut parameters = use_count.to_string();
             for coedge_id in loop_.coedges() {
-                let coedge = ir
-                    .model
-                    .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == *coedge_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "IGES loop {} references missing coedge {}",
-                            loop_.id, coedge_id
-                        ))
-                    })?;
+                let coedge = topology.coedges[coedge_id.as_str()];
                 let edge_index = edge_indices[coedge.edge.as_str()];
                 let edge_list_index = edge_list_index.ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -1877,8 +1860,11 @@ fn same_float(left: f64, right: f64) -> bool {
     (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITE_DEGENERATE
 }
 
-fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>, CodecError> {
-    validate_trimmed_sheet_topology(ir, version)?;
+fn topology_entities(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    topology: ValidatedTopology<'_>,
+) -> Result<Vec<Entity>, CodecError> {
     let ignored_carriers = ignored_carrier_geometry(ir);
     let topology_edge_ids = ir
         .model
@@ -1970,19 +1956,9 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
     let mut pcurve_ids = std::collections::BTreeSet::new();
     for face in &ir.model.faces {
         for loop_id in &face.loops {
-            let loop_ = ir
-                .model
-                .loops
-                .iter()
-                .find(|candidate| candidate.id == *loop_id)
-                .expect("validated loop reference");
+            let loop_ = topology.loops[loop_id.as_str()];
             for coedge_id in loop_.coedges() {
-                let coedge = ir
-                    .model
-                    .coedges
-                    .iter()
-                    .find(|candidate| candidate.id == *coedge_id)
-                    .expect("validated coedge reference");
+                let coedge = topology.coedges[coedge_id.as_str()];
                 pcurve_ids.extend(
                     coedge
                         .pcurves
@@ -1994,12 +1970,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
     }
     let mut pcurve_indices = BTreeMap::new();
     for pcurve_id in pcurve_ids {
-        let pcurve = ir
-            .model
-            .pcurves
-            .iter()
-            .find(|candidate| candidate.id.as_str() == pcurve_id)
-            .expect("validated pcurve reference");
+        let pcurve = topology.pcurves[pcurve_id.as_str()];
         let index = entities.len();
         entities.push(pcurve_entity(ir, pcurve)?);
         pcurve_indices.insert(pcurve_id, index);
@@ -2010,15 +1981,8 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
     let mut faces = ir.model.faces.iter().collect::<Vec<_>>();
     faces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for face in &faces {
-        let surface_index = *surface_indices
-            .get(face.surface.as_str())
-            .expect("validated face surface reference");
-        let surface = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-            .expect("validated face surface reference");
+        let surface_index = surface_indices[face.surface.as_str()];
+        let surface = topology.surfaces[face.surface.as_str()];
         let loops = face_loop_order(ir, face)?;
         let bounded = loops
             .iter()
@@ -2058,9 +2022,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
     }
 
     for face in &faces {
-        let surface_index = *surface_indices
-            .get(face.surface.as_str())
-            .expect("validated face surface reference");
+        let surface_index = surface_indices[face.surface.as_str()];
         let loops = face_loop_order(ir, face)?;
         let bounded = loops
             .iter()
@@ -2069,12 +2031,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
             let representation = loops
                 .first()
                 .and_then(|loop_| loop_.coedges().first())
-                .and_then(|coedge_id| {
-                    ir.model
-                        .coedges
-                        .iter()
-                        .find(|coedge| coedge.id == *coedge_id)
-                })
+                .map(|coedge_id| topology.coedges[coedge_id.as_str()])
                 .map_or(0, |coedge| i32::from(!coedge.pcurves.is_empty()));
             format!(
                 "{representation},{},{}",
@@ -2140,7 +2097,38 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
 fn validate_trimmed_sheet_topology(
     ir: &CadIr,
     version: crate::IgesVersion,
-) -> Result<(), CodecError> {
+) -> Result<ValidatedTopology<'_>, CodecError> {
+    let topology = ValidatedTopology {
+        loops: ir
+            .model
+            .loops
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        coedges: ir
+            .model
+            .coedges
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        pcurves: ir
+            .model
+            .pcurves
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+        surfaces: ir
+            .model
+            .surfaces
+            .iter()
+            .rev()
+            .map(|value| (value.id.as_str(), value))
+            .collect(),
+    };
+
     if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least one face for topology output".into(),
@@ -2277,11 +2265,10 @@ fn validate_trimmed_sheet_topology(
                 face.id
             )));
         }
-        let surface = ir
-            .model
+        let surface = topology
             .surfaces
-            .iter()
-            .find(|candidate| candidate.id == face.surface)
+            .get(face.surface.as_str())
+            .copied()
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES face {} references missing surface {}",
@@ -2324,10 +2311,10 @@ fn validate_trimmed_sheet_topology(
                 )));
             }
             let first_pcurve_count = loop_.coedges().first().and_then(|coedge_id| {
-                ir.model
+                topology
                     .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == *coedge_id)
+                    .get(coedge_id.as_str())
+                    .copied()
                     .map(|coedge| coedge.pcurves.len())
             });
             let Some(first_pcurve_count) = first_pcurve_count else {
@@ -2347,11 +2334,10 @@ fn validate_trimmed_sheet_topology(
                 bounded_representation = Some(loop_has_pcurves);
             }
             for coedge_id in loop_.coedges() {
-                let coedge = ir
-                    .model
+                let coedge = topology
                     .coedges
-                    .iter()
-                    .find(|candidate| candidate.id == *coedge_id)
+                    .get(coedge_id.as_str())
+                    .copied()
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "IGES loop {} references missing coedge {}",
@@ -2473,11 +2459,10 @@ fn validate_trimmed_sheet_topology(
                             pcurve_use.pcurve
                         )));
                     }
-                    let pcurve = ir
-                        .model
+                    let pcurve = topology
                         .pcurves
-                        .iter()
-                        .find(|candidate| candidate.id == pcurve_use.pcurve)
+                        .get(pcurve_use.pcurve.as_str())
+                        .copied()
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "IGES coedge {} references missing pcurve {}",
@@ -2535,7 +2520,7 @@ fn validate_trimmed_sheet_topology(
             "IGES semantic writer requires every topology arena entry to belong to a supported sheet face".into(),
         ));
     }
-    Ok(())
+    Ok(topology)
 }
 
 fn is_decoder_free_geometry_body(body: &cadmpeg_ir::topology::Body) -> bool {
