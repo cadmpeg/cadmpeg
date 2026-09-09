@@ -861,7 +861,10 @@ fn attach_standalone_wires(
                 .geometry;
             let start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
             let end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
-            Some((index, curve_id.clone(), *range, *pos, start, end))
+            let carrier =
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(*range))
+                    .ok()?;
+            Some((index, carrier, *pos, start, end))
         })
         .collect::<Option<Vec<_>>>();
     let Some(plans) = plans else {
@@ -872,6 +875,21 @@ fn attach_standalone_wires(
         RegionId::mint("catia:freeform:wire-region#0".to_string()).expect("identity grammar");
     let shell_id =
         ShellId::mint("catia:freeform:wire-shell#0".to_string()).expect("identity grammar");
+    let edge_ids = plans
+        .iter()
+        .map(|(index, ..)| {
+            EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar")
+        })
+        .collect();
+    let Ok(shell) = Shell::new(
+        shell_id.clone(),
+        region_id.clone(),
+        Vec::new(),
+        edge_ids,
+        Vec::new(),
+    ) else {
+        return false;
+    };
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
@@ -882,8 +900,7 @@ fn attach_standalone_wires(
             Exactness::Inferred,
         );
     }
-    let mut edge_ids = Vec::with_capacity(plans.len());
-    for (index, curve_id, range, pos, start, end) in plans {
+    for (index, carrier, pos, start, end) in plans {
         let point_ids = [
             PointId::mint(format!("catia:freeform:wire-point#{index}:start"))
                 .expect("identity grammar"),
@@ -940,15 +957,11 @@ fn attach_standalone_wires(
         ]);
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            carrier: match cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)) {
-                Ok(carrier) => carrier,
-                Err(_) => return false,
-            },
+            carrier,
             start: vertex_ids[0].clone(),
             end: vertex_ids[1].clone(),
             tolerance: None,
         });
-        edge_ids.push(edge_id);
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -964,14 +977,7 @@ fn attach_standalone_wires(
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(
-        match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return false;
-            }
-        },
-    );
+    ir.model.shells.push(shell);
     true
 }
 
@@ -2977,6 +2983,33 @@ mod tests {
     }
 
     #[test]
+    fn rejected_later_wire_leaves_all_topology_arenas_unchanged() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid linear NURBS"),
+            ),
+            source_object: None,
+        });
+        let before = ir.model.clone();
+        assert!(!attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)],
+        ));
+        assert_eq!(ir.model, before);
+    }
+
+    #[test]
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::b2_line_profile_stream();
@@ -3278,7 +3311,7 @@ mod tests {
                 Some(curve_id.clone()),
                 Some([0.0, 1.0]),
             )
-            .unwrap(),
+            .expect("valid edge carrier"),
             start: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%230".to_string())

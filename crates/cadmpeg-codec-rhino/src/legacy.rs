@@ -1781,10 +1781,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     pcurves: vec![PcurveUse {
                         pcurve: pcurve_id,
                         isoparametric: None,
-                        parameter_range: (Some(pcurve_domain))
-                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
-                            .transpose()
-                            .map_err(CodecError::malformed)?,
+                        parameter_range: Some(
+                            cadmpeg_ir::geometry::DirectedParameterRange::new(pcurve_domain)
+                                .map_err(CodecError::malformed)?,
+                        ),
                     }],
                     use_curve: None,
                 });
