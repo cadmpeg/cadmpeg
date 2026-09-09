@@ -32,7 +32,10 @@ pub fn om(data: &[u8]) {
         crate::om_tokens::NUMBER_PREFIX,
         crate::om_tokens::unit_for(std::str::from_utf8(data).unwrap_or("")),
     );
-    let _ = crate::om::compact_indices(data);
+    let mut at = 0;
+    while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
+        at += token.raw().len();
+    }
     for section in crate::om::indexed_sections(data) {
         let _ = section.numeric_expressions();
     }

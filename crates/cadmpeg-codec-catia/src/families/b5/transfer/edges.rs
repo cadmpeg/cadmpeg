@@ -82,14 +82,6 @@ pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     })
 }
 
-pub(super) fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
-    graph.vertex_points.get(vertex).copied().or_else(|| {
-        vertex
-            .checked_sub(graph.vertex_points.len())
-            .and_then(|index| graph.logical_vertices.get(index).map(|vertex| vertex.point))
-    })
-}
-
 pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
     let parameters = bounded_occurrence_range(parameters, domain)?;
     Some(if parameters[0] < parameters[1] {
@@ -282,14 +274,15 @@ pub(super) fn emit_edges(
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-) -> Option<HashMap<u32, EdgeId>> {
+) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
         let id = EdgeId::mint(format!("catia:b5:edge#{edge_id}")).expect("identity grammar");
         let curve_id =
             CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
-        let endpoints = graph.edge_vertices[&edge_id];
+        let endpoints = graph.vertices.edges()[&edge_id]
+            .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
         let curve_plan = plan
             .edge_curve_plan
             .remove(&edge_id)
@@ -320,12 +313,14 @@ pub(super) fn emit_edges(
             },
         );
         if !matches!(geometry, CurveGeometry::Unknown { .. }) {
-            annotations.derived(&curve_id, "geometry");
+            annotations
+                .derived(&curve_id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(cgm_source("edge", edge_id)),
+            source_object: Some(cgm_source("edge", edge_id)?),
         });
         let procedural = helix
             .as_ref()
@@ -362,12 +357,17 @@ pub(super) fn emit_edges(
             );
             annotations
                 .derived(&procedural_id, "curve")
-                .derived(&procedural_id, "definition");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if cache_fit_tolerance.is_some() {
-                annotations.derived(&procedural_id, "cache_fit_tolerance");
+                annotations
+                    .derived(&procedural_id, "cache_fit_tolerance")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let procedural =
-                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance).ok()?;
+                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
 
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }
@@ -378,12 +378,20 @@ pub(super) fn emit_edges(
             "5e_edge",
             Exactness::ByteExact,
         );
-        annotations.derived(&id, "start").derived(&id, "end");
+        annotations
+            .derived(&id, "start")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "end")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if edge_range.is_some() {
-            annotations.derived(&id, "param_range");
+            annotations
+                .derived(&id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if edge_tolerance.is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         edge_id_map.insert(edge_id, id.clone());
         ir.model.edges.push(Edge {
@@ -397,5 +405,5 @@ pub(super) fn emit_edges(
             tolerance: edge_tolerance,
         });
     }
-    Some(edge_id_map)
+    Ok(edge_id_map)
 }

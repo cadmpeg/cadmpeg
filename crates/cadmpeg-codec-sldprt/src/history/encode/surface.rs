@@ -498,8 +498,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            let cadmpeg_ir::features::FilledSurfaceContinuity::Uniform(continuity) = continuity
-            else {
+            let Some(continuity) = continuity.uniform() else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has per-boundary filled-surface continuity",
                     feature.id
@@ -517,7 +516,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("SupportFaces".into(), support_faces);
             properties.insert(
                 "Continuity".into(),
-                crate::feature_schema::surface_continuity_token(*continuity).into(),
+                crate::feature_schema::surface_continuity_token(continuity).into(),
             );
             properties.insert("MergeResult".into(), merge_result.to_string());
             NeutralFeatureEncoding {

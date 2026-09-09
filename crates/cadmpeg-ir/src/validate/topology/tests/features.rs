@@ -292,7 +292,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
     };
     use crate::sketches::SketchId;
 
-    let sketch = SketchId("synthetic:test:sketch#missing".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
     let definitions = [
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
@@ -1660,15 +1660,18 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     let feature_id =
         FeatureId::mint("synthetic:test:feature#reference-image").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.assets.push(Asset {
-        id: asset_id.clone(),
-        name: Some("reference.png".into()),
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded {
-            data: vec![1, 2, 3],
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            asset_id.clone(),
+            Some("reference.png".into()),
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![1, 2, 3]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -1728,15 +1731,18 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
     let mut ir = unit_cube();
     let face_id = ir.model.faces[0].id.clone();
-    ir.model.assets.push(Asset {
-        id: asset_id.clone(),
-        name: Some("decal.png".into()),
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded {
-            data: vec![1, 2, 3],
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            asset_id.clone(),
+            Some("decal.png".into()),
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![1, 2, 3]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,

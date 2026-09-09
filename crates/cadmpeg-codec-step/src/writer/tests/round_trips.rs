@@ -555,12 +555,8 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.regions[0].shells = vec![ir.model.shells[0].id.clone()];
     ir.model.bodies.truncate(1);
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.2,
-        g: 0.4,
-        b: 0.8,
-        a: 1.0,
-    });
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"));
     ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
 
     let mut output = Vec::new();
@@ -586,12 +582,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     assert_eq!(decoded.ir().model.shells[0].wire_edges.len(), 1);
     assert_eq!(
         decoded.ir().model.bodies[0].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.2,
-            g: 0.4,
-            b: 0.8,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -632,7 +623,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     let mut ir = unit_cube();
     ir.model.tessellations.push(
         Tessellation::from_decoded(
-            "mesh-0",
+            "synthetic:test:tessellation#mesh-0",
             vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
@@ -880,12 +871,9 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.8,
-            g: 0.2,
-            b: 0.1,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.8, 0.2, 0.1, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });
@@ -945,12 +933,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.8,
-            g: 0.2,
-            b: 0.1,
-            a: 0.35,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.8, 0.2, 0.1, 0.35).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });
@@ -963,12 +948,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.8,
-            g: 0.2,
-            b: 0.1,
-            a: 0.65,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.8, 0.2, 0.1, 0.65).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });
@@ -1016,7 +998,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         .model
         .appearances
         .iter()
-        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
         .collect::<Vec<_>>();
     assert_eq!(alphas.len(), 2);
     assert!(alphas.iter().any(|alpha| (*alpha - 0.35).abs() < EPS_ALPHA));

@@ -43,12 +43,10 @@ fn planar_sheet_round_trips_object_attributes() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.bodies[0].name = Some("named sheet".into());
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 64.0 / 255.0,
-        g: 128.0 / 255.0,
-        b: 1.0,
-        a: 192.0 / 255.0,
-    });
+    ir.model.bodies[0].color = Some(
+        cadmpeg_ir::topology::Color::new(64.0 / 255.0, 128.0 / 255.0, 1.0, 192.0 / 255.0)
+            .expect("valid color"),
+    );
     ir.model.bodies[0].visible = Some(false);
     for version in [
         RhinoArchiveVersion::V5,

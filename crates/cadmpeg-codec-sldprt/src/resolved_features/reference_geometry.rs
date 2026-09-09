@@ -1312,7 +1312,7 @@ pub(crate) fn enrich_history_sketch_block_references(
             };
             let identity = (
                 feature_index,
-                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()),
             );
             by_source
                 .entry(source)
@@ -1592,7 +1592,7 @@ pub(crate) fn enrich_history_reference_axes(
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::ReferenceAxis
                 || feature.properties.contains_key("Planes")
             {
@@ -1676,7 +1676,7 @@ pub(crate) fn enrich_history_reference_axes(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
-        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+        if native_object_class(feature.input_class.as_deref().unwrap_or_default())
             != NativeClassKind::ReferenceAxis
             || feature.properties.contains_key("Origin")
             || feature.properties.contains_key("Direction")
@@ -1943,7 +1943,7 @@ pub(super) fn legacy_reference_axis_triads(
             let classes = records
                 .iter()
                 .map(|feature| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 })
                 .collect::<Vec<_>>();
             if classes[..3]

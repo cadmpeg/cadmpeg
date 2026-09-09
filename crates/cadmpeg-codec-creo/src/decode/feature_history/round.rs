@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round and chamfer radius reconstruction from support geometry.
 
-use super::super::sketch::normalized;
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
@@ -12,6 +11,7 @@ use crate::decode::analytic::equations::{
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 use crate::legacy_feature::LegacyRoundRadius;
 use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
+use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
@@ -38,8 +38,8 @@ pub(in super::super) fn parallel_support_radius(
     let mut radii = Vec::new();
     for first in 0..planes.len() {
         for second in first + 1..planes.len() {
-            let first_normal = normalized(planes[first].1)?;
-            let second_normal = normalized(planes[second].1)?;
+            let first_normal = normalize(planes[first].1)?;
+            let second_normal = normalize(planes[second].1)?;
             let alignment = first_normal
                 .iter()
                 .zip(second_normal)
@@ -79,8 +79,8 @@ pub(in super::super) fn slot_fillet_cylinder(
     cap_planes: [PlaneEquation; 2],
     support_planes: &[PlaneEquation],
 ) -> Option<CylinderEquation> {
-    let axis = normalized(cap_planes[0].normal)?;
-    let second_cap_normal = normalized(cap_planes[1].normal)?;
+    let axis = normalize(cap_planes[0].normal)?;
+    let second_cap_normal = normalize(cap_planes[1].normal)?;
     if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
         return None;
     }
@@ -94,12 +94,12 @@ pub(in super::super) fn slot_fillet_cylinder(
     }
     let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
     for first in 0..support_planes.len() {
-        let first_normal = normalized(support_planes[first].normal)?;
+        let first_normal = normalize(support_planes[first].normal)?;
         if dot(first_normal, axis).abs() > EPS_GEOMETRY_AGREEMENT {
             return None;
         }
         for second in first + 1..support_planes.len() {
-            let second_normal = normalized(support_planes[second].normal)?;
+            let second_normal = normalize(support_planes[second].normal)?;
             if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
                 continue;
             }
@@ -142,7 +142,7 @@ pub(in super::super) fn slot_fillet_cylinder(
                 continue;
             };
             let tangent_to_all = support_planes.iter().all(|plane| {
-                let Some(normal) = normalized(plane.normal) else {
+                let Some(normal) = normalize(plane.normal) else {
                     return false;
                 };
                 let distance = dot(
@@ -334,15 +334,15 @@ pub(in super::super) fn prototype_round_radius(
             .into_iter()
             .filter(|(record, row, _)| {
                 matches!(
-                    record.family,
+                    record.record().family,
                     crate::surface::SurfacePrototypeFamily::Torus(_)
                 ) && row.feature_id == feature_id
                     && rows.iter().any(|candidate| candidate.offset == row.offset)
             })
             .filter_map(|(record, _, _)| {
                 Some((
-                    prototype_scalar(record, "radius1")?,
-                    prototype_scalar(record, "radius2")?,
+                    prototype_scalar(record.record(), "radius1")?,
+                    prototype_scalar(record.record(), "radius2")?,
                 ))
             }),
     )?;
@@ -640,8 +640,8 @@ pub(in super::super) fn round_support_radius(
     let local_planes = placed_planes(scan);
     let first_cap = reconciled_model_plane(&local_planes, ir, *first_cap_id)?;
     let second_cap = reconciled_model_plane(&local_planes, ir, *second_cap_id)?;
-    let first_cap_normal = normalized(first_cap.normal)?;
-    let second_cap_normal = normalized(second_cap.normal)?;
+    let first_cap_normal = normalize(first_cap.normal)?;
+    let second_cap_normal = normalize(second_cap.normal)?;
     if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
         return None;
     }
@@ -660,7 +660,7 @@ pub(in super::super) fn round_support_radius(
     support_planes
         .iter()
         .all(|plane| {
-            normalized(plane.normal).is_some_and(|normal| {
+            normalize(plane.normal).is_some_and(|normal| {
                 dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
             })
         })
@@ -680,8 +680,8 @@ pub(in super::super) fn round_support_envelope_cylinder(
 ) -> Option<crate::surface::PositionalCylinderFrame> {
     let ([first_cap, second_cap], support_planes) =
         resolved_round_support_planes(scan, ir, feature_id)?;
-    let axis = normalized(first_cap.normal)?;
-    let second_cap_normal = normalized(second_cap.normal)?;
+    let axis = normalize(first_cap.normal)?;
+    let second_cap_normal = normalize(second_cap.normal)?;
     if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
         return None;
     }
@@ -696,9 +696,9 @@ pub(in super::super) fn round_support_envelope_cylinder(
 
     let mut support_pairs = Vec::new();
     for first in 0..support_planes.len() {
-        let first_normal = normalized(support_planes[first].normal)?;
+        let first_normal = normalize(support_planes[first].normal)?;
         for second in first + 1..support_planes.len() {
-            let second_normal = normalized(support_planes[second].normal)?;
+            let second_normal = normalize(support_planes[second].normal)?;
             if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
                 continue;
             }
@@ -770,13 +770,13 @@ pub(in super::super) fn round_support_envelope_cylinder(
     let origin = std::array::from_fn(|index| {
         start[index] + support_normal[index] * (support_midpoint - start_offset)
     });
-    Some(crate::surface::PositionalCylinderFrame {
+    crate::surface::PositionalCylinderFrame::new(
         origin,
         axis,
-        ref_direction: support_normal,
+        support_normal,
         radius,
-        length: Some(cap_gap),
-    })
+        Some(cap_gap),
+    )
 }
 
 fn resolved_round_support_planes(
@@ -800,8 +800,8 @@ fn resolved_round_support_planes(
         reconciled_model_plane(&local_planes, ir, *first_cap_id)?,
         reconciled_model_plane(&local_planes, ir, *second_cap_id)?,
     ];
-    let first_cap_normal = normalized(caps[0].normal)?;
-    let second_cap_normal = normalized(caps[1].normal)?;
+    let first_cap_normal = normalize(caps[0].normal)?;
+    let second_cap_normal = normalize(caps[1].normal)?;
     if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
         return None;
     }
@@ -821,7 +821,7 @@ fn resolved_round_support_planes(
     support_planes
         .iter()
         .all(|plane| {
-            normalized(plane.normal).is_some_and(|normal| {
+            normalize(plane.normal).is_some_and(|normal| {
                 dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
             })
         })
@@ -943,7 +943,7 @@ pub(in super::super) fn equal_distance_chamfer_setback(
     let setbacks = cones
         .iter()
         .map(|cone| {
-            let axis = normalized(cone.axis())?;
+            let axis = normalize(cone.axis())?;
             (circular_cone(*cone)
                 && cone.radius().abs() <= EPS_RADIUS_NONZERO
                 && (cone.half_angle() - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
@@ -951,7 +951,7 @@ pub(in super::super) fn equal_distance_chamfer_setback(
             support_planes
                 .iter()
                 .filter_map(|plane| {
-                    let normal = normalized(plane.normal)?;
+                    let normal = normalize(plane.normal)?;
                     let denominator = dot(axis, normal);
                     (denominator.abs() >= 1.0 - EPS_DENOMINATOR_ALIGNMENT).then_some(())?;
                     let displacement = [
@@ -987,12 +987,12 @@ fn chamfer_cone_equation(
         .and_then(|record| record.positional_cone_frame())
     {
         return ConeEquation::new(
-            frame.apex,
-            frame.axis,
-            frame.ref_direction,
+            frame.apex(),
+            frame.axis(),
+            frame.ref_direction(),
             0.0,
             1.0,
-            frame.half_angle,
+            frame.half_angle(),
         );
     }
     let id =

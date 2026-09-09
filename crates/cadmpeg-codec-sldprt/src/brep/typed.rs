@@ -28,28 +28,28 @@ const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyNode {
+pub(crate) struct BodyNode {
     /// Stream-local transmit index.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Persistent XT node id.
-    pub node_id: u32,
+    pub(crate) node_id: u32,
     /// The first seven pointer cells in the BODY ownership field sequence.
-    pub topology_refs: [u32; 7],
+    pub(crate) topology_refs: [u32; 7],
     /// Additional pointer cells following the topology fields.  Edited BODY
     /// schemas may retain the region head in this lane; ownership closure
     /// selects it only when REGION links validate.
-    pub ownership_refs: Vec<u32>,
+    pub(crate) ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
-    pub kind: BodyKind,
+    pub(crate) kind: BodyKind,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte after the complete node.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 impl BodyNode {
     /// First shell reference in the body topology fields.
-    pub fn shell(&self) -> u32 {
+    pub(crate) fn shell(&self) -> u32 {
         self.topology_refs[0]
     }
 
@@ -66,59 +66,59 @@ impl BodyNode {
 
 /// A typed SHELL node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShellNode {
+pub(crate) struct ShellNode {
     /// Stream-local transmit index.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Persistent XT node id.
-    pub node_id: u32,
+    pub(crate) node_id: u32,
     /// `[attribute_chain, body, next, back_face, edge, vertex, region, front_face]`.
-    pub refs: [u32; 8],
+    pub(crate) refs: [u32; 8],
     /// Byte offset of the node tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte after the complete node.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegionNode {
+pub(crate) struct RegionNode {
     /// Stream-local transmit index.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Persistent XT node id.
-    pub node_id: u32,
+    pub(crate) node_id: u32,
     /// `[attribute_chain, body, next, previous, shell_head]`.
-    pub refs: [u32; 5],
+    pub(crate) refs: [u32; 5],
     /// Byte offset of the node tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte after the complete node.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// A typed FACE node.  The compact bridge parser uses the same attribute and
 /// node-id prefix, so `attr` is the bridge key used by the graph decoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FaceNode {
+pub(crate) struct FaceNode {
     /// Stream-local transmit index.
-    pub attr: u16,
+    pub(crate) attr: u16,
     /// Persistent XT node id.
-    pub node_id: u32,
+    pub(crate) node_id: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
-    pub refs: [u32; 5],
+    pub(crate) refs: [u32; 5],
     /// Stored face sense marker.
-    pub sense: Sense,
+    pub(crate) sense: Sense,
     /// Byte offset of the node tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte after the complete node.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// All typed ownership nodes recovered from one stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Facts {
-    pub bodies: Vec<BodyNode>,
-    pub shells: Vec<ShellNode>,
-    pub regions: Vec<RegionNode>,
-    pub faces: Vec<FaceNode>,
+pub(crate) struct Facts {
+    pub(crate) bodies: Vec<BodyNode>,
+    pub(crate) shells: Vec<ShellNode>,
+    pub(crate) regions: Vec<RegionNode>,
+    pub(crate) faces: Vec<FaceNode>,
 }
 
 type OwnershipMaps = (
@@ -131,7 +131,7 @@ type OwnershipMaps = (
 impl Facts {
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
-    pub fn merge_missing(&mut self, other: Self) {
+    pub(crate) fn merge_missing(&mut self, other: Self) {
         merge_nodes(&mut self.bodies, other.bodies, |node| node.attr);
         merge_nodes(&mut self.shells, other.shells, |node| node.attr);
         merge_nodes(&mut self.regions, other.regions, |node| node.attr);
@@ -141,7 +141,7 @@ impl Facts {
     /// Return whether the stream contains a closed typed BODY ownership set.
     /// FACE-to-SHELL closure is checked separately against compact bridge
     /// records because a stream may carry subordinate faces in another site.
-    pub fn has_valid_ownership(&self) -> bool {
+    pub(crate) fn has_valid_ownership(&self) -> bool {
         let Some((bodies, regions, shells, _faces)) = self.ownership_maps() else {
             return false;
         };
@@ -155,14 +155,14 @@ impl Facts {
     /// Return FACE attributes whose shell pointers close through the validated
     /// typed ownership maps.  Raw FACE candidates can be byte-window matches
     /// with a pointer outside the u16 attribute identity space.
-    pub fn valid_face_attrs(&self) -> Option<HashSet<u16>> {
+    pub(crate) fn valid_face_attrs(&self) -> Option<HashSet<u16>> {
         let (_, _, _, faces) = self.ownership_maps()?;
         Some(faces.keys().copied().collect())
     }
 
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
-    pub fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
+    pub(crate) fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
         let (bodies, regions, shells, all_faces) = self.ownership_maps()?;
         let faces = if bridge_attrs.is_empty() {
             all_faces
@@ -479,12 +479,12 @@ fn region_chain_from_head(
 
 /// One validated typed body hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hierarchy {
-    pub body: BodyNode,
-    pub regions: Vec<RegionNode>,
-    pub shells: Vec<ShellNode>,
+pub(crate) struct Hierarchy {
+    pub(crate) body: BodyNode,
+    pub(crate) regions: Vec<RegionNode>,
+    pub(crate) shells: Vec<ShellNode>,
     /// `(face bridge attr, owning shell attr)` pairs.
-    pub faces: Vec<(u16, u16)>,
+    pub(crate) faces: Vec<(u16, u16)>,
 }
 
 fn merge_nodes<T, F>(target: &mut Vec<T>, source: Vec<T>, key: F)
@@ -822,7 +822,7 @@ fn schema_faces(bytes: &[u8], offset: usize) -> Vec<FaceNode> {
 }
 
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
-pub fn scan(bytes: &[u8]) -> Facts {
+pub(crate) fn scan(bytes: &[u8]) -> Facts {
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();

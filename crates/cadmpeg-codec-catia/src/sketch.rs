@@ -3,9 +3,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+mod unique_index;
+use unique_index::UniqueIndex;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchNativeOperand,
 };
 
@@ -34,9 +37,9 @@ pub(crate) fn transfer_native_sketch_entities(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: Option<&HashSet<String>>,
 ) -> HashSet<String> {
-    let (object_records, ambiguous_object_records) = unique_object_records(native);
-    let (entity_records, ambiguous_entity_records) = unique_entity_records(native);
-    let (design_objects, ambiguous_design_objects) = unique_design_objects(native);
+    let object_records = unique_object_records(native);
+    let entity_records = unique_entity_records(native);
+    let design_objects = unique_design_objects(native);
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -69,9 +72,7 @@ pub(crate) fn transfer_native_sketch_entities(
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
             continue;
         };
-        if ambiguous_design_objects.contains(sketch_native_ref.as_str())
-            || graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str()))
-        {
+        if graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str())) {
             continue;
         }
         let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
@@ -86,8 +87,7 @@ pub(crate) fn transfer_native_sketch_entities(
         let Some(owner_record) = object_records.get(owner_record_id).copied() else {
             continue;
         };
-        if ambiguous_object_records.contains(owner_record_id)
-            || owner_record.parent != sketch_object.parent
+        if owner_record.parent != sketch_object.parent
             || owner_record.design_object.as_deref() != sketch_object.owner_design_object.as_deref()
         {
             continue;
@@ -97,16 +97,11 @@ pub(crate) fn transfer_native_sketch_entities(
         for child_object in exact_sketch_member_objects(
             owner_record,
             &object_records,
-            &ambiguous_object_records,
             &design_objects_by_owner_record,
-            &ambiguous_design_objects,
+            &design_objects,
         ) {
-            let geometry_fields = admitted_sketch_geometry_fields(
-                child_object,
-                &object_records,
-                &entity_records,
-                &ambiguous_entity_records,
-            );
+            let geometry_fields =
+                admitted_sketch_geometry_fields(child_object, &object_records, &entity_records);
             let [geometry_field] = geometry_fields.as_slice() else {
                 continue;
             };
@@ -114,10 +109,12 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
 
-            let entity_id = SketchEntityId(design_feature::neutral_history_id(
+            let Ok(entity_id) = SketchEntityId::mint(design_feature::neutral_history_id(
                 &geometry_field.id,
                 "sketch-entity",
-            ));
+            )) else {
+                continue;
+            };
             if ir.model.sketch_entities.iter().any(|entity| {
                 entity.id() == &entity_id
                     || (entity.sketch == sketch_id
@@ -125,14 +122,17 @@ pub(crate) fn transfer_native_sketch_entities(
             }) {
                 continue;
             }
-            let Some(native_kind) = geometry_field.class_name().map(str::to_owned) else {
+            let Some(native_kind) = geometry_field
+                .class_name()
+                .and_then(cadmpeg_ir::products::NonEmptyString::new)
+            else {
                 continue;
             };
             ir.model.sketch_entities.push(
                 SketchEntity::new(
                     entity_id,
                     sketch_id.clone(),
-                    SketchGeometry::Native { native_kind },
+                    SketchGeometry::native(native_kind),
                 )
                 .with_native_ref(Some(geometry_field.id.clone())),
             );
@@ -157,9 +157,9 @@ pub(crate) fn transfer_native_sketch_constraints(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: Option<&HashSet<String>>,
 ) -> HashSet<String> {
-    let (object_records, ambiguous_object_records) = unique_object_records(native);
-    let (entity_records, ambiguous_entity_records) = unique_entity_records(native);
-    let (design_objects, ambiguous_design_objects) = unique_design_objects(native);
+    let object_records = unique_object_records(native);
+    let entity_records = unique_entity_records(native);
+    let design_objects = unique_design_objects(native);
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -192,9 +192,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
             continue;
         };
-        if ambiguous_design_objects.contains(sketch_native_ref.as_str())
-            || graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str()))
-        {
+        if graph_scope.is_some_and(|scope| !scope.contains(sketch_object.parent.as_str())) {
             continue;
         }
         let Some(owner_record_id) = sketch_object.owner_record.as_deref() else {
@@ -209,8 +207,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         let Some(owner_record) = object_records.get(owner_record_id).copied() else {
             continue;
         };
-        if ambiguous_object_records.contains(owner_record_id)
-            || owner_record.parent != sketch_object.parent
+        if owner_record.parent != sketch_object.parent
             || owner_record.design_object.as_deref() != sketch_object.owner_design_object.as_deref()
         {
             continue;
@@ -219,9 +216,8 @@ pub(crate) fn transfer_native_sketch_constraints(
         let member_objects = exact_sketch_member_objects(
             owner_record,
             &object_records,
-            &ambiguous_object_records,
             &design_objects_by_owner_record,
-            &ambiguous_design_objects,
+            &design_objects,
         );
         let member_object_ids = member_objects
             .iter()
@@ -238,15 +234,12 @@ pub(crate) fn transfer_native_sketch_constraints(
                     entity.id().clone(),
                 ))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<UniqueIndex<_, _>>();
 
         for child_object in member_objects {
-            for geometry_field in admitted_sketch_geometry_fields(
-                child_object,
-                &object_records,
-                &entity_records,
-                &ambiguous_entity_records,
-            ) {
+            for geometry_field in
+                admitted_sketch_geometry_fields(child_object, &object_records, &entity_records)
+            {
                 let Some(sketch_entity) = sketch_entities.get(geometry_field.id.as_str()) else {
                     continue;
                 };
@@ -254,7 +247,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                     let Some(target_id) = reference.target() else {
                         continue;
                     };
-                    if reference.is_null() || ambiguous_object_records.contains(target_id) {
+                    if reference.is_null() {
                         continue;
                     }
                     let Some(target_record) = object_records.get(target_id).copied() else {
@@ -286,9 +279,6 @@ pub(crate) fn transfer_native_sketch_constraints(
                     let Some(target_entity_record_id) = target_record.entity_record() else {
                         continue;
                     };
-                    if ambiguous_entity_records.contains(target_entity_record_id) {
-                        continue;
-                    }
                     let Some(target_entity_record) =
                         entity_records.get(target_entity_record_id).copied()
                     else {
@@ -346,10 +336,12 @@ pub(crate) fn transfer_native_sketch_constraints(
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &candidate.target_entity_record,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(candidate.target_entity_record.as_str())
@@ -384,7 +376,6 @@ pub(crate) fn transfer_native_sketch_constraints(
             &mut native_properties,
             &candidate.target_references,
             &object_records,
-            &ambiguous_object_records,
         );
         native_properties.insert(
             "catia_relation_incidence_count".to_string(),
@@ -402,10 +393,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                 incidence.reference_offset.to_string(),
             );
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: candidate.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: candidate.target_class,
                 native_state: None,
                 native_flags: None,
@@ -426,6 +415,13 @@ pub(crate) fn transfer_native_sketch_constraints(
                     native_ref: Some(candidate.target_entity_record.clone()),
                 }],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: candidate.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -464,8 +460,7 @@ struct NativeSketchConstraintIncidence {
 fn insert_target_reference_properties(
     properties: &mut BTreeMap<String, String>,
     references: &[CatiaObjectRecordReference],
-    object_records: &HashMap<&str, &CatiaObjectRecord>,
-    ambiguous_object_records: &HashSet<&str>,
+    object_records: &UniqueIndex<&str, &CatiaObjectRecord>,
 ) {
     properties.insert(
         "catia_relation_target_reference_count".to_string(),
@@ -507,15 +502,12 @@ fn insert_target_reference_properties(
         }
         if let Some(target) = reference.target() {
             properties.insert(format!("{prefix}_target_record"), target.to_string());
-            if !ambiguous_object_records.contains(target) {
-                if let Some(target_record) = object_records.get(target) {
-                    if let Some(class_name) = target_record.class_name() {
-                        properties.insert(format!("{prefix}_target_class"), class_name.to_string());
-                    }
-                    if let Some(class_entry) = target_record.class_entry() {
-                        properties
-                            .insert(format!("{prefix}_target_entry"), class_entry.to_string());
-                    }
+            if let Some(target_record) = object_records.get(target) {
+                if let Some(class_name) = target_record.class_name() {
+                    properties.insert(format!("{prefix}_target_class"), class_name.to_string());
+                }
+                if let Some(class_entry) = target_record.class_entry() {
+                    properties.insert(format!("{prefix}_target_entry"), class_entry.to_string());
                 }
             }
         }
@@ -530,17 +522,16 @@ fn insert_target_reference_properties(
 
 fn exact_sketch_member_objects<'a>(
     owner_record: &'a CatiaObjectRecord,
-    object_records: &HashMap<&'a str, &'a CatiaObjectRecord>,
-    ambiguous_object_records: &HashSet<&'a str>,
+    object_records: &UniqueIndex<&'a str, &'a CatiaObjectRecord>,
     design_objects_by_owner_record: &HashMap<&'a str, Vec<&'a CatiaDesignObject>>,
-    ambiguous_design_objects: &HashSet<&'a str>,
+    design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
 ) -> Vec<&'a CatiaDesignObject> {
     owner_record
         .references
         .iter()
         .filter_map(|reference| {
             let target_id = reference.target()?;
-            if reference.is_null() || ambiguous_object_records.contains(target_id) {
+            if reference.is_null() {
                 return None;
             }
             let target_record = object_records.get(target_id).copied()?;
@@ -554,7 +545,7 @@ fn exact_sketch_member_objects<'a>(
             let [child_object] = child_objects.as_slice() else {
                 return None;
             };
-            if ambiguous_design_objects.contains(child_object.id.as_str())
+            if design_objects.get(child_object.id.as_str()).is_none()
                 || child_object.parent != owner_record.parent
                 || child_object.owner_record.as_deref() != Some(target_id)
                 || child_object.owner_entity_id != reference.entity_id()
@@ -568,9 +559,8 @@ fn exact_sketch_member_objects<'a>(
 
 fn admitted_sketch_geometry_fields<'a>(
     child_object: &'a CatiaDesignObject,
-    object_records: &HashMap<&'a str, &'a CatiaObjectRecord>,
-    entity_records: &HashMap<&'a str, &'a CatiaEntityRecord>,
-    ambiguous_entity_records: &HashSet<&'a str>,
+    object_records: &UniqueIndex<&'a str, &'a CatiaObjectRecord>,
+    entity_records: &UniqueIndex<&'a str, &'a CatiaEntityRecord>,
 ) -> Vec<&'a CatiaObjectRecord> {
     child_object
         .fields
@@ -587,7 +577,6 @@ fn admitted_sketch_geometry_fields<'a>(
                 && field.design_object.as_deref() == Some(child_object.id.as_str())
                 && field.owner_entity_id() == Some(child_object.owner_entity_id)
                 && field.entity_id().is_some()
-                && !ambiguous_entity_records.contains(entity_record_id)
                 && entity_record.object_graph == field.parent
                 && entity_record.object_record == field.id
                 && Some(entity_record.entity_id) == field.entity_id()
@@ -634,20 +623,20 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
 
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &entity.id,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(entity.id.as_str())
         }) {
             continue;
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: binding.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: range.constraint.value.clone(),
                 native_state: None,
                 native_flags: None,
@@ -656,6 +645,13 @@ pub(crate) fn transfer_constraint_ranges(
                 parameter: None,
                 operands: vec![binding.operand],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: binding.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -682,64 +678,41 @@ struct ConstraintBinding {
 }
 
 struct ConstraintIndexes<'a> {
-    entity_records: HashMap<&'a str, &'a CatiaEntityRecord>,
-    ambiguous_entity_records: HashSet<&'a str>,
-    object_records: HashMap<&'a str, &'a CatiaObjectRecord>,
-    ambiguous_object_records: HashSet<&'a str>,
-    design_objects: HashMap<&'a str, &'a CatiaDesignObject>,
-    ambiguous_design_objects: HashSet<&'a str>,
-    sketch_ids: HashMap<String, SketchId>,
-    ambiguous_sketch_ids: HashSet<String>,
-    sketch_entities: HashMap<String, (SketchEntityId, SketchId)>,
-    ambiguous_sketch_entities: HashSet<String>,
+    entity_records: UniqueIndex<&'a str, &'a CatiaEntityRecord>,
+    object_records: UniqueIndex<&'a str, &'a CatiaObjectRecord>,
+    design_objects: UniqueIndex<&'a str, &'a CatiaDesignObject>,
+    sketch_ids: UniqueIndex<String, SketchId>,
+    sketch_entities: UniqueIndex<String, (SketchEntityId, SketchId)>,
 }
 
 impl<'a> ConstraintIndexes<'a> {
     fn new(native: &'a CatiaNative, ir: &CadIr) -> Self {
-        let (entity_records, ambiguous_entity_records) = unique_entity_records(native);
-        let (object_records, ambiguous_object_records) = unique_object_records(native);
-        let (design_objects, ambiguous_design_objects) = unique_design_objects(native);
-        let (sketch_ids, ambiguous_sketch_ids) = sketch_ids_by_native_ref(ir);
-        let (sketch_entities, ambiguous_sketch_entities) = sketch_entities_by_native_ref(ir);
+        let entity_records = unique_entity_records(native);
+        let object_records = unique_object_records(native);
+        let design_objects = unique_design_objects(native);
+        let sketch_ids = sketch_ids_by_native_ref(ir);
+        let sketch_entities = sketch_entities_by_native_ref(ir);
         Self {
             entity_records,
-            ambiguous_entity_records,
             object_records,
-            ambiguous_object_records,
             design_objects,
-            ambiguous_design_objects,
             sketch_ids,
-            ambiguous_sketch_ids,
             sketch_entities,
-            ambiguous_sketch_entities,
         }
     }
 }
 
-fn sketch_entities_by_native_ref(
-    ir: &CadIr,
-) -> (HashMap<String, (SketchEntityId, SketchId)>, HashSet<String>) {
-    let mut entities = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for entity in &ir.model.sketch_entities {
-        let Some(native_ref) = entity.native_ref.as_deref() else {
-            continue;
-        };
-        if ambiguous.contains(native_ref) {
-            continue;
-        }
-        if entities
-            .insert(
-                native_ref.to_string(),
+fn sketch_entities_by_native_ref(ir: &CadIr) -> UniqueIndex<String, (SketchEntityId, SketchId)> {
+    ir.model
+        .sketch_entities
+        .iter()
+        .filter_map(|entity| {
+            Some((
+                entity.native_ref.as_deref()?.to_string(),
                 (entity.id().clone(), entity.sketch.clone()),
-            )
-            .is_some()
-        {
-            entities.remove(native_ref);
-            ambiguous.insert(native_ref.to_string());
-        }
-    }
-    (entities, ambiguous)
+            ))
+        })
+        .collect()
 }
 
 fn constraint_binding(
@@ -755,8 +728,7 @@ fn constraint_binding(
 
     let range_record_id = range_entity.object_record.as_str();
     let range_record = indexes.object_records.get(range_record_id).copied()?;
-    if indexes.ambiguous_object_records.contains(range_record_id)
-        || range_record.parent != range_entity.object_graph
+    if range_record.parent != range_entity.object_graph
         || range_record.entity_id() != Some(range_entity.entity_id)
         || range_record.entity_record() != Some(range_entity.id.as_str())
     {
@@ -773,14 +745,6 @@ fn constraint_binding(
     };
     let source_entity = source_entity.filter(|entity| !entity.is_null())?;
     let source_entity_id = source_entity.entity()?;
-    if indexes.ambiguous_entity_records.contains(source_entity_id)
-        || indexes
-            .ambiguous_object_records
-            .contains(source_record_id.as_str())
-    {
-        return None;
-    }
-
     let source_record = indexes
         .object_records
         .get(source_record_id.as_str())
@@ -803,20 +767,14 @@ fn constraint_binding(
     let sketch = sketch_owner_for_design_object(
         source_design_object,
         &indexes.design_objects,
-        &indexes.ambiguous_design_objects,
         &indexes.sketch_ids,
-        &indexes.ambiguous_sketch_ids,
         feature_transfer,
     )?;
-    let entity = if indexes.ambiguous_sketch_entities.contains(source_record_id) {
-        None
-    } else {
-        indexes
-            .sketch_entities
-            .get(source_record_id)
-            .filter(|(_, entity_sketch)| entity_sketch == &sketch)
-            .map(|(entity, _)| entity.clone())
-    };
+    let entity = indexes
+        .sketch_entities
+        .get(source_record_id)
+        .filter(|(_, entity_sketch)| entity_sketch == &sketch)
+        .map(|(entity, _)| entity.clone());
     let object_index = u32::try_from(source_record.ordinal).ok()?;
     let native_kind = source_record
         .class_name()
@@ -843,24 +801,19 @@ fn constraint_binding(
 
 fn sketch_owner_for_design_object<'a>(
     start: &'a str,
-    design_objects: &HashMap<&'a str, &'a CatiaDesignObject>,
-    ambiguous_design_objects: &HashSet<&'a str>,
-    sketch_ids: &HashMap<String, SketchId>,
-    ambiguous_sketch_ids: &HashSet<String>,
+    design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
+    sketch_ids: &UniqueIndex<String, SketchId>,
     feature_transfer: &DesignFeatureTransfer,
 ) -> Option<SketchId> {
     let mut current = Some(start);
     let mut visited = HashSet::new();
 
     while let Some(current_id) = current {
-        if !visited.insert(current_id) || ambiguous_design_objects.contains(current_id) {
+        if !visited.insert(current_id) {
             return None;
         }
         let object = design_objects.get(current_id).copied()?;
         if feature_transfer.feature_ids.contains_key(current_id) {
-            if ambiguous_sketch_ids.contains(current_id) {
-                return None;
-            }
             return sketch_ids.get(current_id).cloned();
         }
         current = object
@@ -917,60 +870,37 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
     }
 }
 
-fn unique_entity_records(
-    native: &CatiaNative,
-) -> (HashMap<&str, &CatiaEntityRecord>, HashSet<&str>) {
-    let mut records = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for entity in &native.entity_records {
-        if records.insert(entity.id.as_str(), entity).is_some() {
-            ambiguous.insert(entity.id.as_str());
-        }
-    }
-    (records, ambiguous)
+fn unique_entity_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaEntityRecord> {
+    native
+        .entity_records
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect()
 }
 
-fn unique_object_records(
-    native: &CatiaNative,
-) -> (HashMap<&str, &CatiaObjectRecord>, HashSet<&str>) {
-    let mut records = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for record in native.object_graphs.iter().flat_map(|graph| &graph.records) {
-        if records.insert(record.id.as_str(), record).is_some() {
-            ambiguous.insert(record.id.as_str());
-        }
-    }
-    (records, ambiguous)
+fn unique_object_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaObjectRecord> {
+    native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record))
+        .collect()
 }
 
-fn unique_design_objects(
-    native: &CatiaNative,
-) -> (HashMap<&str, &CatiaDesignObject>, HashSet<&str>) {
-    let mut objects = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for object in &native.design_objects {
-        if objects.insert(object.id.as_str(), object).is_some() {
-            ambiguous.insert(object.id.as_str());
-        }
-    }
-    (objects, ambiguous)
+fn unique_design_objects(native: &CatiaNative) -> UniqueIndex<&str, &CatiaDesignObject> {
+    native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect()
 }
 
-fn sketch_ids_by_native_ref(ir: &CadIr) -> (HashMap<String, SketchId>, HashSet<String>) {
-    let mut sketch_ids = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for sketch in &ir.model.sketches {
-        let Some(native_ref) = sketch.native_ref.as_deref() else {
-            continue;
-        };
-        if sketch_ids
-            .insert(native_ref.to_string(), sketch.id.clone())
-            .is_some()
-        {
-            ambiguous.insert(native_ref.to_string());
-        }
-    }
-    (sketch_ids, ambiguous)
+fn sketch_ids_by_native_ref(ir: &CadIr) -> UniqueIndex<String, SketchId> {
+    ir.model
+        .sketches
+        .iter()
+        .filter_map(|sketch| Some((sketch.native_ref.as_deref()?.to_string(), sketch.id.clone())))
+        .collect()
 }
 
 #[cfg(test)]
@@ -1108,12 +1038,13 @@ mod tests {
                 .incoming_storage_references
                 .push(crate::native::CatiaEntityIncomingStorageReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
-                        11,
-                        false,
-                        Some("catia:outer:entity-record#source".to_string()),
-                        Some("ConstraintField".to_string()),
-                    )),
+                    source_entity: Some(
+                        crate::native::CatiaEntityReference::resolved_or_unresolved(
+                            11,
+                            Some("catia:outer:entity-record#source".to_string()),
+                            Some("ConstraintField".to_string()),
+                        ),
+                    ),
                 });
             source_record.storage = Some(crate::native::CatiaObjectStorage {
                 storage_ref: 10,
@@ -1127,12 +1058,13 @@ mod tests {
                 .incoming_references
                 .push(CatiaEntityIncomingReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
-                        11,
-                        false,
-                        Some("catia:outer:entity-record#source".to_string()),
-                        Some("ConstraintField".to_string()),
-                    )),
+                    source_entity: Some(
+                        crate::native::CatiaEntityReference::resolved_or_unresolved(
+                            11,
+                            Some("catia:outer:entity-record#source".to_string()),
+                            Some("ConstraintField".to_string()),
+                        ),
+                    ),
                     payload_offset: 9,
                     source: CatiaObjectRecordReferenceSource::Field,
                 });
@@ -1177,12 +1109,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1283,12 +1215,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1432,16 +1364,18 @@ mod tests {
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
         let entity = &ir.model.sketch_entities[0];
-        assert_eq!(entity.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(entity.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             entity.native_ref.as_deref(),
             Some("catia:outer:object-record#geometry-field")
         );
-        assert_eq!(entity.id().0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entity.id().as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(entity.geometry_ref.is_none());
-        assert!(matches!(
-            &entity.geometry,
-            SketchGeometry::Native { native_kind } if native_kind == "2DPoint"
+        assert!(matches!(entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
         ));
     }
 
@@ -1489,6 +1423,24 @@ mod tests {
     }
 
     #[test]
+    fn refuses_constraint_relations_with_duplicate_sketch_entity_references() {
+        let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
+        transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
+        assert!(!ir.model.sketch_entities.is_empty());
+        let duplicates = ir.model.sketch_entities.clone();
+        ir.model.sketch_entities.extend(duplicates.clone());
+        ir.model.sketch_entities.extend(duplicates);
+        assert!(transfer_native_sketch_constraints(
+            &mut ir,
+            &native,
+            &transfer,
+            Some(&graph_scope)
+        )
+        .is_empty());
+        assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
     fn transfers_a_source_closed_native_sketch_constraint_relation() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
 
@@ -1499,19 +1451,19 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#constraint-field")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native sketch constraint");
         };
@@ -1584,7 +1536,10 @@ mod tests {
         );
         assert_eq!(native_properties["catia_relation_incidence_count"], "1");
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entities[0].as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
         assert_eq!(operands[0].native_kind, "ConstraintDYS");
@@ -1652,19 +1607,19 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#range")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native constraint");
         };
@@ -1720,10 +1675,10 @@ mod tests {
 
         assert!(ir.model.parameters.is_empty());
 
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             parameter: constraint_parameter,
             ..
-        } = &ir.model.sketch_constraints[0].definition
+        } = ir.model.sketch_constraints[0].definition.kind()
         else {
             panic!("expected native constraint");
         };
@@ -1733,14 +1688,16 @@ mod tests {
     #[test]
     fn binds_a_constraint_to_an_exact_native_sketch_entity() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
-        let entity_id = SketchEntityId("synthetic:test:sketch-entity#source".to_string());
+        let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string())
+            .expect("valid test fixture");
         ir.model.sketch_entities.push(
             SketchEntity::new(
                 entity_id.clone(),
-                SketchId("synthetic:test:sketch#0".to_string()),
-                SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
-                },
+                SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                        .expect("nonempty source identity"),
+                ),
             )
             .with_native_ref(Some("source-record".to_string())),
         );
@@ -1748,7 +1705,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert_eq!(entities, &vec![entity_id]);
@@ -1760,11 +1718,14 @@ mod tests {
         for suffix in ["first", "second"] {
             ir.model.sketch_entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
-                    SketchId("synthetic:test:sketch#0".to_string()),
-                    SketchGeometry::Native {
-                        native_kind: "2DPoint".to_string(),
-                    },
+                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}"))
+                        .expect("valid test fixture"),
+                    SketchId::mint("synthetic:test:sketch#0".to_string())
+                        .expect("valid test fixture"),
+                    SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                            .expect("nonempty source identity"),
+                    ),
                 )
                 .with_native_ref(Some("source-record".to_string())),
             );
@@ -1773,7 +1734,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());
@@ -1784,11 +1746,14 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
-                SketchId("synthetic:test:other-sketch#0".to_string()),
-                SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
-                },
+                SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
+                    .expect("valid test fixture"),
+                SketchId::mint("synthetic:test:other-sketch#0".to_string())
+                    .expect("valid test fixture"),
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                        .expect("nonempty source identity"),
+                ),
             )
             .with_native_ref(Some("source-record".to_string())),
         );
@@ -1796,7 +1761,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());
@@ -1835,8 +1801,10 @@ mod tests {
         let (mut ir, native, mut transfer, graph_scope) = fixture(false);
         transfer.feature_ids.insert(
             "source-object".to_string(),
-            cadmpeg_ir::features::FeatureId::mint("source-object:feature".to_string())
-                .expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint(
+                "synthetic:test:id#source-object:feature".to_string(),
+            )
+            .expect("identity grammar"),
         );
 
         assert_eq!(

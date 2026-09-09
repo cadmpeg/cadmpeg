@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::{Cursor, Write};
@@ -580,7 +582,10 @@ fn decode_yields_metadata_and_honest_report() {
         Some("Autodesk Neutron")
     );
     // resabs/resnor were carried into tolerances.
-    assert_eq!(result.ir().tolerances.linear, 1.0e-6);
+    assert_eq!(
+        result.ir().tolerances.linear.get(),
+        EXPECTED_HEADER_LINEAR_TOLERANCE
+    );
     assert!(result
         .source_fidelity()
         .annotations

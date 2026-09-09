@@ -63,6 +63,7 @@ pub fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,
+    notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
@@ -629,8 +630,11 @@ pub fn write_semantic(
             }
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
-                let (patched_bytes, patched_guids) =
-                    crate::materials::patch_protein_appearances(&bytes, &protein_appearance_edits)?;
+                let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
+                    &bytes,
+                    &protein_appearance_edits,
+                    notes,
+                )?;
                 bytes = patched_bytes;
                 patched_protein_appearances.extend(patched_guids);
             }

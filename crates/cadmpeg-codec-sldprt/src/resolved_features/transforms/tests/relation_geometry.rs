@@ -8,7 +8,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -17,51 +18,57 @@ fn binary_relations_require_matching_evaluated_geometry() {
     use SketchRelationKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
-    let sketch = SketchId("sketch".into());
-    let entity =
-        |id: &str, geometry| SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry);
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let entity = |id: &str, geometry| {
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
+    };
     let horizontal = entity(
-        "horizontal",
-        SketchGeometry::Line {
+        "synthetic:test:id#horizontal",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let parallel = entity(
-        "parallel",
-        SketchGeometry::Line {
+        "synthetic:test:id#parallel",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 2.0),
             end: Point2::new(4.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let perpendicular = entity(
-        "perpendicular",
-        SketchGeometry::Line {
+        "synthetic:test:id#perpendicular",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(0.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     let collinear = entity(
-        "collinear",
-        SketchGeometry::Line {
+        "synthetic:test:id#collinear",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(6.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let circle = |id: &str, u, v, radius| {
         entity(
             id,
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(u, v),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
     };
-    let first_circle = circle("first-circle", 0.0, 2.0, 2.0);
-    let equal_circle = circle("equal-circle", 4.0, 2.0, 2.0);
-    let concentric_circle = circle("concentric-circle", 0.0, 2.0, 1.0);
-    let coradial_circle = circle("coradial-circle", 0.0, 2.0, 2.0);
-    let unrelated_circle = circle("unrelated-circle", 8.0, 8.0, 3.0);
+    let first_circle = circle("synthetic:test:id#first-circle", 0.0, 2.0, 2.0);
+    let equal_circle = circle("synthetic:test:id#equal-circle", 4.0, 2.0, 2.0);
+    let concentric_circle = circle("synthetic:test:id#concentric-circle", 0.0, 2.0, 1.0);
+    let coradial_circle = circle("synthetic:test:id#coradial-circle", 0.0, 2.0, 2.0);
+    let unrelated_circle = circle("synthetic:test:id#unrelated-circle", 8.0, 8.0, 3.0);
 
     for (kind, first, second) in [
         (Parallel, &horizontal, &parallel),
@@ -96,57 +103,64 @@ fn binary_relations_require_matching_evaluated_geometry() {
 
 #[test]
 fn locus_relations_require_matching_evaluated_geometry() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let entity = |id: &str, geometry| {
-        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
             .with_construction(true)
     };
     let mut first = entity(
-        "first",
-        SketchGeometry::Point {
+        "synthetic:test:id#first",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let mut second = entity(
-        "second",
-        SketchGeometry::Point {
+        "synthetic:test:id#second",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
-        "line",
-        SketchGeometry::Line {
+        "synthetic:test:id#line",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(-2.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let mut arc = entity(
-        "arc",
-        SketchGeometry::Arc {
+        "synthetic:test:id#arc",
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
             start_angle: cadmpeg_ir::features::Angle(0.0),
             end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
-        },
+        })
+        .unwrap(),
     );
     let symmetric_first = entity(
-        "symmetric-first",
-        SketchGeometry::Point {
+        "synthetic:test:id#symmetric-first",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(-1.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let mut symmetric_second = entity(
-        "symmetric-second",
-        SketchGeometry::Point {
+        "synthetic:test:id#symmetric-second",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let symmetry_axis = entity(
-        "symmetry-axis",
-        SketchGeometry::Line {
+        "synthetic:test:id#symmetry-axis",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -3.0),
             end: Point2::new(0.0, 3.0),
-        },
+        })
+        .unwrap(),
     );
     let mut first_marker = marker("first-marker", None);
     let second_marker = marker("second-marker", None);
@@ -294,7 +308,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -304,7 +318,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -314,7 +328,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Midpoint { .. })
+        Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -324,7 +338,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::ArcAngle { .. })
+        Some(SketchConstraintDefinitionInput::ArcAngle { .. })
     ));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -338,7 +352,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Symmetric {
+        Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(symmetric_first.id().clone()),
             second: SketchLocus::Entity(symmetric_second.id().clone()),
             axis: symmetry_axis.id().clone(),
@@ -352,16 +366,17 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::AtIntersection {
+        Some(SketchConstraintDefinitionInput::AtIntersection {
             point: SketchLocus::Entity(first.id().clone()),
             first: line.id().clone(),
             second: symmetry_axis.id().clone(),
         })
     );
 
-    second.geometry = SketchGeometry::Point {
+    second.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let definition = typed_marker_relation_definition_in_sketch(
         &coincident,
         &sketch,
@@ -372,7 +387,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     .expect("typed coincident relation");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::CoincidentLoci { .. }
+        SketchConstraintDefinitionInput::CoincidentLoci { .. }
     ));
     assert!(marker_relation_is_inactive(
         &coincident,
@@ -380,10 +395,11 @@ fn locus_relations_require_matching_evaluated_geometry() {
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
     ));
     first.clone_from(&entity(
-        "first",
-        SketchGeometry::Point {
+        "synthetic:test:id#first",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -393,7 +409,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
@@ -403,14 +419,15 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
-    arc.geometry = SketchGeometry::Arc {
+    arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(1.0),
         start_angle: cadmpeg_ir::features::Angle(0.0),
         end_angle: cadmpeg_ir::features::Angle(std::f64::consts::PI),
-    };
+    })
+    .unwrap();
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
             &arc_angle,
@@ -419,11 +436,12 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
-    symmetric_second.geometry = SketchGeometry::Point {
+    symmetric_second.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(2.0, 2.0),
-    };
+    })
+    .unwrap();
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
             &symmetric,
@@ -432,25 +450,26 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Native { .. })
+        Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
 
 #[test]
 fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, u: f64, v: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("distance").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -461,10 +480,10 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         pmi: None,
         native_ref: None,
     };
-    let first = point("first", 0.0, 0.0);
-    let coincident_first = point("z-coincident-first", 0.0, 0.0);
-    let second = point("second", 3.0, 4.0);
-    let unrelated = point("unrelated", 20.0, 20.0);
+    let first = point("synthetic:test:id#first", 0.0, 0.0);
+    let coincident_first = point("synthetic:test:id#z-coincident-first", 0.0, 0.0);
+    let second = point("synthetic:test:id#second", 3.0, 4.0);
+    let unrelated = point("synthetic:test:id#unrelated", 20.0, 20.0);
     assert_eq!(
         unique_profile_distance_loci_pair(
             &sketch,
@@ -482,7 +501,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         ))
     );
 
-    let ambiguous = point("ambiguous", 23.0, 24.0);
+    let ambiguous = point("synthetic:test:id#ambiguous", 23.0, 24.0);
     assert_eq!(
         unique_profile_distance_loci_pair(
             &sketch,
@@ -495,22 +514,23 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
 
 #[test]
 fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, u: f64, v: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
-    let first = point("first", 0.0, 0.0);
-    let second = point("second", 5.0, 20.0);
-    let unrelated = point("unrelated", 100.0, 100.0);
+    let first = point("synthetic:test:id#first", 0.0, 0.0);
+    let second = point("synthetic:test:id#second", 5.0, 20.0);
+    let unrelated = point("synthetic:test:id#unrelated", 100.0, 100.0);
     let parameter = DesignParameter {
-        id: ParameterId::mint("distance").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -525,21 +545,27 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second_locus = SketchLocus::Entity(second.id().clone());
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_axis_distance_locus(&sketch, &first_locus, &parameter, &entities, true,),
+        unique_profile_axis_distance_locus(
+            &sketch,
+            &first_locus,
+            &parameter,
+            &entities,
+            ProfileAxis::U,
+        ),
         Some(second_locus.clone())
     );
     assert_eq!(
-        unique_profile_axis_distance_pair(&sketch, &parameter, &entities, true),
+        unique_profile_axis_distance_pair(&sketch, &parameter, &entities, ProfileAxis::U),
         Some((first_locus, second_locus))
     );
 
-    let ambiguous = point("ambiguous", 10.0, 30.0);
+    let ambiguous = point("synthetic:test:id#ambiguous", 10.0, 30.0);
     assert_eq!(
         unique_profile_axis_distance_pair(
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-            true,
+            ProfileAxis::U,
         ),
         None
     );
@@ -547,24 +573,32 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
 
 #[test]
 fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
-    let first = line("first", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
-    let second = line("second", Point2::new(0.0, 5.0), Point2::new(10.0, 5.0));
+    let first = line(
+        "synthetic:test:id#first",
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let second = line(
+        "synthetic:test:id#second",
+        Point2::new(0.0, 5.0),
+        Point2::new(10.0, 5.0),
+    );
     let unrelated = line(
-        "unrelated",
+        "synthetic:test:id#unrelated",
         Point2::new(20.0, 20.0),
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
-        id: ParameterId::mint("distance").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -585,7 +619,11 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Some((first.id().clone(), second.id().clone()))
     );
 
-    let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
+    let wrong = line(
+        "synthetic:test:id#wrong",
+        Point2::new(0.0, 2.0),
+        Point2::new(10.0, 2.0),
+    );
     assert_eq!(
         unique_repaired_profile_line_distance_pair(
             &sketch,
@@ -603,7 +641,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     );
 
     let other_solved = line(
-        "other-solved",
+        "synthetic:test:id#other-solved",
         Point2::new(0.0, -5.0),
         Point2::new(10.0, -5.0),
     );
@@ -619,12 +657,12 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     );
 
     let unrelated_first = line(
-        "unrelated-first",
+        "synthetic:test:id#unrelated-first",
         Point2::new(20.0, 20.0),
         Point2::new(30.0, 20.0),
     );
     let unrelated_second = line(
-        "unrelated-second",
+        "synthetic:test:id#unrelated-second",
         Point2::new(20.0, 25.0),
         Point2::new(30.0, 25.0),
     );
@@ -644,7 +682,11 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         None
     );
 
-    let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
+    let ambiguous = line(
+        "synthetic:test:id#ambiguous",
+        Point2::new(0.0, 10.0),
+        Point2::new(10.0, 10.0),
+    );
     assert_eq!(
         unique_profile_line_distance_pair(
             &sketch,
@@ -657,20 +699,32 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
 
 #[test]
 fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
-    let horizontal = line("horizontal", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
-    let vertical = line("vertical", Point2::new(0.0, 0.0), Point2::new(0.0, 10.0));
-    let diagonal = line("diagonal", Point2::new(20.0, 20.0), Point2::new(21.0, 21.0));
+    let horizontal = line(
+        "synthetic:test:id#horizontal",
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let vertical = line(
+        "synthetic:test:id#vertical",
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 10.0),
+    );
+    let diagonal = line(
+        "synthetic:test:id#diagonal",
+        Point2::new(20.0, 20.0),
+        Point2::new(21.0, 21.0),
+    );
     let parameter = DesignParameter {
-        id: ParameterId::mint("angle").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#angle").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "90deg".into(),
@@ -692,7 +746,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     );
 
     let wrong = line(
-        "wrong",
+        "synthetic:test:id#wrong",
         Point2::new(0.0, 0.0),
         Point2::new(3.0_f64.sqrt(), 1.0),
     );
@@ -712,7 +766,11 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
-    let ambiguous = line("ambiguous", Point2::new(5.0, 0.0), Point2::new(5.0, 10.0));
+    let ambiguous = line(
+        "synthetic:test:id#ambiguous",
+        Point2::new(5.0, 0.0),
+        Point2::new(5.0, 10.0),
+    );
     assert_eq!(
         unique_repaired_profile_line_angle_pair(
             &sketch,
@@ -730,12 +788,12 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     );
 
     let unrelated_first = line(
-        "unrelated-first",
+        "synthetic:test:id#unrelated-first",
         Point2::new(0.0, 0.0),
         Point2::new(0.5, 3.0_f64.sqrt() * 0.5),
     );
     let unrelated_second = line(
-        "unrelated-second",
+        "synthetic:test:id#unrelated-second",
         Point2::new(0.0, 0.0),
         Point2::new(-3.0_f64.sqrt() * 0.5, 0.5),
     );
@@ -766,30 +824,35 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
 
 #[test]
 fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 5.0),
-        },
+        })
+        .unwrap(),
     );
     let line = |id: &str, start: Point2, end: Point2| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
-    let horizontal = line("horizontal", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
+    let horizontal = line(
+        "synthetic:test:id#horizontal",
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
     let unrelated = line(
-        "unrelated",
+        "synthetic:test:id#unrelated",
         Point2::new(100.0, 20.0),
         Point2::new(100.0, 30.0),
     );
     let parameter = DesignParameter {
-        id: ParameterId::mint("distance").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -815,7 +878,11 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Some((point_locus, horizontal.id().clone()))
     );
 
-    let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
+    let wrong = line(
+        "synthetic:test:id#wrong",
+        Point2::new(0.0, 2.0),
+        Point2::new(10.0, 2.0),
+    );
     assert_eq!(
         unique_repaired_profile_point_line_pair(
             &sketch,
@@ -835,7 +902,11 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         ))
     );
 
-    let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
+    let ambiguous = line(
+        "synthetic:test:id#ambiguous",
+        Point2::new(0.0, 10.0),
+        Point2::new(10.0, 10.0),
+    );
     assert_eq!(
         unique_repaired_profile_point_line_pair(
             &sketch,
@@ -853,18 +924,19 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
     );
 
     let unrelated_point = SketchEntity::new(
-        SketchEntityId("unrelated-point".into()),
+        SketchEntityId::mint("synthetic:test:id#unrelated-point").unwrap(),
         point.sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(20.0, 25.0),
-        },
+        })
+        .unwrap(),
     )
     .with_construction(point.construction)
     .with_native_ref(point.native_ref.clone())
     .with_geometry_ref(point.geometry_ref.clone())
     .with_endpoint_refs(point.endpoint_refs.clone());
     let unrelated_line = line(
-        "unrelated-line",
+        "synthetic:test:id#unrelated-line",
         Point2::new(20.0, 20.0),
         Point2::new(30.0, 20.0),
     );
@@ -895,19 +967,20 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
 
 #[test]
 fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, u: f64, v: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
-    let first_entity = point("first-entity", 1.0, 2.0);
-    let second_entity = point("second-entity", 4.0, 2.0);
-    let unrelated = point("unrelated", 8.0, 9.0);
+    let first_entity = point("synthetic:test:id#first-entity", 1.0, 2.0);
+    let second_entity = point("synthetic:test:id#second-entity", 4.0, 2.0);
+    let unrelated = point("synthetic:test:id#unrelated", 8.0, 9.0);
     let first = marker("first-marker", Some([0.001, 0.002]));
     let second = marker("second-marker", None);
     let collision = marker("collision-marker", Some([8.0, 9.0]));
@@ -952,7 +1025,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             ],
             &markers,
             &loci,
-            true,
+            ProfileAxis::U,
         ),
         Some(vec![
             SketchLocus::Entity(first_entity.id().clone()),
@@ -960,7 +1033,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
         ])
     );
 
-    let ambiguous = point("ambiguous", 6.0, 2.0);
+    let ambiguous = point("synthetic:test:id#ambiguous", 6.0, 2.0);
     assert_eq!(
         unique_axis_aligned_linked_loci(
             &relation,
@@ -968,7 +1041,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             &[first_entity, second_entity, unrelated, ambiguous],
             &markers,
             &loci,
-            true,
+            ProfileAxis::U,
         ),
         None
     );
@@ -1002,49 +1075,55 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
         (collision.id.as_str(), &collision),
         (point.id.as_str(), &point),
     ]);
-    let point_id = SketchEntityId("point-entity".into());
+    let point_id = SketchEntityId::mint("synthetic:test:id#point-entity").unwrap();
     let loci = HashMap::from([(
         point.id.clone(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
     let point_entity = SketchEntity::new(
         point_id.clone(),
-        SketchId("sketch".into()),
-        SketchGeometry::Point {
+        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(1.0, 2.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(point.id.clone()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
             &relation,
-            &SketchId("sketch".into()),
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::Fixed { entity: point_id })
+        Some(SketchConstraintDefinitionInput::Fixed { entity: point_id })
     );
 }
 
 #[test]
 fn relation_line_identity_ignores_self_identifying_geometry_link() {
-    let sketch = SketchId("sketch".into());
-    let line_id = SketchEntityId("line".into());
-    let first_id = SketchEntityId("first".into());
-    let second_id = SketchEntityId("second".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let line_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
+    let first_id = SketchEntityId::mint("synthetic:test:id#first").unwrap();
+    let second_id = SketchEntityId::mint("synthetic:test:id#second").unwrap();
     let line = SketchEntity::new(
         line_id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let point_entity = |id: SketchEntityId, position: Point2| {
-        SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
-            .with_construction(true)
+        SketchEntity::new(
+            id,
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
+        )
+        .with_construction(true)
     };
     let first_entity = point_entity(first_id.clone(), Point2::new(0.0, 0.0));
     let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));
@@ -1112,13 +1191,13 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
         (ambiguous.id.as_str(), &ambiguous),
         (linked.id.as_str(), &linked),
     ]);
-    let expected = SketchLocus::Start(SketchEntityId("line-a".into()));
+    let expected = SketchLocus::Start(SketchEntityId::mint("synthetic:test:id#line-a").unwrap());
     let loci = HashMap::from([
         (
             ambiguous.id.clone(),
             vec![
                 expected.clone(),
-                SketchLocus::End(SketchEntityId("line-b".into())),
+                SketchLocus::End(SketchEntityId::mint("synthetic:test:id#line-b").unwrap()),
             ],
         ),
         (linked.id.clone(), vec![expected.clone()]),
@@ -1130,7 +1209,7 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
     );
     assert_eq!(
         marker_entities(&ambiguous.id, &markers, &loci),
-        vec![SketchEntityId("line-a".into())]
+        vec![SketchEntityId::mint("synthetic:test:id#line-a").unwrap()]
     );
 }
 
@@ -1167,7 +1246,9 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
     ]);
     let loci = HashMap::from([(
         known.id.clone(),
-        vec![SketchLocus::Start(SketchEntityId("line".into()))],
+        vec![SketchLocus::Start(
+            SketchEntityId::mint("synthetic:test:id#line").unwrap(),
+        )],
     )]);
 
     assert_eq!(

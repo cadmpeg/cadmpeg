@@ -1715,7 +1715,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     )
     .expect("the record owns its extrusion");
     assert!(matches!(
-        decoded.definition,
+        decoded.definition(),
         DecodedProceduralSurfaceDefinition::Extrusion { .. }
     ));
 
@@ -1795,7 +1795,10 @@ fn rgb_attribute_chain_decodes_body_color() {
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
+    assert_eq!(
+        (color.r(), color.g(), color.b(), color.a()),
+        (0.1, 0.2, 0.3, 1.0)
+    );
 }
 
 #[test]
@@ -1825,7 +1828,7 @@ fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
-        (color.r, color.g, color.b, color.a),
+        (color.r(), color.g(), color.b(), color.a()),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
 }
@@ -1856,7 +1859,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
-        (color.r, color.g, color.b, color.a),
+        (color.r(), color.g(), color.b(), color.a()),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
 }
@@ -1924,5 +1927,8 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
-    assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
+    assert_eq!(
+        (color.r(), color.g(), color.b(), color.a()),
+        (0.1, 0.2, 0.3, 1.0)
+    );
 }

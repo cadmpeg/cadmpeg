@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface prototype parameters and first-instance prototype surfaces.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
@@ -14,7 +15,6 @@ use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
 use crate::vecmath::{cross, dot};
 
@@ -36,17 +36,11 @@ pub(in super::super) fn prototype_vector_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<[f64; 3]>> {
-    let crate::surface::SurfaceNamedValue::ScalarArray {
-        dimensions,
-        count: 3,
-        values,
-        ..
-    } = &record.field(name)?.value
-    else {
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field(name)?.value else {
         return None;
     };
-    let vector_count = usize::try_from(*dimensions).ok()?;
-    (values.len() == vector_count.checked_mul(3)?).then_some(())?;
+    (array.count() == 3).then_some(())?;
+    let values = array.values();
     values
         .chunks_exact(3)
         .map(|coordinates| Some([coordinates[0]?, coordinates[1]?, coordinates[2]?]))
@@ -57,13 +51,11 @@ pub(in super::super) fn prototype_parameter_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<f64>> {
-    let crate::surface::SurfaceNamedValue::CountedScalarArray { count, values, .. } =
-        &record.field(name)?.value
+    let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &record.field(name)?.value
     else {
         return None;
     };
-    (values.len() == usize::try_from(*count).ok()?).then_some(())?;
-    values.iter().copied().collect()
+    array.values().iter().copied().collect()
 }
 
 pub(in super::super) fn prototype_spline_nurbs(
@@ -82,23 +74,19 @@ pub(in super::super) fn prototype_spline_nurbs(
 pub(in super::super) fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-    let crate::surface::SurfaceNamedValue::ScalarArray {
-        dimensions: 4,
-        count: 3,
-        values,
-        ..
-    } = &record.field("local_sys")?.value
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field("local_sys")?.value
     else {
         return None;
     };
-    let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
+    (array.dimensions() == 4 && array.count() == 3).then_some(())?;
+    let slots = array.values().iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
     slots.iter().all(|value| value.is_finite()).then_some(())?;
     let first: [f64; 3] = slots[0..3].try_into().ok()?;
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
     let first_norm = dot(first, first).sqrt();
-    let reference = normalized(first)?;
+    let reference = normalize(first)?;
     let torus = matches!(
         record.family,
         crate::surface::SurfacePrototypeFamily::Torus(_)
@@ -117,11 +105,11 @@ pub(in super::super) fn prototype_local_frame(
                             && dot(reference, candidate).abs()
                                 <= EPS_PROTOTYPE_AGREEMENT * candidate_norm
                     })
-                    .and_then(|()| normalized(candidate))
+                    .and_then(|()| normalize(candidate))
             });
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
-    let axis = normalized(cross(reference, second))?;
+    let axis = normalize(cross(reference, second))?;
     let origin: [f64; 3] = slots[9..12].try_into().ok()?;
     origin.into_iter().all(f64::is_finite).then_some(())?;
     Some((origin, axis, reference))
@@ -180,27 +168,57 @@ pub(in super::super) fn surface_prototype_frame_bounds(
     ))
 }
 
+#[derive(Clone, Copy)]
+pub(in super::super) enum SupportedPrototype<'a> {
+    Plane(&'a crate::surface::SurfacePrototypeRecord),
+    Cylinder(&'a crate::surface::SurfacePrototypeRecord),
+    Cone(&'a crate::surface::SurfacePrototypeRecord),
+    Torus(&'a crate::surface::SurfacePrototypeRecord),
+    Spline(&'a crate::surface::SurfacePrototypeRecord),
+}
+
+impl<'a> SupportedPrototype<'a> {
+    pub(in super::super) fn record(self) -> &'a crate::surface::SurfacePrototypeRecord {
+        match self {
+            Self::Plane(record)
+            | Self::Cylinder(record)
+            | Self::Cone(record)
+            | Self::Torus(record)
+            | Self::Spline(record) => record,
+        }
+    }
+}
+
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Vec<(
-    &'a crate::surface::SurfacePrototypeRecord,
+    SupportedPrototype<'a>,
     &'a crate::surface::SurfaceRow,
     &'a crate::container::Section,
 )> {
     let mut associations = Vec::new();
     for record in &scan.surfaces.prototype_records {
-        let row_kind = match record.family {
-            crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
-            crate::surface::SurfacePrototypeFamily::Cylinder => {
-                crate::surface::SurfaceKind::Cylinder
-            }
-            crate::surface::SurfacePrototypeFamily::Torus(_) => {
-                crate::surface::SurfaceKind::TorusOrSphere
-            }
-            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
-            crate::surface::SurfacePrototypeFamily::Spline(_) => {
-                crate::surface::SurfaceKind::Spline
-            }
+        let (prototype, row_kind) = match record.family {
+            crate::surface::SurfacePrototypeFamily::Plane => (
+                SupportedPrototype::Plane(record),
+                crate::surface::SurfaceKind::Plane,
+            ),
+            crate::surface::SurfacePrototypeFamily::Cylinder => (
+                SupportedPrototype::Cylinder(record),
+                crate::surface::SurfaceKind::Cylinder,
+            ),
+            crate::surface::SurfacePrototypeFamily::Cone => (
+                SupportedPrototype::Cone(record),
+                crate::surface::SurfaceKind::Cone,
+            ),
+            crate::surface::SurfacePrototypeFamily::Torus(_) => (
+                SupportedPrototype::Torus(record),
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
+            crate::surface::SurfacePrototypeFamily::Spline(_) => (
+                SupportedPrototype::Spline(record),
+                crate::surface::SurfaceKind::Spline,
+            ),
             _ => continue,
         };
         let Some(section) = scan.framing.sections.iter().find(|section| {
@@ -228,7 +246,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
-        associations.push((record, row, section));
+        associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in &associations {
@@ -244,15 +262,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
-        return 0;
+        return Ok(0);
     }
     let mut transferred = 0;
-    for (record, row, section) in unique_surface_prototype_associations(scan) {
+    for (prototype, row, section) in unique_surface_prototype_associations(scan) {
+        let record = prototype.record();
         let geometry =
-            match record.family {
-                crate::surface::SurfacePrototypeFamily::Plane => {
+            match prototype {
+                SupportedPrototype::Plane(_) => {
                     let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                         continue;
                     };
@@ -267,7 +286,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                         },
                     )
                 }
-                crate::surface::SurfacePrototypeFamily::Cylinder => {
+                SupportedPrototype::Cylinder(_) => {
                     let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                         continue;
                     };
@@ -286,7 +305,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                         Err(_) => continue,
                     })
                 }
-                crate::surface::SurfacePrototypeFamily::Torus(_) => {
+                SupportedPrototype::Torus(_) => {
                     let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                         continue;
                     };
@@ -329,35 +348,34 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                         )
                     }
                 }
-                crate::surface::SurfacePrototypeFamily::Cone => {
+                SupportedPrototype::Cone(_) => {
                     let Some(frame) = crate::surface::prototype_cone_frame(record) else {
                         continue;
                     };
                     SurfaceGeometry::Cone(
                         match cadmpeg_ir::geometry::ConeSurface::try_new(
-                            Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
-                            Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                            Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+                            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                             Vector3::new(
-                                frame.ref_direction[0],
-                                frame.ref_direction[1],
-                                frame.ref_direction[2],
+                                frame.ref_direction()[0],
+                                frame.ref_direction()[1],
+                                frame.ref_direction()[2],
                             ),
                             0.0,
                             1.0,
-                            frame.half_angle,
+                            frame.half_angle(),
                         ) {
                             Ok(payload) => payload,
                             Err(_) => continue,
                         },
                     )
                 }
-                crate::surface::SurfacePrototypeFamily::Spline(_) => {
+                SupportedPrototype::Spline(_) => {
                     let Some(nurbs) = prototype_spline_nurbs(record) else {
                         continue;
                     };
                     SurfaceGeometry::Nurbs(nurbs)
                 }
-                _ => unreachable!("prototype family was filtered above"),
             };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
             .expect("identity grammar");
@@ -367,7 +385,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         annotate(
             annotations,
             &id,
-            &section.name,
+            section.name(),
             record.offset as u64,
             "first_instance_surface_prototype",
             Exactness::Derived,
@@ -377,7 +395,14 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name, row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "{}:{}",
+                    section.name(),
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -387,16 +412,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_positional_spline_replays(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
-        return 0;
+        return Ok(0);
     }
     let mut transferred = 0;
     for parameter in &scan.surfaces.parameters {
@@ -483,7 +508,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         annotate(
             annotations,
             &id,
-            &section.name,
+            section.name(),
             parameter.body_offset as u64,
             "positional_spline_prototype_replay",
             Exactness::Derived,
@@ -493,7 +518,14 @@ pub(in super::super) fn transfer_positional_spline_replays(
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("{}:{}", section.name, row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "{}:{}",
+                    section.name(),
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -503,19 +535,19 @@ pub(in super::super) fn transfer_positional_spline_replays(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     if !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
     ) {
-        return 0;
+        return Ok(0);
     }
     let mut carrier_counts = BTreeMap::<u32, usize>::new();
     for carrier in &scan.surfaces.legacy_carriers {
@@ -618,21 +650,16 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     Err(_) => continue,
                 },
             ),
-            crate::legacy_geometry::LegacySurfaceGeometry::Spline {
-                points,
-                u_parameters,
-                v_parameters,
-                u_derivatives,
-                v_derivatives,
-                mixed_derivatives,
-            } if row.kind == crate::surface::SurfaceKind::Spline => {
+            crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
+                if row.kind == crate::surface::SurfaceKind::Spline =>
+            {
                 let Some(nurbs) = interpolation_spline_surface(
-                    points,
-                    u_parameters,
-                    v_parameters,
-                    u_derivatives,
-                    v_derivatives,
-                    mixed_derivatives,
+                    spline.points(),
+                    spline.u_parameters(),
+                    spline.v_parameters(),
+                    spline.u_derivatives(),
+                    spline.v_derivatives(),
+                    spline.mixed_derivatives(),
                 ) else {
                     continue;
                 };
@@ -662,11 +689,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!(
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
                     "{}{}",
                     carrier.namespace.source_prefix(),
                     carrier.surface_id
-                ),
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: Some(carrier.namespace.is_visible()),
@@ -676,7 +706,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]

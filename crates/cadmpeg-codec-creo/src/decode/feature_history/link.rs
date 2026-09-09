@@ -9,7 +9,7 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
@@ -30,7 +30,7 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
                 .expect("identity grammar");
             let definition =
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
-            let sketch = model_sketch_id(scan, definition);
+            let sketch = model_sketch_id(scan, definition)?;
             let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
             exactly_one(
                 ir.model
@@ -87,9 +87,7 @@ pub(in super::super) fn generated_surface_id_for_feature(
             table
                 .entries
                 .iter()
-                .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
-                })
+                .filter(|entry| entry.source_entity_id() == Some(source_entity_id))
                 .filter(|entry| table.surface_ids().contains(&entry.entity_id))
                 .map(|entry| entry.entity_id)
         });
@@ -104,7 +102,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
-    if entry.class_id != 200 || entry.source_entity_id().is_none() {
+    if entry.source_entity_id().is_none() {
         return false;
     }
     if table.surface_ids().contains(&entry.entity_id) {
@@ -116,8 +114,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     table.non_surface_entity_ids().contains(&entry.entity_id)
         && generated_profile_table_shape(table)
         && table.entries.iter().skip(2).any(|candidate| {
-            candidate.class_id == 200
-                && table.surface_ids().contains(&candidate.entity_id)
+            table.surface_ids().contains(&candidate.entity_id)
                 && crate::surface::unique_surface_row(rows, candidate.entity_id).is_some_and(
                     |row| {
                         row.feature_id == feature_id
@@ -158,9 +155,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
             let matching = table
                 .entries
                 .iter()
-                .filter(|entry| {
-                    entry.class_id == 200 && entry.source_entity_id() == Some(source_entity_id)
-                })
+                .filter(|entry| entry.source_entity_id() == Some(source_entity_id))
                 .collect::<Vec<_>>();
             let [entry] = matching.as_slice() else {
                 return None;
@@ -222,9 +217,7 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
         || first.class_id != 204
         || second.class_id != 203
         || rest.is_empty()
-        || !rest
-            .iter()
-            .all(|entry| entry.class_id == 200 && entry.source_entity_id().is_some())
+        || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
         return false;
     }
@@ -258,12 +251,12 @@ fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> 
 pub(in super::super) fn section_generated_profile_surface_kinds(
     geometry: &SketchGeometry,
 ) -> Option<&'static [crate::surface::SurfaceKind]> {
-    match geometry {
-        SketchGeometry::Line { .. } => Some(&[crate::surface::SurfaceKind::Plane]),
-        SketchGeometry::Arc { .. } | SketchGeometry::Circle { .. } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => Some(&[crate::surface::SurfaceKind::Plane]),
+        SketchGeometryDefinition::Arc { .. } | SketchGeometryDefinition::Circle { .. } => {
             Some(&[crate::surface::SurfaceKind::Cylinder])
         }
-        SketchGeometry::Nurbs { .. } => Some(&[
+        SketchGeometryDefinition::Nurbs { .. } => Some(&[
             crate::surface::SurfaceKind::Spline,
             crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ]),
@@ -334,14 +327,14 @@ pub(in super::super) fn profile_segment_ids(
     segments
         .iter()
         .filter(|segment| {
-            let entity_id = SketchEntityId(format!(
+            let entity_id = format!(
                 "creo:featdefs:sketch_entity#{definition_id}:{}",
                 segment.external_id
-            ));
+            );
             profiles
                 .iter()
                 .flatten()
-                .any(|entity_use| entity_use.entity == entity_id)
+                .any(|entity_use| entity_use.entity.as_str() == entity_id)
         })
         .map(|segment| segment.external_id)
         .collect()

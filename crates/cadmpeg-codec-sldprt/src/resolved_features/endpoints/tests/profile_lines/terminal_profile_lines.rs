@@ -28,18 +28,18 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
     payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&7u32.to_le_bytes());
     payload[curve_offset + 104..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         marker("first", 0, SketchInputKind::Point, Some([1.0, 2.0])),

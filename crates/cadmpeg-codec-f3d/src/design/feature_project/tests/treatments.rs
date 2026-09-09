@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 #[test]
@@ -28,24 +29,30 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             value,
         ))
         .expect("generated feature parameter is canonical");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
         let mut owner = parse_parameter_owner(&parameter_owner_frame())
-            .expect("generated parameter owner is canonical");
-        owner.id = format!("f3d:native:owner#{record_index}");
-        owner.record_index = record_index;
-        owner.scope_record_index = scope_record_index;
-        owner.parameter_record_index = parameter_record_index;
-        owner.companion_record_index = parameter_record_index + 1;
-        owner.local_ordinal = local_ordinal;
+            .expect("generated parameter owner is canonical")
+            .into_record("Design/BulkStream.dat", 0)
+            .unwrap();
+        {
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
+            wire.record_index = record_index;
+            wire.scope_record_index = scope_record_index;
+            wire.parameter_record_index = parameter_record_index;
+            wire.companion_record_index = parameter_record_index + 1;
+            wire.local_ordinal = local_ordinal;
+            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        }
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
-        id: format!("f3d:native:scope#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
         byte_offset,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
@@ -105,7 +112,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     scopes[2].reference_members =
         crate::records::ReferenceRun::unlocated(vec![0, 363, 0, 370, 0, 378]);
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
-        id: format!("f3d:native:face-operand#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:face-operand#{record_index}"),
         scope_record_index: 32,
         scope_reference_ordinal,
         group: None,
@@ -116,7 +123,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 1300,
-        recipe_id: format!("f3d:native:construction-recipe#{}", record_index + 3),
+        recipe_id: format!(
+            "f3d:native/BulkStream.dat:construction-recipe#{}",
+            record_index + 3
+        ),
         recipe_prefix_offset: 1311,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: Vec::new(),
@@ -196,10 +206,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         ),
     ];
     distance_angle_parameters[1]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -219,18 +227,26 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
     ));
 
-    distance_angle_parameters[0].source = crate::records::DesignParameterSource::new(
-        "leftDistance".into(),
-        distance_angle_parameters[0].owner_record_index(),
-        distance_angle_parameters[0].family_discriminator(),
-    )
-    .unwrap();
-    distance_angle_parameters[1].source = crate::records::DesignParameterSource::new(
-        "rotateAngle".into(),
-        distance_angle_parameters[1].owner_record_index(),
-        distance_angle_parameters[1].family_discriminator(),
-    )
-    .unwrap();
+    distance_angle_parameters[0]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "leftDistance".into(),
+                distance_angle_parameters[0].owner_record_index(),
+                distance_angle_parameters[0].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    distance_angle_parameters[1]
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "rotateAngle".into(),
+                distance_angle_parameters[1].owner_record_index(),
+                distance_angle_parameters[1].family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -256,10 +272,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
     ];
     hole_parameters[2]
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -295,7 +309,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }]
     ));
 
-    hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
+    hole_parameters[2]
+        .try_set_evaluated_value(118.0_f64.to_radians())
+        .unwrap();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[
@@ -359,7 +375,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if drill_point_angle.0 == 118.0_f64.to_radians()
     ));
 
-    counterbore_parameters[2].evaluated_value = std::f64::consts::PI;
+    counterbore_parameters[2]
+        .try_set_evaluated_value(std::f64::consts::PI)
+        .unwrap();
     let (features, _) = project_parameter_design(
         &counterbore_parameters,
         &[
@@ -518,47 +536,55 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if parameters.len() == 2
     ));
 
-    let construction_group =
-        |record_index, scope_reference_ordinal| DesignConstructionOperandGroup {
-            id: format!("f3d:native:construction-group#{record_index}"),
-            scope_record_index: 22,
-            scope_reference_ordinal,
-            record_index,
-            byte_offset: 1_000 + u64::from(scope_reference_ordinal),
-            class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
-                value: record_index + 100,
-                offset: 1_026 + u64::from(scope_reference_ordinal),
-            }],
-            lost_edge_references: Vec::new(),
-            frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-                member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
-                auxiliary_records: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_records: vec![crate::records::Located {
-                    value: record_index + 1,
-                    offset: 1_050 + u64::from(scope_reference_ordinal),
+    let construction_group = |record_index, scope_reference_ordinal| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
+                scope_record_index: 22,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 1_000 + u64::from(scope_reference_ordinal),
+                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: record_index + 100,
+                    offset: 1_026 + u64::from(scope_reference_ordinal),
                 }],
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 100,
-                opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
-                opaque_scalar: 0.5,
-                opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
-                variant: false,
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: vec![crate::records::Located {
+                            value: record_index + 1,
+                            offset: 1_050 + u64::from(scope_reference_ordinal),
+                        }],
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 100,
+                        opaque_index_offset: 1_078 + u64::from(scope_reference_ordinal),
+                        opaque_scalar: 0.5,
+                        opaque_scalar_offset: 1_082 + u64::from(scope_reference_ordinal),
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+                role_offset: 1_060 + u64::from(scope_reference_ordinal),
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
             },
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
-            role_offset: 1_060 + u64::from(scope_reference_ordinal),
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-            paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
-        };
+        )
+        .unwrap()
+    };
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]
         .lost_edge_references
-        .push("f3d:native:lost-edge-reference#1".into());
+        .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
     let mut chamfer_scope = scopes[1].clone();
     chamfer_scope.previous_history_state_id = Some(21);
     let (features, _) = project_parameter_design(
@@ -611,43 +637,52 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![101, 111, 102, 112]);
     if let crate::records::feature::DesignScopePayload::Draft(slot) = &mut scope.payload {
         *slot = Some(DesignDraftOperation {
-            angle: -0.25,
+            angle: crate::records::feature::DesignFiniteScalar::new(-0.25).unwrap(),
             angle_record_index: 90,
             angle_offset: 0,
             opposite_angle_record_index: 91,
             opposite_angle_offset: 0,
         });
     }
-    let group = |record_index, member, role| DesignConstructionOperandGroup {
-        id: format!("{stream}:design-construction-operand-group#{record_index}"),
-        scope_record_index: 100,
-        scope_reference_ordinal: 0,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: member,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+    let group = |record_index, member, role| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("{stream}:design-construction-operand-group#{record_index}"),
+                scope_record_index: 100,
+                scope_reference_ordinal: 0,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: member,
+                    offset: 0,
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
+            },
+        )
+        .unwrap()
     };
     let groups = [
         group(101, 111, DesignOperandRole::ROLE_0X10),
@@ -690,20 +725,21 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         next_record_index: 114,
         next_byte_offset: 0,
     };
-    let timeline = crate::records::DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = crate::records::DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![crate::records::Located {
                 value: 100,
                 offset: 0,
             }],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -918,7 +954,7 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let scope = DesignParameterScope {
-        id: "f3d:native:scope#12".into(),
+        id: "f3d:native/BulkStream.dat:scope#12".into(),
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
@@ -942,47 +978,56 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
-    let group = |record_index, ordinal, members: Vec<u32>| DesignConstructionOperandGroup {
-        id: format!("f3d:native:construction-group#{record_index}"),
-        scope_record_index: 12,
-        scope_reference_ordinal: ordinal,
-        record_index,
-        byte_offset: 1000 + u64::from(ordinal) * 200,
-        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+    let group = |record_index, ordinal, members: Vec<u32>| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
+                scope_record_index: 12,
+                scope_reference_ordinal: ordinal,
+                record_index,
+                byte_offset: 1000 + u64::from(ordinal) * 200,
+                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
 
-        members: members
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| crate::records::Located {
-                value,
-                offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
-            })
-            .collect(),
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 1021 + u64::from(ordinal) * 200,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 300 + ordinal,
-                offset: 1100 + u64::from(ordinal) * 200,
-            }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 100,
-            opaque_index_offset: 1128 + u64::from(ordinal) * 200,
-            opaque_scalar: 0.5,
-            opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::BODIES_B,
-        ),
-        role_offset: 1110 + u64::from(ordinal) * 200,
+                members: members
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| crate::records::Located {
+                        value,
+                        offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
+                    })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 1021 + u64::from(ordinal) * 200,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: vec![crate::records::Located {
+                            value: 300 + ordinal,
+                            offset: 1100 + u64::from(ordinal) * 200,
+                        }],
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 100,
+                        opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+                        opaque_scalar: 0.5,
+                        opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+                role_offset: 1110 + u64::from(ordinal) * 200,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+            },
+        )
+        .unwrap()
     };
     let mut operand_groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
     let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
@@ -995,17 +1040,25 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             value,
         ))
         .expect("canonical localized Fillet parameter");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter
     };
     let owner = |record_index, parameter_record_index, local_ordinal| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
-        owner.id = format!("f3d:native:owner#{record_index}");
-        owner.record_index = record_index;
-        owner.scope_record_index = 12;
-        owner.parameter_record_index = parameter_record_index;
-        owner.local_ordinal = local_ordinal;
+        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+            .unwrap()
+            .into_record("Design/BulkStream.dat", 0)
+            .unwrap();
+        {
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
+            wire.record_index = record_index;
+            wire.scope_record_index = 12;
+            wire.parameter_record_index = parameter_record_index;
+            wire.companion_record_index = parameter_record_index + 1;
+            wire.local_ordinal = local_ordinal;
+            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        }
         owner
     };
     let parameters = [
@@ -1028,20 +1081,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &mut indexed_scope.payload
     {
         *slot = Some(crate::records::feature::DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup {
-                tangency_weight: Some(crate::records::feature::DesignFixedFilletScalar {
+            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
+                Some(crate::records::feature::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 10,
                     value_offset: 100,
                 }),
-                law: crate::records::feature::DesignFixedFilletLaw::Constant(
+                crate::records::feature::DesignFixedFilletLaw::Constant(
                     crate::records::feature::DesignFixedFilletScalar {
                         value: 0.5,
                         record_index: 20,
                         value_offset: 200,
                     },
                 ),
-            }],
+            )
+            .unwrap()],
         });
     }
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
@@ -1281,7 +1335,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     operand_groups[0]
         .lost_edge_references
-        .push("f3d:native:lost-edge-reference#1".into());
+        .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
     let (features, _) = project_parameter_design(
         &parameters,
@@ -1393,7 +1447,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.previous_history_state_id = Some(8);
     let edge_identity = |record_index, group_record_index, edge| {
         crate::records::topology::DesignEdgeIdentityOperand {
-            id: format!("f3d:native:edge-identity#{record_index}"),
+            id: format!("f3d:native/BulkStream.dat:edge-identity#{record_index}"),
             scope_record_index: patch_scope.record_index,
             group_record_index,
             group_member_ordinal: 0,
@@ -1511,10 +1565,18 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 202, 203, 300]);
     patch_scope.payload = crate::records::feature::DesignScopePayload::SurfacePatch(Vec::new());
-    patch_group.members = vec![200, 201, 202, 203]
-        .into_iter()
-        .map(|value| crate::records::Located { value, offset: 0 })
-        .collect();
+    patch_group
+        .try_set_members(
+            vec![200, 201, 202, 203]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: index as u64 * 11,
+                })
+                .collect(),
+        )
+        .unwrap();
     let grouped_projection = crate::design::feature_project::project_surface_patch(
         &patch_scope,
         std::slice::from_ref(&patch_group),
@@ -1552,4 +1614,124 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }) if tool_selection == &tools.id
             && cell_selections == &[cadmpeg_ir::features::BodySelection::Native(cell.id)]
     ));
+}
+
+#[test]
+fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
+    use crate::records::topology::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
+    let mut weight = parse_design_parameter(&parameter_record(
+        Some(1),
+        "1",
+        "TangencyWeight",
+        None,
+        "weight",
+        1.0,
+    ))
+    .unwrap();
+    weight.record_index = 11;
+    let mut radius = parse_design_parameter(&parameter_record(
+        Some(2),
+        "1 mm",
+        "Radius",
+        Some("mm"),
+        "radius",
+        1.0,
+    ))
+    .unwrap();
+    radius.record_index = 12;
+    let scope = DesignParameterScope::empty(
+        "f3d:native:scope#10",
+        crate::records::feature::DesignFeatureKind::Fillet,
+        10,
+    );
+    let laws = [
+        (
+            DesignFilletRadiusLaw::Constant {
+                radius_parameter_record_index: 11,
+            },
+            vec![(0, &weight)],
+        ),
+        (
+            DesignFilletRadiusLaw::Chordal {
+                chord_length_parameter_record_index: 11,
+            },
+            vec![(0, &weight)],
+        ),
+        (
+            DesignFilletRadiusLaw::Asymmetric {
+                offset_one_parameter_record_index: 11,
+                offset_two_parameter_record_index: 12,
+            },
+            vec![(0, &weight), (1, &radius)],
+        ),
+        (
+            DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index: 11,
+                end_radius_parameter_record_index: 12,
+                middle: Vec::new(),
+            },
+            vec![(0, &weight), (1, &radius)],
+        ),
+    ];
+    for (law, parameters) in laws {
+        let assignment = DesignFilletRadiusGroup {
+            id: "f3d:native:assignment#20".into(),
+            scope_record_index: 10,
+            group_ordinal: 0,
+            group_record_index: 20,
+            edge_operand_record_indices: Vec::new(),
+            law,
+            tangency_weight_parameter_record_index: None,
+        };
+        let inputs = crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &[],
+            timelines: &[],
+            construction_groups: &[],
+            fillet_radius_groups: std::slice::from_ref(&assignment),
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
+            placements: &[],
+            body_bindings: &[],
+            component_naming_spaces: &[],
+            histories: &[],
+        };
+        assert!(matches!(
+            crate::design::feature_project::project_fillet_arm(
+                &inputs,
+                &scope,
+                &parameters,
+                "f3d:native"
+            ),
+            FeatureDefinition::Native { .. }
+        ));
+    }
+}
+
+#[test]
+fn fillet_unit_conversion_rejects_finite_overflow() {
+    let parameter = |kind, value| {
+        parse_design_parameter(&parameter_record(
+            Some(1),
+            "1 mm",
+            kind,
+            Some("mm"),
+            "radius",
+            value,
+        ))
+        .unwrap()
+    };
+    let start = parameter("StartRadius", f64::MAX);
+    let end = parameter("EndRadius", 1.0);
+    assert!(crate::design::feature_project::design_length(&start).is_none());
+    assert!(
+        crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
+    );
 }

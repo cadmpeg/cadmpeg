@@ -49,14 +49,7 @@ pub(crate) fn cyl_spl_sur(
     // and ends with the shared revision-gated surface tail, so its cache is
     // located by parsing that tail. The compact layout has no tail: its optional
     // final surface cache is the last surface block in the scope.
-    let (
-        directrix,
-        parameter_interval,
-        direction,
-        native_position,
-        cache_fit_tolerance,
-        revision_form,
-    ) = if matches!(cur.peek(), Some(Token::Long(_))) {
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = cur.take_long()?;
         // Sense flag of the embedded directrix curve. It is the carrier's
         // whole boolean run, so it travels in the revision form's `flags`.
@@ -81,26 +74,34 @@ pub(crate) fn cyl_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        let fit_tolerance = cache.fit_tolerance();
         cur.at_scope_end().then_some(())?;
-        (
-            directrix,
-            interval,
-            direction,
-            native_position,
-            fit_tolerance,
-            Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
-                revision,
-                support_bounds: [None; 4],
-                reference_endpoints: [None; 2],
-                second_endpoints: [None; 2],
-                flags: vec![directrix_sense],
-                cache: cache.into_form()?,
-                discontinuities,
-                tail_flag,
-                trailing_flags: Vec::new(),
-            }),
-        )
+        Some(DecodedProceduralSurface::revision(
+            DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval: interval,
+                direction: Vector3::new(
+                    direction[0] * LEN_TO_MM,
+                    direction[1] * LEN_TO_MM,
+                    direction[2] * LEN_TO_MM,
+                ),
+                native_position: Point3::new(
+                    native_position[0] * LEN_TO_MM,
+                    native_position[1] * LEN_TO_MM,
+                    native_position[2] * LEN_TO_MM,
+                ),
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: [None; 4],
+                    reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
+                    flags: vec![directrix_sense],
+                    cache: cache.into_form()?,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+        ))
     } else {
         let directrix = crate::nurbs::core::curve_cache(span)?;
         let interval = [cur.take_f64()?, cur.take_f64()?];
@@ -114,34 +115,25 @@ pub(crate) fn cyl_spl_sur(
                 Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                 _ => None,
             });
-        (
-            directrix,
-            interval,
-            direction,
-            native_position,
+        Some(DecodedProceduralSurface::legacy(
+            DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval: interval,
+                direction: Vector3::new(
+                    direction[0] * LEN_TO_MM,
+                    direction[1] * LEN_TO_MM,
+                    direction[2] * LEN_TO_MM,
+                ),
+                native_position: Point3::new(
+                    native_position[0] * LEN_TO_MM,
+                    native_position[1] * LEN_TO_MM,
+                    native_position[2] * LEN_TO_MM,
+                ),
+                revision_form: None,
+            },
             cache_fit_tolerance,
-            None,
-        )
-    };
-
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            direction: Vector3::new(
-                direction[0] * LEN_TO_MM,
-                direction[1] * LEN_TO_MM,
-                direction[2] * LEN_TO_MM,
-            ),
-            native_position: Point3::new(
-                native_position[0] * LEN_TO_MM,
-                native_position[1] * LEN_TO_MM,
-                native_position[2] * LEN_TO_MM,
-            ),
-            revision_form,
-        },
-        cache_fit_tolerance,
-    })
+        ))
+    }
 }
 
 pub(crate) fn decode_rolling_ball_side(
@@ -673,7 +665,6 @@ fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry>
 
 fn variable_blend_value(
     cur: &mut Cur<'_>,
-    modern: bool,
     depth: usize,
 ) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
     use cadmpeg_ir::geometry::{
@@ -690,7 +681,7 @@ fn variable_blend_value(
         1
     };
     let calibrated = cur.take_enum()?;
-    let modern_flag = if modern { cur.take_bool()? } else { false };
+    let modern_flag = cur.take_bool()?;
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
             discriminator,
@@ -735,7 +726,7 @@ fn variable_blend_value(
             radius: cur.take_f64()? * LEN_TO_MM,
             variable_chamfer: cur.take_enum()?,
             chamfer_type: cur.take_enum()?,
-            nested: Box::new(variable_blend_value(cur, modern, depth + 1)?),
+            nested: Box::new(variable_blend_value(cur, depth + 1)?),
         },
         "interp" => {
             let parameter = cur.take_f64()?;
@@ -833,7 +824,7 @@ mod variable_blend_value_tests {
         two_ends(&mut direct);
         let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated two-ends value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated two-ends value");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.payload.discriminator(), 7);
@@ -858,8 +849,7 @@ mod variable_blend_value_tests {
         two_ends(&mut recursive);
         let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded =
-            variable_blend_value(&mut cur, true, 0).expect("generated recursive const value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated recursive const value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
@@ -883,7 +873,7 @@ mod variable_blend_value_tests {
         }
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated fixed-width value");
+        let decoded = variable_blend_value(&mut cur, 0).expect("generated fixed-width value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth {
             parameters, width, ..
@@ -939,7 +929,7 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded =
-            variable_blend_value(&mut cur, true, 0).expect("generated enum-tagged interp value");
+            variable_blend_value(&mut cur, 0).expect("generated enum-tagged interp value");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
@@ -1010,7 +1000,7 @@ mod variable_blend_value_tests {
         integer(&mut bytes, 0x15, 0);
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, true, 0)
+        let decoded = variable_blend_value(&mut cur, 0)
             .expect("generated interp value with unset derivatives");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
@@ -1071,11 +1061,11 @@ pub(crate) fn var_blend_spl_sur(
         1 => true,
         _ => return None,
     };
-    let first_value = variable_blend_value(&mut cur, true, 0)?;
+    let first_value = variable_blend_value(&mut cur, 0)?;
     let radii = if two_radii {
         cadmpeg_ir::geometry::VariableBlendRadii::Two {
             first: first_value,
-            second: variable_blend_value(&mut cur, true, 0)?,
+            second: variable_blend_value(&mut cur, 0)?,
         }
     } else {
         cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
@@ -1094,7 +1084,7 @@ pub(crate) fn var_blend_spl_sur(
             }),
             3 => {
                 let radius = if cur.take_bool()? {
-                    Some(Box::new(variable_blend_value(&mut cur, true, 0)?))
+                    Some(Box::new(variable_blend_value(&mut cur, 0)?))
                 } else {
                     None
                 };
@@ -1131,12 +1121,6 @@ pub(crate) fn var_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let stored_cache_fit_tolerance = cache.fit_tolerance();
-    let cache_fit_tolerance = if shape_prefix == 0 {
-        None
-    } else {
-        stored_cache_fit_tolerance
-    };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
     let secondary_curve = if cur.take_ident() == Some("null_curve") {
@@ -1170,56 +1154,49 @@ pub(crate) fn var_blend_spl_sur(
     };
     let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
-            EmbeddedVariableBlend {
-                subtype,
-                revision,
-                sides,
-                slice: slice.curve,
-                slice_range: slice.parameter_range,
-                offsets,
-                radii,
-                cross_section,
-                u_range: [u_lower, u_upper],
-                v_lower,
-                shape_parameter,
-                shape_length,
-                shape_tail,
-                cache: match cache {
-                    crate::nurbs::proc_surface::RevisionSurfaceCache::Solved {
-                        fit_tolerance,
-                        ..
-                    } => match std::num::NonZeroI64::new(shape_prefix) {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
+            subtype,
+            revision,
+            sides,
+            slice: slice.curve,
+            slice_range: slice.parameter_range,
+            offsets,
+            radii,
+            cross_section,
+            u_range: [u_lower, u_upper],
+            v_lower,
+            shape_parameter,
+            shape_length,
+            shape_tail,
+            cache: match cache.into_form()? {
+                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
+                    match std::num::NonZeroI64::new(shape_prefix) {
                         Some(shape_prefix) => VariableBlendCache::Current {
                             shape_prefix,
-                            fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
-                                fit_tolerance,
-                            )
-                            .ok()?,
+                            fit_tolerance,
                         },
                         None => VariableBlendCache::Stale,
-                    },
-                    crate::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(
-                        parameterization,
-                    ) => VariableBlendCache::Parameterization {
+                    }
+                }
+                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
+                    VariableBlendCache::Parameterization {
                         shape_prefix,
                         parameterization,
-                    },
-                },
-                discontinuities,
-                tail_flag,
-                tail_extensions,
-                secondary_curve,
-                convexity,
-                render_mode,
-                post_range,
-                post_curve,
-                post_pcurve,
+                    }
+                }
             },
-        )),
-        cache_fit_tolerance,
-    })
+            discontinuities,
+            tail_flag,
+            tail_extensions,
+            secondary_curve,
+            convexity,
+            render_mode,
+            post_range,
+            post_curve,
+            post_pcurve,
+        })),
+    ))
 }
 
 fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundary> {
@@ -1460,17 +1437,15 @@ pub(crate) fn vertex_blend_spl_sur(
     let grid_size = cur.take_long()?;
     let fit_tolerance =
         cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
-            EmbeddedVertexBlend {
-                revision,
-                boundaries,
-                grid_size,
-                fit_tolerance,
-            },
-        )),
-        cache_fit_tolerance: None,
-    })
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(EmbeddedVertexBlend {
+            revision,
+            boundaries,
+            grid_size,
+            fit_tolerance,
+        })),
+        None,
+    ))
 }
 
 pub(crate) fn full_rb_blend_spl_sur(
@@ -1522,7 +1497,6 @@ pub(crate) fn full_rb_blend_spl_sur(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
-    let cache_fit_tolerance = cache.fit_tolerance();
     let third = if has_third {
         Some(Box::new(rolling_ball_third_side(&mut cur)?))
     } else {
@@ -1540,8 +1514,8 @@ pub(crate) fn full_rb_blend_spl_sur(
             end: offsets[1],
         }
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Blend {
+    Some(DecodedProceduralSurface::revision(
+        DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
                 CurveGeometry::Nurbs(curve) => Some(curve.clone()),
@@ -1568,8 +1542,7 @@ pub(crate) fn full_rb_blend_spl_sur(
                 tail_extensions,
             })),
         },
-        cache_fit_tolerance,
-    })
+    ))
 }
 
 /// Decode the compact rolling-ball carrier emitted without the native side
@@ -1630,8 +1603,8 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             end: offsets[1],
         }
     };
-    Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Blend {
+    Some(DecodedProceduralSurface::legacy(
+        DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),
             spine: Some(spine),
             radius,
@@ -1639,5 +1612,5 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             native: None,
         },
         cache_fit_tolerance,
-    })
+    ))
 }

@@ -58,7 +58,13 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         ),
-        (b"364", b"263", 76u32, [0, 0, 0, 0], identity_matrix()),
+        (
+            b"364",
+            b"263",
+            76u32,
+            [0, 0, 0, 0],
+            crate::records::SketchPlacementMatrix::IDENTITY.rows(),
+        ),
     ];
 
     for (class_tag, paired_class_tag, record_index, prefix_marker, transform) in cases {

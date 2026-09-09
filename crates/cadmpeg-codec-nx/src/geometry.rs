@@ -201,9 +201,6 @@ fn select_analytic_candidate(
     let Some(second) = valid.next() else {
         return Some((first.record.clone(), first.frame.end));
     };
-    if valid.next().is_some() {
-        return None;
-    }
     let first_boundary = fixed_record_boundary(stream, first.frame.end);
     let second_boundary = fixed_record_boundary(stream, second.frame.end);
     match (first_boundary, second_boundary) {

@@ -57,7 +57,6 @@ pub fn value_blocks(data: &[u8]) {
 pub fn object_graph(data: &[u8]) {
     let _ = crate::object_graph::parse(data);
     let _ = crate::object_graph::surface_aliases(data);
-    let _ = crate::object_graph::markers_7cd9(data, data.len());
 }
 
 /// Exercise `7C02` string-catalog parsing.

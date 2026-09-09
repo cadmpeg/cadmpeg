@@ -481,6 +481,12 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_presentation(&mut self, context: Ref) {
+        enum StyleKind {
+            Surface,
+            Curve,
+            Point,
+        }
+
         let ir = self.ir;
         let appearances: HashMap<&str, &Appearance> = ir
             .model
@@ -495,10 +501,10 @@ impl<'a> Builder<'a> {
             .filter(|binding| binding.visible == Some(false))
             .map(|binding| binding.id.as_str())
             .collect::<BTreeSet<_>>();
-        let mut body_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
-        let mut face_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
-        let mut body_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
-        let mut face_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
+        let mut body_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            HashMap::new();
+        let mut face_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -519,18 +525,16 @@ impl<'a> Builder<'a> {
             };
             match &binding.target {
                 AppearanceTarget::Body(id) => {
-                    body_candidates.entry(id.as_str()).or_default().push(spec);
-                    body_binding_ids
+                    body_candidates
                         .entry(id.as_str())
                         .or_default()
-                        .push(&binding.id);
+                        .push((spec, &binding.id));
                 }
                 AppearanceTarget::Face(id) => {
-                    face_candidates.entry(id.as_str()).or_default().push(spec);
-                    face_binding_ids
+                    face_candidates
                         .entry(id.as_str())
                         .or_default()
-                        .push(&binding.id);
+                        .push((spec, &binding.id));
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -552,22 +556,19 @@ impl<'a> Builder<'a> {
         let mut conflicting_face_targets = BTreeSet::new();
         let mut conflicted_binding_ids = BTreeSet::new();
         let mut target_conflicts = BTreeMap::new();
-        for (target, candidates) in body_candidates {
-            let Some(first) = candidates.first().copied() else {
+        for (&target, candidates) in &body_candidates {
+            let Some((first, _)) = candidates.first().copied() else {
                 continue;
             };
             if candidates
                 .iter()
                 .copied()
-                .any(|candidate| !equivalent_style_spec(first, candidate))
+                .any(|(candidate, _)| !equivalent_style_spec(first, candidate))
             {
                 conflicting_body_targets.insert(target.to_string());
-                let ids = body_binding_ids
-                    .get(target)
-                    .expect("body appearance candidate has binding ids")
+                let ids = candidates
                     .iter()
-                    .copied()
-                    .cloned()
+                    .map(|(_, id)| (*id).clone())
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("body".into(), target.into()), ids);
@@ -575,22 +576,19 @@ impl<'a> Builder<'a> {
                 body_colors.insert(target, first);
             }
         }
-        for (target, candidates) in face_candidates {
-            let Some(first) = candidates.first().copied() else {
+        for (&target, candidates) in &face_candidates {
+            let Some((first, _)) = candidates.first().copied() else {
                 continue;
             };
             if candidates
                 .iter()
                 .copied()
-                .any(|candidate| !equivalent_style_spec(first, candidate))
+                .any(|(candidate, _)| !equivalent_style_spec(first, candidate))
             {
                 conflicting_face_targets.insert(target.to_string());
-                let ids = face_binding_ids
-                    .get(target)
-                    .expect("face appearance candidate has binding ids")
+                let ids = candidates
                     .iter()
-                    .copied()
-                    .cloned()
+                    .map(|(_, id)| (*id).clone())
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("face".into(), target.into()), ids);
@@ -668,14 +666,14 @@ impl<'a> Builder<'a> {
                 }
             }
             if own.is_some() {
-                if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
+                if let Some(binding_ids) = face_candidates.get(face_id.as_str()) {
                     self.written_appearance_bindings
-                        .extend(binding_ids.iter().copied().cloned());
+                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
                 }
             } else if let Some(body_id) = body {
-                if let Some(binding_ids) = body_binding_ids.get(body_id) {
+                if let Some(binding_ids) = body_candidates.get(body_id) {
                     self.written_appearance_bindings
-                        .extend(binding_ids.iter().copied().cloned());
+                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
                 }
             }
             let name = spec
@@ -699,21 +697,30 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let (target, style_kind) = match &binding.target {
-                AppearanceTarget::Face(id) => {
-                    (self.face_step_refs.get(id.as_str()).copied(), "surface")
+                AppearanceTarget::Face(id) => (
+                    self.face_step_refs.get(id.as_str()).copied(),
+                    StyleKind::Surface,
+                ),
+                AppearanceTarget::Surface(id) => (
+                    self.surface_refs.get(id.as_str()).copied(),
+                    StyleKind::Surface,
+                ),
+                AppearanceTarget::Curve(id) => {
+                    (self.curve_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Surface(id) => {
-                    (self.surface_refs.get(id.as_str()).copied(), "surface")
+                AppearanceTarget::Edge(id) => {
+                    (self.edge_refs.get(id.as_str()).copied(), StyleKind::Curve)
                 }
-                AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
-                AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
+                AppearanceTarget::Point(id) => {
+                    (self.point_refs.get(id.as_str()).copied(), StyleKind::Point)
+                }
                 AppearanceTarget::Vertex(id) => {
-                    (self.vertex_refs.get(id.as_str()).copied(), "point")
+                    (self.vertex_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
-                AppearanceTarget::Tessellation(id) => {
-                    (self.tessellation_step_refs.get(id).copied(), "surface")
-                }
+                AppearanceTarget::Tessellation(id) => (
+                    self.tessellation_step_refs.get(id).copied(),
+                    StyleKind::Surface,
+                ),
                 AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -732,10 +739,9 @@ impl<'a> Builder<'a> {
             };
             let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                "surface" => self.surface_style(color, name, &mut style_refs),
-                "curve" => self.curve_style(color, name, &mut style_refs),
-                "point" => self.point_style(color, name, &mut style_refs),
-                _ => unreachable!(),
+                StyleKind::Surface => self.surface_style(color, name, &mut style_refs),
+                StyleKind::Curve => self.curve_style(color, name, &mut style_refs),
+                StyleKind::Point => self.point_style(color, name, &mut style_refs),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
@@ -759,9 +765,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_binding_ids.get(*body_id) {
+            if let Some(binding_ids) = body_candidates.get(*body_id) {
                 self.written_appearance_bindings
-                    .extend(binding_ids.iter().copied().cloned());
+                    .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
             }
             let name = spec
                 .appearance
@@ -828,11 +834,11 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
-        let key = format!("surface:{name}:{rgb}:{}", color.a.to_bits());
+        let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
             return *style;
         }
@@ -849,10 +855,11 @@ impl<'a> Builder<'a> {
             .emitter
             .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
         let mut styles = vec![style_fill];
-        if color.a < 1.0 {
-            let transparency = self
-                .emitter
-                .emit("SURFACE_STYLE_TRANSPARENT", &real(1.0 - f64::from(color.a)));
+        if color.a() < 1.0 {
+            let transparency = self.emitter.emit(
+                "SURFACE_STYLE_TRANSPARENT",
+                &real(1.0 - f64::from(color.a())),
+            );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
                 &format!(".CONSTANT_SHADING.,{colour},{}", refs(&[transparency])),
@@ -880,9 +887,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -913,9 +920,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r)),
-            real(f64::from(color.g)),
-            real(f64::from(color.b))
+            real(f64::from(color.r())),
+            real(f64::from(color.g())),
+            real(f64::from(color.b()))
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1172,7 +1179,16 @@ impl<'a> Builder<'a> {
             let Some(&from) = product_origins.get(child_product) else {
                 continue;
             };
-            let transform = occurrence.effective_transform();
+            let transform = match occurrence.effective_transform() {
+                Ok(transform) => transform,
+                Err(error) => {
+                    self.loss(
+                        StepLossCode::AssemblyGraphInvalid,
+                        format!("occurrence '{}': {error}", occurrence.id),
+                    );
+                    return;
+                }
+            };
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
@@ -1261,7 +1277,16 @@ impl<'a> Builder<'a> {
 
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                let transform = occurrence.effective_transform();
+                let transform = match occurrence.effective_transform() {
+                    Ok(transform) => transform,
+                    Err(error) => {
+                        self.loss(
+                            StepLossCode::AssemblyGraphInvalid,
+                            format!("occurrence '{}': {error}", occurrence.id),
+                        );
+                        return;
+                    }
+                };
                 if !is_identity(&transform.rows()) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1309,7 +1334,16 @@ impl<'a> Builder<'a> {
             else {
                 continue;
             };
-            let transform = occurrence.effective_transform();
+            let transform = match occurrence.effective_transform() {
+                Ok(transform) => transform,
+                Err(error) => {
+                    self.loss(
+                        StepLossCode::AssemblyGraphInvalid,
+                        format!("occurrence '{}': {error}", occurrence.id),
+                    );
+                    return;
+                }
+            };
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
@@ -1361,7 +1395,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                real(self.ir.tolerances.linear),
+                real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -1893,7 +1927,7 @@ impl<'a> Builder<'a> {
                 "COORDINATES_LIST",
                 &format!(
                     "{}, {},({coordinates})",
-                    string(&mesh.id),
+                    string(mesh.id.as_str()),
                     mesh.vertices().len()
                 ),
             );
@@ -1938,7 +1972,7 @@ impl<'a> Builder<'a> {
             if !mesh.faces.is_empty() {
                 reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
             }
-            if mesh.chordal_deflection.is_some() {
+            if mesh.chordal_deflection().is_some() {
                 reduced_fields.push("chordal deflection".to_string());
             }
             if !mesh.channels().is_empty() {
@@ -1972,7 +2006,7 @@ impl<'a> Builder<'a> {
                     "TRIANGULATED_FACE",
                     &format!(
                         "{},{coordinates},{},{normals},$,({point_indices}),({triangles})",
-                        string(&mesh.id),
+                        string(mesh.id.as_str()),
                         mesh.vertices().len()
                     ),
                 );
@@ -1982,7 +2016,7 @@ impl<'a> Builder<'a> {
                     } else {
                         "TESSELLATED_SHELL"
                     },
-                    &format!("{},({face}),{link}", string(&mesh.id)),
+                    &format!("{},({face}),{link}", string(mesh.id.as_str())),
                 )
             } else {
                 let triangles = mesh
@@ -2002,12 +2036,13 @@ impl<'a> Builder<'a> {
                     "TRIANGULATED_SURFACE_SET",
                     &format!(
                         "{},{coordinates},{},{normals},({point_indices}),({triangles})",
-                        string(&mesh.id),
+                        string(mesh.id.as_str()),
                         mesh.vertices().len()
                     ),
                 )
             };
-            self.tessellation_step_refs.insert(mesh.id.clone(), item);
+            self.tessellation_step_refs
+                .insert(mesh.id.to_string(), item);
             representation_items.push(item);
         }
         if !representation_items.is_empty() {
@@ -2834,11 +2869,11 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                if aspects.contains_key(source_id) {
+                if aspects.contains_key(source_id.as_str()) {
                     continue;
                 }
                 let target = self.emit_datum_target(pds, annotation, form, identification);
-                aspects.insert(source_id.clone(), target);
+                aspects.insert(source_id.to_string(), target);
             }
         }
         for annotation in &annotations {
@@ -2846,10 +2881,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2862,10 +2897,10 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
-                aspects.entry(source_id.clone()).or_insert_with(|| {
+                aspects.entry(source_id.to_string()).or_insert_with(|| {
                     self.emitter.emit(
                         "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id)),
+                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
                     )
                 });
             }
@@ -2884,7 +2919,7 @@ impl<'a> Builder<'a> {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     return None;
                 };
-                aspects.get(source_id).copied()
+                aspects.get(source_id.as_str()).copied()
             });
             let target_ref = target_ref
                 .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
@@ -2905,7 +2940,7 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
-                let Some(basis_ref) = aspects.get(source_id).copied() else {
+                let Some(basis_ref) = aspects.get(source_id.as_str()).copied() else {
                     exact = false;
                     continue;
                 };
@@ -2925,7 +2960,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .find_map(|target| {
                     if let PmiTarget::ShapeAspect { source_id } = target {
-                        aspects.get(source_id).copied()
+                        aspects.get(source_id.as_str()).copied()
                     } else {
                         None
                     }
@@ -3013,7 +3048,7 @@ impl<'a> Builder<'a> {
         for annotation in &annotations {
             if let PmiDefinition::DatumSystem { references } = &annotation.definition {
                 let mut groups = BTreeMap::<(u32, Option<u32>), Vec<_>>::new();
-                for reference in references {
+                for reference in references.as_slice() {
                     groups
                         .entry((reference.precedence.get(), reference.common_group))
                         .or_default()
@@ -3026,9 +3061,6 @@ impl<'a> Builder<'a> {
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
-                        if group[0].common_group.is_none() && group.len() != 1 {
-                            return None;
-                        }
                         let (datum, modifiers) = if group[0].common_group.is_some() {
                             let elements = group
                                 .iter()
@@ -3203,7 +3235,7 @@ impl<'a> Builder<'a> {
                     if datum_system.is_some() && datum_ref.is_none() {
                         continue;
                     }
-                    let measure = self.emit_pmi_measure(*magnitude);
+                    let measure = self.emit_pmi_measure(magnitude.get());
                     let tolerance_ref = if datum_ref.is_none()
                         && modifiers.is_empty()
                         && defined_unit.is_none()
@@ -3420,10 +3452,10 @@ impl<'a> Builder<'a> {
         for modifier in parsed {
             match modifier {
                 Modifier::WithValue { kind, value } => {
-                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue::new(
                         value,
-                        quantity: cadmpeg_ir::PmiQuantity::Length,
-                    });
+                        cadmpeg_ir::PmiQuantity::Length,
+                    )?);
                     modifiers.push(
                         self.emitter
                             .emit(
@@ -3523,8 +3555,10 @@ impl<'a> Builder<'a> {
             ),
             PmiQuantity::Ratio => ("MEASURE_WITH_UNIT", "RATIO_MEASURE", self.emit_ratio_unit()),
         };
-        self.emitter
-            .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
+        self.emitter.emit(
+            entity,
+            &format!("{typed}({}),{unit}", real(value.value.get())),
+        )
     }
 
     fn emit_pmi_measure_representation_item(
@@ -3539,7 +3573,11 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             "MEASURE_REPRESENTATION_ITEM",
-            &format!("{},{typed}({}),{unit}", string(name), real(value.value)),
+            &format!(
+                "{},{typed}({}),{unit}",
+                string(name),
+                real(value.value.get())
+            ),
         )
     }
 
@@ -4378,7 +4416,7 @@ impl<'a> Builder<'a> {
                     .filter(|binding| binding.appearance == appearance.id)
                     .collect::<Vec<_>>();
                 let alpha_unwritable = appearance.base_color.is_some_and(|color| {
-                    color.a != 1.0
+                    color.a() != 1.0
                         && bindings.iter().any(|binding| match &binding.target {
                             AppearanceTarget::Curve(_)
                             | AppearanceTarget::Edge(_)

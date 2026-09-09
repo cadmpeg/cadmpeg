@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole placement, cap outlines, and cylinder construction from envelopes.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::features::{Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-
-use super::super::sketch::normalized;
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
@@ -27,8 +26,8 @@ pub fn hole_extent_and_direction(
     let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
         return None;
     };
-    let first_normal = normalized(*first_normal)?;
-    let second_normal = normalized(*second_normal)?;
+    let first_normal = normalize(*first_normal)?;
+    let second_normal = normalize(*second_normal)?;
     let alignment = first_normal
         .iter()
         .zip(second_normal)
@@ -87,8 +86,13 @@ pub fn plane_envelope_corners(envelope: &crate::surface::PlaneEnvelope) -> Optio
     ])
 }
 
-pub type HoleCapOutline = (u32, [f64; 3], [f64; 3], [[f64; 3]; 2]);
-pub type PartialCapOutline = (u32, [f64; 3], [f64; 3], Option<[[f64; 3]; 2]>);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CapOutline {
+    pub surface_id: u32,
+    pub origin: [f64; 3],
+    pub normal: [f64; 3],
+    pub corners: Option<[[f64; 3]; 2]>,
+}
 
 pub fn cap_square_center_radius(
     corners: [[f64; 3]; 2],
@@ -118,30 +122,26 @@ pub fn cap_square_center_radius(
     ))
 }
 
-pub fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<SurfaceGeometry> {
-    let (_, _, axis, corners) = cap;
-    let axis = normalized(axis)?;
+pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
+    let axis = normalize(cap.normal)?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
-    let (center, radius) = cap_square_center_radius(corners?, axis_index)?;
+    let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
     let radial_axis = (0..3).find(|index| *index != axis_index)?;
     let mut ref_direction = [0.0; 3];
     ref_direction[radial_axis] = 1.0;
-    Some(SurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
-            Point3::new(center[0], center[1], center[2]),
-            Vector3::new(axis[0], axis[1], axis[2]),
-            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-            radius,
-        )
-        .ok()?,
-    ))
+    Some(HoleCylinder {
+        origin: Point3::new(center[0], center[1], center[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        radius,
+    })
 }
 
-pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceGeometry> {
-    let placement = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
+pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
+    let placement = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis = placement.1;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
@@ -152,8 +152,8 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Surf
         .collect::<Vec<_>>();
     let mut centers = Vec::<[f64; 3]>::new();
     let mut radii = Vec::new();
-    for (_, _, _, corners) in caps {
-        let (center, radius) = cap_square_center_radius(corners, axis_index)?;
+    for cap in caps {
+        let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
         centers.push(center);
         radii.push(radius);
     }
@@ -172,15 +172,12 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Surf
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
-            Point3::new(centers[0][0], centers[0][1], centers[0][2]),
-            Vector3::new(axis[0], axis[1], axis[2]),
-            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-            radii[0],
-        )
-        .ok()?,
-    ))
+    Some(HoleCylinder {
+        origin: Point3::new(centers[0][0], centers[0][1], centers[0][2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        radius: radii[0],
+    })
 }
 
 pub fn cylinder_from_complementary_outline_bounds(
@@ -191,7 +188,7 @@ pub fn cylinder_from_complementary_outline_bounds(
         return None;
     };
     let (origin, normal, _) = plane_surface.parts();
-    let axis = normalized([normal.x, normal.y, normal.z])?;
+    let axis = normalize([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
@@ -252,11 +249,33 @@ pub fn cylinder_from_complementary_outline_bounds(
     ))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HoleCylinder {
+    pub origin: Point3,
+    pub axis: Vector3,
+    pub ref_direction: Vector3,
+    pub radius: f64,
+}
+
+impl TryFrom<HoleCylinder> for SurfaceGeometry {
+    type Error = &'static str;
+
+    fn try_from(cylinder: HoleCylinder) -> Result<Self, Self::Error> {
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cylinder.origin,
+            cylinder.axis,
+            cylinder.ref_direction,
+            cylinder.radius,
+        )
+        .map(Self::Cylinder)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimpleHoleGeometry {
+pub struct SimpleHoleGeometry<'a> {
     pub entry_surface_id: Option<u32>,
-    pub cylinder_ids: Vec<u32>,
+    pub cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
     pub direction: [f64; 3],
     pub extent: LinearTermination,
-    pub geometry: SurfaceGeometry,
+    pub geometry: HoleCylinder,
 }

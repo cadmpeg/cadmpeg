@@ -103,12 +103,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         )));
     assert_eq!(
         result.ir().model.faces[0].color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.9,
-            g: 0.1,
-            b: 0.1,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.9, 0.1, 0.1, 1.0).expect("valid color"))
     );
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
     assert_eq!(

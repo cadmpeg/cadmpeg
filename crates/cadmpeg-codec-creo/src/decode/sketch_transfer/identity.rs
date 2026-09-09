@@ -157,26 +157,23 @@ pub(in super::super) fn unresolved_saved_section_entity(
     saved: &crate::feature::FeatureSavedEntity,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
-) -> (SketchEntity, usize) {
+) -> Option<(SketchEntity, usize)> {
     let (internal_id, offset, kind) = saved_section_entity_identity(saved);
-    let unique_internal_id = internal_id.is_some_and(|id| unique_saved_ids.contains(&id));
-    let external_id = if unique_internal_id {
+    let unique_internal_id = internal_id.filter(|id| unique_saved_ids.contains(id));
+    let external_id = if let Some(internal_id) = unique_internal_id {
         definition.order_table.as_ref().and_then(|order| {
-            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id?)
+            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id)
         })
     } else {
         None
     };
-    let suffix = if unique_internal_id {
+    let suffix = if let Some(internal_id) = unique_internal_id {
         external_id.map_or_else(
-            || {
-                let internal_id = internal_id.expect("unique saved entity has an id");
-                match kind {
-                    SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
-                        internal_id.to_string()
-                    }
-                    _ => format!("saved{internal_id}"),
+            || match kind {
+                SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
+                    internal_id.to_string()
                 }
+                _ => format!("saved{internal_id}"),
             },
             |external_id| external_id.to_string(),
         )
@@ -185,30 +182,33 @@ pub(in super::super) fn unresolved_saved_section_entity(
     };
     let id = external_id.map_or_else(
         || match kind {
-            SavedSectionEntityKind::Spline => SketchEntityId(format!(
+            SavedSectionEntityKind::Spline => SketchEntityId::mint(format!(
                 "creo:featdefs:saved_spline#{}:{suffix}",
                 sketch_identity_scope(sketch)
-            )),
-            SavedSectionEntityKind::Dummy => SketchEntityId(format!(
+            ))
+            .ok(),
+            SavedSectionEntityKind::Dummy => SketchEntityId::mint(format!(
                 "creo:featdefs:saved_dummy#{}:{suffix}",
                 sketch_identity_scope(sketch)
-            )),
+            ))
+            .ok(),
             _ => sketch_entity_id(sketch, &suffix),
         },
         |external_id| sketch_entity_id(sketch, external_id),
-    );
-    (
+    )?;
+    Some((
         SketchEntity::new(
             id,
             sketch.clone(),
-            SketchGeometry::Native {
-                native_kind: format!("saved_{}", kind.name()),
-            },
+            SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(format!(
+                "saved_{}",
+                kind.name()
+            ))?),
         )
         .with_construction(true)
         .with_native_ref(Some(sketch_native_ref(sketch))),
         offset,
-    )
+    ))
 }
 
 pub(in super::super) fn unique_saved_section_internal_ids(

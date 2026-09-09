@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
+
 use std::fmt::Write;
 use std::io::Cursor;
 
@@ -153,7 +155,8 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
     let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         context.set_retention_limits(point.len(), point.len());
         crate::decode::seal_for_test(context.commit(), false)
     });
@@ -169,7 +172,8 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
     let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         context.set_retention_limits(point.len(), point.len());
         crate::decode::seal_for_test(context.commit(), false)
     });
@@ -226,7 +230,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         );
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
-        assert_eq!(result.ir().model.subds[0].faces[0].edges.len(), 4);
+        assert_eq!(result.ir().model.subds[0].cage.faces()[0].edges().len(), 4);
         assert!(!result
             .ir()
             .native_unknowns("rhino")
@@ -643,10 +647,10 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert!(model.edges.iter().all(|edge| edge.curve.is_some()
         && edge
             .tolerance
-            .is_some_and(|tolerance| (tolerance - 0.3).abs() < 1.0e-12)));
+            .is_some_and(|tolerance| (tolerance.get() - 0.3).abs() < EPS_TOPOLOGY_TOLERANCE)));
     assert!(model.vertices.iter().all(|vertex| vertex
         .tolerance
-        .is_some_and(|tolerance| (tolerance - 0.2).abs() < 1.0e-12)));
+        .is_some_and(|tolerance| (tolerance.get() - 0.2).abs() < EPS_TOPOLOGY_TOLERANCE)));
     assert!(model
         .pcurves
         .iter()

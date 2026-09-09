@@ -94,7 +94,7 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    compose_body_transform(&mut body, instance);
+    compose_body_transform(&mut body, instance).unwrap();
     assert_eq!(
         body.transform
             .expect("required invariant")
@@ -130,7 +130,7 @@ fn region_raw(
             index: 0,
             loops: Vec::new(),
             surface: 0,
-            reversed_surface: 0,
+            reversed_surface: false,
             material_channel: 0,
             uuid: None,
             color: None,
@@ -259,7 +259,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .map(|(index, vertices)| crate::brep::RawBrepEdge {
             index: i32::try_from(index).expect("index"),
             curve: i32::try_from(index).expect("index"),
-            proxy_reversed: 0,
+            proxy_reversed: false,
             proxy_domain: interval,
             vertices,
             trims: vec![i32::try_from(index).expect("index")],
@@ -277,13 +277,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             proxy_domain: interval,
             edge: i32::try_from(index).expect("index"),
             vertices,
-            reversed_3d: 0,
+            reversed_3d: false,
             trim_type: 1,
             iso: 0,
             loop_index: 0,
             tolerances: [0.02, 0.03],
             domain: interval,
-            proxy_reversed: 0,
+            proxy_reversed: false,
             reserved: Vec::new(),
             legacy_tolerances: [0.02, 0.03],
             source_range: 0..0,
@@ -329,7 +329,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
                 index: 0,
                 loops: vec![0],
                 surface: 0,
-                reversed_surface: 0,
+                reversed_surface: false,
                 material_channel: 0,
                 uuid: None,
                 color: None,
@@ -465,7 +465,8 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "plane-brep".to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,
         visible: Some(true),
@@ -509,8 +510,18 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
     );
     assert_eq!(model.points[1].position.x, 25.4);
-    assert_eq!(model.vertices[0].tolerance, Some(0.254));
-    assert_eq!(model.edges[0].tolerance, Some(0.254));
+    assert_eq!(
+        model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.254)
+    );
+    assert_eq!(
+        model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.254)
+    );
     assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
     let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
@@ -551,7 +562,8 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "free-vertex-brep".to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("free-vertex-brep".to_string())
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
@@ -609,7 +621,8 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "plane-brep".to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
@@ -673,7 +686,9 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
         None
     );
     assert_eq!(
-        scaled_tolerance(0.5, 25.4).expect("required invariant"),
+        scaled_tolerance(0.5, 25.4)
+            .expect("required invariant")
+            .map(cadmpeg_ir::units::PositiveScalar::get),
         Some(12.7)
     );
     assert_eq!(finite_tolerance(0.5), Some(0.5));
@@ -685,7 +700,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     let edge = crate::brep::RawBrepEdge {
         index: 0,
         curve: 0,
-        proxy_reversed: 0,
+        proxy_reversed: false,
         proxy_domain: crate::settings::Interval([3.0, 7.0]),
         vertices: [0, 1],
         trims: Vec::new(),
@@ -696,7 +711,7 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
     assert_eq!(edge_param_range(&edge), [3.0, 7.0]);
     assert_eq!(edge_vertices(&edge), [0, 1]);
     let reversed = crate::brep::RawBrepEdge {
-        proxy_reversed: 1,
+        proxy_reversed: true,
         ..edge
     };
     assert_eq!(edge_param_range(&reversed), [3.0, 7.0]);
@@ -772,6 +787,40 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
             .collect::<Vec<_>>(),
         vec![vec![0]]
     );
+}
+
+#[test]
+fn contradictory_region_index_uses_array_position_for_shell_grouping() {
+    let (_, mut raw) = source_shaped_plane_brep();
+    raw.minor = 3;
+    raw.face_sides = vec![
+        crate::brep::RawBrepFaceSide {
+            index: 0,
+            region: 1,
+            face: 0,
+            direction: 1,
+            source_range: 0..0,
+        },
+        crate::brep::RawBrepFaceSide {
+            index: 1,
+            region: 0,
+            face: 0,
+            direction: -1,
+            source_range: 0..0,
+        },
+    ];
+    raw.regions = vec![region(0, 0), region(9, 1)];
+    raw.regions[0].sides = vec![1];
+    raw.regions[1].sides = vec![0];
+    let admitted = crate::brep::ValidatedRawBrep::try_new(raw).expect("repair redundant index");
+    let grouping = region_shell_groups(admitted.raw(), &[0]).expect("shell grouping");
+    assert!(!grouping.fallback);
+    assert_eq!(grouping.shells[0].region, 1);
+    assert_eq!(grouping.shells[0].faces, vec![0]);
+    assert!(admitted
+        .warnings()
+        .iter()
+        .any(|warning| redundant_field_diagnostic(warning)));
 }
 
 #[test]
@@ -944,7 +993,8 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "extrusion".to_string(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("extrusion".to_string())
+            .expect("nonempty source identity"),
         name: Some("Extrusion".to_string()),
         color: None,
         visible: Some(true),
@@ -1044,7 +1094,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         assert!(context.object(0).is_some());
         assert!(context.unknown(0).is_some());
         assert_eq!(context.unit_scale(), None);
@@ -1098,7 +1149,8 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("valid tolerances");
         let original = context
             .unknown(0)
             .expect("required invariant")
@@ -1258,7 +1310,7 @@ fn class_report_counts_terminal_outcomes_once() {
     );
     let scan = crate::container::scan_owned(bytes).expect("object table");
     with_expand(&scan, |expand| {
-        let mut context = DecodeContext::new(&scan, expand);
+        let mut context = DecodeContext::new(&scan, expand).expect("valid tolerances");
         assert!(context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
         assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
         assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
@@ -1308,7 +1360,7 @@ fn class_report_preserves_nil_class_source_selection() {
             };
         }
         with_expand(&scan, |expand| {
-            let context = DecodeContext::new(&scan, expand);
+            let context = DecodeContext::new(&scan, expand).expect("valid tolerances");
             let result = seal_for_test(context.commit(), false);
             let loss = result
                 .report()

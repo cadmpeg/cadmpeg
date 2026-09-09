@@ -1956,7 +1956,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     annotations: &mut AnnotationBuilder,
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let source = IntersectionCompletionSource {
         prefix: prefix.to_owned(),
         graph,
@@ -1970,7 +1970,8 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
         annotations,
         validated_endpoint_witnesses,
         geometry_budget,
-    );
+    )?;
+    Ok(())
 }
 
 /// Re-run chart attachment over the complete model after all stream-owned
@@ -1981,14 +1982,15 @@ pub(crate) fn attach_completed_intersection_pcurves_for_model_with_budget(
     annotations: &mut AnnotationBuilder,
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     attach_completed_intersection_pcurves_for_sources_with_budget(
         ir,
         sources,
         annotations,
         validated_endpoint_witnesses,
         geometry_budget,
-    );
+    )?;
+    Ok(())
 }
 
 fn attach_completed_intersection_pcurves_for_sources_with_budget(
@@ -1997,7 +1999,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     annotations: &mut AnnotationBuilder,
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let loop_faces = ir
         .model
         .loops
@@ -2020,7 +2022,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((&edge.id, edge.tolerance?)))
+        .filter_map(|edge| Some((&edge.id, edge.tolerance?.get())))
         .collect::<BTreeMap<_, _>>();
     let coedge_candidates = ir
         .model
@@ -2049,7 +2051,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         })
         .collect::<Vec<_>>();
     if coedge_candidates.is_empty() {
-        return;
+        return Ok(());
     }
     let required_keys = coedge_candidates
         .iter()
@@ -2259,12 +2261,18 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| node.pos as u64);
         annotations
-            .note(&pcurve_id, source.source_stream, source_offset)
+            .note(&pcurve_id, &source.source_stream, source_offset)
             .tag("INTERSECTION_PCURVE");
-        annotations.derived(&pcurve_id, "geometry");
-        annotations.derived(&pcurve_id, "parameter_range");
+        annotations
+            .derived(&pcurve_id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&pcurve_id, "parameter_range")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if metadata.fit_tolerance().is_some() {
-            annotations.derived(&pcurve_id, "fit_tolerance");
+            annotations
+                .derived(&pcurve_id, "fit_tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
@@ -2284,6 +2292,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             });
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -75,7 +75,8 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, Some([0.0, 3.0]));
     assert_eq!(ir.model.curves[0].id, id);
@@ -172,7 +173,8 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
     let CurveGeometry::Circle(circle_curve) = &ir.model.curves[0].geometry else {
@@ -254,7 +256,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
     let CurveGeometry::Ellipse(ellipse_curve) = &ir.model.curves[0].geometry else {
@@ -341,7 +344,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     let id = id.expect("spline support identifies a curve carrier");
     assert_eq!(range, None);
     let CurveGeometry::Ellipse(ellipse_curve) = &ir.model.curves[0].geometry else {
@@ -452,7 +456,8 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         [0, 1],
         Some(&native),
         None,
-    );
+    )
+    .expect("valid source object identity");
     let curve = curve.expect("procedural support identifies the curve");
     assert_eq!(ir.model.surfaces.len(), 2);
     let [procedural] = ir.model.procedural_surfaces.as_slice() else {

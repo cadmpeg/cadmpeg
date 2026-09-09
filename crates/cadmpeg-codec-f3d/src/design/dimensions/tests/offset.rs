@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use cadmpeg_ir::sketches::SketchOffsetPair;
+use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
@@ -34,28 +35,28 @@ fn offset_loci(rows: &[(u32, u32, u32)]) -> Vec<crate::records::DesignDimensionL
 fn counted_offset_return_run_pairs_sources_and_results() {
     let entity = |id: &str, start, end| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Line { start, end },
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
     let bottom = entity(
-        "generated:line#bottom",
+        "generated:test:line#bottom",
         Point2::new(10.0, 0.0),
         Point2::new(0.0, 0.0),
     );
     let top = entity(
-        "generated:line#top",
+        "generated:test:line#top",
         Point2::new(0.0, 10.0),
         Point2::new(10.0, 10.0),
     );
     let inset_top = entity(
-        "generated:line#inset-top",
+        "generated:test:line#inset-top",
         Point2::new(2.0, 8.0),
         Point2::new(8.0, 8.0),
     );
     let inset_bottom = entity(
-        "generated:line#inset-bottom",
+        "generated:test:line#inset-bottom",
         Point2::new(8.0, 2.0),
         Point2::new(2.0, 2.0),
     );
@@ -81,16 +82,17 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 fn counted_offset_accepts_primary_to_generated_identity_partition() {
     let entity = |id: &str, y| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Line {
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, y),
                 end: Point2::new(8.0, y),
-            },
+            })
+            .unwrap(),
         )
     };
-    let source = entity("generated:line#source", 0.0);
-    let result = entity("generated:line#result", 2.75);
+    let source = entity("generated:test:line#source", 0.0);
+    let result = entity("generated:test:line#result", 2.75);
     let entities = HashMap::from([(1, &source), (2, &result)]);
     let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
 
@@ -124,22 +126,16 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
 fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     let entity = |id: &str, degree, knots, control_points| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Nurbs {
-                curve: cadmpeg_ir::geometry::PcurveNurbs::new(
-                    degree,
-                    knots,
-                    control_points,
-                    None,
-                    false,
-                )
-                .unwrap(),
-            },
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::nurbs(
+                cadmpeg_ir::geometry::PcurveNurbs::new(degree, knots, control_points, None, false)
+                    .unwrap(),
+            ),
         )
     };
     let source = entity(
-        "generated:nurbs#source",
+        "generated:test:nurbs#source",
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -151,7 +147,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     let result_start = Point2::new(-1.2, 1.6);
     let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
     let result = entity(
-        "generated:nurbs#result",
+        "generated:test:nurbs#result",
         3,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -180,11 +176,16 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     ));
 
     let mut skewed = result;
-    let SketchGeometry::Nurbs { curve } = &mut skewed.geometry else {
-        unreachable!("test result is a NURBS")
-    };
-    curve
-        .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+    skewed
+        .geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                unreachable!("test result is a NURBS")
+            };
+            curve
+                .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+                .unwrap();
+        })
         .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
@@ -200,24 +201,26 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
 fn counted_offset_accepts_trimmed_concentric_arcs() {
     let arc = |id: &str, radius| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Arc {
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(3.0, -4.0),
                 radius: Length(radius),
                 start_angle: Angle(0.0),
                 end_angle: Angle(std::f64::consts::FRAC_PI_2),
-            },
+            })
+            .unwrap(),
         )
     };
-    let source = arc("generated:arc#source", 2.0);
-    let mut result = arc("generated:arc#result", 5.0);
-    result.geometry = SketchGeometry::Arc {
+    let source = arc("generated:test:arc#source", 2.0);
+    let mut result = arc("generated:test:arc#result", 5.0);
+    result.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
         radius: Length(5.0),
         start_angle: Angle(0.1),
         end_angle: Angle(1.4),
-    };
+    })
+    .unwrap();
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     let definition = exact_counted_offset(
@@ -240,12 +243,13 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     ));
 
     let mut mismatched = result;
-    mismatched.geometry = SketchGeometry::Arc {
+    mismatched.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
         radius: Length(5.0),
         start_angle: Angle(std::f64::consts::PI),
         end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
-    };
+    })
+    .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
@@ -260,16 +264,17 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
 fn counted_offset_accepts_concentric_full_circles() {
     let circle = |id: &str, radius| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Circle {
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(3.0, -4.0),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
     };
-    let source = circle("generated:circle#source", 5.0);
-    let result = circle("generated:circle#result", 3.5);
+    let source = circle("generated:test:circle#source", 5.0);
+    let result = circle("generated:test:circle#result", 3.5);
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     assert!(matches!(
@@ -308,10 +313,11 @@ fn counted_offset_accepts_concentric_full_circles() {
     ));
 
     let mut displaced = result.clone();
-    displaced.geometry = SketchGeometry::Circle {
+    displaced.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -3.9),
         radius: Length(3.5),
-    };
+    })
+    .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
@@ -325,35 +331,39 @@ fn counted_offset_accepts_concentric_full_circles() {
 #[test]
 fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs() {
     let stream = "f3d:synthetic";
-    let sketch_id = SpatialSketchId("synthetic:spatial-sketch#offset".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#offset").unwrap();
     let entity = |record_index, geometry| {
         SpatialSketchEntity::new(
-            SpatialSketchEntityId(format!("synthetic:spatial-curve#{record_index}")),
+            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-curve#{record_index}"))
+                .unwrap(),
             sketch_id.clone(),
             geometry,
         )
         .with_native_ref(Some(format!("{stream}:sketch-curve#{record_index}")))
     };
     let sources = [
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
             start: Point3::new(-20.0, 5.0, 8.0),
             end: Point3::new(-15.0, 5.0, 8.0),
-        },
-        SpatialSketchGeometry::Arc {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Arc {
             center: Point3::new(30.0, -12.0, 9.0),
             normal: Vector3::new(1.0, 0.0, 0.0),
             reference_direction: Vector3::new(0.0, 1.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-        SpatialSketchGeometry::Circle {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
             center: Point3::new(50.0, 40.0, -7.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: Length(4.0),
-        },
-        SpatialSketchGeometry::Nurbs {
+        })
+        .unwrap(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
             curve: cadmpeg_ir::geometry::NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -361,8 +371,11 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                 None,
                 false,
             )
+            .unwrap()
+            .try_into()
             .unwrap(),
-        },
+        })
+        .unwrap(),
     ]
     .into_iter()
     .enumerate()
@@ -379,22 +392,24 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .map(|(index, (start, end))| {
         entity(
             index as u32 + 11,
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         )
     })
     .collect::<Vec<_>>();
-    let profile = SpatialSketchProfile {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        boundary: results
+    let profile = SpatialSketchProfile::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        results
             .iter()
             .map(|entity| SpatialSketchEntityUse {
                 entity: entity.id().clone(),
                 reversed: false,
             })
             .collect(),
-    };
+    )
+    .unwrap();
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
         name: None,
@@ -467,7 +482,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         .chain(&results)
         .map(|entity| ((stream, record_index(entity)), entity))
         .collect::<HashMap<_, _>>();
-    let parameter = ParameterId::mint("synthetic:parameter#offset").expect("identity grammar");
+    let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
     let definition = spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",
@@ -483,7 +498,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
-        SpatialSketchConstraintDefinition::Offset {
+        SpatialSketchConstraintDefinitionInput::Offset {
             sources: actual_sources,
             results: actual_results,
             normal,
@@ -523,10 +538,11 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     .is_none());
     let outside_source = entity(
         99,
-        SpatialSketchGeometry::Line {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
             start: Point3::new(-100.0, 0.0, 0.0),
             end: Point3::new(-90.0, 0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     by_record.insert((stream, 99), &outside_source);
     let mut non_permutation = operands.clone();
@@ -559,20 +575,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         &by_record,
     )
     .is_none());
-    let mut repeated_boundary = sketch.clone();
-    repeated_boundary.profiles[0].boundary[1] = repeated_boundary.profiles[0].boundary[0].clone();
-    assert!(spatial_counted_offset_dimension_definition(
-        "Linear Dimension-1",
-        Some(0x20),
-        &operands,
-        &parameter,
-        3.0,
-        -3.0,
-        &sketch_id,
-        std::slice::from_ref(&repeated_boundary),
-        &by_record,
-    )
-    .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
     assert!(spatial_counted_offset_dimension_definition(
@@ -593,136 +595,151 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
 fn counted_roles_require_matching_solved_geometry() {
     let line = |id: &str, start, end| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Line { start, end },
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
     let horizontal = line(
-        "generated:line#horizontal",
+        "generated:test:line#horizontal",
         Point2::new(-2.0, 3.0),
         Point2::new(5.0, 3.0),
     );
     let vertical = line(
-        "generated:line#vertical",
+        "generated:test:line#vertical",
         Point2::new(4.0, -1.0),
         Point2::new(4.0, 8.0),
     );
 
     assert!(matches!(
         counted_role_relation(&[&horizontal], 0x40),
-        Some(SketchConstraintDefinition::Horizontal { entity })
+        Some(SketchConstraintDefinitionInput::Horizontal { entity })
             if &entity == horizontal.id()
     ));
     assert!(matches!(
         counted_role_relation(&[&vertical], 0x80),
-        Some(SketchConstraintDefinition::Vertical { entity })
+        Some(SketchConstraintDefinitionInput::Vertical { entity })
             if &entity == vertical.id()
+    ));
+    assert!(matches!(
+        counted_role_relation(&[&horizontal], 0x20_0000_0040),
+        Some(SketchConstraintDefinitionInput::Horizontal { entity }) if &entity == horizontal.id()
     ));
     assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
     assert!(counted_role_relation(&[&horizontal, &vertical], 0x40).is_none());
 
     let arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#tangent".into()),
+        SketchEntityId::mint("generated:test:arc#tangent").unwrap(),
         horizontal.sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0, 2.0),
             radius: Length(1.0),
             start_angle: Angle(std::f64::consts::FRAC_PI_2),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &horizontal], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == horizontal.id()
     ));
 
     let tangent_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#arc-tangent".into()),
+        SketchEntityId::mint("generated:test:arc#arc-tangent").unwrap(),
         horizontal.sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0, 5.0),
             radius: Length(2.0),
             start_angle: Angle(-std::f64::consts::FRAC_PI_2),
             end_angle: Angle(0.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &tangent_arc], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == tangent_arc.id()
     ));
 
     let non_tangent_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#arc-not-tangent".into()),
+        SketchEntityId::mint("generated:test:arc#arc-not-tangent").unwrap(),
         tangent_arc.sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-1.0, 3.0),
             radius: Length(1.0),
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(2.0 * std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     assert!(counted_role_relation(&[&arc, &non_tangent_arc], 0x100).is_none());
 
     let interior_tangent_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#arc-interior-tangent".into()),
+        SketchEntityId::mint("generated:test:arc#arc-interior-tangent").unwrap(),
         tangent_arc.sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0 - 2.0 / 2.0_f64.sqrt(), 2.0 + 2.0 / 2.0_f64.sqrt()),
             radius: Length(1.0),
             start_angle: Angle(-std::f64::consts::FRAC_PI_2),
             end_angle: Angle(0.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &interior_tangent_arc], 0x100),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == interior_tangent_arc.id()
     ));
 
     let tangent_circle = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:circle#rounded-tangent".into()),
+        SketchEntityId::mint("generated:test:circle#rounded-tangent").unwrap(),
         tangent_arc.sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
-        },
+        })
+        .unwrap(),
     );
     let rounded_tangent_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#rounded-tangent".into()),
+        SketchEntityId::mint("generated:test:arc#rounded-tangent").unwrap(),
         tangent_arc.sketch.clone(),
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(2.0, 0.0),
             radius: Length(1.0),
             start_angle: Angle(TEST_ANGLE_ROUNDING),
             end_angle: Angle(std::f64::consts::PI),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         crate::design::dimensions::counted_role_relation_at_tolerance(
             &[&tangent_circle, &rounded_tangent_arc],
-            0x100,
+            &[crate::records::SketchConstraintKind::Tangent],
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Tangent { first, second })
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));
 
     let mut equal_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId("generated:arc#equal".into()),
+        SketchEntityId::mint("generated:test:arc#equal").unwrap(),
         arc.sketch.clone(),
         arc.geometry.clone(),
     );
     assert!(matches!(
         counted_role_relation(&[&arc, &equal_arc], 0x800),
-        Some(SketchConstraintDefinition::Equal { first, second })
+        Some(SketchConstraintDefinitionInput::Equal { first, second })
             if &first == arc.id() && &second == equal_arc.id()
     ));
-    if let SketchGeometry::Arc { radius, .. } = &mut equal_arc.geometry {
-        *radius = Length(2.0);
-    }
+    equal_arc
+        .geometry
+        .edit(|definition| {
+            if let SketchGeometryDefinition::Arc { radius, .. } = definition {
+                *radius = Length(2.0);
+            }
+        })
+        .unwrap();
     assert!(counted_role_relation(&[&arc, &equal_arc], 0x800).is_none());
 }
 
@@ -756,20 +773,23 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let owner = |stream: &str| DesignParameterOwner {
-        id: format!("f3d:{stream}:design-parameter-owner#0"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 9,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 1.0,
-        evaluated_value_offset: 40,
-        parameter_record_index: 11,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 12,
+    let owner = |stream: &str| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("f3d:{stream}:design-parameter-owner#0"),
+            byte_offset: (40) - 40,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 10,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 12,
+        })
+        .unwrap()
     };
     let pair = |stream: &str| DesignDimensionLocusPair {
         id: format!("f3d:{stream}:design-dimension-locus-pair#0"),
@@ -800,22 +820,28 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 100,
     };
-    let point = |stream: &str, record_index| SketchPoint {
-        id: format!("f3d:{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: None,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 89,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+    let point = |stream: &str, record_index| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("f3d:{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
     let mut points = vec![
         point("A", 20),

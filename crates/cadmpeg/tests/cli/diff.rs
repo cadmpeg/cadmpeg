@@ -14,7 +14,8 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let left = unit_cube();
     let mut right = left.clone();
     right.model.points[0].position.x += 0.5;
-    right.model.edges[0].tolerance = Some(0.01);
+    right.model.edges[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.01).expect("positive finite tolerance"));
     right.model.coedges[0].sense = match right.model.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,

@@ -89,37 +89,42 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     let entities = sketch_input_entities(&payload, "lane");
     let first_entity = entities
         .iter()
-        .find(|entity| entity.offset == first as u64)
+        .find(|entity| entity.offset() == first as u64)
         .expect("first linked profile point");
     assert_eq!(first_entity.kind, SketchInputKind::Point);
     assert_eq!(first_entity.coordinates_m, Some([1.0, 2.0]));
     assert_eq!(first_entity.local_id, Some(32));
 
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset: line as u64,
-        object_index: Some(20),
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            line as u64,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = Some(20);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let point = |id: &str, offset| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let point = |id: &str, offset| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [
         curve.clone(),

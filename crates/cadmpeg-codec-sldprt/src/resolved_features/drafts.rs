@@ -639,7 +639,7 @@ mod tests {
             features: vec![feature],
         };
         let mut projected = vec![cadmpeg_ir::features::Feature {
-            id: FeatureId::mint("draft").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
             ordinal: 0,
             name: Some("Draft1".into()),
             suppressed: Some(false),

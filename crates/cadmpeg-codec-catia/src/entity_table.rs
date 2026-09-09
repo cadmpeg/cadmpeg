@@ -393,24 +393,10 @@ fn reference_signature_program(
     let mut at = 0;
     while at < bytes.len() {
         let start = at;
-        match bytes[start] {
-            byte @ (b'E' | b'S' | b'T') => {
-                if !expects_operand {
-                    return None;
-                }
-                let symbol = match byte {
-                    b'E' => ReferenceSignatureSymbol::E,
-                    b'S' => ReferenceSignatureSymbol::S,
-                    b'T' => ReferenceSignatureSymbol::T,
-                    _ => unreachable!("matched descriptor symbol"),
-                };
-                program.push(ReferenceSignatureInstruction::Symbol {
-                    symbol,
-                    offset: signature_offset + start,
-                });
-                expects_operand = false;
-                at += 1;
-            }
+        let symbol = match bytes[start] {
+            b'E' => ReferenceSignatureSymbol::E,
+            b'S' => ReferenceSignatureSymbol::S,
+            b'T' => ReferenceSignatureSymbol::T,
             byte if byte.is_ascii_digit() => {
                 if !expects_operand {
                     return None;
@@ -424,6 +410,7 @@ fn reference_signature_program(
                     offset: signature_offset + start,
                 });
                 expects_operand = false;
+                continue;
             }
             b'(' if !expects_operand => {
                 program.push(ReferenceSignatureInstruction::OpenCall {
@@ -432,6 +419,7 @@ fn reference_signature_program(
                 call_depth = call_depth.checked_add(1)?;
                 expects_operand = true;
                 at += 1;
+                continue;
             }
             b',' if call_depth != 0 && !expects_operand => {
                 program.push(ReferenceSignatureInstruction::Comma {
@@ -439,6 +427,7 @@ fn reference_signature_program(
                 });
                 expects_operand = true;
                 at += 1;
+                continue;
             }
             b')' if call_depth != 0 && !expects_operand => {
                 program.push(ReferenceSignatureInstruction::CloseCall {
@@ -447,6 +436,7 @@ fn reference_signature_program(
                 call_depth -= 1;
                 expects_operand = false;
                 at += 1;
+                continue;
             }
             b'#' if !expects_operand => {
                 let selector_offset = start.checked_add(1)?;
@@ -461,6 +451,7 @@ fn reference_signature_program(
                     selector_offset: signature_offset + selector_offset,
                 });
                 at += 2;
+                continue;
             }
             b'-' if !expects_operand => {
                 program.push(ReferenceSignatureInstruction::Difference {
@@ -468,9 +459,19 @@ fn reference_signature_program(
                 });
                 expects_operand = true;
                 at += 1;
+                continue;
             }
             _ => return None,
+        };
+        if !expects_operand {
+            return None;
         }
+        program.push(ReferenceSignatureInstruction::Symbol {
+            symbol,
+            offset: signature_offset + start,
+        });
+        expects_operand = false;
+        at += 1;
     }
     (!expects_operand && call_depth == 0).then_some(program)
 }

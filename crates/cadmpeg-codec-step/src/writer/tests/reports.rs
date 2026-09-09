@@ -127,16 +127,20 @@ fn edgeless_doc() -> CadIr {
 #[test]
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube();
-    ir.model.assets.push(cadmpeg_ir::assets::Asset {
-        id: cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
-            .expect("identity grammar"),
-        name: Some("texture".into()),
-        media_type: Some("image/png".into()),
-        content: cadmpeg_ir::assets::AssetContent::External {
-            uri: "urn:test:texture".into(),
-        },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        cadmpeg_ir::assets::Asset::try_new(
+            cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
+                .expect("identity grammar"),
+            Some("texture".into()),
+            Some("image/png".into()),
+            cadmpeg_ir::assets::AssetContent::External {
+                uri: cadmpeg_ir::products::NonEmptyString::new("urn:test:texture")
+                    .expect("nonempty uri"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
@@ -210,9 +214,12 @@ fn writer_reports_unrepresented_topology_metadata() {
         .expect("decode topology metadata fixture")
         .into_parts()
         .0;
-    ir.model.faces[0].tolerance = Some(0.01);
-    ir.model.edges[0].tolerance = Some(0.02);
-    ir.model.vertices[0].tolerance = Some(0.03);
+    ir.model.faces[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.01).expect("positive finite tolerance"));
+    ir.model.edges[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.02).expect("positive finite tolerance"));
+    ir.model.vertices[0].tolerance =
+        Some(cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"));
     let edge_curve = ir.model.edges[0].curve.clone().expect("edge curve");
     let coedge = ir
         .model
@@ -348,13 +355,18 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 
     let mut ir = unit_cube();
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
-    ir.model.assets.push(Asset {
-        id: texture.clone(),
-        name: None,
-        media_type: Some("image/png".into()),
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            texture.clone(),
+            None,
+            Some("image/png".into()),
+            AssetContent::Embedded {
+                data: cadmpeg_ir::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::from_decoded(
             "synthetic:test:tessellation#triangle-metadata",
@@ -674,21 +686,17 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     for (id, color) in [
         (
             red.clone(),
-            cadmpeg_ir::topology::Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"),
         ),
         (
             blue.clone(),
-            cadmpeg_ir::topology::Color {
-                r: if same_color { 1.0 } else { 0.0 },
-                g: 0.0,
-                b: if same_color { 0.0 } else { 1.0 },
-                a: 1.0,
-            },
+            cadmpeg_ir::topology::Color::new(
+                if same_color { 1.0 } else { 0.0 },
+                0.0,
+                if same_color { 0.0 } else { 1.0 },
+                1.0,
+            )
+            .expect("valid color"),
         ),
     ] {
         ir.model.appearances.push(Appearance {
@@ -815,7 +823,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
                 .expect("identity grammar"),
         ))
         .with_faces(vec![ir.model.faces[0].id.clone()])
-        .with_chordal_deflection(Some(0.01)),
+        .with_chordal_deflection(Some(0.01))
+        .unwrap(),
     );
 
     let report = write_step(
@@ -1081,12 +1090,9 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.4,
-            g: 0.5,
-            b: 0.6,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.4, 0.5, 0.6, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     });
@@ -1168,7 +1174,11 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     let PmiDefinition::DatumSystem { references } = &mut system.definition else {
         unreachable!()
     };
-    references[0].modifiers.push("unknown_modifier".into());
+    let mut edited = references.as_slice().to_vec();
+    edited[0].modifiers.push("unknown_modifier".into());
+    references
+        .replace(edited)
+        .expect("unchanged datum compartments");
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1271,7 +1281,8 @@ fn edge_without_curve_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: "object-0".into(),
+        object_id: cadmpeg_ir::products::NonEmptyString::new("object-0")
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
@@ -1282,11 +1293,8 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: Some(source_object.clone()),
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
     ir.model.tessellations.push(
         Tessellation::from_decoded(

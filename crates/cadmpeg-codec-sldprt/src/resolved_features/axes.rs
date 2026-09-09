@@ -1179,7 +1179,7 @@ pub(super) fn profile_roster_construction_axis(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset).ok()?;
+            let offset = usize::try_from(marker.offset()).ok()?;
             if !marker_is_selected_construction_line(&lane.native_payload, offset) {
                 return None;
             }
@@ -1567,7 +1567,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let curve_candidates = markers.iter().copied().filter(|marker| {
-        let Ok(offset) = usize::try_from(marker.offset) else {
+        let Ok(offset) = usize::try_from(marker.offset()) else {
             return false;
         };
         if marker.feature_ref.as_deref() != Some(profile_native) {
@@ -1616,7 +1616,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .iter()
         .copied()
         .filter(|marker| {
-            usize::try_from(marker.offset).ok().is_some_and(|offset| {
+            usize::try_from(marker.offset()).ok().is_some_and(|offset| {
                 lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
             })
         })
@@ -1633,7 +1633,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             .copied()
             .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
             .collect::<Vec<_>>();
-        owned.sort_unstable_by_key(|marker| marker.offset);
+        owned.sort_unstable_by_key(|marker| marker.offset());
         if let Some(start) = owned
             .windows(2)
             .find_map(|pair| (pair[1].id == end.id).then_some(pair[0]))
@@ -1657,7 +1657,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .filter(|marker| {
-            usize::try_from(marker.offset).ok().is_some_and(|offset| {
+            usize::try_from(marker.offset()).ok().is_some_and(|offset| {
                 extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
                     .is_some()
             })
@@ -1672,7 +1672,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
                 .then_some(endpoints)
         })
         .collect::<Vec<_>>();
-    boundary_relations.sort_unstable_by_key(|endpoints| [endpoints[0].offset, endpoints[1].offset]);
+    boundary_relations
+        .sort_unstable_by_key(|endpoints| [endpoints[0].offset(), endpoints[1].offset()]);
     boundary_relations
         .dedup_by_key(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]);
     match boundary_relations.as_slice() {

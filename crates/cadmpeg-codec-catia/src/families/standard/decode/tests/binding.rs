@@ -850,7 +850,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             &[None],
             &[],
         )
-        .expect("standard topology fixture transfer");
+        .expect("valid source object identity");
 
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
@@ -1035,7 +1035,8 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         [0, 0],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
     assert!(matches!(ir

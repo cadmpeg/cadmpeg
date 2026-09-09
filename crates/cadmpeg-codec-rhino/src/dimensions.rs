@@ -62,6 +62,21 @@ pub(crate) const V2_LEADER: Uuid = Uuid::from_canonical([
 ]);
 pub(crate) const V2_REALLY_BIG_NUMBER: f64 = 1.0e150;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OrdinateAxis {
+    X,
+    Y,
+}
+
+impl OrdinateAxis {
+    fn value(self) -> i32 {
+        match self {
+            Self::X => 1,
+            Self::Y => 2,
+        }
+    }
+}
+
 /// Dimension family and defining plane-space geometry.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Definition {
@@ -84,7 +99,7 @@ pub(crate) enum Definition {
     Ordinate {
         definition_point: [f64; 2],
         leader_point: [f64; 2],
-        measured_direction: i32,
+        measured_direction: OrdinateAxis,
         kink_offsets: [f64; 2],
     },
     CenterMark {
@@ -512,19 +527,20 @@ fn world_horizontal_in_plane(plane: &Plane) -> [f64; 2] {
     [plane.xaxis.0[0], plane.yaxis.0[0]]
 }
 
-fn ordinate_direction(stored: i32, definition: [f64; 2], leader: [f64; 2]) -> Option<i32> {
+fn ordinate_direction(stored: i32, definition: [f64; 2], leader: [f64; 2]) -> Option<OrdinateAxis> {
     match stored {
-        0 | 1 => Some(stored + 1),
+        0 => Some(OrdinateAxis::X),
+        1 => Some(OrdinateAxis::Y),
         -1 => Some(inferred_ordinate_direction(definition, leader)),
         _ => None,
     }
 }
 
-fn inferred_ordinate_direction(definition: [f64; 2], leader: [f64; 2]) -> i32 {
+fn inferred_ordinate_direction(definition: [f64; 2], leader: [f64; 2]) -> OrdinateAxis {
     if (leader[0] - definition[0]).abs() <= (leader[1] - definition[1]).abs() {
-        1
+        OrdinateAxis::X
     } else {
-        2
+        OrdinateAxis::Y
     }
 }
 
@@ -811,7 +827,7 @@ fn decode_legacy(
                 ordinate_direction(stored_direction, definition_point, leader_point).ok_or_else(
                     || FramingError::structural(range.start, "invalid legacy ordinate direction"),
                 )?;
-            let measurement = if measured_direction == 1 {
+            let measurement = if measured_direction == OrdinateAxis::X {
                 definition_point[0].abs()
             } else {
                 definition_point[1].abs()
@@ -1138,8 +1154,10 @@ pub(crate) fn decode(
         let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
         let measured_direction = if stored_direction == 0 {
             inferred_ordinate_direction(definition_point, leader_point)
+        } else if stored_direction == 1 {
+            OrdinateAxis::X
         } else {
-            stored_direction
+            OrdinateAxis::Y
         };
         let kink_offsets = [
             scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
@@ -1198,7 +1216,7 @@ pub(crate) fn decode(
             measured_direction,
             ..
         } => {
-            (if *measured_direction == 1 {
+            (if *measured_direction == OrdinateAxis::X {
                 definition_point[0].abs()
             } else {
                 definition_point[1].abs()
@@ -1355,10 +1373,13 @@ pub(crate) fn project(
     name: Option<String>,
     object: &str,
     order: u32,
-) -> (
-    cadmpeg_ir::semantic_annotations::SemanticAnnotation,
-    Vec<crate::loss::RhinoLossCode>,
-) {
+) -> Result<
+    (
+        cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+        Vec<crate::loss::RhinoLossCode>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     use crate::loss::RhinoLossCode;
     use cadmpeg_ir::semantic_annotations::{
         SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -1601,7 +1622,7 @@ pub(crate) fn project(
             );
             properties.insert(
                 "measured_direction".to_string(),
-                measured_direction.to_string(),
+                measured_direction.value().to_string(),
             );
             properties.insert(
                 "kink_offsets".to_string(),
@@ -1656,6 +1677,15 @@ pub(crate) fn project(
         RhinoLossCode::DimensionDetailReferenceUnresolved,
     );
 
+    let value = cadmpeg_ir::units::FiniteScalar::new(value)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("dimension value must be finite"))?;
+    let position = position
+        .map(|value| {
+            cadmpeg_ir::units::FiniteVector::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("dimension position must be finite")
+            })
+        })
+        .transpose()?;
     let annotation = SemanticAnnotation {
         id: SemanticAnnotationId::mint(format!("rhino:dimension:annotation#{key}"))
             .expect("identity grammar"),
@@ -1675,12 +1705,12 @@ pub(crate) fn project(
         assets: Vec::new(),
         native_ref: object.to_string(),
     };
-    (annotation, unresolved)
+    Ok((annotation, unresolved))
 }
 
 /// Serializes one decoded dimension without source-record identity.
 pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0);
+    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0).ok()?;
     serde_json::to_string(&serde_json::json!({
         "kind": "dimension",
         "runtime_type": annotation.runtime_type,
@@ -2147,7 +2177,7 @@ pub(crate) mod tests {
             Definition::Ordinate {
                 definition_point: [-30.0, 80.0],
                 leader_point: [20.0, 120.0],
-                measured_direction: 1,
+                measured_direction: OrdinateAxis::X,
                 kink_offsets: [15.0, 7.5]
             }
         ));
@@ -2298,7 +2328,7 @@ pub(crate) mod tests {
             Definition::Ordinate {
                 definition_point: [40.0, -70.0],
                 leader_point: [40.0, 20.0],
-                measured_direction: 1,
+                measured_direction: OrdinateAxis::X,
                 kink_offsets: [12.5, 5.0]
             }
         ));
@@ -2530,7 +2560,7 @@ pub(crate) mod tests {
         assert!(matches!(
             ordinate.definition,
             Definition::Ordinate {
-                measured_direction: 1,
+                measured_direction: OrdinateAxis::X,
                 kink_offsets: [12.5, 5.0],
                 ..
             }

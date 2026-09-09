@@ -48,6 +48,31 @@ pub(crate) fn fixture(inventor: bool) -> Vec<u8> {
     file
 }
 
+pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
+    const STREAM_LEN: usize = 4096;
+    assert!(ufrx.len() <= STREAM_LEN);
+    let mut file = fixture(true);
+    file.resize(3 * SECTOR_SIZE + STREAM_LEN, 0);
+    let directory = sector_mut(&mut file, 0);
+    put_u32(directory, 128 + 68, 3);
+    directory_entry(directory, 3, "UFRxDoc", 2, NO_STREAM, 2, STREAM_LEN as u64);
+    directory[3 * 128 + 67] = 0;
+    let fat = sector_mut(&mut file, 1);
+    for sector in 2..10 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 9 {
+                END_OF_CHAIN
+            } else {
+                sector as u32 + 1
+            },
+        );
+    }
+    file[3 * SECTOR_SIZE..3 * SECTOR_SIZE + ufrx.len()].copy_from_slice(ufrx);
+    file
+}
+
 fn directory_entry(
     directory: &mut [u8],
     index: usize,

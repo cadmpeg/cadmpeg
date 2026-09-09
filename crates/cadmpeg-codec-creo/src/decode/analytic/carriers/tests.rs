@@ -144,13 +144,14 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [-12.5, 4.0, 0.0],
-                        axis: [0.0, 1.0, 0.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 0.75,
-                        length: Some(34.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [-12.5, 4.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        0.75,
+                        Some(34.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -188,7 +189,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -206,17 +207,18 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [-30.0, 6.5, -14.0],
-                        axis: [
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [-30.0, 6.5, -14.0],
+                        [
                             std::f64::consts::FRAC_1_SQRT_2,
                             0.0,
                             std::f64::consts::FRAC_1_SQRT_2,
                         ],
-                        ref_direction: [0.0, -1.0, 0.0],
-                        radius: 0.8,
-                        length: Some(0.282_842_712_474_619),
-                    },
+                        [0.0, -1.0, 0.0],
+                        0.8,
+                        Some(0.282_842_712_474_619),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -457,7 +459,8 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert!(ir.model.surfaces.is_empty());

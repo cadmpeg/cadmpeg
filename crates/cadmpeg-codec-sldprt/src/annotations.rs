@@ -16,7 +16,7 @@ pub(crate) fn note(
     let id = id.into();
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     let stream = builder.stream(stream);
-    builder.note(&id, stream, offset).tag(tag);
+    builder.note(&id, &stream, offset).tag(tag);
     builder.exactness(id, exactness);
     *annotations = builder.build();
 }

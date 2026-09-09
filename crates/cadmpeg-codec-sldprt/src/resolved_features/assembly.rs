@@ -13,7 +13,7 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
-pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
+pub(crate) fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     let sections = scan.sections().collect::<Vec<_>>();
     let has_explicit_lanes = sections.iter().any(|source| {
         source
@@ -74,7 +74,7 @@ fn feature_input_lane(
     let references = reference_cells(&scalars, &classes);
     let sketch_entities = sketch_input_entities(payload, &parent);
     for entity in &sketch_entities {
-        let signature = usize::try_from(entity.offset)
+        let signature = usize::try_from(entity.offset())
             .ok()
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
             .map_or("sketch-marker", |prefix| {
@@ -90,7 +90,7 @@ fn feature_input_lane(
             annotations,
             entity.id.clone(),
             section,
-            entity.offset,
+            entity.offset(),
             signature,
             Exactness::ByteExact,
         );

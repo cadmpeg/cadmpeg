@@ -3,8 +3,8 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, DeclaredInterval,
-    ProjectionOutcome,
+    declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    DeclaredInterval, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -86,17 +86,12 @@ fn tabulated_directrix_type_allowed(
     )
 }
 
-fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let length = vector.norm();
-    (length.is_finite() && length > 0.0).then(|| vector.scale(1.0 / length))
-}
-
 fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     let column = |index| {
         Vector3::new(
-            transform.rows[0][index],
-            transform.rows[1][index],
-            transform.rows[2][index],
+            transform.rows()[0][index],
+            transform.rows()[1][index],
+            transform.rows()[2][index],
         )
     };
     let [x, y, z] = [column(0), column(1), column(2)];
@@ -755,7 +750,6 @@ fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) 
                 "iges_surface_poles",
                 MAX_SURFACE_POLES as u64,
                 pole_count as u64,
-                None,
             );
         }
         return None;
@@ -1276,7 +1270,7 @@ pub(super) fn project(
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         decoded.insert(entry.sequence);
     }
@@ -1381,7 +1375,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1518,7 +1512,7 @@ pub(super) fn project(
                         basis: Box::new(directrix_geometry),
                         transform: transform.body_transform(),
                     },
-                    source_object: Some(source_object(entry)),
+                    source_object: Some(source_object(entry)?),
                 });
                 placed_id
             };
@@ -1535,7 +1529,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -1633,7 +1627,7 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
                 geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             placed_id
         };
@@ -1661,7 +1655,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1805,7 +1799,7 @@ pub(super) fn project(
                         basis: Box::new(directrix_geometry),
                         transform: transform.body_transform(),
                     },
-                    source_object: Some(source_object(entry)),
+                    source_object: Some(source_object(entry)?),
                 });
                 procedural_axis_origin = transform.point(axis_origin);
                 let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
@@ -1830,7 +1824,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -1886,7 +1880,6 @@ pub(super) fn project(
                 "iges_revolution_poles",
                 MAX_SURFACE_POLES as u64,
                 u64::MAX,
-                None,
             ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
@@ -1894,7 +1887,6 @@ pub(super) fn project(
                 "iges_revolution_poles",
                 MAX_SURFACE_POLES as u64,
                 surface_pole_count as u64,
-                None,
             ));
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
@@ -1943,7 +1935,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let mut procedural_directrix =
             CurveId::mint(format!("iges:model:curve#D{generatrix_sequence}"))
@@ -1978,7 +1970,7 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Nurbs(placed_generatrix),
-                source_object: Some(source_object(entry)),
+                source_object: Some(source_object(entry)?),
             });
             procedural_axis_origin = transform.point(axis_origin);
             let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
@@ -2079,7 +2071,6 @@ pub(super) fn project(
                     "iges_surface_poles",
                     MAX_SURFACE_POLES as u64,
                     u64::MAX,
-                    None,
                 ));
             }
             Some(requested) if requested > MAX_SURFACE_POLES as u64 => {
@@ -2087,7 +2078,6 @@ pub(super) fn project(
                     "iges_surface_poles",
                     MAX_SURFACE_POLES as u64,
                     requested,
-                    None,
                 ));
             }
             Some(_) => {}
@@ -2120,7 +2110,6 @@ pub(super) fn project(
                 "iges_surface_poles",
                 MAX_SURFACE_POLES as u64,
                 pole_count as u64,
-                None,
             ));
         }
         let Some(u_knot_count) = u_count
@@ -2368,7 +2357,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -2415,11 +2404,11 @@ pub(super) fn project(
             continue;
         };
         let indicator = Vector3::new(x, y, z);
-        if !declared_unit_vector(record, 1, indicator, global.real_precision()) {
+        let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
+        else {
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
-        }
-        let indicator = unit_vector(indicator).expect("validated nonzero finite offset indicator");
+        };
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
@@ -2511,7 +2500,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,

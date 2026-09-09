@@ -3316,7 +3316,7 @@ fn select_associated_pcurve(
         .find(|pcurve| pcurve.id == candidate)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
-    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
+    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear.get());
     let start = vdefs
         .get(&edge.vertices().0)
         .and_then(|vertex| point_positions.get(vertex.point))

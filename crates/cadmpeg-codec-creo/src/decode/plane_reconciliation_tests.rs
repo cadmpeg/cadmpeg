@@ -221,7 +221,8 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         &mut ir,
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &std::collections::BTreeSet::new(),
-    );
+    )
+    .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
     let plane = ir
@@ -251,7 +252,8 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
 }
@@ -321,7 +323,8 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         1
     );
     assert!(ir.model.surfaces.iter().any(|surface| {

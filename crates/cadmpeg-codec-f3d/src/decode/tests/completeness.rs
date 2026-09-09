@@ -6,7 +6,7 @@ use super::super::feature_definition_is_incomplete;
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -223,7 +223,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
     ));
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::AssemblyJoint {
-            joint: JointId::mint("model:joint#assembly").expect("identity grammar"),
+            joint: JointId::mint("model:test:joint#assembly").expect("identity grammar"),
         }
     ));
     assert!(OccurrenceId::mint(String::new()).is_err());

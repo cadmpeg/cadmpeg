@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use super::*;
 
@@ -18,8 +18,9 @@ fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
         offset: 40,
     });
 
-    let Some((2, SketchGeometry::Ellipse { bounds, .. }, 40)) =
+    let Some((2, SketchGeometryDefinition::Ellipse { bounds, .. }, 40)) =
         saved_section_entity_geometry(&entity)
+            .map(|(id, geometry, offset)| (id, geometry.into_definition(), offset))
     else {
         panic!("full ellipse");
     };

@@ -443,6 +443,10 @@ impl TryFrom<u8> for CatiaCircleLayout {
 
 /// One complete consolidated `B:19` arc-length circle support.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "CatiaConsolidatedCircleWire",
+    into = "CatiaConsolidatedCircleWire"
+)]
 pub struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     pub id: String,
@@ -460,10 +464,65 @@ pub struct CatiaConsolidatedCircle {
     pub radius: f64,
     /// Arc-length parameter interval.
     pub range: [f64; 2],
-    /// Whether the interval spans one complete circumference.
-    pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+impl CatiaConsolidatedCircle {
+    /// Whether the interval spans one complete circumference.
+    pub fn full_circle(&self) -> bool {
+        crate::families::b2::records::circle_range_is_full_turn(self.radius, self.range)
+    }
+}
+#[derive(Serialize, Deserialize)]
+struct CatiaConsolidatedCircleWire {
+    id: String,
+    byte_offset: u64,
+    layout: CatiaCircleLayout,
+    record_id: u32,
+    frame_token: u8,
+    center_pair: [f64; 2],
+    radius: f64,
+    range: [f64; 2],
+    full_circle: bool,
+    chart_shift: f64,
+}
+impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
+    type Error = String;
+    fn try_from(wire: CatiaConsolidatedCircleWire) -> Result<Self, Self::Error> {
+        let circle = Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            layout: wire.layout,
+            record_id: wire.record_id,
+            frame_token: wire.frame_token,
+            center_pair: wire.center_pair,
+            radius: wire.radius,
+            range: wire.range,
+            chart_shift: wire.chart_shift,
+        };
+        if wire.full_circle != circle.full_circle() {
+            return Err("full_circle does not match radius and range".into());
+        }
+        Ok(circle)
+    }
+}
+impl From<CatiaConsolidatedCircle> for CatiaConsolidatedCircleWire {
+    fn from(circle: CatiaConsolidatedCircle) -> Self {
+        let full_circle = circle.full_circle();
+        Self {
+            full_circle,
+            id: circle.id,
+            byte_offset: circle.byte_offset,
+            layout: circle.layout,
+            record_id: circle.record_id,
+            frame_token: circle.frame_token,
+            center_pair: circle.center_pair,
+            radius: circle.radius,
+            range: circle.range,
+            chart_shift: circle.chart_shift,
+        }
+    }
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
@@ -2472,7 +2531,7 @@ where
             .map(|candidate| match candidate {
                 CatiaRelationDependencyCandidate::Reference(reference) => reference,
                 CatiaRelationDependencyCandidate::LegacyEntity(entity) => {
-                    CatiaEntityReference::from_parts(0, false, Some(entity), None)
+                    CatiaEntityReference::resolved_or_unresolved(0, Some(entity), None)
                 }
             })
             .collect()
@@ -2709,16 +2768,15 @@ pub enum CatiaEntityReference {
 }
 
 impl CatiaEntityReference {
-    pub fn from_parts(
+    /// Stored identity with optional same-graph resolution.
+    pub fn resolved_or_unresolved(
         entity_id: u32,
-        is_null: bool,
         entity: Option<String>,
         class_name: Option<String>,
     ) -> Self {
-        match (is_null, entity) {
-            (true, _) => Self::Null { entity_id },
-            (false, None) => Self::Unresolved { entity_id },
-            (false, Some(entity)) => Self::Resolved {
+        match entity {
+            None => Self::Unresolved { entity_id },
+            Some(entity) => Self::Resolved {
                 entity_id,
                 entity,
                 class_name,
@@ -4754,9 +4812,8 @@ fn entity_incidences(
                 .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
                     source_entity: record.entity_id().map(|entity_id| {
-                        CatiaEntityReference::from_parts(
+                        CatiaEntityReference::resolved_or_unresolved(
                             entity_id,
-                            false,
                             record.entity_record().map(str::to_owned),
                             record.class_name().map(str::to_owned),
                         )
@@ -4769,9 +4826,8 @@ fn entity_incidences(
             incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
                 source_entity: record.entity_id().map(|entity_id| {
-                    CatiaEntityReference::from_parts(
+                    CatiaEntityReference::resolved_or_unresolved(
                         entity_id,
-                        false,
                         record.entity_record().map(str::to_owned),
                         record.class_name().map(str::to_owned),
                     )
@@ -5760,9 +5816,8 @@ fn semantic_entity_indices(
             .or_default()
             .entry(parameter.binding.value.clone())
             .or_default()
-            .push(CatiaEntityReference::from_parts(
+            .push(CatiaEntityReference::resolved_or_unresolved(
                 entity.entity_id,
-                false,
                 Some(entity.id.clone()),
                 entity_classes
                     .get(&(entity.object_graph.clone(), entity.entity_id))
@@ -5970,8 +6025,7 @@ pub struct CatiaLegacyEntityIdentity {
     /// Little-endian identity following the delimiter.
     pub entity_id: u32,
     /// Stored record lead following the identity.
-    #[serde(default)]
-    pub lead: u8,
+    pub lead: legacy_entity::CatiaLegacyIdentityLead,
 }
 
 /// One complete compact legacy schema program.
@@ -6516,44 +6570,13 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
     pub model_midpoint: cadmpeg_ir::math::Point3,
 }
 
-/// Start or end of an oriented endpoint pair.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-pub enum CatiaZeroEntityEndpointIndex {
-    /// First oriented endpoint.
-    Start,
-    /// Second oriented endpoint.
-    End,
-}
-
-impl From<CatiaZeroEntityEndpointIndex> for u8 {
-    fn from(value: CatiaZeroEntityEndpointIndex) -> Self {
-        match value {
-            CatiaZeroEntityEndpointIndex::Start => 0,
-            CatiaZeroEntityEndpointIndex::End => 1,
-        }
-    }
-}
-
-impl TryFrom<u8> for CatiaZeroEntityEndpointIndex {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Start),
-            1 => Ok(Self::End),
-            other => Err(format!("endpoint_index {other} is not start or end")),
-        }
-    }
-}
-
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
     /// Start or end of that candidate's oriented endpoint pair.
-    pub endpoint_index: CatiaZeroEntityEndpointIndex,
+    pub endpoint_index: crate::families::zero_entity::topology::EdgeEnd,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
@@ -7024,7 +7047,6 @@ fn consolidated_circles(
             center_pair: circle.center_pair,
             radius: circle.radius,
             range: circle.range,
-            full_circle: circle.full_circle,
             chart_shift: circle.chart_shift,
         })
         .collect()
@@ -7398,7 +7420,7 @@ fn consolidated_cone_faces(
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
         })
-        .map(|record| (record.range.start, record.range.end))
+        .filter_map(|record| record.range().map(|range| (range.start, range.end)))
         .collect::<HashMap<_, _>>();
     crate::families::b2::records::b2_cone_faces(bytes)
         .into_iter()
@@ -7799,13 +7821,13 @@ fn zero_entity_support_runs(
                                 byte_offset: loop_record.pos as u64,
                                 record_ordinal: loop_record.record_ordinal,
                                 tag: loop_record.tag,
-                                member_ids: loop_record.member_ids,
+                                member_ids: loop_record.members.member_ids().collect(),
                                 typed_references: loop_record.typed_references,
                                 typed_records,
                                 support_record_ordinals: loop_record.support_record_ordinals,
-                                terminal_id: loop_record.terminal_id,
-                                gap: loop_record.gap,
-                                loop_class: loop_record.loop_class,
+                                terminal_id: loop_record.members.terminal_id(),
+                                gap: loop_record.members.gap(),
+                                loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
                                 oriented_model_endpoints: loop_record.oriented_model_endpoints,
                             }
@@ -7835,6 +7857,10 @@ fn zero_entity_support_runs(
         .collect()
 }
 
+fn zero_entity_endpoint_pair_id(index: usize) -> String {
+    format!("catia:zero-entity:endpoint-pair-candidate#{index}")
+}
+
 fn zero_entity_endpoint_pair_candidates(
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
 ) -> Vec<CatiaZeroEntityEndpointPairCandidate> {
@@ -7842,7 +7868,7 @@ fn zero_entity_endpoint_pair_candidates(
         .into_iter()
         .enumerate()
         .map(|(index, candidate)| CatiaZeroEntityEndpointPairCandidate {
-            id: format!("catia:zero-entity:endpoint-pair-candidate#{index}"),
+            id: zero_entity_endpoint_pair_id(index),
             face_records: candidate
                 .face_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
@@ -7857,7 +7883,6 @@ fn zero_entity_endpoint_pair_candidates(
 
 fn zero_entity_endpoint_locus_candidates(
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
-    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
 ) -> Vec<CatiaZeroEntityEndpointLocusCandidate> {
     candidates
         .into_iter()
@@ -7869,11 +7894,8 @@ fn zero_entity_endpoint_locus_candidates(
                 .into_iter()
                 .map(
                     |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
-                        endpoint_pair: endpoint_pairs[pair].id.clone(),
-                        endpoint_index: match endpoint_index {
-                            0 => CatiaZeroEntityEndpointIndex::Start,
-                            _ => CatiaZeroEntityEndpointIndex::End,
-                        },
+                        endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
+                        endpoint_index,
                     },
                 )
                 .collect(),
@@ -7892,8 +7914,8 @@ fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroE
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs,
-            surface_support_refs: record.surface_support_refs,
+            topology_refs: record.topology_refs(),
+            surface_support_refs: record.surface_support_refs(),
         })
         .collect()
 }
@@ -7902,6 +7924,8 @@ fn zero_entity_oriented_use_pairs(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    use crate::families::zero_entity::records::ZeroEntityUseSlot;
+
     crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7909,12 +7933,16 @@ fn zero_entity_oriented_use_pairs(
             id: format!("catia:zero-entity:oriented-use-pair#{index}"),
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
-            base_columns: pair.base_columns,
-            uses: pair.uses.map(|use_| CatiaZeroEntityOrientedUse {
+            base_columns: pair.base_columns(),
+            uses: [
+                (ZeroEntityUseSlot::First, &pair.uses[0]),
+                (ZeroEntityUseSlot::Second, &pair.uses[1]),
+            ]
+            .map(|(slot, use_)| CatiaZeroEntityOrientedUse {
                 byte_offset: use_.pos as u64,
                 record_ordinal: use_.record_ordinal,
-                side: use_.side,
-                allocations: use_.allocations,
+                side: slot.side(),
+                allocations: pair.allocations(slot),
             }),
         })
         .collect()
@@ -8299,7 +8327,7 @@ fn consolidated_edge_nodes(
         })
         .map(|record| {
             (
-                record.range.start,
+                record.byte_offset(),
                 (record.width, record.flag, record.source_index),
             )
         })
@@ -8777,7 +8805,7 @@ impl CatiaNative {
                 byte_offset: segment.range.start as u64,
                 byte_len: (segment.range.end - segment.range.start) as u64,
                 type_word: segment.type_word,
-                family: finjpl_family(segment.kind).to_string(),
+                family: finjpl_family(segment.kind()).to_string(),
                 name: segment.name,
                 data: bytes[segment.range].to_vec(),
             })
@@ -9080,10 +9108,8 @@ impl CatiaNative {
             crate::families::zero_entity::topology::endpoint_locus_candidates(
                 &parsed_zero_entity_endpoint_pairs,
             );
-        let zero_entity_endpoint_locus_candidates = zero_entity_endpoint_locus_candidates(
-            parsed_zero_entity_endpoint_loci,
-            &zero_entity_endpoint_pair_candidates,
-        );
+        let zero_entity_endpoint_locus_candidates =
+            zero_entity_endpoint_locus_candidates(parsed_zero_entity_endpoint_loci);
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =

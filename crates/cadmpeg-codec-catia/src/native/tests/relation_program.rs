@@ -235,9 +235,8 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         result_type: "Real".to_string(),
     };
     let reference = |entity_id: u32| {
-        crate::native::CatiaEntityReference::from_parts(
+        crate::native::CatiaEntityReference::resolved_or_unresolved(
             entity_id,
-            false,
             Some(format!("entity-{entity_id}")),
             Some("param".to_string()),
         )
@@ -353,9 +352,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         parameter_entity.entity_id,
-                        false,
                         Some(parameter_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -366,7 +364,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None)
+        .expect("valid exactness fields");
     let [parameter] = ir.model.parameters.as_slice() else {
         panic!("one relation-program input parameter")
     };
@@ -400,7 +399,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         &empty_binding_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
         panic!("one empty-binding input parameter")
     };
@@ -434,7 +434,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         &conflicting_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
     assert!(conflicting_ir.model.parameters.is_empty());
 }
@@ -452,9 +453,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
             crate::native::CatiaRelationProgramInstance {
                 framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                    context_entity: crate::native::CatiaEntityReference::from_parts(
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         output_entity.entity_id,
-                        false,
                         Some(output_entity.id.clone()),
                         Some("paramout".to_string()),
                     ),
@@ -467,9 +467,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "LENGTH".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         input_entity.entity_id,
-                        false,
                         Some(input_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -480,7 +479,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
-    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None)
+        .expect("valid exactness fields");
     let [input, output] = ir.model.parameters.as_slice() else {
         panic!("typed relation-program input and output")
     };
@@ -512,7 +512,8 @@ fn complete_relation_program_output_transfers_a_typed_result() {
         &ambiguous_native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
         panic!("ambiguous compound output keeps its typed input")
     };

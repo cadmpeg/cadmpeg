@@ -1637,7 +1637,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: (tolerance > 0.0).then_some(tolerance),
+            tolerance: (tolerance > 0.0)
+                .then(|| {
+                    cadmpeg_ir::units::PositiveScalar::new(tolerance)
+                        .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
+                })
+                .transpose()?,
         });
         vertex_by_class.insert(class, vertex_id);
     }
@@ -1684,7 +1689,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             tolerance: group_tolerance
                 .get(&root)
                 .copied()
-                .filter(|value| *value > 0.0),
+                .filter(|value| *value > 0.0)
+                .map(|value| {
+                    cadmpeg_ir::units::PositiveScalar::new(value)
+                        .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
+                })
+                .transpose()?,
         });
         group_edges.insert(root, edge_id);
     }
@@ -2224,9 +2234,17 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                     CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                 })?
             };
-            ir.tolerances.linear = reader.f64().map_err(malformed)? * scale;
+            ir.tolerances.linear =
+                cadmpeg_ir::units::PositiveScalar::new(reader.f64().map_err(malformed)? * scale)
+                    .ok_or_else(|| {
+                        CodecError::malformed("linear tolerance must be positive and finite")
+                    })?;
             let _relative_tolerance = reader.f64().map_err(malformed)?;
-            ir.tolerances.angular = reader.f64().map_err(malformed)?;
+            ir.tolerances.angular =
+                cadmpeg_ir::units::PositiveScalar::new(reader.f64().map_err(malformed)?)
+                    .ok_or_else(|| {
+                        CodecError::malformed("angular tolerance must be positive and finite")
+                    })?;
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
             *omitted.entry(chunk.typecode).or_default() += 1;
             opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
@@ -2511,8 +2529,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            geometry_transferred:
-                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
             coverage: [
                 (crate::coverage::LEGACY_V1_POINTS, decoded),
                 (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
@@ -3021,7 +3038,7 @@ mod tests {
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
             false,
         );
-        assert_eq!(result.ir().tolerances.linear, 10.0);
+        assert_eq!(result.ir().tolerances.linear.get(), 10.0);
         assert_eq!(result.source_fidelity().retained_records.len(), 3);
         assert_eq!(
             result

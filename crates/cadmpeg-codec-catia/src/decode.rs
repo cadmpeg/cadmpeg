@@ -95,13 +95,18 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
 
 #[derive(Default)]
 struct IncomingEntityIncidenceCounts {
-    total: usize,
     payload: usize,
     storage: usize,
     classified: usize,
     zero: usize,
     one: usize,
     multiple: usize,
+}
+
+impl IncomingEntityIncidenceCounts {
+    fn total(&self) -> usize {
+        self.payload + self.storage
+    }
 }
 
 fn incoming_entity_incidence_counts<'a>(
@@ -117,7 +122,6 @@ fn incoming_entity_incidence_counts<'a>(
         let payload_count = payload_references.len();
         let storage_count = storage_references.len();
         let total = payload_count + storage_count;
-        counts.total += total;
         counts.payload += payload_count;
         counts.storage += storage_count;
         counts.classified += payload_references
@@ -207,7 +211,7 @@ fn finish_decode(
         &native,
         &mut annotations,
         modeling_graph_scope.as_ref(),
-    );
+    )?;
     design_feature_transfer.assign_parameter_owners(&mut ir, &native);
     let appearance_transfer = crate::appearance::transfer(
         &mut ir,
@@ -487,11 +491,18 @@ fn finish_decode(
         .fold(
             (0, 0, 0, 0),
             |(lead_81, lead_82, lead_e5, lead_fd), identity| match identity.lead {
-                0x81 => (lead_81 + 1, lead_82, lead_e5, lead_fd),
-                0x82 => (lead_81, lead_82 + 1, lead_e5, lead_fd),
-                0xe5 => (lead_81, lead_82, lead_e5 + 1, lead_fd),
-                0xfd => (lead_81, lead_82, lead_e5, lead_fd + 1),
-                _ => unreachable!("validated legacy identity lead"),
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead81 => {
+                    (lead_81 + 1, lead_82, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::Lead82 => {
+                    (lead_81, lead_82 + 1, lead_e5, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadE5 => {
+                    (lead_81, lead_82, lead_e5 + 1, lead_fd)
+                }
+                crate::legacy_entity::CatiaLegacyIdentityLead::LeadFd => {
+                    (lead_81, lead_82, lead_e5, lead_fd + 1)
+                }
             },
         );
     let legacy_text_field_count = native
@@ -889,15 +900,7 @@ fn finish_decode(
             }
         })
         .count();
-    let IncomingEntityIncidenceCounts {
-        total: constraint_range_incoming_reference_count,
-        payload: constraint_range_incoming_payload_reference_count,
-        storage: constraint_range_incoming_storage_reference_count,
-        classified: classified_constraint_range_source_entity_count,
-        zero: unreferenced_constraint_range_count,
-        one: uniquely_referenced_constraint_range_count,
-        multiple: multiply_referenced_constraint_range_count,
-    } = incoming_entity_incidence_counts(
+    let constraint_range_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -909,15 +912,16 @@ fn finish_decode(
                 )
             }),
     );
+    let constraint_range_incoming_reference_count = constraint_range_incidences.total();
     let IncomingEntityIncidenceCounts {
-        total: range_interval_incoming_reference_count,
-        payload: range_interval_incoming_payload_reference_count,
-        storage: range_interval_incoming_storage_reference_count,
-        classified: classified_range_interval_source_entity_count,
-        zero: unreferenced_range_interval_count,
-        one: uniquely_referenced_range_interval_count,
-        multiple: multiply_referenced_range_interval_count,
-    } = incoming_entity_incidence_counts(
+        payload: constraint_range_incoming_payload_reference_count,
+        storage: constraint_range_incoming_storage_reference_count,
+        classified: classified_constraint_range_source_entity_count,
+        zero: unreferenced_constraint_range_count,
+        one: uniquely_referenced_constraint_range_count,
+        multiple: multiply_referenced_constraint_range_count,
+    } = constraint_range_incidences;
+    let range_interval_incidences = incoming_entity_incidence_counts(
         native
             .entity_records
             .iter()
@@ -929,6 +933,15 @@ fn finish_decode(
                 )
             }),
     );
+    let range_interval_incoming_reference_count = range_interval_incidences.total();
+    let IncomingEntityIncidenceCounts {
+        payload: range_interval_incoming_payload_reference_count,
+        storage: range_interval_incoming_storage_reference_count,
+        classified: classified_range_interval_source_entity_count,
+        zero: unreferenced_range_interval_count,
+        one: uniquely_referenced_range_interval_count,
+        multiple: multiply_referenced_range_interval_count,
+    } = range_interval_incidences;
     let definition_value_count = native
         .entity_records
         .iter()
@@ -1769,23 +1782,22 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             matches!(
-                &entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();
-    let native_operation_feature_ids = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature
-                .source_tag
-                .as_deref()
-                .is_some_and(design_feature::is_admitted_native_operation_class)
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
+    let native_operation_feature_ids =
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| {
+                feature.source_tag.as_deref().is_some_and(|name| {
+                    design_feature::NativeOperationClass::try_from(name).is_ok()
+                })
+            })
+            .map(|feature| feature.id.clone())
+            .collect::<HashSet<_>>();
     let transferred_native_operation_parameter_count = ir
         .model
         .parameters

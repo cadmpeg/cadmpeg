@@ -267,9 +267,9 @@ fn intersection_chart_rejects_unresolved_support_relation() {
 fn intersection_rejects_cross_form_xmt_collision_atomically() {
     let construction = |delta_twin, pos| crate::topology::CompositeCurve {
         xmt: 12,
-        header_references: [1; 5],
+        header_references: [None; 5],
         sense: true,
-        references: [6, 7, 20, 21, 22, 23],
+        references: [6, 7, 20, 21, 22, 23].map(crate::framing::xmt_reference::XmtTarget::from_wire),
         delta_twin,
         pos,
     };
@@ -337,8 +337,15 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
     let [uncharted] = scan.uncharted.as_slice() else {
         panic!("one bounded uncharted intersection");
     };
-    assert!(uncharted.supports.iter().all(|support| *support > 1));
-    assert_ne!(uncharted.supports[0], uncharted.supports[1]);
+    assert!(uncharted
+        .supports
+        .references()
+        .iter()
+        .all(|support| u32::from(*support) > 1));
+    assert_ne!(
+        uncharted.supports.references()[0],
+        uncharted.supports.references()[1]
+    );
     assert!(uncharted.tolerance.is_finite() && uncharted.tolerance > 0.0);
 
     let edge = stream

@@ -9,6 +9,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
+use crate::framing::xmt_reference::XmtTarget;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
@@ -54,17 +55,17 @@ pub struct Node {
 #[derive(Debug, Clone, Copy)]
 pub struct FaceFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// Face tolerance in Parasolid metres.
     pub tolerance: f64,
     /// Next face in the owning shell, or the null reference.
-    pub next_face: u32,
+    pub next_face: Option<XmtTarget>,
     /// First loop reference.
-    pub loop_xmt: u32,
+    pub loop_xmt: Option<XmtTarget>,
     /// Owning shell reference.
-    pub shell: u32,
+    pub shell: Option<XmtTarget>,
     /// Surface-carrier reference.
-    pub surface: u32,
+    pub surface: Option<XmtTarget>,
     /// Decoded orientation.
     pub sense: Sense,
 }
@@ -73,13 +74,13 @@ pub struct FaceFields {
 #[derive(Debug, Clone, Copy)]
 pub struct EdgeFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// Edge tolerance in Parasolid metres.
     pub tolerance: f64,
     /// First fin reference.
-    pub fin: u32,
+    pub fin: Option<XmtTarget>,
     /// Curve-carrier reference.
-    pub curve: u32,
+    pub curve: Option<XmtTarget>,
 }
 
 /// Exact topology witnesses carried by the unique edge using one curve.
@@ -95,55 +96,55 @@ pub struct CurveEdgeWitness {
 #[derive(Debug, Clone, Copy)]
 pub struct ShellFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// Owning body.
-    pub body: u32,
+    pub body: Option<XmtTarget>,
     /// Next shell in the owning body.
-    pub next_shell: u32,
+    pub next_shell: Option<XmtTarget>,
     /// First face in the shell.
-    pub first_face: u32,
+    pub first_face: Option<XmtTarget>,
     /// First fixed shell sentinel.
-    pub sentinel_0: u32,
+    pub sentinel_0: Option<XmtTarget>,
     /// Second fixed shell sentinel.
-    pub sentinel_1: u32,
+    pub sentinel_1: Option<XmtTarget>,
     /// Owning region.
-    pub region: u32,
+    pub region: Option<XmtTarget>,
     /// Face ownership anchor, or null when ownership uses the FACE chain.
-    pub last_face: u32,
+    pub last_face: Option<XmtTarget>,
 }
 
 /// Sequentially decoded LOOP references.
 #[derive(Debug, Clone, Copy)]
 pub struct LoopFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// First fin in the loop.
-    pub fin: u32,
+    pub fin: Option<XmtTarget>,
     /// Owning face.
-    pub face: u32,
+    pub face: Option<XmtTarget>,
     /// Next loop owned by the same face, or the null reference.
-    pub next_loop: u32,
+    pub next_loop: Option<XmtTarget>,
 }
 
 /// Sequentially decoded FIN references and sense.
 #[derive(Debug, Clone, Copy)]
 pub struct FinFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// Owning loop.
-    pub loop_xmt: u32,
+    pub loop_xmt: Option<XmtTarget>,
     /// Forward fin in the ring.
-    pub forward: u32,
+    pub forward: Option<XmtTarget>,
     /// Backward fin in the ring.
-    pub backward: u32,
+    pub backward: Option<XmtTarget>,
     /// Vertex at this fin.
-    pub vertex: u32,
+    pub vertex: Option<XmtTarget>,
     /// Edge carried by this fin.
-    pub edge: u32,
+    pub edge: Option<XmtTarget>,
     /// Partner fin on the opposite side of the edge.
-    pub other: u32,
+    pub other: Option<XmtTarget>,
     /// Curve carried by this fin.
-    pub curve_xmt: u32,
+    pub curve_xmt: Option<XmtTarget>,
     /// Decoded orientation.
     pub sense: Sense,
 }
@@ -152,9 +153,9 @@ pub struct FinFields {
 #[derive(Debug, Clone, Copy)]
 pub struct VertexFields {
     /// Attribute-list reference.
-    pub attributes: u32,
+    pub attributes: Option<XmtTarget>,
     /// Referenced point record.
-    pub point: u32,
+    pub point: Option<XmtTarget>,
     /// Vertex tolerance in Parasolid metres.
     pub tolerance: f64,
 }
@@ -236,12 +237,12 @@ impl Node {
             _ => return None,
         };
         Some(FaceFields {
-            attributes,
+            attributes: XmtTarget::from_wire(attributes),
             tolerance,
-            next_face: refs[0],
-            loop_xmt: refs[2],
-            shell: refs[3],
-            surface: refs[4],
+            next_face: XmtTarget::from_wire(refs[0]),
+            loop_xmt: XmtTarget::from_wire(refs[2]),
+            shell: XmtTarget::from_wire(refs[3]),
+            surface: XmtTarget::from_wire(refs[4]),
             sense,
         })
     }
@@ -255,10 +256,10 @@ impl Node {
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
         Some(EdgeFields {
-            attributes,
+            attributes: XmtTarget::from_wire(attributes),
             tolerance,
-            fin: refs[0],
-            curve: refs[3],
+            fin: XmtTarget::from_wire(refs[0]),
+            curve: XmtTarget::from_wire(refs[3]),
         })
     }
 
@@ -268,14 +269,14 @@ impl Node {
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
         Some(ShellFields {
-            attributes: refs[0],
-            body: refs[1],
-            next_shell: refs[2],
-            first_face: refs[3],
-            sentinel_0: refs[4],
-            sentinel_1: refs[5],
-            region: refs[6],
-            last_face: refs[7],
+            attributes: XmtTarget::from_wire(refs[0]),
+            body: XmtTarget::from_wire(refs[1]),
+            next_shell: XmtTarget::from_wire(refs[2]),
+            first_face: XmtTarget::from_wire(refs[3]),
+            sentinel_0: XmtTarget::from_wire(refs[4]),
+            sentinel_1: XmtTarget::from_wire(refs[5]),
+            region: XmtTarget::from_wire(refs[6]),
+            last_face: XmtTarget::from_wire(refs[7]),
         })
     }
 
@@ -285,10 +286,10 @@ impl Node {
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
         Some(LoopFields {
-            attributes: refs[0],
-            fin: refs[1],
-            face: refs[2],
-            next_loop: refs[3],
+            attributes: XmtTarget::from_wire(refs[0]),
+            fin: XmtTarget::from_wire(refs[1]),
+            face: XmtTarget::from_wire(refs[2]),
+            next_loop: XmtTarget::from_wire(refs[3]),
         })
     }
 
@@ -303,14 +304,14 @@ impl Node {
             _ => return None,
         };
         Some(FinFields {
-            attributes: refs[0],
-            loop_xmt: refs[1],
-            forward: refs[2],
-            backward: refs[3],
-            vertex: refs[4],
-            other: refs[5],
-            edge: refs[6],
-            curve_xmt: refs[7],
+            attributes: XmtTarget::from_wire(refs[0]),
+            loop_xmt: XmtTarget::from_wire(refs[1]),
+            forward: XmtTarget::from_wire(refs[2]),
+            backward: XmtTarget::from_wire(refs[3]),
+            vertex: XmtTarget::from_wire(refs[4]),
+            other: XmtTarget::from_wire(refs[5]),
+            edge: XmtTarget::from_wire(refs[6]),
+            curve_xmt: XmtTarget::from_wire(refs[7]),
             sense,
         })
     }
@@ -322,8 +323,8 @@ impl Node {
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         Some(VertexFields {
-            attributes: refs[0],
-            point: refs[4],
+            attributes: XmtTarget::from_wire(refs[0]),
+            point: XmtTarget::from_wire(refs[4]),
             tolerance,
         })
     }
@@ -366,7 +367,7 @@ impl Node {
     }
 
     fn reference_targets(&self) -> Vec<(ReferenceRole, u32)> {
-        match self.kind {
+        let references = match self.kind {
             NodeKind::Shell => self.shell_fields().map_or_else(Vec::new, |fields| {
                 vec![
                     (ReferenceRole::Body, fields.body),
@@ -395,9 +396,9 @@ impl Node {
                 at += 1;
                 read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
                     vec![
-                        (ReferenceRole::Surface, references[0]),
-                        (ReferenceRole::Surface, references[1]),
-                        (ReferenceRole::Curve, references[2]),
+                        (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
+                        (ReferenceRole::Surface, XmtTarget::from_wire(references[1])),
+                        (ReferenceRole::Curve, XmtTarget::from_wire(references[2])),
                     ]
                 })
             }
@@ -412,7 +413,7 @@ impl Node {
                 }
                 at += 2;
                 read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
-                    vec![(ReferenceRole::Surface, reference)]
+                    vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
                 })
             }
             NodeKind::TrimmedCurve => {
@@ -420,7 +421,7 @@ impl Node {
                     return Vec::new();
                 };
                 read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
-                    vec![(ReferenceRole::Curve, reference)]
+                    vec![(ReferenceRole::Curve, XmtTarget::from_wire(reference))]
                 })
             }
             NodeKind::SpCurve => {
@@ -429,14 +430,18 @@ impl Node {
                 };
                 read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
                     vec![
-                        (ReferenceRole::Surface, references[0]),
-                        (ReferenceRole::Curve, references[1]),
-                        (ReferenceRole::Curve, references[2]),
+                        (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
+                        (ReferenceRole::Curve, XmtTarget::from_wire(references[1])),
+                        (ReferenceRole::Curve, XmtTarget::from_wire(references[2])),
                     ]
                 })
             }
             _ => Vec::new(),
-        }
+        };
+        references
+            .into_iter()
+            .filter_map(|(role, reference)| Some((role, u32::from(reference?))))
+            .collect()
     }
 }
 
@@ -541,11 +546,11 @@ pub struct CompositeCurve {
     /// Cross-reference index of the curve record.
     pub xmt: u32,
     /// Five ordered common-header references.
-    pub header_references: [u32; 5],
+    pub header_references: [Option<XmtTarget>; 5],
     /// Serialized orientation sense.
     pub sense: bool,
     /// Six ordered construction references.
-    pub references: [u32; 6],
+    pub references: [Option<XmtTarget>; 6],
     /// Whether the record uses the single-byte delta-twin tag.
     pub delta_twin: bool,
     /// Record type-tag offset in the inflated stream.
@@ -579,9 +584,11 @@ impl Graph {
                     && (references[0] > 1 || references[1] > 1))
                     .then_some(CompositeCurve {
                         xmt: node.xmt,
-                        header_references: header.try_into().ok()?,
+                        header_references: <[u32; 5]>::try_from(header)
+                            .ok()?
+                            .map(XmtTarget::from_wire),
                         sense,
-                        references,
+                        references: references.map(XmtTarget::from_wire),
                         delta_twin: false,
                         pos: node.pos,
                     })
@@ -655,9 +662,9 @@ pub(crate) fn intersection_data_curve_at(
     Some((
         CompositeCurve {
             xmt,
-            header_references,
+            header_references: header_references.map(XmtTarget::from_wire),
             sense,
-            references,
+            references: references.map(XmtTarget::from_wire),
             delta_twin: true,
             pos,
         },
@@ -1054,6 +1061,10 @@ impl Graph {
         self.nodes.get(&(kind, xmt))
     }
 
+    pub(crate) fn get_target(&self, kind: NodeKind, target: Option<XmtTarget>) -> Option<&Node> {
+        self.get(kind, u32::from(target?))
+    }
+
     /// Look up the node whose type tag starts at `pos`.
     pub fn at_pos(&self, pos: usize) -> Option<&Node> {
         let &(kind, xmt) = self.by_pos.get(&pos)?;
@@ -1086,13 +1097,13 @@ impl Graph {
         references.extend(
             self.of_kind(NodeKind::Edge)
                 .filter_map(Node::edge_fields)
-                .map(|fields| fields.curve)
+                .filter_map(|fields| fields.curve.map(u32::from))
                 .filter(|reference| *reference > 1),
         );
         references.extend(
             self.of_kind(NodeKind::Fin)
                 .filter_map(Node::fin_fields)
-                .map(|fields| fields.curve_xmt)
+                .filter_map(|fields| fields.curve_xmt.map(u32::from))
                 .filter(|reference| *reference > 1),
         );
         for node in self.of_kind(NodeKind::BlendSurface) {
@@ -1136,19 +1147,22 @@ impl Graph {
         let edges = self
             .of_kind(NodeKind::Edge)
             .filter_map(Node::edge_fields)
-            .filter(|edge| edge.curve == curve_xmt)
+            .filter(|edge| edge.curve.map(u32::from) == Some(curve_xmt))
             .collect::<Vec<_>>();
         let [edge] = edges.as_slice() else {
             return None;
         };
-        let first_fin = self.get(NodeKind::Fin, edge.fin)?.fin_fields()?;
-        let second_fin = self.get(NodeKind::Fin, first_fin.forward)?.fin_fields()?;
+        let first_fin = self.get_target(NodeKind::Fin, edge.fin)?.fin_fields()?;
+        let second_fin = self
+            .get_target(NodeKind::Fin, first_fin.forward)?
+            .fin_fields()?;
         let position = |vertex_xmt| {
             let point_xmt = self
-                .get(NodeKind::Vertex, vertex_xmt)?
+                .get_target(NodeKind::Vertex, vertex_xmt)?
                 .vertex_fields()?
                 .point;
-            self.get(NodeKind::Point, point_xmt)?.point_position()
+            self.get_target(NodeKind::Point, point_xmt)?
+                .point_position()
         };
         Some(CurveEdgeWitness {
             endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
@@ -1162,13 +1176,13 @@ impl Graph {
         references.extend(
             self.of_kind(NodeKind::Face)
                 .filter_map(Node::face_fields)
-                .map(|fields| fields.surface)
+                .filter_map(|fields| fields.surface.map(u32::from))
                 .filter(|reference| *reference > 1),
         );
         references.extend(
             self.of_kind(NodeKind::Vertex)
                 .filter_map(Node::vertex_fields)
-                .map(|fields| fields.point)
+                .filter_map(|fields| fields.point.map(u32::from))
                 .filter(|reference| *reference > 1),
         );
         references
@@ -1207,7 +1221,11 @@ impl Graph {
         reachable_fins.iter().all(|xmt| {
             self.get(NodeKind::Fin, *xmt)
                 .and_then(Node::fin_fields)
-                .is_some_and(|fields| fields.other == 1 || reachable_fins.contains(&fields.other))
+                .is_some_and(|fields| {
+                    fields
+                        .other
+                        .is_none_or(|other| reachable_fins.contains(&u32::from(other)))
+                })
         })
     }
 
@@ -1230,22 +1248,23 @@ impl Graph {
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();
         let mut rings = Vec::new();
-        while loop_xmt != 1 {
-            if !seen_loops.insert(loop_xmt) {
+        while let Some(target) = loop_xmt {
+            let current = u32::from(target);
+            if !seen_loops.insert(current) {
                 return None;
             }
-            let fields = self.get(NodeKind::Loop, loop_xmt)?.loop_fields()?;
-            if fields.face != face_xmt {
+            let fields = self.get(NodeKind::Loop, current)?.loop_fields()?;
+            if fields.face.map(u32::from) != Some(face_xmt) {
                 return None;
             }
-            rings.push((loop_xmt, self.fin_ring(loop_xmt, fields.fin)?));
+            rings.push((current, self.fin_ring(current, fields.fin?)?));
             loop_xmt = fields.next_loop;
         }
         Some(rings)
     }
 
-    fn fin_ring(&self, loop_xmt: u32, first: u32) -> Option<Vec<u32>> {
-        (first != 1).then_some(())?;
+    fn fin_ring(&self, loop_xmt: u32, first: XmtTarget) -> Option<Vec<u32>> {
+        let first = u32::from(first);
         let mut current = first;
         let mut previous = None;
         let mut seen = BTreeSet::new();
@@ -1256,31 +1275,37 @@ impl Graph {
             }
             ring.push(current);
             let fields = self.get(NodeKind::Fin, current)?.fin_fields()?;
-            let vertex_resolves = self.get(NodeKind::Vertex, fields.vertex).is_some()
-                || (fields.vertex == 1 && fields.forward == current && fields.backward == current);
-            if fields.loop_xmt != loop_xmt
-                || self.get(NodeKind::Edge, fields.edge).is_none()
+            let vertex_resolves = self.get_target(NodeKind::Vertex, fields.vertex).is_some()
+                || (fields.vertex.is_none()
+                    && fields.forward.map(u32::from) == Some(current)
+                    && fields.backward.map(u32::from) == Some(current));
+            if fields.loop_xmt.map(u32::from) != Some(loop_xmt)
+                || self.get_target(NodeKind::Edge, fields.edge).is_none()
                 || !vertex_resolves
             {
                 return None;
             }
-            if fields.other != 1 {
-                let other = self.get(NodeKind::Fin, fields.other)?.fin_fields()?;
-                if other.other != current || other.edge != fields.edge {
+            if let Some(other_xmt) = fields.other {
+                let other = self
+                    .get(NodeKind::Fin, u32::from(other_xmt))?
+                    .fin_fields()?;
+                if other.other.map(u32::from) != Some(current) || other.edge != fields.edge {
                     return None;
                 }
             }
             if let Some(previous) = previous {
-                if fields.backward != previous {
+                if fields.backward.map(u32::from) != Some(previous) {
                     return None;
                 }
             }
-            let next = self.get(NodeKind::Fin, fields.forward)?.fin_fields()?;
-            if next.backward != current {
+            let next = self
+                .get_target(NodeKind::Fin, fields.forward)?
+                .fin_fields()?;
+            if next.backward.map(u32::from) != Some(current) {
                 return None;
             }
             previous = Some(current);
-            current = fields.forward;
+            current = u32::from(fields.forward?);
         }
     }
 
@@ -1288,12 +1313,12 @@ impl Graph {
         let Some(fields) = shell.shell_fields() else {
             return false;
         };
-        if fields.attributes != 1
-            || fields.next_shell != 1
-            || fields.sentinel_0 != 1
-            || fields.sentinel_1 != 1
-            || fields.body <= 1
-            || fields.region <= 1
+        if fields.attributes.is_some()
+            || fields.next_shell.is_some()
+            || fields.sentinel_0.is_some()
+            || fields.sentinel_1.is_some()
+            || fields.body.is_none_or(|target| u32::from(target) == 0)
+            || fields.region.is_none_or(|target| u32::from(target) == 0)
         {
             return false;
         }
@@ -1303,16 +1328,16 @@ impl Graph {
 
     pub(crate) fn shell_face_xmts(&self, shell: &Node) -> Option<Vec<u32>> {
         let fields = shell.shell_fields()?;
-        if fields.last_face != 1 {
+        if fields.last_face.is_some() {
             (fields.last_face == fields.first_face).then_some(())?;
-            self.get(NodeKind::Face, fields.first_face)
+            self.get_target(NodeKind::Face, fields.first_face)
                 .and_then(Node::face_fields)
-                .filter(|face| face.shell == shell.xmt)?;
+                .filter(|face| face.shell.map(u32::from) == Some(shell.xmt))?;
             let faces: Vec<_> = self
                 .of_kind(NodeKind::Face)
                 .filter(|face| {
                     face.face_fields()
-                        .is_some_and(|fields| fields.shell == shell.xmt)
+                        .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt))
                 })
                 .map(|face| face.xmt)
                 .collect();
@@ -1321,14 +1346,15 @@ impl Graph {
 
         let mut face_xmt = fields.first_face;
         let mut visited = BTreeSet::new();
-        while face_xmt != 1 {
-            if !visited.insert(face_xmt) {
+        while let Some(target) = face_xmt {
+            let current = u32::from(target);
+            if !visited.insert(current) {
                 return None;
             }
             let face = self
-                .get(NodeKind::Face, face_xmt)
+                .get(NodeKind::Face, current)
                 .and_then(Node::face_fields)?;
-            if face.shell != shell.xmt {
+            if face.shell.map(u32::from) != Some(shell.xmt) {
                 return None;
             }
             face_xmt = face.next_face;

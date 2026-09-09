@@ -94,8 +94,8 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .map(|(index, span)| {
             Ok(ArchiveSpan {
                 id: crate::native::native_id("archive-span", index.to_string()),
-                start: span.start,
-                end: span.end,
+                span: crate::native::ByteSpan::try_new(span.start, span.end)
+                    .map_err(CodecError::Malformed)?,
                 role: crate::native::ArchiveSpanRole::from_label(
                     span.role.label(),
                     span.role.entry().map(str::to_owned),
@@ -131,9 +131,9 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
 pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     let mut notes = vec![
         format!("SchemaVersion={}", scan.document.schema_version),
-        format!("FileVersion={}", scan.document.file_version),
+        format!("FileVersion={}", scan.document.file_version.as_str()),
         format!("document root={}", scan.document.root_name),
-        format!("document kind={}", scan.document.document_kind.as_str()),
+        format!("document kind={}", scan.document.document_kind().as_str()),
         format!("object count={}", scan.document.object_count),
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
@@ -231,9 +231,8 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
     schema_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
-    file_version
-        .parse::<usize>()
-        .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
+    let file_version =
+        crate::native::FileVersion::try_from(file_version).map_err(CodecError::Malformed)?;
     let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
     let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     let _ = unique_section(root, data_tag)?;
@@ -254,19 +253,6 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let document_kind = if domains.iter().any(|domain| domain == "Assembly") {
-        crate::native::DocumentKind::Assembly
-    } else if domains.iter().any(|domain| domain == "TechDraw") {
-        crate::native::DocumentKind::Drawing
-    } else if domains.iter().any(|domain| domain == "PartDesign") {
-        crate::native::DocumentKind::PartDesign
-    } else if domains.iter().any(|domain| domain == "Part") {
-        crate::native::DocumentKind::Part
-    } else if object_count == 0 {
-        crate::native::DocumentKind::Empty
-    } else {
-        crate::native::DocumentKind::ApplicationDocument
-    };
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         schema_version,
@@ -274,7 +260,6 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         program_version: canonical_attribute(root, "ProgramVersion", "programVersion")?,
         root_name: root.tag_name().name().into(),
         object_count,
-        document_kind,
         domains,
     };
     Ok(document)
@@ -314,15 +299,15 @@ pub(crate) fn logical_ledger(
                 LogicalClassification::Typed {
                     owner: entry.id.clone(),
                 },
-            );
+            )?;
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = if entry.name == "Document.xml" {
                 properties
                     .iter()
                     .map(|property| {
                         (
-                            property.byte_start,
-                            property.byte_end,
+                            property.xml.start(),
+                            property.xml.end(),
                             if property.family == PropertyFamily::Unknown {
                                 "named_opaque"
                             } else {
@@ -337,8 +322,8 @@ pub(crate) fn logical_ledger(
                     .iter()
                     .map(|property| {
                         (
-                            property.byte_start,
-                            property.byte_end,
+                            property.xml.start(),
+                            property.xml.end(),
                             if gui::has_registered_property_grammar(
                                 &property.name,
                                 &property.type_name,
@@ -352,7 +337,12 @@ pub(crate) fn logical_ledger(
                     })
                     .chain(gui.documents.iter().flat_map(|document| {
                         document.states.iter().map(|state| {
-                            (state.byte_start, state.byte_end, "typed", state.id.clone())
+                            (
+                                state.xml.start(),
+                                state.xml.end(),
+                                "typed",
+                                state.id.clone(),
+                            )
                         })
                     }))
                     .collect::<Vec<_>>()
@@ -372,12 +362,12 @@ pub(crate) fn logical_ledger(
                     cursor,
                     start,
                     LogicalClassification::Structural,
-                );
+                )?;
                 let classification = match classification {
                     "typed" => LogicalClassification::Typed { owner },
                     _ => LogicalClassification::NamedOpaque { owner },
                 };
-                push_logical_span(&mut output, entry, start, end, classification);
+                push_logical_span(&mut output, entry, start, end, classification)?;
                 cursor = end;
             }
             push_logical_span(
@@ -386,7 +376,7 @@ pub(crate) fn logical_ledger(
                 cursor,
                 entry.byte_len(),
                 LogicalClassification::Structural,
-            );
+            )?;
         } else {
             push_logical_span(
                 &mut output,
@@ -396,7 +386,7 @@ pub(crate) fn logical_ledger(
                 LogicalClassification::NamedOpaque {
                     owner: entry.id.clone(),
                 },
-            );
+            )?;
         }
     }
     Ok(output)
@@ -413,7 +403,7 @@ pub(crate) fn byte_coverage(
     for span in logical {
         *classification_bytes
             .entry(span.classification.as_str().to_owned())
-            .or_insert(0) += span.end.saturating_sub(span.start);
+            .or_insert(0) += span.span.end() - span.span.start();
         if matches!(
             span.classification,
             LogicalClassification::NamedOpaque { .. }
@@ -422,32 +412,35 @@ pub(crate) fn byte_coverage(
         }
     }
     let mut ordered_physical = physical.iter().collect::<Vec<_>>();
-    ordered_physical.sort_by_key(|span| span.start);
-    let physical_exact = ordered_physical.first().is_some_and(|span| span.start == 0)
-        && ordered_physical.iter().all(|span| span.start < span.end)
+    ordered_physical.sort_by_key(|span| span.span.start());
+    let physical_exact = ordered_physical
+        .first()
+        .is_some_and(|span| span.span.start() == 0)
         && ordered_physical
             .windows(2)
-            .all(|pair| pair[0].end == pair[1].start)
+            .all(|pair| pair[0].span.end() == pair[1].span.start())
         && ordered_physical
             .last()
-            .is_some_and(|span| span.end == physical_byte_len);
+            .is_some_and(|span| span.span.end() == physical_byte_len);
     let logical_exact = logical
         .iter()
-        .all(|span| entries.iter().any(|entry| entry.name == span.entry) && span.start < span.end)
+        .all(|span| entries.iter().any(|entry| entry.name == span.entry))
         && entries.iter().all(|entry| {
             let mut spans = logical
                 .iter()
                 .filter(|span| span.entry == entry.name)
                 .collect::<Vec<_>>();
-            spans.sort_by_key(|span| span.start);
+            spans.sort_by_key(|span| span.span.start());
             if entry.byte_len() == 0 {
                 spans.is_empty()
             } else {
-                spans.first().is_some_and(|span| span.start == 0)
-                    && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+                spans.first().is_some_and(|span| span.span.start() == 0)
+                    && spans
+                        .windows(2)
+                        .all(|pair| pair[0].span.end() == pair[1].span.start())
                     && spans
                         .last()
-                        .is_some_and(|span| span.end == entry.byte_len())
+                        .is_some_and(|span| span.span.end() == entry.byte_len())
             }
         });
     ByteCoverageRecord {
@@ -472,16 +465,17 @@ fn push_logical_span(
     start: u64,
     end: u64,
     classification: LogicalClassification,
-) {
-    if start < end {
-        output.push(LogicalSpan {
-            id: crate::native::native_id("logical-span", output.len().to_string()),
-            entry: entry.name.clone(),
-            start,
-            end,
-            classification,
-        });
+) -> Result<(), CodecError> {
+    if start == end {
+        return Ok(());
     }
+    output.push(LogicalSpan {
+        id: crate::native::native_id("logical-span", output.len().to_string()),
+        entry: entry.name.clone(),
+        span: crate::native::ByteSpan::try_new(start, end).map_err(CodecError::Malformed)?,
+        classification,
+    });
+    Ok(())
 }
 
 #[cfg(test)]

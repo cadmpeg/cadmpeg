@@ -34,14 +34,20 @@ fn retains_support_attachment_and_distinct_offset_frame() {
         .arena_as::<crate::native::AttachmentRecord>("attachments")
         .expect("attachments");
     assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].map_mode.as_deref(), Some("5"));
+    assert_eq!(
+        attachments[0].map_mode.map(|mode| mode.to_string()),
+        Some("5".to_owned())
+    );
     assert_eq!(
         attachments[0].supports[0].object(),
         Some("fcstd:native:object#Support")
     );
     assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
-    assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
-    assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
+    assert_eq!(
+        attachments[0].placement().expect("placement").rows()[0][3],
+        10.0
+    );
+    assert_eq!(attachments[0].offset().expect("offset").rows()[0][3], 2.0);
     assert_eq!(attachments[0].effective_frame()[0][3], 12.0);
     let sketch = result.ir().model.sketches.first().expect("sketch");
     assert_eq!(
@@ -130,5 +136,51 @@ fn rejects_invalid_attachment_placement_values() {
                 cadmpeg_core::CodecError::Malformed(_)
             ))
         ));
+    }
+}
+
+#[test]
+fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
+    for index in 0..super::MAP_MODE_NAMES.len() {
+        let expected = index.to_string();
+        let mode = super::MapModeIndex::try_new(index).expect("valid table index");
+        assert_eq!(mode.to_string(), expected);
+        assert_eq!(
+            super::MapModeIndex::try_from(expected.as_str()).expect("text index"),
+            mode
+        );
+        let wire = serde_json::json!(expected);
+        assert_eq!(serde_json::to_value(mode).expect("serialize index"), wire);
+        assert_eq!(
+            serde_json::from_value::<super::MapModeIndex>(wire).expect("deserialize index"),
+            mode
+        );
+    }
+    for index in [super::MAP_MODE_NAMES.len(), 255, 256, usize::MAX] {
+        assert!(super::MapModeIndex::try_new(index).is_err());
+    }
+    let record = crate::native::AttachmentRecord::try_new(
+        "attachment".to_owned(),
+        "object".to_owned(),
+        Vec::new(),
+        None,
+        None,
+        None,
+    )
+    .expect("attachment without a map mode");
+    let wire = serde_json::to_value(record).expect("serialize attachment");
+    for value in [
+        "not-an-index".to_owned(),
+        "-1".to_owned(),
+        String::new(),
+        super::MAP_MODE_NAMES.len().to_string(),
+        "256".to_owned(),
+    ] {
+        assert!(super::MapModeIndex::try_from(value.as_str()).is_err());
+        let mut invalid = wire.clone();
+        invalid["map_mode"] = serde_json::json!(value);
+        let error = serde_json::from_value::<crate::native::AttachmentRecord>(invalid)
+            .expect_err("invalid map mode at the record wire boundary");
+        assert!(error.to_string().contains("map_mode"));
     }
 }

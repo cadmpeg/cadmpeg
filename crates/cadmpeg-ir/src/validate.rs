@@ -25,7 +25,6 @@ pub mod admissibility_freeze;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
-mod assets;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -38,11 +37,9 @@ mod referential_integrity;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
-mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
-use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -58,16 +55,10 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use subd::{check_source_associations, check_subds};
 use topology::{
     check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
     check_wire_topology,
 };
-
-/// A radius/length that is not a finite positive number is invalid geometry.
-fn nonpositive(x: f64) -> bool {
-    !(x.is_finite() && x > 0.0)
-}
 
 /// Count the records represented by the IR arenas without running validation.
 ///
@@ -90,7 +81,6 @@ fn validate_model_with_index(
 ) -> ValidationReport {
     let mut findings = Vec::new();
 
-    check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
@@ -108,8 +98,6 @@ fn validate_model_with_index(
     check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
-    check_subds(ir, &mut findings);
-    check_source_associations(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
@@ -206,7 +194,7 @@ mod tests {
     fn configuration_feature_sketch_resolves_against_model_sketches() {
         let mut ir = CadIr::empty();
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
-        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: 0,
@@ -228,12 +216,13 @@ mod tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: crate::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: crate::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: crate::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {

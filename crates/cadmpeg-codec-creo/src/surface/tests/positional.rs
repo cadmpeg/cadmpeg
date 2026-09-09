@@ -79,88 +79,153 @@ fn positional_line_extrusion_requires_a_non_degenerate_plane_carrier() {
 
 #[test]
 fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
-    let valid = PositionalTorusFrame {
-        center: [0.0, 1.0, 2.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        major_radius: 4.0,
-        minor_radius: 0.5,
-    };
-    assert!(valid.is_valid());
+    let valid =
+        PositionalTorusFrame::new([0.0, 1.0, 2.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 4.0, 0.5)
+            .expect("valid positional torus frame");
 
-    let mut nonfinite_center = valid;
-    nonfinite_center.center[1] = f64::INFINITY;
-    assert!(!nonfinite_center.is_valid());
+    assert!(PositionalTorusFrame::new(
+        {
+            let mut value = valid.center;
+            value[1] = f64::INFINITY;
+            value
+        },
+        valid.axis,
+        valid.ref_direction,
+        valid.major_radius,
+        valid.minor_radius
+    )
+    .is_none());
 
-    let mut zero_major = valid;
-    zero_major.major_radius = 0.0;
-    assert!(zero_major.is_valid());
+    assert!(PositionalTorusFrame::new(
+        valid.center,
+        valid.axis,
+        valid.ref_direction,
+        0.0,
+        valid.minor_radius
+    )
+    .is_some());
 
-    let mut negative_major = valid;
-    negative_major.major_radius = -0.1;
-    assert!(!negative_major.is_valid());
+    assert!(PositionalTorusFrame::new(
+        valid.center,
+        valid.axis,
+        valid.ref_direction,
+        -0.1,
+        valid.minor_radius
+    )
+    .is_none());
 
-    let mut non_unit_axis = valid;
-    non_unit_axis.axis = [0.0, 0.0, 2.0];
-    assert!(!non_unit_axis.is_valid());
+    assert!(PositionalTorusFrame::new(
+        valid.center,
+        [0.0, 0.0, 2.0],
+        valid.ref_direction,
+        valid.major_radius,
+        valid.minor_radius
+    )
+    .is_none());
 
-    let mut non_orthogonal_reference = valid;
-    non_orthogonal_reference.ref_direction = [0.0, 0.0, 1.0];
-    assert!(!non_orthogonal_reference.is_valid());
+    assert!(PositionalTorusFrame::new(
+        valid.center,
+        valid.axis,
+        [0.0, 0.0, 1.0],
+        valid.major_radius,
+        valid.minor_radius
+    )
+    .is_none());
 
-    let mut nonfinite_minor = valid;
-    nonfinite_minor.minor_radius = f64::NAN;
-    assert!(!nonfinite_minor.is_valid());
+    assert!(PositionalTorusFrame::new(
+        valid.center,
+        valid.axis,
+        valid.ref_direction,
+        valid.major_radius,
+        f64::NAN
+    )
+    .is_none());
 }
 
 #[test]
 fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
-    let valid = PositionalCylinderFrame {
-        origin: [0.0, 1.0, 2.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 3.0,
-        length: Some(4.0),
-    };
-    assert!(valid.is_valid());
+    let valid = PositionalCylinderFrame::new(
+        [0.0, 1.0, 2.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        3.0,
+        Some(4.0),
+    )
+    .expect("valid positional cylinder frame");
 
-    let mut nonfinite_origin = valid;
-    nonfinite_origin.origin[1] = f64::NAN;
-    assert!(!nonfinite_origin.is_valid());
+    assert!(PositionalCylinderFrame::new(
+        {
+            let mut value = valid.origin;
+            value[1] = f64::NAN;
+            value
+        },
+        valid.axis,
+        valid.ref_direction,
+        valid.radius,
+        valid.length
+    )
+    .is_none());
 
-    let mut nonfinite_radius = valid;
-    nonfinite_radius.radius = f64::INFINITY;
-    assert!(!nonfinite_radius.is_valid());
+    assert!(PositionalCylinderFrame::new(
+        valid.origin,
+        valid.axis,
+        valid.ref_direction,
+        f64::INFINITY,
+        valid.length
+    )
+    .is_none());
 
-    let mut non_unit_axis = valid;
-    non_unit_axis.axis = [0.0, 0.0, 2.0];
-    assert!(!non_unit_axis.is_valid());
+    assert!(PositionalCylinderFrame::new(
+        valid.origin,
+        [0.0, 0.0, 2.0],
+        valid.ref_direction,
+        valid.radius,
+        valid.length
+    )
+    .is_none());
 
-    let mut non_orthogonal_reference = valid;
-    non_orthogonal_reference.ref_direction = [0.0, 1.0, 1.0];
-    assert!(!non_orthogonal_reference.is_valid());
+    assert!(PositionalCylinderFrame::new(
+        valid.origin,
+        valid.axis,
+        [0.0, 1.0, 1.0],
+        valid.radius,
+        valid.length
+    )
+    .is_none());
 
-    let mut nonpositive_length = valid;
-    nonpositive_length.length = Some(0.0);
-    assert!(!nonpositive_length.is_valid());
+    assert!(PositionalCylinderFrame::new(
+        valid.origin,
+        valid.axis,
+        valid.ref_direction,
+        valid.radius,
+        Some(0.0)
+    )
+    .is_none());
 }
 
 #[test]
 fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
-    let first = PositionalCylinderFrame {
-        origin: [1.0, 2.0, 3.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        length: Some(8.0),
-    };
+    let first = PositionalCylinderFrame::new(
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        2.0,
+        Some(8.0),
+    )
+    .expect("valid positional cylinder frame");
     assert_eq!(
         unique_positional_cylinder_frame(&[first, first]),
         Some(first)
     );
 
-    let mut conflicting = first;
-    conflicting.radius = 3.0;
+    let conflicting = PositionalCylinderFrame::new(
+        first.origin(),
+        first.axis(),
+        first.ref_direction(),
+        3.0,
+        first.length(),
+    )
+    .expect("valid positional cylinder frame");
     assert_eq!(
         unique_positional_cylinder_frame(&[first, conflicting]),
         None
@@ -392,23 +457,29 @@ fn positional_cylinder_frame_decodes_compact_y_axis_envelopes() {
 
     assert_eq!(
         decode_positional_cylinder_frame(&direct, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-12.5, 4.0, 0.0],
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 0.75,
-            length: Some(34.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-12.5, 4.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                0.75,
+                Some(34.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     assert_eq!(
         decode_positional_cylinder_frame(&split, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [12.5, 4.0, 0.0],
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            radius: 0.75,
-            length: Some(34.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [12.5, 4.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                0.75,
+                Some(34.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let mut inconsistent = split;
@@ -426,13 +497,16 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&outer_left, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-15.0, 24.0, 6.0],
-            axis: [0.0, 0.0, -1.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            radius: 2.0,
-            length: Some(12.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-15.0, 24.0, 6.0],
+                [0.0, 0.0, -1.0],
+                [-1.0, 0.0, 0.0],
+                2.0,
+                Some(12.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let middle_left = [
@@ -441,13 +515,16 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&middle_left, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-15.0, 24.0, 2.5],
-            axis: [0.0, 0.0, -1.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            radius: 3.5,
-            length: Some(8.5),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-15.0, 24.0, 2.5],
+                [0.0, 0.0, -1.0],
+                [-1.0, 0.0, 0.0],
+                3.5,
+                Some(8.5)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let outer_right = [
@@ -456,13 +533,16 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&outer_right, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [15.0, 24.0, -6.0],
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 2.0,
-            length: Some(12.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [15.0, 24.0, -6.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                2.0,
+                Some(12.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let terminal_zero_negative = [
@@ -470,13 +550,16 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&terminal_zero_negative, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-325.0, -175.0, 0.0],
-            axis: [0.0, 0.0, -1.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            radius: 17.5,
-            length: Some(100.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-325.0, -175.0, 0.0],
+                [0.0, 0.0, -1.0],
+                [-1.0, 0.0, 0.0],
+                17.5,
+                Some(100.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     assert!(
@@ -496,13 +579,16 @@ fn positional_cylinder_frame_decodes_signed_axis_aligned_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&forward, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-22.0, 5.499_999_999_999_9, -9.25],
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [-1.0, 0.0, 0.0],
-            radius: 1.75,
-            length: Some(2.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-22.0, 5.499_999_999_999_9, -9.25],
+                [0.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                1.75,
+                Some(2.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let reversed = [
@@ -511,13 +597,16 @@ fn positional_cylinder_frame_decodes_signed_axis_aligned_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&reversed, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [22.0, 7.499_999_999_999_9, -9.25],
-            axis: [0.0, -1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 1.75,
-            length: Some(2.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [22.0, 7.499_999_999_999_9, -9.25],
+                [0.0, -1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                1.75,
+                Some(2.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let mut ambiguous_axis = forward;
@@ -632,13 +721,16 @@ fn positional_cylinder_frame_decodes_signed_axial_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&positive_end, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [30.0, 0.0, 5.5],
-            axis: [-1.0, 0.0, 0.0],
-            ref_direction: [0.0, 0.0, 1.0],
-            radius: 11.0,
-            length: Some(0.199_999_999_999_999_98),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [30.0, 0.0, 5.5],
+                [-1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                11.0,
+                Some(0.199_999_999_999_999_98)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let negative_end = [
@@ -647,13 +739,16 @@ fn positional_cylinder_frame_decodes_signed_axial_radial_envelopes() {
     ];
     assert_eq!(
         decode_positional_cylinder_frame(&negative_end, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [-29.799_999_999_999_997, 0.0, 5.5],
-            axis: [-1.0, 0.0, 0.0],
-            ref_direction: [0.0, 0.0, 1.0],
-            radius: 11.0,
-            length: Some(0.199_999_999_999_999_98),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [-29.799_999_999_999_997, 0.0, 5.5],
+                [-1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                11.0,
+                Some(0.199_999_999_999_999_98)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
 
     let mut wrong_separator = positive_end;
@@ -1139,13 +1234,14 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .expect("replay-trailed repeated-diameter carrier");
     assert_eq!(
         replay_frame,
-        PositionalCylinderFrame {
-            origin: [9.0, 23.0, 5.0],
-            axis: [1.0 / 2.0_f64.sqrt(), 0.0, 1.0 / 2.0_f64.sqrt()],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 15.0,
-            length: Some(2.0_f64.sqrt()),
-        }
+        PositionalCylinderFrame::new(
+            [9.0, 23.0, 5.0],
+            [1.0 / 2.0_f64.sqrt(), 0.0, 1.0 / 2.0_f64.sqrt()],
+            [0.0, 1.0, 0.0],
+            15.0,
+            Some(2.0_f64.sqrt())
+        )
+        .expect("valid positional cylinder frame")
     );
     let selector_corner_interval = [
         0x12, 0x2d, 0x40, 0x7a, 0x35, 0xc4, 0x3e, 0x21, 0x5b, 0x11, 0x2d, 0x44, 0xff, 0xd2, 0xa6,
@@ -1527,13 +1623,14 @@ fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
         body
     };
     let values = [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 6.0];
-    let expected = PositionalCylinderFrame {
-        origin: [4.0, 5.0, 2.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        length: Some(4.0),
-    };
+    let expected = PositionalCylinderFrame::new(
+        [4.0, 5.0, 2.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        2.0,
+        Some(4.0),
+    )
+    .expect("valid positional cylinder frame");
     for opener in [
         &[0x18, 0xe4, 0x11][..],
         &[0x18, 0xe4, 0x00, 0x11, 0x07],
@@ -1806,13 +1903,16 @@ fn decodes_held_coordinate_type24_round_envelope() {
     let replay = record(&replay_body);
     assert_eq!(
         replay.positional_cylinder_frame(),
-        Some(PositionalCylinderFrame {
-            origin: [34.0, 5.0, 9.0],
-            axis: [1.0, 0.0, 0.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 1.0,
-            length: Some(4.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [34.0, 5.0, 9.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                1.0,
+                Some(4.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     assert_eq!(replay.type24_round_radius(), Some(1.0));
     assert_eq!(

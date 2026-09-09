@@ -7,7 +7,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
@@ -181,41 +183,47 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let group = DesignConstructionOperandGroup {
-        id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
-        scope_record_index: 12,
-        scope_reference_ordinal: 0,
-        record_index: 100,
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 200,
-            offset: 1026,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 1021,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 300,
-                offset: 1043,
+    let group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 0,
+            record_index: 100,
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 200,
+                offset: 1026,
             }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 180,
-            opaque_index_offset: 1071,
-            opaque_scalar: 0.125,
-            opaque_scalar_offset: 1075,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
-        role_offset: 1053,
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 300,
+                        offset: 1043,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 180,
+                    opaque_index_offset: 1071,
+                    opaque_scalar: 0.125,
+                    opaque_scalar_offset: 1075,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
+            role_offset: 1053,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1124,
-    };
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_byte_offset: 1124,
+        },
+    )
+    .unwrap();
     let wrapper_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
         byte_offset: 0,
@@ -314,43 +322,49 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let group = DesignConstructionOperandGroup {
-        id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
-        scope_record_index: 80,
-        scope_reference_ordinal: 0,
-        record_index: 90,
-        byte_offset: 900,
-        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 100,
-            offset: 926,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 921,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 200,
-                offset: 943,
+    let group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: 80,
+            scope_reference_ordinal: 0,
+            record_index: 90,
+            byte_offset: 900,
+            class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 100,
+                offset: 926,
             }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 1,
-            opaque_index_offset: 971,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 975,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 953,
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 921,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 200,
+                        offset: 943,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 1,
+                    opaque_index_offset: 971,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 975,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::ROLE_0X5,
+            ),
+            role_offset: 953,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
-        paired_byte_offset: 1024,
-    };
+            paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
+            paired_byte_offset: 1024,
+        },
+    )
+    .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -564,16 +578,16 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .expect("counted Extrude selection group");
     assert_eq!(
         group
-            .members
+            .members()
             .iter()
             .map(|member| member.value)
             .collect::<Vec<_>>(),
         [200, 201]
     );
-    assert_eq!(group.opaque_index, 180);
-    assert_eq!(group.opaque_scalar, 0.25);
+    assert_eq!(group.opaque_index.get(), 180);
+    assert_eq!(group.opaque_scalar(), 0.25);
     assert!(group.variant);
-    assert_eq!(group.paired_byte_offset, paired_at as u64);
+    assert_eq!(group.paired_byte_offset(), paired_at as u64);
 
     let member_record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
@@ -726,7 +740,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         byte_offset: 4000,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 586,
+        primary_id: std::num::NonZeroU64::new(586).unwrap(),
         secondary_id: 0,
         geometry: None,
     };
@@ -746,22 +760,29 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         })
     ));
 
-    let remaining_members = group.members.split_off(1);
-    let sketch_id = SketchId("f3d:model:sketch#172".into());
+    let all_members = group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .collect::<Vec<_>>();
+    group.try_set_members(all_members[..1].to_vec()).unwrap();
+    let sketch_id = SketchId::mint("f3d:model:sketch#172").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
-            entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
+            entity: neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
@@ -799,35 +820,38 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         record_index: 401,
         persistent_id: Some(587),
     });
-    group.members.extend(remaining_members);
+    group.try_set_members(all_members).unwrap();
     let mut sketch = sketch;
-    let second_profile_id = SketchEntityId("second-profile".into());
-    sketch.profiles.push(vec![SketchEntityUse {
+    let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
+    sketch.profiles.push_single(SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
-    }]);
+    });
     let point_entity = SketchEntity::new(
-        neutral_sketch_point_id(&sketch_id, 587),
+        neutral_sketch_point_id(&sketch_id, 587).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.5, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let line_entity = SketchEntity::new(
-        neutral_sketch_curve_id(&sketch_id, 586, 0),
+        neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second_profile_entity = SketchEntity::new(
         second_profile_id,
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let profile_entities = [line_entity, second_profile_entity, point_entity];
     assert!(matches!(
@@ -882,7 +906,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         } if actual_sketch == &sketch_id && actual_selections == &[group.id.clone()]
     ));
     let mut single_profile_sketch = sketch.clone();
-    single_profile_sketch.profiles.truncate(1);
+    single_profile_sketch
+        .profiles
+        .edit(|profiles| profiles.truncate(1))
+        .unwrap();
     assert!(matches!(
         resolved_extrude_profile_selection(
             &sketch_id,

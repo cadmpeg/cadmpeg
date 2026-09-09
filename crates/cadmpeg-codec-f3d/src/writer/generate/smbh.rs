@@ -1547,7 +1547,7 @@ fn encode_source_less_edges_vertices_points(
         let (sense, continuity) = edge_record_metadata(topology, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
         native_string(records, &continuity)?;
-        native_tolerant_edge_tail(records, topology, edge)?;
+        native_tolerant_edge_tail(records, topology, edge);
         records.push(0x11);
     }
     for vertex in &model.vertices {
@@ -1592,7 +1592,7 @@ fn encode_source_less_edges_vertices_points(
             native_i64(records, i64::from(endpoint_index.code()));
         }
         native_ref(records, native_record_index(point_start, point)?);
-        native_tolerant_vertex_tail(records, topology, vertex)?;
+        native_tolerant_vertex_tail(records, topology, vertex);
         records.push(0x11);
     }
     for point in &model.points {
@@ -1727,21 +1727,15 @@ fn native_tolerant_vertex_tail(
     records: &mut Vec<u8>,
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
-) -> Result<(), CodecError> {
+) {
     let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
     // The unset evaluated slot has no neutral tolerance; the native tail
     // carries the fact and the sentinel is written back.
     let tolerance = match vertex.tolerance {
-        Some(tolerance) => tolerance,
+        Some(tolerance) => tolerance.get(),
         None if stored.is_some_and(|tail| tail.evaluated_unset) => -1.0,
-        None => return Ok(()),
+        None => return,
     };
-    if !tolerance.is_finite() {
-        return Err(CodecError::malformed(format_args!(
-            "F3D vertex {} tolerance must be finite",
-            vertex.id
-        )));
-    }
     // The record stores three f64 tolerance slots: the two leading slots
     // verbatim (default: the -1 unevaluated sentinel) and the evaluated
     // tolerance last, followed by a version-gated trailing integer (0 or 1,
@@ -1767,24 +1761,17 @@ fn native_tolerant_vertex_tail(
     if let Some(trailing) = trailing {
         native_i64(records, trailing);
     }
-    Ok(())
 }
 
 fn native_tolerant_edge_tail(
     records: &mut Vec<u8>,
     topology: &NativeGenerationIndex<'_>,
     edge: &cadmpeg_ir::topology::Edge,
-) -> Result<(), CodecError> {
+) {
     let Some(tolerance) = edge.tolerance else {
-        return Ok(());
+        return;
     };
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return Err(CodecError::malformed(format_args!(
-            "F3D edge {} tolerance must be finite and nonnegative",
-            edge.id
-        )));
-    }
-    native_f64(records, tolerance / LEN_TO_MM);
+    native_f64(records, tolerance.get() / LEN_TO_MM);
     let (revision, trailing) = topology
         .tolerant_edges
         .get(edge.id.as_str())
@@ -1795,7 +1782,6 @@ fn native_tolerant_edge_tail(
     if let Some(trailing) = trailing {
         native_i64(records, trailing);
     }
-    Ok(())
 }
 
 fn edge_record_metadata(

@@ -5,7 +5,7 @@ use super::super::feature_history::{
     feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
 };
 use super::super::native::annotate;
-use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
@@ -17,12 +17,13 @@ use super::nurbs::{
 };
 use super::pcurves::add_extrusion_pcurve;
 use super::profiles::{
-    extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs, line_pcurve,
-    ordered_extrusion_profiles, oriented_arc_parameterization, resolved_sketch_profiles,
+    extrusion_cap_pcurve, extrusion_side_uvs, line_pcurve, ordered_extrusion_profiles,
+    oriented_arc_parameterization, resolved_sketch_profiles, ProfileGeometry,
 };
 use crate::container::ContainerScan;
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -30,7 +31,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchEntityId};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -65,10 +66,11 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         .flat_map(|table| {
             table.entries.iter().filter_map(|entry| {
                 let external_id = entry.source_entity_id()?;
-                let entity = SketchEntityId(format!(
+                let entity = SketchEntityId::mint(format!(
                     "creo:featdefs:sketch_entity#{}:{external_id}",
                     definition.identity.id()
-                ));
+                ))
+                .ok()?;
                 (profile_entity_set.contains(&entity)
                     && generated_profile_entry_is_admissible(
                         feature_id,
@@ -117,7 +119,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
@@ -136,25 +140,36 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 1) else {
             continue;
         };
-        let Some((profiles, outer_area)) = ordered_extrusion_profiles(profiles) else {
+        let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
-        if profiles.iter().flatten().any(|(geometry, _, start, end)| {
-            matches!(geometry, SketchGeometry::Line { .. }) && start == end
-        }) {
-            continue;
-        }
         if profiles
             .iter()
-            .flatten()
-            .any(|(geometry, reversed, start, end)| {
-                extrusion_brep_side_surface(transform, geometry, *reversed, *start, *end, span)
+            .flat_map(super::profiles::ValidatedProfile::entities)
+            .any(|entity| {
+                let geometry = entity.geometry();
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
+                geometry
+                    .to_sketch()
+                    .and_then(|sketch_geometry| {
+                        extrusion_brep_side_surface(
+                            transform,
+                            &sketch_geometry,
+                            reversed,
+                            start,
+                            end,
+                            span,
+                        )
+                    })
                     .is_none()
             })
         {
             continue;
         }
-        let forward_caps = outer_area > 0.0;
+        let forward_caps = profiles[0].area() > 0.0;
 
         let prefix = format!("creo:feature:extrusion#{feature_id}");
         let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
@@ -181,19 +196,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 geometry: SurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::PlaneSurface::try_new(
                         Point3::new(
-                            transform.origin[0] + offset * transform.normal[0],
-                            transform.origin[1] + offset * transform.normal[1],
-                            transform.origin[2] + offset * transform.normal[2],
+                            transform.origin()[0] + offset * transform.normal()[0],
+                            transform.origin()[1] + offset * transform.normal()[1],
+                            transform.origin()[2] + offset * transform.normal()[2],
                         ),
                         Vector3::new(
-                            transform.normal[0],
-                            transform.normal[1],
-                            transform.normal[2],
+                            transform.normal()[0],
+                            transform.normal()[1],
+                            transform.normal()[2],
                         ),
                         Vector3::new(
-                            transform.u_axis[0],
-                            transform.u_axis[1],
-                            transform.u_axis[2],
+                            transform.u_axis()[0],
+                            transform.u_axis()[1],
+                            transform.u_axis()[2],
                         ),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -207,16 +222,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
         let mut bottom_loops = Vec::new();
         let mut top_loops = Vec::new();
-        for (profile_index, profile) in profiles.iter().enumerate() {
+        for (profile_index, validated) in profiles.iter().enumerate() {
+            let profile = validated.entities();
             let count = profile.len();
             let mut bottom_vertices = Vec::new();
             let mut top_vertices = Vec::new();
-            for (index, (_, _, start, _)) in profile.iter().enumerate() {
+            for (index, entity) in profile.iter().enumerate() {
+                let start = entity.start();
+
                 for (side, offset, arena) in [
                     ("bottom", span.lower, &mut bottom_vertices),
                     ("top", span.upper, &mut top_vertices),
                 ] {
-                    let position = section_point_in_model(transform, *start);
+                    let position = section_point_in_model(transform, start);
                     let point_id =
                         PointId::mint(format!("{prefix}:point:{profile_index}:{index}:{side}"))
                             .expect("identity grammar");
@@ -226,9 +244,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ir.model.points.push(Point {
                         id: point_id.clone(),
                         position: Point3::new(
-                            position[0] + offset * transform.normal[0],
-                            position[1] + offset * transform.normal[1],
-                            position[2] + offset * transform.normal[2],
+                            position[0] + offset * transform.normal()[0],
+                            position[1] + offset * transform.normal()[1],
+                            position[2] + offset * transform.normal()[2],
                         ),
                         source_object: None,
                     });
@@ -244,7 +262,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let mut bottom_edges = Vec::new();
             let mut top_edges = Vec::new();
             let mut vertical_edges = Vec::new();
-            for (index, (geometry, reversed, start, end)) in profile.iter().enumerate() {
+            for (index, entity) in profile.iter().enumerate() {
+                let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let next = (index + 1) % count;
                 for (side, offset, vertices, arena) in [
                     ("bottom", span.lower, &bottom_vertices, &mut bottom_edges),
@@ -257,10 +283,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:{side}"))
                             .expect("identity grammar");
                     let curve = match geometry {
-                        SketchGeometry::Line { .. } => {
-                            let placed_start = section_point_in_model(transform, *start);
-                            let placed_end = section_point_in_model(transform, *end);
-                            let Some(direction) = normalized(std::array::from_fn(|axis| {
+                        ProfileGeometry::Line { .. } => {
+                            let placed_start = section_point_in_model(transform, start);
+                            let placed_end = section_point_in_model(transform, end);
+                            let Some(direction) = normalize(std::array::from_fn(|axis| {
                                 placed_end[axis] - placed_start[axis]
                             })) else {
                                 continue;
@@ -268,43 +294,44 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             CurveGeometry::Line(
                                 cadmpeg_ir::geometry::LineCurve::try_new(
                                     Point3::new(
-                                        placed_start[0] + offset * transform.normal[0],
-                                        placed_start[1] + offset * transform.normal[1],
-                                        placed_start[2] + offset * transform.normal[2],
+                                        placed_start[0] + offset * transform.normal()[0],
+                                        placed_start[1] + offset * transform.normal()[1],
+                                        placed_start[2] + offset * transform.normal()[2],
                                     ),
                                     Vector3::new(direction[0], direction[1], direction[2]),
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                             )
                         }
-                        SketchGeometry::Arc { center, radius, .. }
-                        | SketchGeometry::Circle { center, radius } => {
+                        ProfileGeometry::Arc { center, radius, .. }
+                        | ProfileGeometry::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
-                            let (axis_sign, _) = oriented_arc_parameterization(*reversed, 0.0, 0.0);
+                            let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
                             CurveGeometry::Circle(
                                 cadmpeg_ir::geometry::CircleCurve::try_new(
                                     Point3::new(
-                                        center[0] + offset * transform.normal[0],
-                                        center[1] + offset * transform.normal[1],
-                                        center[2] + offset * transform.normal[2],
+                                        center[0] + offset * transform.normal()[0],
+                                        center[1] + offset * transform.normal()[1],
+                                        center[2] + offset * transform.normal()[2],
                                     ),
                                     Vector3::new(
-                                        axis_sign * transform.normal[0],
-                                        axis_sign * transform.normal[1],
-                                        axis_sign * transform.normal[2],
+                                        axis_sign * transform.normal()[0],
+                                        axis_sign * transform.normal()[1],
+                                        axis_sign * transform.normal()[2],
                                     ),
                                     Vector3::new(
-                                        transform.u_axis[0],
-                                        transform.u_axis[1],
-                                        transform.u_axis[2],
+                                        transform.u_axis()[0],
+                                        transform.u_axis()[1],
+                                        transform.u_axis()[2],
                                     ),
                                     radius.0,
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                             )
                         }
-                        SketchGeometry::Nurbs { .. } => {
-                            let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, *reversed)
+                        ProfileGeometry::Nurbs { .. } => {
+                            let Some(nurbs) =
+                                oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                             else {
                                 continue;
                             };
@@ -314,16 +341,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             let Some(translated) = translated_nurbs_curve(
                                 &placed,
                                 [
-                                    offset * transform.normal[0],
-                                    offset * transform.normal[1],
-                                    offset * transform.normal[2],
+                                    offset * transform.normal()[0],
+                                    offset * transform.normal()[1],
+                                    offset * transform.normal()[2],
                                 ],
                             ) else {
                                 continue;
                             };
                             CurveGeometry::Nurbs(translated)
                         }
-                        _ => unreachable!("profile family checked above"),
                     };
                     ir.model.curves.push(Curve {
                         id: curve_id.clone(),
@@ -331,24 +357,23 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         source_object: None,
                     });
                     let param_range = match geometry {
-                        SketchGeometry::Line { .. } => {
+                        ProfileGeometry::Line { .. } => {
                             Some([0.0, (end[0] - start[0]).hypot(end[1] - start[1])])
                         }
-                        SketchGeometry::Arc {
+                        ProfileGeometry::Arc {
                             start_angle,
                             end_angle,
                             ..
                         } => Some(
-                            oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
+                            oriented_arc_parameterization(reversed, start_angle.0, end_angle.0).1,
                         ),
-                        SketchGeometry::Circle { .. } => Some(
-                            oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,
+                        ProfileGeometry::Circle { .. } => Some(
+                            oriented_arc_parameterization(reversed, 0.0, std::f64::consts::TAU).1,
                         ),
-                        SketchGeometry::Nurbs { .. } => {
-                            oriented_sketch_nurbs_curve(geometry, *reversed)
+                        ProfileGeometry::Nurbs { .. } => {
+                            oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
                         }
-                        _ => None,
                     };
                     ir.model.edges.push(Edge {
                         id: edge_id.clone(),
@@ -366,20 +391,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let edge_id =
                     EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:vertical"))
                         .expect("identity grammar");
-                let origin = section_point_in_model(transform, *start);
+                let origin = section_point_in_model(transform, start);
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Line(
                         cadmpeg_ir::geometry::LineCurve::try_new(
                             Point3::new(
-                                origin[0] + span.lower * transform.normal[0],
-                                origin[1] + span.lower * transform.normal[1],
-                                origin[2] + span.lower * transform.normal[2],
+                                origin[0] + span.lower * transform.normal()[0],
+                                origin[1] + span.lower * transform.normal()[1],
+                                origin[2] + span.lower * transform.normal()[2],
                             ),
                             Vector3::new(
-                                transform.normal[0],
-                                transform.normal[1],
-                                transform.normal[2],
+                                transform.normal()[0],
+                                transform.normal()[1],
+                                transform.normal()[2],
                             ),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -437,7 +462,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
                 let id = bottom_coedges[ring_index].clone();
-                let (geometry, reversed, start, end) = &profile[edge_index];
+                let entity = &profile[edge_index];
+                let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let bottom_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
@@ -446,9 +479,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(geometry, *reversed, *start, *end).ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
-                    })?,
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "extrusion pcurve geometry is invalid",
+                            )
+                        },
+                    )?,
                 )?;
                 ir.model.coedges.push(Coedge {
                     id,
@@ -467,7 +504,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     use_curve: None,
                 });
                 let id = top_coedges[ring_index].clone();
-                let (geometry, reversed, start, end) = &profile[ring_index];
+                let entity = &profile[ring_index];
+                let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
+                let reversed = entity.reversed();
+                let start = entity.start();
+                let end = entity.end();
+
                 let top_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
@@ -476,9 +521,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(geometry, *reversed, *start, *end).ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
-                    })?,
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "extrusion pcurve geometry is invalid",
+                            )
+                        },
+                    )?,
                 )?;
                 ir.model.coedges.push(Coedge {
                     id,
@@ -498,20 +547,24 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 });
             }
 
-            let forward_sides = extrusion_profile_signed_area(profile)
-                .expect("validated extrusion profile has nonzero area")
-                > 0.0;
-            for (index, (geometry, _, start, _)) in profile.iter().enumerate() {
+            let forward_sides = validated.area() > 0.0;
+            for (index, entity) in profile.iter().enumerate() {
+                let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
+                let start = entity.start();
+
                 let next = (index + 1) % count;
                 let surface_id =
                     SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
                         .expect("identity grammar");
                 let Some(surface_geometry) = extrusion_brep_side_surface(
                     transform,
-                    geometry,
-                    profile[index].1,
-                    *start,
-                    profile[index].3,
+                    &sketch_geometry,
+                    profile[index].reversed(),
+                    start,
+                    profile[index].end(),
                     span,
                 ) else {
                     break;
@@ -555,8 +608,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     (top_edges[index].clone(), Sense::Reversed),
                     (vertical_edges[index].clone(), Sense::Reversed),
                 ];
-                let side_uvs =
-                    extrusion_side_uvs(geometry, profile[index].1, *start, profile[index].3, span);
+                let side_uvs = extrusion_side_uvs(
+                    &sketch_geometry,
+                    profile[index].reversed(),
+                    start,
+                    profile[index].end(),
+                    span,
+                );
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),

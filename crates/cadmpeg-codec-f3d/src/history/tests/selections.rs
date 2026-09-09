@@ -580,35 +580,41 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
     use cadmpeg_ir::features::BodySelection;
 
-    let identity =
-        |occurrence_reference| crate::records::feature::DesignCombineExternalBodyIdentity {
+    let identity = |occurrence_reference| {
+        crate::records::feature::DesignCombineExternalBodyIdentityWire {
             selector_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_asset_id_offset: 0,
+            selector_asset_id_offset: 44,
             selector_context_id: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_context_id_offset: 0,
+            selector_context_id_offset: 120,
             occurrence_reference,
-            occurrence_reference_offset: 0,
+            occurrence_reference_offset: 205,
             external_body_reference: 700,
-            external_body_reference_offset: 0,
+            external_body_reference_offset: 220,
             external_segment: 2,
-            external_segment_offset: 0,
+            external_segment_offset: 229,
             external_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            external_asset_id_offset: 0,
+            external_asset_id_offset: 237,
             external_link_name: "component-body-link".into(),
-            external_link_name_offset: 0,
-            external_version: None,
+            external_link_name_offset: 314,
+            external_property_key: None,
+            external_property_key_offset: None,
+            external_version_urn: None,
+            external_version_urn_offset: None,
             tail_values: [0, 0],
-            tail_value_offsets: [0, 12],
-        };
+            tail_value_offsets: [359, 371],
+        }
+        .try_into()
+        .unwrap()
+    };
     let tool =
         |record_index, occurrence_reference| crate::records::feature::DesignCombineBodySelection {
             record_index,
@@ -1348,7 +1354,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use cadmpeg_ir::features::ProfileRef;
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
-        let member_offsets = vec![0; members.len()];
+        let member_offsets = (0..members.len())
+            .map(|index| index as u64 * 11)
+            .collect::<Vec<_>>();
         serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!(
                 "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
@@ -1363,9 +1371,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 279_172_874_240_u64,
@@ -1482,10 +1490,16 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         [0, 1]
     );
     let mut repeated_child = groups.clone();
-    repeated_child[0].members.push(crate::records::Located {
-        value: 110,
-        offset: 0,
-    });
+    let repeated_members = repeated_child[0]
+        .members()
+        .iter()
+        .copied()
+        .chain([crate::records::Located {
+            value: 110,
+            offset: repeated_child[0].members().last().unwrap().offset + 11,
+        }])
+        .collect();
+    repeated_child[0].try_set_members(repeated_members).unwrap();
     assert!(
         crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child).is_none()
     );
@@ -1668,8 +1682,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
             "class_tag": "282", "members": [40], "member_offsets": [0],
             "frame": {"member_count_offset": 0, "opaque_index": 1,
-                "opaque_index_offset": 0, "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 0, "variant": false},
+                "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 22, "variant": false},
             "role": 21_474_836_480u64, "role_offset": 0,
             "paired_class_tag": "261", "paired_byte_offset": 0
         }))

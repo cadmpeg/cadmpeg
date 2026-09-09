@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier pairwise intersection curves.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::sketch::normalized;
 use crate::decode::analytic::equations::{circular_cone, plane_cone_conic, CarrierEquation};
 use crate::vecmath::{cross, dot};
 
@@ -37,7 +37,7 @@ pub(in super::super) fn carrier_intersection_curve(
             });
             let point_numerator = cross(weighted, direction);
             let origin = point_numerator.map(|value| value / denominator);
-            let direction = normalized(direction)?;
+            let direction = normalize(direction)?;
             Some((
                 CurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
@@ -51,8 +51,8 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Cylinder(cylinder))
         | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane)) => {
-            let normal = normalized(plane.normal)?;
-            let axis = normalized(cylinder.axis)?;
+            let normal = normalize(plane.normal)?;
+            let axis = normalize(cylinder.axis)?;
             let cosine = dot(normal, axis);
             if cosine.abs() <= EPS_AXIS_ORTHO {
                 let signed_distance = dot(
@@ -84,7 +84,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let center: [f64; 3] =
                 std::array::from_fn(|index| cylinder.origin[index] + axis_parameter * axis[index]);
             if (cosine.abs() - 1.0).abs() <= EPS_AXIS_ORTHO {
-                let reference = normalized(cylinder.ref_direction)?;
+                let reference = normalize(cylinder.ref_direction)?;
                 return Some((
                     CurveGeometry::Circle(
                         cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -98,7 +98,7 @@ pub(in super::super) fn carrier_intersection_curve(
                     "plane_cylinder_circle",
                 ));
             }
-            let projected_axis = normalized(std::array::from_fn(|index| {
+            let projected_axis = normalize(std::array::from_fn(|index| {
                 axis[index] - cosine * normal[index]
             }))?;
             Some((
@@ -117,7 +117,7 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
         | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
-            let normal = normalized(plane.normal)?;
+            let normal = normalize(plane.normal)?;
             let signed_distance = dot(
                 normal,
                 std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
@@ -131,7 +131,7 @@ pub(in super::super) fn carrier_intersection_curve(
             }
             let center: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - signed_distance * normal[index]);
-            let reference = normalized(std::array::from_fn(|index| {
+            let reference = normalize(std::array::from_fn(|index| {
                 sphere.ref_direction[index] - dot(sphere.ref_direction, normal) * normal[index]
             }))
             .unwrap_or_else(|| {
@@ -155,8 +155,8 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
         | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane)) => {
-            let normal = normalized(plane.normal)?;
-            let axis = normalized(cone.axis())?;
+            let normal = normalize(plane.normal)?;
+            let axis = normalize(cone.axis())?;
             let alignment = dot(normal, axis);
             let slope = cone.half_angle().tan();
             if circular_cone(cone) && slope.abs() > EPS_CONE_SLOPE_NONZERO {
@@ -171,7 +171,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 if plane_distance.abs() <= EPS_CARRIER_AGREEMENT * scale
                     && (alignment.abs() - cone.half_angle().sin()).abs() <= EPS_AXIS_ORTHO
                 {
-                    let direction = normalized(std::array::from_fn(|index| {
+                    let direction = normalize(std::array::from_fn(|index| {
                         axis[index] - alignment * normal[index]
                     }))?;
                     return Some((
@@ -204,7 +204,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 }
                 let center: [f64; 3] =
                     std::array::from_fn(|index| cone.origin()[index] + axial * axis[index]);
-                let reference = normalized(cone.ref_direction())?;
+                let reference = normalize(cone.ref_direction())?;
                 let (geometry, tag) = if circular_cone(cone) {
                     (
                         CurveGeometry::Circle(
@@ -239,8 +239,8 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => {
-            let normal = normalized(plane.normal)?;
-            let axis = normalized(torus.axis)?;
+            let normal = normalize(plane.normal)?;
+            let axis = normalize(torus.axis)?;
             if (dot(normal, axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
@@ -254,7 +254,7 @@ pub(in super::super) fn carrier_intersection_curve(
             }
             let center: [f64; 3] =
                 std::array::from_fn(|index| torus.center[index] + axial * axis[index]);
-            let reference = normalized(torus.ref_direction)?;
+            let reference = normalize(torus.ref_direction)?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -269,8 +269,8 @@ pub(in super::super) fn carrier_intersection_curve(
             ))
         }
         (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
-            let first_axis = normalized(first.axis)?;
-            let second_axis = normalized(second.axis)?;
+            let first_axis = normalize(first.axis)?;
+            let second_axis = normalize(second.axis)?;
             let alignment = dot(first_axis, second_axis);
             if (alignment.abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
@@ -350,7 +350,7 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Sphere(sphere))
         | (CarrierEquation::Sphere(sphere), CarrierEquation::Cylinder(cylinder)) => {
-            let axis = normalized(cylinder.axis)?;
+            let axis = normalize(cylinder.axis)?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - cylinder.origin[index]);
             let axial = dot(relative, axis);
@@ -362,7 +362,7 @@ pub(in super::super) fn carrier_intersection_curve(
             {
                 return None;
             }
-            let reference = normalized(cylinder.ref_direction)?;
+            let reference = normalize(cylinder.ref_direction)?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -378,8 +378,8 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => {
-            let cylinder_axis = normalized(cylinder.axis)?;
-            let torus_axis = normalized(torus.axis)?;
+            let cylinder_axis = normalize(cylinder.axis)?;
+            let torus_axis = normalize(torus.axis)?;
             if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
@@ -404,7 +404,7 @@ pub(in super::super) fn carrier_intersection_curve(
             {
                 return None;
             }
-            let reference = normalized(cylinder.ref_direction)?;
+            let reference = normalize(cylinder.ref_direction)?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -423,7 +423,7 @@ pub(in super::super) fn carrier_intersection_curve(
             if !circular_cone(cone) {
                 return None;
             }
-            let cone_axis = normalized(cone.axis())?;
+            let cone_axis = normalize(cone.axis())?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - cone.origin()[index]);
             let axial = dot(relative, cone_axis);
@@ -459,7 +459,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let center: [f64; 3] = std::array::from_fn(|index| {
                 cone.origin()[index] + cone_parameter * cone_axis[index]
             });
-            let reference = normalized(cone.ref_direction())?;
+            let reference = normalize(cone.ref_direction())?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -475,7 +475,7 @@ pub(in super::super) fn carrier_intersection_curve(
         }
         (CarrierEquation::Sphere(sphere), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere)) => {
-            let axis = normalized(torus.axis)?;
+            let axis = normalize(torus.axis)?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| torus.center[index] - sphere.center[index]);
             let axial = dot(relative, axis);
@@ -511,7 +511,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let center_axial = sphere_parameter * axial / meridian_distance;
             let center: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
-            let reference = normalized(torus.ref_direction)?;
+            let reference = normalize(torus.ref_direction)?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -526,8 +526,8 @@ pub(in super::super) fn carrier_intersection_curve(
             ))
         }
         (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) => {
-            let first_axis = normalized(first.axis)?;
-            let second_axis = normalized(second.axis)?;
+            let first_axis = normalize(first.axis)?;
+            let second_axis = normalize(second.axis)?;
             if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
@@ -569,7 +569,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let center_axial = first_parameter * axial / meridian_distance;
             let center: [f64; 3] =
                 std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
-            let reference = normalized(first.ref_direction)?;
+            let reference = normalize(first.ref_direction)?;
             Some((
                 CurveGeometry::Circle(
                     cadmpeg_ir::geometry::CircleCurve::try_new(

@@ -9,7 +9,7 @@ const EPS_CONE_ANGLE: f64 = 1.0e-12;
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
     assert_eq!(
-        crate::deltas::walk(&stream).bytes_decoded,
+        crate::deltas::walk(&stream).bytes_decoded(),
         stream.len() - DELTAS_PREAMBLE.len()
     );
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -90,7 +90,12 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.3)
+    );
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
         Some(&result.ir().model.curves[0].id)
@@ -105,9 +110,19 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
+    assert_eq!(
+        result.ir().model.faces[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.2)
+    );
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
+    assert_eq!(
+        result.ir().model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(0.1)
+    );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

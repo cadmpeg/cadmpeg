@@ -2,6 +2,7 @@
 //! Identity framing for the pre-`7C05` design stream.
 
 use cadmpeg_core::decode::View;
+use serde::{Deserialize, Serialize};
 
 use crate::container;
 
@@ -290,6 +291,45 @@ pub struct LegacyIntegerValue {
     pub value: i32,
 }
 
+/// Stored legacy identity record lead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaLegacyIdentityLead {
+    /// Lead `0x81`.
+    Lead81,
+    /// Lead `0x82`.
+    Lead82,
+    /// Lead `0xe5`.
+    LeadE5,
+    /// Lead `0xfd`.
+    LeadFd,
+}
+
+impl TryFrom<u8> for CatiaLegacyIdentityLead {
+    type Error = String;
+
+    fn try_from(lead: u8) -> Result<Self, Self::Error> {
+        match lead {
+            0x81 => Ok(Self::Lead81),
+            0x82 => Ok(Self::Lead82),
+            0xe5 => Ok(Self::LeadE5),
+            0xfd => Ok(Self::LeadFd),
+            _ => Err(format!("lead {lead:#x} is not 0x81, 0x82, 0xe5, or 0xfd")),
+        }
+    }
+}
+
+impl From<CatiaLegacyIdentityLead> for u8 {
+    fn from(lead: CatiaLegacyIdentityLead) -> Self {
+        match lead {
+            CatiaLegacyIdentityLead::Lead81 => 0x81,
+            CatiaLegacyIdentityLead::Lead82 => 0x82,
+            CatiaLegacyIdentityLead::LeadE5 => 0xe5,
+            CatiaLegacyIdentityLead::LeadFd => 0xfd,
+        }
+    }
+}
+
 /// One stored entity identity in a legacy identity run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LegacyEntityIdentity {
@@ -298,7 +338,7 @@ pub struct LegacyEntityIdentity {
     /// Little-endian identity following the delimiter.
     pub entity_id: u32,
     /// Stored record lead following the identity.
-    pub lead: u8,
+    pub lead: CatiaLegacyIdentityLead,
 }
 
 /// One complete compact schema program following a legacy catalog opener.
@@ -388,14 +428,14 @@ fn parse_run_before(
         .windows(6)
         .enumerate()
         .filter_map(|(offset, bytes)| {
-            if bytes[0] != 0xea || !matches!(bytes[5], 0x81 | 0x82 | 0xe5 | 0xfd) {
+            if bytes[0] != 0xea {
                 return None;
             }
             let entity_id = View::u32_le_at(bytes, 1)?;
             (entity_id != 0).then_some(LegacyEntityIdentity {
                 offset,
                 entity_id,
-                lead: bytes[5],
+                lead: CatiaLegacyIdentityLead::try_from(bytes[5]).ok()?,
             })
         })
         .collect::<Vec<_>>();

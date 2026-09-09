@@ -111,9 +111,14 @@ impl E5SurfaceWrapper {
 #[derive(Clone, Copy)]
 struct E5Record {
     pos: usize,
-    end: usize,
     class: u8,
     size: usize,
+}
+
+impl E5Record {
+    fn end(&self) -> usize {
+        self.pos + self.size + 13
+    }
 }
 
 const MARKER: &[u8; 3] = &crate::layout::token::E5_RECORD_FAMILY;
@@ -131,7 +136,6 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
             let size = View::u16_le_at(data, pos + 5).map(usize::from)?;
             Some(E5Record {
                 pos,
-                end: range.end,
                 class: data[pos + 3],
                 size,
             })
@@ -152,7 +156,7 @@ pub fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
     let mut region_start = 0usize;
     for record in records {
         runs.extend(vertex_runs(&data[region_start..record.pos]));
-        region_start = record.end;
+        region_start = record.end();
     }
     runs.extend(vertex_runs(&data[region_start..]));
     let Some(run_count) = runs
@@ -243,7 +247,7 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         let scalar_count = (record.size - 58) / 8;
         let scalars_finite = (0..scalar_count)
             .all(|index| f64_le(data, pos + 39 + 8 * index).is_some_and(f64::is_finite));
-        let Some(bounds) = read_f64_array::<4>(data, record.end - 32) else {
+        let Some(bounds) = read_f64_array::<4>(data, record.end() - 32) else {
             continue;
         };
         if !scalars_finite || origin.iter().chain(&bounds).any(|value| !value.is_finite()) {
@@ -278,7 +282,7 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
     for record in e5_records(data) {
         let pos = record.pos;
         if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
-            let payload = &data[pos + 13..record.end];
+            let payload = &data[pos + 13..record.end()];
             if let Some((_, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
@@ -359,11 +363,7 @@ pub fn e5_rolling_ball_jets(data: &[u8]) -> Vec<E5RollingBallJet> {
 }
 
 fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingBallJet> {
-    let expected_end = record.pos.checked_add(13)?.checked_add(record.size)?;
-    if expected_end != record.end {
-        return None;
-    }
-    let mut view = View::over_retained(data).child(record.pos.checked_add(13)?, record.end)?;
+    let mut view = View::over_retained(data).child(record.pos.checked_add(13)?, record.end())?;
     if view.u8()? != 0x80 {
         return None;
     }
@@ -580,7 +580,7 @@ pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
             continue;
         }
         let Some((references, next)) =
-            crate::wire::counted_refs(&data[record.pos + 13..record.end], false)
+            crate::wire::counted_refs(&data[record.pos + 13..record.end()], false)
         else {
             continue;
         };
@@ -600,7 +600,7 @@ pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
 }
 
 fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
-    let mut view = View::over_retained(data).child(record.pos + 13, record.end)?;
+    let mut view = View::over_retained(data).child(record.pos + 13, record.end())?;
     if view.u8()? != 0x80 {
         return None;
     }

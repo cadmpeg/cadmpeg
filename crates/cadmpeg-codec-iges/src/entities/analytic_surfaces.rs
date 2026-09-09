@@ -515,7 +515,13 @@ pub(super) fn project(
             id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
                 .expect("identity grammar"),
             geometry: result,
-            source_object: Some(source_object(entry)),
+            source_object: Some(match source_object(entry) {
+                Ok(source) => source,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            }),
         });
         decoded.insert(entry.sequence);
     }
