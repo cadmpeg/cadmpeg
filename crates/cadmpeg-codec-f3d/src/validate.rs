@@ -86,7 +86,7 @@ fn valid_assembly_operand_path_link(
         return false;
     };
     let Some(locator_reference_offset) = scope
-        .byte_offset
+        .byte_offset()
         .checked_add(locator_marker_offset)
         .and_then(|offset| offset.checked_add(1))
     else {
@@ -168,8 +168,8 @@ fn valid_class_363_operand_path_link(
                 + u64::try_from(class_363_identity::OCCURRENCE_GUID + 4).unwrap_or(u64::MAX)
         && link.wrapper_reference_offset < link.wrapper_byte_offset
         && link.locator_scope_reference_offset > link.locator_byte_offset
-        && link.locator_reference_offset >= scope.byte_offset
-        && link.locator_reference_offset < scope.paired_byte_offset
+        && link.locator_reference_offset >= scope.byte_offset()
+        && link.locator_reference_offset < scope.paired_byte_offset()
         && path.byte_offset() < link.locator_byte_offset
         && path.occurrence_guids()[0].offset == link.path_reference_offset
         && path.identity_guids()[0].offset > path.occurrence_guids()[0].offset
@@ -212,10 +212,10 @@ fn valid_class_307_joint_origin_qualifier(
                         == crate::records::feature::DesignFeatureKind::JointOrigin
                     && target_scope.record_index == *scope_record_index
                     && target_scope.class_tag == *class_tag
-                    && target_scope.byte_offset == *byte_offset
+                    && target_scope.byte_offset() == *byte_offset
                     && target_scope.paired_class_tag == *paired_class_tag
-                    && target_scope.paired_byte_offset == *paired_byte_offset
-                    && target_scope.frame_length == class_307_joint_origin::LEN as u64
+                    && target_scope.paired_byte_offset() == *paired_byte_offset
+                    && target_scope.frame_length() == class_307_joint_origin::LEN as u64
                     && target_scope.joint_origin_transform() == Some(frame.transform)
             })
             .count()
@@ -359,9 +359,9 @@ fn valid_axial_selector_identity(
         return false;
     };
     let selector_pair_is_referenced = scope
-        .reference_members
+        .reference_members()
         .values()
-        .zip(scope.reference_members.values().skip(1))
+        .zip(scope.reference_members().values().skip(1))
         .filter(|(first, second)| {
             [**first, **second] == [selector.axis_record_index, selector.selector_record_index]
         })
@@ -371,7 +371,7 @@ fn valid_axial_selector_identity(
         .iter()
         .all(|record_index| {
             scope
-                .reference_members
+                .reference_members()
                 .values()
                 .filter(|member| *member == record_index)
                 .count()
@@ -473,12 +473,12 @@ fn valid_axial_assembly_targets(
                     .count();
                 frame.reference_record_index == *construction_record_index
                     && scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .filter(|record_index| **record_index == *construction_record_index)
                         .count()
                         == 1
-                    && *construction_byte_offset > scope.paired_byte_offset
+                    && *construction_byte_offset > scope.paired_byte_offset()
                     && construction_byte_offset.checked_add(48)
                         == Some(*construction_transform_offset)
                     && construction_byte_offset.checked_add(193)
@@ -1281,7 +1281,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .scope()
                 .record()
                 .byte_offset()
-                .checked_add(scope.map_or(0, |scope| scope.frame_length))
+                .checked_add(scope.map_or(0, |scope| scope.frame_length()))
                 == Some(feature.scope().base_record().byte_offset())
             && mesh_record_offset_is(
                 feature.collection_owner.record(),
@@ -1290,8 +1290,8 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::feature::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset == feature.scope().record().byte_offset()
-                    && scope.paired_byte_offset == feature.scope().base_record().byte_offset()
+                    && scope.byte_offset() == feature.scope().record().byte_offset()
+                    && scope.paired_byte_offset() == feature.scope().base_record().byte_offset()
             });
 
         let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
@@ -1405,7 +1405,7 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             scope.kind() == crate::records::feature::DesignFeatureKind::Canvas
         }) && scope_bindings.insert((native_stream, image.scope_record_index))
             && geometry_records.insert((native_stream, image.geometry().record_index()))
-            && scope.is_some_and(|scope| scope.byte_offset == image.scope_byte_offset())
+            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
             && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
             && component_entities
                 .contains(&(design_segment, u64::from(image.component_entity_suffix)));
@@ -1499,7 +1499,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .is_some_and(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::Decal)
             && scope_bindings.insert((native_stream, image.scope_record_index()))
             && asset_records.insert((native_stream, image.asset.record_index()))
-            && scope.is_some_and(|scope| scope.byte_offset == image.scope_byte_offset())
+            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
             && fusion_entities.contains(&(design_segment, u64::from(image.asset.entity_suffix())))
             && group.is_some_and(|group| {
                 group.scope_record_index == image.scope_record_index()
@@ -1653,8 +1653,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .get(&(native_stream, binding.entity_id.suffix()))
                 .is_some_and(|entity| {
                     entity.entity_id == binding.entity_id
-                        && binding.entity_reference_offset > scope.byte_offset
-                        && binding.entity_reference_offset < scope.paired_byte_offset
+                        && binding.entity_reference_offset > scope.byte_offset()
+                        && binding.entity_reference_offset < scope.paired_byte_offset()
                 })
         });
         let valid_sketch_profile = |profile: &records::topology::DesignSketchProfileOperand| {
@@ -1662,7 +1662,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
             usize::try_from(profile.scope_reference_ordinal)
                 .ok()
-                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                 == Some(&profile.record_index)
                 && header.is_some_and(|header| {
                     header.byte_offset == profile.byte_offset
@@ -1687,7 +1687,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let base_flange_link = match scope.base_flange_operation() {
             None => scope.kind() != crate::records::feature::DesignFeatureKind::BaseFlange,
             Some(operation) => {
-                scope.reference_members.values().copied().eq([
+                scope.reference_members().values().copied().eq([
                     operation.profile_group_record_index,
                     operation.profile_record_index,
                     operation.thickness_record_index,
@@ -1695,8 +1695,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ]) && scope.base_flange_profile().is_some_and(|profile| {
                     profile.record_index == operation.profile_record_index
                         && profile.scope_reference_ordinal == 1
-                }) && operation.thickness_offset == scope.byte_offset.saturating_add(123)
-                    && operation.thickness_offset < scope.paired_byte_offset
+                }) && operation.thickness_offset == scope.byte_offset().saturating_add(123)
+                    && operation.thickness_offset < scope.paired_byte_offset()
             }
         };
         let edge_flange_link = match scope.edge_flange_operation() {
@@ -1742,13 +1742,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ]);
                 }
                 edge_count > 0
-                    && claimed.len() == scope.reference_members.len()
+                    && claimed.len() == scope.reference_members().len()
                     && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
-                    && claimed
-                        .iter()
-                        .all(|index| scope.reference_members.values().any(|value| value == index))
-                    && operation.bend_radius_offset > scope.byte_offset
-                    && operation.bend_radius_offset < scope.paired_byte_offset
+                    && claimed.iter().all(|index| {
+                        scope
+                            .reference_members()
+                            .values()
+                            .any(|value| value == index)
+                    })
+                    && operation.bend_radius_offset > scope.byte_offset()
+                    && operation.bend_radius_offset < scope.paired_byte_offset()
             }
         };
         let hem_link = match scope.hem_operation() {
@@ -1782,12 +1785,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ]),
                 }
                 claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
-                    && claimed.len() == scope.reference_members.len()
-                    && claimed
-                        .iter()
-                        .all(|index| scope.reference_members.values().any(|value| value == index))
-                    && operation.bend_radius_offset > scope.byte_offset
-                    && operation.bend_radius_offset < scope.paired_byte_offset
+                    && claimed.len() == scope.reference_members().len()
+                    && claimed.iter().all(|index| {
+                        scope
+                            .reference_members()
+                            .values()
+                            .any(|value| value == index)
+                    })
+                    && operation.bend_radius_offset > scope.byte_offset()
+                    && operation.bend_radius_offset < scope.paired_byte_offset()
             }
         };
         let copy_paste_link = match scope.copy_paste_bodies_operation() {
@@ -1797,9 +1803,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records_by_index.get(&(native_stream, operation.body_group_record_index));
                 let relation_header =
                     records_by_index.get(&(native_stream, operation.relation_record_index));
-                scope.reference_members.values().next() == Some(&operation.body_group_record_index)
+                scope.reference_members().values().next()
+                    == Some(&operation.body_group_record_index)
                     && scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .skip(1)
                         .copied()
@@ -1856,13 +1863,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         return false;
                     };
                     let expected_records = scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .next()
                         .into_iter()
                         .chain(
                             scope
-                                .reference_members
+                                .reference_members()
                                 .values_in(6..count.saturating_add(5))
                                 .into_iter()
                                 .flatten(),
@@ -1936,7 +1943,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .all(|record_index| {
                             scope
-                                .reference_members
+                                .reference_members()
                                 .values()
                                 .any(|value| value == record_index)
                                 && records_by_index.contains_key(&(native_stream, *record_index))
@@ -1981,7 +1988,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ]
                 };
                 let generation = design::assembly::AssemblyScopeGeneration::new(
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 );
@@ -2000,9 +2007,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 );
                 let as_built_frames = scope.kind()
                     == crate::records::feature::DesignFeatureKind::AsBuilt
-                    && scope.frame_length == 399;
+                    && scope.frame_length() == 399;
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 );
@@ -2044,13 +2051,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .all(|(ordinal, reference)| {
                                 let reference_ordinal = ordinal * 2;
                                 scope
-                                    .reference_members
+                                    .reference_members()
                                     .values()
                                     .nth(reference_ordinal)
                                     .copied()
                                     == Some(reference.value)
                                     && scope
-                                        .reference_members
+                                        .reference_members()
                                         .offsets()
                                         .nth(reference_ordinal)
                                         .copied()
@@ -2077,9 +2084,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         })
                                     } else {
                                         frame.reference_offset
-                                            == scope.byte_offset + frame_reference_offsets[ordinal]
+                                            == scope.byte_offset()
+                                                + frame_reference_offsets[ordinal]
                                             && frame.transform_offset
-                                                == scope.byte_offset
+                                                == scope.byte_offset()
                                                     + frame_transform_offsets[ordinal]
                                     };
                                     let reference_exists = if as_built_frames {
@@ -2104,9 +2112,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         return false;
                     };
                     as_built_421
-                        && scope.reference_members.values().nth(8).copied()
+                        && scope.reference_members().values().nth(8).copied()
                             == Some(frame.reference_record_index)
-                        && scope.reference_members.offsets().nth(8).copied()
+                        && scope.reference_members().offsets().nth(8).copied()
                             == Some(frame.reference_offset)
                         && header.class_tag.as_str() == generation.frame_class_tag()
                         && frame.class_tag == header.class_tag
@@ -2223,14 +2231,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .is_none_or(|record_index| {
                         scope.class_tag.as_str() == "276"
                             && scope.paired_class_tag.as_str() == "258"
-                            && scope.frame_length == 604
+                            && scope.frame_length() == 604
                             && native.design_parameter_scopes.iter().any(|target| {
                                 design_stream(&target.id) == native_stream
                                     && target.kind()
                                         == crate::records::feature::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
                                     && target.joint_origin_transform_offset()
-                                        == Some(scope.byte_offset + 36)
+                                        == Some(scope.byte_offset() + 36)
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
@@ -2317,7 +2325,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         };
                         alignment.owners.len() == 4
                             && scope
-                                .reference_members
+                                .reference_members()
                                 .values()
                                 .skip(4)
                                 .take(4)
@@ -2329,7 +2337,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     alignment.owners[0].value,
                                 ])
                             && scope
-                                .reference_members
+                                .reference_members()
                                 .values()
                                 .skip(9)
                                 .take(2)
@@ -2339,10 +2347,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
                 ) {
-                    (0..scope.reference_members.len())
+                    (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
-                                .reference_members
+                                .reference_members()
                                 .values_in(start..start + alignment.owners.len())
                                 .is_some_and(|values| {
                                     values.eq(alignment.owners.iter().map(|owner| &owner.value))
@@ -2352,7 +2360,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == 1
                 } else {
                     scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .rev()
                         .take(alignment.owners.len())
@@ -2372,7 +2380,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
                 let frame_matches_transform = match (
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
@@ -2383,11 +2391,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     (257 | 261 | 267, "264", None) if scope.class_tag.as_str() == "414" => true,
                     (257, "262", None) if scope.class_tag.as_str() == "283" => true,
                     (385, "262", Some(matrix)) if scope.class_tag.as_str() == "283" => {
-                        matrix.scope.offset == scope.byte_offset.saturating_add(46)
+                        matrix.scope.offset == scope.byte_offset().saturating_add(46)
                             && matrix.carrier_offset.is_none()
                     }
                     (404, _, Some(matrix)) => {
-                        matrix.scope.offset == scope.byte_offset.saturating_add(54)
+                        matrix.scope.offset == scope.byte_offset().saturating_add(54)
                             && matrix
                                 .carrier_offset
                                 .is_some_and(|offset| offset < construction.neutron_role_offset)
@@ -2401,7 +2409,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             _ => None,
                         };
                         scope_delta.is_some_and(|delta| {
-                            matrix.scope.offset == scope.byte_offset.saturating_add(delta)
+                            matrix.scope.offset == scope.byte_offset().saturating_add(delta)
                         }) && matrix
                             .carrier_offset
                             .is_some_and(|offset| construction.neutron_role_offset < offset)
@@ -2416,7 +2424,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .get(37..)
                             .is_some_and(|suffix| suffix.starts_with("urn:")));
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .copied()
                     .eq([construction.relation_record_index])
@@ -2455,21 +2463,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         design_stream(&occurrence.id) == native_stream
                             && occurrence.record_index == operation.copied_occurrence_record_index
                     });
-                let source_at = match scope.frame_length {
+                let source_at = match scope.frame_length() {
                     529 => 38,
                     525 => 34,
                     _ => 0,
                 };
                 source_at != 0
                     && scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .copied()
                         .eq([operation.relation_record_index])
                     && operation.source_occurrence_record_index
                         != operation.copied_occurrence_record_index
-                    && operation.source_transform_offset == scope.byte_offset + source_at
-                    && operation.copied_transform_offset == scope.byte_offset + source_at + 156
+                    && operation.source_transform_offset == scope.byte_offset() + source_at
+                    && operation.copied_transform_offset == scope.byte_offset() + source_at + 156
                     && source.is_some_and(|source| {
                         source
                             .component_guid
@@ -2501,17 +2509,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     != Some(design::DesignFeatureFamily::Draft)
             }
             Some(operation) => {
-                scope.reference_members.len() >= 6
+                scope.reference_members().len() >= 6
                     && scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .any(|value| value == &operation.angle_record_index)
                     && scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .any(|value| value == &operation.opposite_angle_record_index)
                     && operation.angle_record_index != operation.opposite_angle_record_index
-                    && operation.angle_offset > scope.paired_byte_offset
+                    && operation.angle_offset > scope.paired_byte_offset()
                     && operation.opposite_angle_offset > operation.angle_offset
                     && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
                     && records_by_index
@@ -2522,7 +2530,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             None => true,
             Some(operation) => {
                 let expected_selections = scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .skip(1)
                     .step_by(2)
@@ -2548,10 +2556,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && design::decode::scopes::parameter_scope_payload_length(scope) == Some(314);
                 let extended_reference_scope = scope.class_tag.as_str() == "329"
                     && scope.paired_class_tag.as_str() == "261"
-                    && scope.frame_length == 363;
-                scope.reference_members.len() >= 4
-                    && scope.reference_members.len().is_multiple_of(2)
-                    && selections.len() == scope.reference_members.len() / 2
+                    && scope.frame_length() == 363;
+                scope.reference_members().len() >= 4
+                    && scope.reference_members().len().is_multiple_of(2)
+                    && selections.len() == scope.reference_members().len() / 2
                     && actual_selections.len() == selections.len()
                     && actual_selections == expected_selections
                     && operation.tools.iter().all(valid_external)
@@ -2560,23 +2568,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             !compact_scope
                                 && !extended_reference_scope
                                 && operation.operation_offset
-                                    == scope.byte_offset.saturating_add(20)
+                                    == scope.byte_offset().saturating_add(20)
                                 && operation.keep_tools_offset
-                                    == scope.byte_offset.saturating_add(25)
+                                    == scope.byte_offset().saturating_add(25)
                         }
                         records::feature::DesignCombineForm::Compact => {
                             compact_scope
                                 && operation.operation_offset
-                                    == scope.byte_offset.saturating_add(21)
+                                    == scope.byte_offset().saturating_add(21)
                                 && operation.keep_tools_offset
-                                    == scope.byte_offset.saturating_add(25)
+                                    == scope.byte_offset().saturating_add(25)
                         }
                         records::feature::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
                                 && operation.operation_offset
-                                    == scope.byte_offset.saturating_add(31)
+                                    == scope.byte_offset().saturating_add(31)
                                 && operation.keep_tools_offset
-                                    == scope.byte_offset.saturating_add(30)
+                                    == scope.byte_offset().saturating_add(30)
                         }
                     }
             }
@@ -2587,7 +2595,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let expected_groups: Vec<_> = match construction.form {
                     records::feature::DesignThreadForm::Standard
                     | records::feature::DesignThreadForm::StandardLegacy => scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .next()
                         .copied()
@@ -2595,14 +2603,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .collect(),
                     records::feature::DesignThreadForm::Compact(_)
                     | records::feature::DesignThreadForm::CompactLegacy => scope
-                        .reference_members
+                        .reference_members()
                         .values()
                         .step_by(2)
                         .copied()
                         .collect(),
                 };
-                scope.reference_members.len() >= 2
-                    && scope.reference_members.len().is_multiple_of(2)
+                scope.reference_members().len() >= 2
+                    && scope.reference_members().len().is_multiple_of(2)
                     && match construction.form {
                         records::feature::DesignThreadForm::StandardLegacy => {
                             scope.class_tag.as_str() == "334"
@@ -2619,13 +2627,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && matches!(
                         construction
                             .designation_offset
-                            .checked_sub(scope.byte_offset),
+                            .checked_sub(scope.byte_offset()),
                         Some(38 | 42)
                     )
                     && match construction.form {
                         records::feature::DesignThreadForm::Compact(Some(reference)) => {
                             reference.offset > construction.designation_offset
-                                && reference.offset < scope.paired_byte_offset
+                                && reference.offset < scope.paired_byte_offset()
                                 && records_by_index
                                     .contains_key(&(native_stream, reference.value.get()))
                         }
@@ -2646,7 +2654,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             ) {
                                 let reference_ordinal = group_ordinal.saturating_mul(2);
                                 let Some(member_record_index) = scope
-                                    .reference_members
+                                    .reference_members()
                                     .values()
                                     .nth(reference_ordinal.saturating_add(1))
                                 else {
@@ -2687,13 +2695,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let joint_origin_link = scope.joint_origin_frame().is_none_or(|origin| {
             let transform = origin.joint_origin_transform;
             let transform_offset = origin.joint_origin_transform_offset;
-            let inline = match (scope.frame_length, &origin.reference) {
-                (385, None) => transform_offset == scope.byte_offset + 49,
+            let inline = match (scope.frame_length(), &origin.reference) {
+                (385, None) => transform_offset == scope.byte_offset() + 49,
                 (336 | 347, Some(reference)) => {
-                    transform_offset == scope.byte_offset + 60
-                        && reference.joint_origin_reference_offset == scope.byte_offset + 46
+                    transform_offset == scope.byte_offset() + 60
+                        && reference.joint_origin_reference_offset == scope.byte_offset() + 46
                         && scope
-                            .reference_members
+                            .reference_members()
                             .values()
                             .any(|value| value == &reference.joint_origin_reference)
                 }
@@ -2719,13 +2727,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && assembly.kind() == crate::records::feature::DesignFeatureKind::Assemble
                         && assembly.class_tag.as_str() == "276"
                         && assembly.paired_class_tag.as_str() == "258"
-                        && assembly.frame_length == 604
-                        && transform_offset == assembly.byte_offset + 36
+                        && assembly.frame_length() == 604
+                        && transform_offset == assembly.byte_offset() + 36
                         && assembly
-                            .reference_members
+                            .reference_members()
                             .values()
                             .any(|value| value == &reference.joint_origin_reference)
-                        && reference.joint_origin_reference_offset == assembly.byte_offset + 25
+                        && reference.joint_origin_reference_offset == assembly.byte_offset() + 25
                 })
             });
             inline || assembly_operand || single_operand_assembly
@@ -2741,16 +2749,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 solid_operation_offset,
                 ..
             }) => {
-                let marker_offset = scope.byte_offset.saturating_add(20);
+                let marker_offset = scope.byte_offset().saturating_add(20);
                 let prefix_valid = match prefix_zero_offset {
                     None => {
                         operation_offset == marker_offset.saturating_add(1)
-                            && scope.reference_count_offset == scope.byte_offset.saturating_add(208)
+                            && scope.reference_count_offset()
+                                == scope.byte_offset().saturating_add(208)
                     }
                     Some(offset) => {
                         offset == marker_offset.saturating_add(1)
                             && operation_offset == offset.saturating_add(4)
-                            && scope.reference_count_offset == scope.byte_offset.saturating_add(212)
+                            && scope.reference_count_offset()
+                                == scope.byte_offset().saturating_add(212)
                     }
                 };
                 prefix_valid
@@ -2791,8 +2801,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             288_u64,
                         )),
                         ("323", "263")
-                            if scope.reference_count_offset
-                                == scope.byte_offset.saturating_add(292) =>
+                            if scope.reference_count_offset()
+                                == scope.byte_offset().saturating_add(292) =>
                         {
                             Some((
                                 516_u64,
@@ -2805,8 +2815,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             ))
                         }
                         ("323", "263")
-                            if scope.reference_count_offset
-                                == scope.byte_offset.saturating_add(272) =>
+                            if scope.reference_count_offset()
+                                == scope.byte_offset().saturating_add(272) =>
                         {
                             Some((
                                 485_u64,
@@ -2830,29 +2840,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         expected_extent,
                         second_side_extent_offset,
                     )| {
-                        scope.frame_length == frame_length
-                            && scope.paired_byte_offset
-                                == scope.byte_offset.saturating_add(frame_length)
-                            && scope.reference_count_offset
-                                == scope.byte_offset.saturating_add(reference_count_offset)
-                            && scope.reference_members.len() == reference_member_count
-                            && operation_offset == scope.byte_offset.saturating_add(27)
+                        scope.frame_length() == frame_length
+                            && scope.paired_byte_offset()
+                                == scope.byte_offset().saturating_add(frame_length)
+                            && scope.reference_count_offset()
+                                == scope.byte_offset().saturating_add(reference_count_offset)
+                            && scope.reference_members().len() == reference_member_count
+                            && operation_offset == scope.byte_offset().saturating_add(27)
                             && direction_face_extend_values == expected_direction_face_extend_values
                             && side_extent_discriminators == expected_side_extent_discriminators
                             && extent == expected_extent
                             && side_extent_discriminator_offsets
                                 == [
-                                    scope.byte_offset.saturating_add(116),
-                                    scope.byte_offset.saturating_add(second_side_extent_offset),
+                                    scope.byte_offset().saturating_add(116),
+                                    scope
+                                        .byte_offset()
+                                        .saturating_add(second_side_extent_offset),
                                 ]
                             && direction_face_extend_offsets
                                 == [
-                                    scope.byte_offset.saturating_add(31),
-                                    scope.byte_offset.saturating_add(35),
+                                    scope.byte_offset().saturating_add(31),
+                                    scope.byte_offset().saturating_add(35),
                                 ]
-                            && direction_reversed_offset == scope.byte_offset.saturating_add(39)
-                            && solid_operation_offset == scope.byte_offset.saturating_add(40)
-                            && start_offset == scope.byte_offset.saturating_add(41)
+                            && direction_reversed_offset == scope.byte_offset().saturating_add(39)
+                            && solid_operation_offset == scope.byte_offset().saturating_add(40)
+                            && start_offset == scope.byte_offset().saturating_add(41)
                     },
                 )
             }
@@ -2871,7 +2883,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ..
             }) => {
                 let prefix_valid = reference.map_or(
-                    operation_offset == scope.byte_offset.saturating_add(28),
+                    operation_offset == scope.byte_offset().saturating_add(28),
                     |reference| {
                         let padding_end = reference
                             .record_index_offset
@@ -2884,11 +2896,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && operation_offset == marker_offset.saturating_add(1)
                             }
                         };
-                        reference.record_index_offset == scope.byte_offset.saturating_add(26)
+                        reference.record_index_offset == scope.byte_offset().saturating_add(26)
                             && matches!(reference.trailing_zero_count, 7 | 8)
                             && marker_valid
                             && scope
-                                .reference_members
+                                .reference_members()
                                 .values()
                                 .any(|value| value == &reference.record_index)
                     },
@@ -2896,7 +2908,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let target_ordinal_valid = first_side_target_ordinal.is_none_or(|target| {
                     usize::try_from(target.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal).copied())
+                        .and_then(|ordinal| {
+                            scope.reference_members().values().nth(ordinal).copied()
+                        })
                         .is_some_and(|record_index| {
                             let mut groups = native
                                 .design_construction_operand_groups
@@ -2922,33 +2936,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     0
                 };
                 let legacy_class_415_layout = scope
-                    .reference_count_offset
-                    .checked_sub(scope.byte_offset)
+                    .reference_count_offset()
+                    .checked_sub(scope.byte_offset())
                     .is_some_and(|reference_count_delta| {
                         legacy_class_415::is_symmetric_distance_layout(
                             scope.class_tag.as_str(),
                             scope.paired_class_tag.as_str(),
-                            scope.frame_length,
+                            scope.frame_length(),
                             reference_count_delta,
-                            scope.reference_members.len(),
+                            scope.reference_members().len(),
                         )
                     });
                 let legacy_class_415_one_sided_layout = scope
-                    .reference_count_offset
-                    .checked_sub(scope.byte_offset)
+                    .reference_count_offset()
+                    .checked_sub(scope.byte_offset())
                     .is_some_and(|reference_count_delta| {
                         legacy_class_415::is_one_sided_layout(
                             scope.class_tag.as_str(),
                             scope.paired_class_tag.as_str(),
-                            scope.frame_length,
+                            scope.frame_length(),
                             reference_count_delta,
-                            scope.reference_members.len(),
+                            scope.reference_members().len(),
                         )
                     });
                 let legacy_class_415_extent = legacy_class_415_layout
                     && operation_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_415::OPERATION as u64)
                     && direction_face_extend_values == [3, 2]
                     && side_extent_discriminators == [1, 1]
@@ -2956,32 +2970,32 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && side_extent_discriminator_offsets
                         == [
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_415::FIRST_SIDE_EXTENT as u64),
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_415::SECOND_SIDE_EXTENT as u64),
                         ]
                     && direction_face_extend_offsets
                         == [
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_415::DIRECTION as u64),
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_415::FACE_EXTEND as u64),
                         ]
                     && direction_reversed_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_415::DIRECTION_REVERSED as u64)
                     && solid_operation_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_415::GEOMETRY_KIND as u64)
                     && start_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_415::START_SUPPORT as u64);
                 let first_side_offset_valid = side_extent_discriminator_offsets[0]
                     .checked_sub(
@@ -2994,13 +3008,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     });
                 let second_side_offset_valid = side_extent_discriminator_offsets[1]
                     == if side_extent_discriminators[0] == 2 {
-                        scope.reference_count_offset.saturating_sub(4)
+                        scope.reference_count_offset().saturating_sub(4)
                     } else {
                         side_extent_discriminator_offsets[0].saturating_add(13)
                     }
                     || (legacy_class_415_one_sided_layout
                         && side_extent_discriminator_offsets[1]
-                            == scope.reference_count_offset.saturating_sub(4));
+                            == scope.reference_count_offset().saturating_sub(4));
                 let standard_extent = matches!(
                     (
                         direction_face_extend_values[0],
@@ -3058,7 +3072,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && direction_reversed_offset == operation_offset.saturating_add(12)
                     && side_extent_discriminator_offsets[1]
                         .checked_add(4)
-                        .is_some_and(|end| end <= scope.reference_count_offset)
+                        .is_some_and(|end| end <= scope.reference_count_offset())
             }
             Some(records::feature::DesignExtrudePrologue::LegacyShifted {
                 operation_prefix_marker_offset,
@@ -3074,9 +3088,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ..
             }) => {
                 let field_shift = match operation_prefix_marker_offset {
-                    None if operation_offset == scope.byte_offset.saturating_add(27) => Some(0),
+                    None if operation_offset == scope.byte_offset().saturating_add(27) => Some(0),
                     Some(marker_offset)
-                        if marker_offset == scope.byte_offset.saturating_add(27)
+                        if marker_offset == scope.byte_offset().saturating_add(27)
                             && operation_offset == marker_offset.saturating_add(1) =>
                     {
                         Some(1)
@@ -3084,19 +3098,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     _ => None,
                 };
                 let compact_extent_offsets = if operation_prefix_marker_offset.is_none()
-                    && operation_offset == scope.byte_offset.saturating_add(26)
+                    && operation_offset == scope.byte_offset().saturating_add(26)
                 {
                     scope
-                        .reference_count_offset
-                        .checked_sub(scope.byte_offset)
+                        .reference_count_offset()
+                        .checked_sub(scope.byte_offset())
                         .and_then(|offset| match offset {
                             251 => Some([
-                                scope.byte_offset.saturating_add(105),
-                                scope.byte_offset.saturating_add(109),
+                                scope.byte_offset().saturating_add(105),
+                                scope.byte_offset().saturating_add(109),
                             ]),
                             281 => Some([
-                                scope.byte_offset.saturating_add(124),
-                                scope.byte_offset.saturating_add(128),
+                                scope.byte_offset().saturating_add(124),
+                                scope.byte_offset().saturating_add(128),
                             ]),
                             _ => None,
                         })
@@ -3106,22 +3120,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let class_296_extent_offsets = if is_class_296_one_sided_to_face_layout(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope
-                        .reference_count_offset
-                        .saturating_sub(scope.byte_offset),
-                    scope.reference_members.len(),
+                        .reference_count_offset()
+                        .saturating_sub(scope.byte_offset()),
+                    scope.reference_members().len(),
                 ) && operation_offset
                     == scope
-                        .byte_offset
+                        .byte_offset()
                         .saturating_add(class_296_to_face::OPERATION as u64)
                 {
                     Some([
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_to_face::FIRST_SIDE_EXTENT as u64),
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_to_face::SECOND_SIDE_EXTENT as u64),
                     ])
                 } else {
@@ -3130,22 +3144,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let class_296_symmetric_extent_offsets = if is_class_296_symmetric_distance_layout(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope
-                        .reference_count_offset
-                        .saturating_sub(scope.byte_offset),
-                    scope.reference_members.len(),
+                        .reference_count_offset()
+                        .saturating_sub(scope.byte_offset()),
+                    scope.reference_members().len(),
                 ) && operation_offset
                     == scope
-                        .byte_offset
+                        .byte_offset()
                         .saturating_add(class_296_symmetric::OPERATION as u64)
                 {
                     Some([
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_symmetric::FIRST_SIDE_EXTENT as u64),
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_symmetric::SECOND_SIDE_EXTENT as u64),
                     ])
                 } else {
@@ -3154,22 +3168,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let class_296_two_faces_extent_offsets = if is_class_296_two_sided_to_faces_layout(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope
-                        .reference_count_offset
-                        .saturating_sub(scope.byte_offset),
-                    scope.reference_members.len(),
+                        .reference_count_offset()
+                        .saturating_sub(scope.byte_offset()),
+                    scope.reference_members().len(),
                 ) && operation_offset
                     == scope
-                        .byte_offset
+                        .byte_offset()
                         .saturating_add(class_296_two_faces::OPERATION as u64)
                 {
                     Some([
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_two_faces::FIRST_SIDE_EXTENT as u64),
                         scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_two_faces::SECOND_SIDE_EXTENT as u64),
                     ])
                 } else {
@@ -3179,21 +3193,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     if is_class_296_legacy_one_sided_to_face_layout(
                         scope.class_tag.as_str(),
                         scope.paired_class_tag.as_str(),
-                        scope.frame_length,
+                        scope.frame_length(),
                         scope
-                            .reference_count_offset
-                            .saturating_sub(scope.byte_offset),
-                        scope.reference_members.len(),
+                            .reference_count_offset()
+                            .saturating_sub(scope.byte_offset()),
+                        scope.reference_members().len(),
                     ) && operation_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_legacy_prefix::OPERATION as u64)
                     {
                         Some([
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT as u64),
-                            scope.byte_offset.saturating_add(
+                            scope.byte_offset().saturating_add(
                                 class_296_legacy_to_face::SECOND_SIDE_EXTENT as u64,
                             ),
                         ])
@@ -3204,21 +3218,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     if is_class_296_legacy_one_sided_distance_layout(
                         scope.class_tag.as_str(),
                         scope.paired_class_tag.as_str(),
-                        scope.frame_length,
+                        scope.frame_length(),
                         scope
-                            .reference_count_offset
-                            .saturating_sub(scope.byte_offset),
-                        scope.reference_members.len(),
+                            .reference_count_offset()
+                            .saturating_sub(scope.byte_offset()),
+                        scope.reference_members().len(),
                     ) && operation_offset
                         == scope
-                            .byte_offset
+                            .byte_offset()
                             .saturating_add(class_296_legacy_prefix::OPERATION as u64)
                     {
                         Some([
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_296_legacy_prefix::FIRST_SIDE_EXTENT as u64),
-                            scope.byte_offset.saturating_add(
+                            scope.byte_offset().saturating_add(
                                 class_296_legacy_distance::SECOND_SIDE_EXTENT as u64,
                             ),
                         ])
@@ -3228,17 +3242,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let class_397_frame = Class397SymmetricFrame::new(
                     scope.class_tag.as_str(),
                     scope.paired_class_tag.as_str(),
-                    scope.frame_length,
+                    scope.frame_length(),
                     scope
-                        .reference_count_offset
-                        .saturating_sub(scope.byte_offset),
-                    scope.reference_members.len(),
+                        .reference_count_offset()
+                        .saturating_sub(scope.byte_offset()),
+                    scope.reference_members().len(),
                 );
                 let extent_valid = if let Some(frame) = class_397_frame {
                     operation_prefix_marker_offset.is_none()
                         && operation_offset
                             == scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_397::OPERATION as u64)
                         && direction_face_extend_values
                             == [class_397::DIRECTION_VALUE, class_397::FACE_EXTEND_VALUE]
@@ -3335,10 +3349,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     side_extent_discriminator_offsets
                         == [
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_397::FIRST_SIDE_EXTENT as u64),
                             scope
-                                .byte_offset
+                                .byte_offset()
                                 .saturating_add(class_397::SECOND_SIDE_EXTENT as u64),
                         ]
                 } else {
@@ -3358,54 +3372,54 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             side_extent_discriminator_offsets
                                 == if direction_face_extend_values[0] == 2 {
                                     if scope
-                                        .reference_count_offset
-                                        .checked_sub(scope.byte_offset)
+                                        .reference_count_offset()
+                                        .checked_sub(scope.byte_offset())
                                         .and_then(|offset| offset.checked_sub(field_shift))
                                         == Some(283)
                                     {
                                         [
-                                            scope.byte_offset.saturating_add(166 + field_shift),
-                                            scope.byte_offset.saturating_add(181 + field_shift),
+                                            scope.byte_offset().saturating_add(166 + field_shift),
+                                            scope.byte_offset().saturating_add(181 + field_shift),
                                         ]
                                     } else {
                                         [
-                                            scope.byte_offset.saturating_add(155 + field_shift),
-                                            scope.byte_offset.saturating_add(178 + field_shift),
+                                            scope.byte_offset().saturating_add(155 + field_shift),
+                                            scope.byte_offset().saturating_add(178 + field_shift),
                                         ]
                                     }
                                 } else if side_extent_discriminators[0] == 2 {
                                     let first_offset = side_extent_discriminator_offsets[0];
                                     if matches!(
                                         first_offset
-                                            .checked_sub(scope.byte_offset)
+                                            .checked_sub(scope.byte_offset())
                                             .and_then(|offset| offset.checked_sub(field_shift)),
                                         Some(106 | 116)
                                     ) {
                                         [
                                             first_offset,
-                                            scope.reference_count_offset.saturating_sub(4),
+                                            scope.reference_count_offset().saturating_sub(4),
                                         ]
                                     } else {
                                         [0, 0]
                                     }
                                 } else if side_extent_discriminator_offsets
                                     == [
-                                        scope.byte_offset.saturating_add(116 + field_shift),
-                                        scope.byte_offset.saturating_add(129 + field_shift),
+                                        scope.byte_offset().saturating_add(116 + field_shift),
+                                        scope.byte_offset().saturating_add(129 + field_shift),
                                     ]
                                 {
                                     side_extent_discriminator_offsets
                                 } else if side_extent_discriminator_offsets[0]
-                                    == scope.byte_offset.saturating_add(116 + field_shift)
+                                    == scope.byte_offset().saturating_add(116 + field_shift)
                                 {
                                     [
-                                        scope.byte_offset.saturating_add(116 + field_shift),
-                                        scope.byte_offset.saturating_add(130 + field_shift),
+                                        scope.byte_offset().saturating_add(116 + field_shift),
+                                        scope.byte_offset().saturating_add(130 + field_shift),
                                     ]
                                 } else {
                                     [
-                                        scope.byte_offset.saturating_add(106 + field_shift),
-                                        scope.byte_offset.saturating_add(110 + field_shift),
+                                        scope.byte_offset().saturating_add(106 + field_shift),
+                                        scope.byte_offset().saturating_add(110 + field_shift),
                                     ]
                                 }
                         })
@@ -3427,28 +3441,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && start_offset == operation_offset.saturating_add(14)
                     && solid_operation_offset == operation_offset.saturating_add(13)
                     && direction_reversed_offset == operation_offset.saturating_add(12)
-                    && direction_face_extend_offsets[1] < scope.reference_count_offset
+                    && direction_face_extend_offsets[1] < scope.reference_count_offset()
             }
             None => true,
-        } && match &scope.payload {
+        } && match &scope.payload() {
             records::feature::DesignScopePayload::SurfaceStitch(operation) => {
-                operation.gap_tolerance_offset > scope.paired_byte_offset
-                    && scope.reference_members.len() >= 4
-                    && scope.reference_members.len().is_multiple_of(2)
-                    && scope.reference_members.values().rev().nth(1)
+                operation.gap_tolerance_offset > scope.paired_byte_offset()
+                    && scope.reference_members().len() >= 4
+                    && scope.reference_members().len().is_multiple_of(2)
+                    && scope.reference_members().values().rev().nth(1)
                         == Some(&operation.tolerance_record_index)
-                    && scope.reference_members.values().next_back()
+                    && scope.reference_members().values().next_back()
                         == Some(&operation.settings_record_index)
             }
             _ => true,
-        } && match &scope.payload {
+        } && match &scope.payload() {
             records::feature::DesignScopePayload::SurfaceRuled(operation) => {
-                operation.method_offset == scope.byte_offset.saturating_add(20)
-                    && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
-                    && operation.corner_offset == scope.byte_offset.saturating_add(50)
-                    && scope.reference_members.values().next()
+                operation.method_offset == scope.byte_offset().saturating_add(20)
+                    && operation.alternate_face_offset == scope.byte_offset().saturating_add(27)
+                    && operation.corner_offset == scope.byte_offset().saturating_add(50)
+                    && scope.reference_members().values().next()
                         == Some(&operation.distance_owner_record_index)
-                    && scope.reference_members.values().nth(1)
+                    && scope.reference_members().values().nth(1)
                         == Some(&operation.angle_owner_record_index)
                     && operation.distance_owner_record_index != operation.angle_owner_record_index
                     && !operation.edge_group_record_indices.is_empty()
@@ -3457,7 +3471,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .all(|record_index| {
                             scope
-                                .reference_members
+                                .reference_members()
                                 .values()
                                 .any(|value| value == record_index)
                         })
@@ -3472,64 +3486,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }
             }
             _ => true,
-        } && scope.frame_length > 89
-            && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
-            && scope.kind_offset > scope.byte_offset
-            && scope.kind_offset < scope.feature_ordinal_offset
-            && scope
-                .paired_byte_offset
-                .checked_sub(scope.feature_ordinal_offset)
-                .and_then(|length| usize::try_from(length).ok())
-                .is_some_and(|length| {
-                    design::decode::scopes::parameter_scope_tail_length_is_valid(
-                        scope.kind_name(),
-                        length,
-                    )
-                })
-            && if scope.previous_history_state_id_offset.is_none() {
-                scope.previous_history_state_id.is_none()
-            } else {
-                match scope
-                    .paired_byte_offset
-                    .checked_sub(scope.feature_ordinal_offset)
-                    .and_then(|tail_length| usize::try_from(tail_length).ok())
-                    .and_then(|tail_length| {
-                        design::decode::scopes::parameter_scope_previous_history_offset(
-                            scope.kind_name(),
-                            tail_length,
-                        )
-                    }) {
-                    Some(offset) => {
-                        scope.previous_history_state_id_offset
-                            == Some(scope.feature_ordinal_offset.saturating_add(offset as u64))
-                            && scope.history_state_id.is_some()
-                                == scope.previous_history_state_id.is_some()
-                    }
-                    None => false,
-                }
-            }
-            && scope.reference_count_offset > scope.byte_offset
-            && scope.reference_count_offset < scope.kind_offset
-            && !scope.reference_members.is_empty()
-            && scope.reference_members.offsets().next()
-                == Some(&scope.reference_count_offset.saturating_add(5))
-            && scope
-                .reference_members
-                .offsets()
-                .zip(scope.reference_members.offsets().skip(1))
-                .all(|(first, second)| *second == first.saturating_add(11))
-            && scope
-                .reference_members
-                .offsets()
-                .next_back()
-                .is_some_and(|offset| offset.saturating_add(18) == scope.kind_offset)
-            && scope.reference_members.offsets().all(|offset| {
-                *offset > scope.reference_count_offset && *offset < scope.kind_offset
-            })
-            && scope
-                .reference_members
-                .values()
-                .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
+        } && scope
+            .reference_members()
+            .values()
+            .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
             && records_by_index.contains_key(&(native_stream, scope.record_index))
             && entity_link
                 .unwrap_or(scope.kind() != crate::records::feature::DesignFeatureKind::Sketch)
@@ -3576,7 +3536,7 @@ fn valid_work_point_construction(
     if construction.point_record_byte_offset >= construction.position_offset
         || construction.position_offset >= construction.reference_type_offset
         || !scope
-            .reference_members
+            .reference_members()
             .values()
             .any(|value| value == &construction.point_record_index)
         || ctx
@@ -3592,7 +3552,7 @@ fn valid_work_point_construction(
             .records_by_index
             .get(&(native_stream, input.record_index));
         scope
-            .reference_members
+            .reference_members()
             .values()
             .any(|value| value == &input.record_index)
             && input.reference_offset > construction.reference_type_offset
@@ -3681,7 +3641,7 @@ fn valid_work_plane_construction(
         return true;
     };
     let Some([placement, first, second, third, extra_offset]) =
-        scope.reference_members.values_array()
+        scope.reference_members().values_array()
     else {
         return false;
     };
@@ -3925,7 +3885,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(design::DesignFeatureFamily::Extrude)
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
-                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.record_index)
         }) && header.is_some_and(|header| {
             header.byte_offset == group.byte_offset() && header.class_tag == group.class_tag
@@ -4133,8 +4093,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role()
                         == if scope.kind()
                             == crate::records::feature::DesignFeatureKind::CoilPrimitive
-                            && scope.reference_members.len() == 10
-                            && scope.coil_operation_offset() == scope.byte_offset.checked_add(22)
+                            && scope.reference_members().len() == 10
+                            && scope.coil_operation_offset() == scope.byte_offset().checked_add(22)
                         {
                             DesignOperandRole::BODIES_A
                         } else {
@@ -4358,7 +4318,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 && role_is_valid
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
-                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.record_index)
                 && group
                     .members()
@@ -4366,7 +4326,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     .map(|member| &member.value)
                     .all(|member| {
                         scope
-                            .reference_members
+                            .reference_members()
                             .values()
                             .any(|value| value == member)
                     })
@@ -4502,7 +4462,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .iter()
             .map(|group| (group.role(), group.members().len()))
             .collect::<Vec<_>>();
-        let valid = match &scope.payload {
+        let valid = match &scope.payload() {
             records::feature::DesignScopePayload::Revolve(Some(
                 crate::records::feature::DesignRevolveConstruction {
                     operation,
@@ -4516,12 +4476,12 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let expected_body_count =
                     usize::from(*operation != records::feature::DesignExtrudeOperation::NewBody);
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .any(|value| value == angle_record_index)
                     && opposite_angle.is_none_or(|located| {
                         scope
-                            .reference_members
+                            .reference_members()
                             .values()
                             .any(|value| value == &located.value)
                     })
@@ -4665,7 +4625,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         [] => {
                             usize::try_from(profile.scope_reference_ordinal)
                                 .ok()
-                                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                                 == Some(&profile.record_index)
                         }
                         [group] => {
@@ -4820,11 +4780,11 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let class_296_two_faces_layout = is_class_296_two_sided_to_faces_layout(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
-                scope.frame_length,
+                scope.frame_length(),
                 scope
-                    .reference_count_offset
-                    .saturating_sub(scope.byte_offset),
-                scope.reference_members.len(),
+                    .reference_count_offset()
+                    .saturating_sub(scope.byte_offset()),
+                scope.reference_members().len(),
             );
             let extent_matches_operands = match extrude_extent {
                 records::feature::DesignExtrudeExtent::OneSidedDistance => {
@@ -5305,7 +5265,7 @@ fn validate_fillet_operand_groups<'a>(
                     })
                     .all(|record_index| {
                         scope
-                            .reference_members
+                            .reference_members()
                             .values()
                             .filter(|member| **member == record_index)
                             .count()
@@ -5671,7 +5631,7 @@ fn validate_body_recipe_operands<'a>(
                         })))
                     && usize::try_from(scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                         == Some(&operand.record_index)
             }
         });
@@ -6329,7 +6289,7 @@ fn validate_edge_operands<'a>(
             design::decode::operands::has_edge_recipe_operands(&scope.kind())
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
-                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&operand.record_index)
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
@@ -6434,7 +6394,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
                 design::decode::operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                         == Some(&operand.recipe.record_index)
             })
             && group.is_some_and(|group| {
@@ -6675,7 +6635,7 @@ fn validate_face_operands<'a>(
                         group.scope_record_index == operand.scope_record_index
                             && usize::try_from(operand.scope_reference_ordinal)
                                 .ok()
-                                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                                 == Some(&group_record_index)
                             && usize::try_from(group_member_ordinal)
                                 .ok()
@@ -6797,7 +6757,7 @@ fn validate_face_operands<'a>(
                 (None, None) => {
                     let direct_member = usize::try_from(operand.scope_reference_ordinal)
                         .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                        .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                         == Some(&operand.record_index);
                     direct_member
                         && match family {
@@ -6816,7 +6776,7 @@ fn validate_face_operands<'a>(
                                 if scope.kind()
                                     == crate::records::feature::DesignFeatureKind::AsBuilt
                                     && design::assembly::legacy_as_built_421_generation(
-                                        scope.frame_length,
+                                        scope.frame_length(),
                                         scope.class_tag.as_str(),
                                         scope.paired_class_tag.as_str(),
                                     )
@@ -6958,11 +6918,12 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         );
         let scope_links_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::DesignFeatureKind::Face
-                && carrier_ordinal.and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                && carrier_ordinal
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.carrier_record_index)
                 && carrier_ordinal
                     .and_then(|ordinal| ordinal.checked_add(1))
-                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&group.paired_record_index)
         });
         let headers_valid = carrier_header.is_some_and(|header| {
@@ -7428,7 +7389,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             None => governing_owner.is_some_and(|owner| {
                 scopes_by_index
                     .get(&(native_stream, owner.scope_record_index()))
-                    .is_some_and(|scope| frame.byte_offset >= scope.byte_offset)
+                    .is_some_and(|scope| frame.byte_offset >= scope.byte_offset())
                     && native
                         .design_parameter_owners
                         .iter()

@@ -5495,6 +5495,7 @@ pub struct DesignNativeFeatureName(std::sync::Arc<str>);
 
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
+     fixed { $($fixed:ident => $fixed_lit:literal : $fixed_payload:ty),+ $(,)? }
      required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
@@ -5502,6 +5503,7 @@ macro_rules! design_feature_kinds {
         #[serde(try_from = "String", into = "String")]
         pub enum DesignFeatureKind {
             $($variant,)+
+            $($fixed,)+
             $($required,)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
@@ -5513,6 +5515,7 @@ macro_rules! design_feature_kinds {
             pub fn as_str(&self) -> &str {
                 match self {
                     $(Self::$variant => $lit,)+
+                    $(Self::$fixed => $fixed_lit,)+
                     $(Self::$required => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
@@ -5528,6 +5531,7 @@ macro_rules! design_feature_kinds {
                 match name.as_str() {
                     "" => Err("Design feature kind must not be empty"),
                     $($lit => Ok(Self::$variant),)+
+                    $($fixed_lit => Ok(Self::$fixed),)+
                     $($required_lit => Ok(Self::$required),)+
                     $($unit_lit => Ok(Self::$unit),)+
                     _ => Ok(Self::Native(DesignNativeFeatureName(name.into()))),
@@ -5550,10 +5554,26 @@ macro_rules! design_feature_kinds {
         #[derive(Debug, Clone, PartialEq)]
         pub enum DesignScopePayload {
             $($variant($payload),)+
+            $($fixed($fixed_payload),)+
             $($required($required_payload),)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
             Native(DesignNativeFeatureName),
+        }
+
+        /// Mutable construction fields with a fixed feature family.
+        pub(crate) enum DesignScopePayloadMut<'a> {
+            $($variant(&'a mut $payload),)+
+            Other,
+        }
+
+        impl DesignScopePayload {
+            fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
+                match self {
+                    $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+
+                    _ => DesignScopePayloadMut::Other,
+                }
+            }
         }
 
         impl TryFrom<DesignFeatureKind> for DesignScopePayload {
@@ -5561,6 +5581,7 @@ macro_rules! design_feature_kinds {
             fn try_from(kind: DesignFeatureKind) -> Result<Self, Self::Error> {
                 match kind {
                     $(DesignFeatureKind::$variant => Ok(Self::$variant(Default::default())),)+
+                    $(DesignFeatureKind::$fixed => Ok(Self::$fixed(Default::default())),)+
                     $(DesignFeatureKind::$required => Err(concat!($required_lit, " requires its operation")),)+
                     $(DesignFeatureKind::$unit => Ok(Self::$unit),)+
                     DesignFeatureKind::Native(name) => Ok(Self::Native(name)),
@@ -5572,6 +5593,7 @@ macro_rules! design_feature_kinds {
             fn kind(&self) -> DesignFeatureKind {
                 match self {
                     $(Self::$variant(_) => DesignFeatureKind::$variant,)+
+                    $(Self::$fixed(_) => DesignFeatureKind::$fixed,)+
                     $(Self::$required(_) => DesignFeatureKind::$required,)+
                     $(Self::$unit => DesignFeatureKind::$unit,)+
                     Self::Native(name) => DesignFeatureKind::Native(name.clone()),
@@ -5581,6 +5603,7 @@ macro_rules! design_feature_kinds {
             fn kind_name(&self) -> &str {
                 match self {
                     $(Self::$variant(_) => $lit,)+
+                    $(Self::$fixed(_) => $fixed_lit,)+
                     $(Self::$required(_) => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
@@ -5619,15 +5642,12 @@ design_feature_kinds! {
         Move => "Move": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
-        Revolve => "Revolve": Option<DesignRevolveConstruction>,
         Shell => "Shell": Option<DesignShellOperation>,
         Schale => "Schale": Option<DesignShellOperation>,
         Thicken => "Thicken": Option<DesignThickenOperation>,
         SpirePrimitive => "SpirePrimitive": Option<DesignCoilScope>,
         CoilPrimitive => "CoilPrimitive": Option<DesignCoilScope>,
-        Loft => "Loft": Option<DesignLoftConstruction>,
         Sweep => "Sweep": Option<DesignSweepScope>,
-        Pipe => "Pipe": Option<DesignPipeConstruction>,
         SurfacePatch => "SurfacePatch": Vec<DesignSurfacePatchBoundary>,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
@@ -5647,6 +5667,11 @@ design_feature_kinds! {
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
+    }
+    fixed {
+        Revolve => "Revolve": Option<DesignRevolveConstruction>,
+        Loft => "Loft": Option<DesignLoftConstruction>,
+        Pipe => "Pipe": Option<DesignPipeConstruction>,
         SpherePrimitive => "SpherePrimitive": Option<DesignSpherePrimitive>,
         TorusPrimitive => "TorusPrimitive": Option<DesignTorusPrimitive>,
         BoxPrimitive => "BoxPrimitive": Option<DesignBoxPrimitive>,
@@ -5696,6 +5721,49 @@ pub struct DesignParameterScope {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    frame_length: u64,
+    /// Byte offset of the kind's UTF-16LE code units.
+    kind_offset: u64,
+    /// One-based ordinal among scopes of the same feature family.
+    pub feature_ordinal: std::num::NonZeroU32,
+    /// Byte offset of `feature_ordinal`.
+    feature_ordinal_offset: u64,
+    /// ASM delta-state identity produced by this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    history_state_id: Option<i64>,
+    /// ASM delta-state identity immediately preceding this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_history_state_id: Option<i64>,
+    /// Byte offset of the encoded preceding-state identity, when present.
+    previous_history_state_id_offset: Option<u64>,
+    /// Byte offset of the ordered reference-table count.
+    reference_count_offset: u64,
+    /// Ordered indexed-record references carried by the scope.
+    reference_members: ReferenceRun<u32>,
+    /// Family-specific construction records.
+    payload: DesignScopePayload,
+    /// Reference members whose records open a construction-operand group the
+    /// group grammar does not close.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unclosed_construction_operand_groups: Vec<u32>,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the paired indexed record header.
+    paired_byte_offset: u64,
+}
+
+/// Unadmitted parameter-scope fields.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignParameterScopeDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
@@ -5710,10 +5778,8 @@ pub struct DesignParameterScope {
     /// Byte offset of `feature_ordinal`.
     pub feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_history_state_id: Option<i64>,
     /// Byte offset of the encoded preceding-state identity, when present.
     pub previous_history_state_id_offset: Option<u64>,
@@ -5725,12 +5791,17 @@ pub struct DesignParameterScope {
     pub payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+impl DesignParameterScopeDraft {
+    pub(crate) fn kind(&self) -> DesignFeatureKind {
+        self.payload.kind()
+    }
 }
 
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
@@ -7499,7 +7570,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
         }
-        Ok(Self {
+        Self::try_new(DesignParameterScopeDraft {
             id: wire.id,
             byte_offset: wire.byte_offset,
             class_tag: wire
@@ -7717,6 +7788,175 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Native(_) => {}
         }
         wire
+    }
+}
+
+impl DesignParameterScope {
+    pub(crate) fn try_new(
+        draft: DesignParameterScopeDraft,
+    ) -> Result<Self, DesignParameterScopePayloadError> {
+        let fail = |field: &str| {
+            DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
+        };
+        let kind = draft.payload.kind_name();
+        if draft.frame_length <= 89
+            || draft.byte_offset.checked_add(draft.frame_length) != Some(draft.paired_byte_offset)
+        {
+            return Err(fail("frame_length/paired_byte_offset"));
+        }
+        if !(draft.byte_offset < draft.kind_offset
+            && draft.kind_offset < draft.feature_ordinal_offset)
+        {
+            return Err(fail("kind_offset/feature_ordinal_offset"));
+        }
+        let tail = draft
+            .paired_byte_offset
+            .checked_sub(draft.feature_ordinal_offset)
+            .and_then(|length| usize::try_from(length).ok())
+            .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        if !crate::design::decode::scopes::parameter_scope_tail_length_is_valid(kind, tail) {
+            return Err(fail("feature_ordinal_offset/kind"));
+        }
+        match draft.previous_history_state_id_offset {
+            None if draft.previous_history_state_id.is_none() => {}
+            Some(offset) => {
+                let relative =
+                    crate::design::decode::scopes::parameter_scope_previous_history_offset(
+                        kind, tail,
+                    )
+                    .ok_or_else(|| fail("previous_history_state_id_offset"))?;
+                if draft.feature_ordinal_offset.checked_add(relative as u64) != Some(offset)
+                    || draft.history_state_id.is_some() != draft.previous_history_state_id.is_some()
+                {
+                    return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));
+                }
+            }
+            None => {
+                return Err(fail(
+                    "previous_history_state_id_offset/previous_history_state_id",
+                ))
+            }
+        }
+        if !(draft.byte_offset < draft.reference_count_offset
+            && draft.reference_count_offset < draft.kind_offset)
+            || draft.reference_members.is_empty()
+        {
+            return Err(fail("reference_count_offset/reference_members"));
+        }
+        let mut expected = draft
+            .reference_count_offset
+            .checked_add(5)
+            .ok_or_else(|| fail("reference_count_offset"))?;
+        for member in draft.reference_members.offsets() {
+            if *member != expected
+                || *member <= draft.reference_count_offset
+                || *member >= draft.kind_offset
+            {
+                return Err(fail("reference_member_offsets"));
+            }
+            expected = expected
+                .checked_add(11)
+                .ok_or_else(|| fail("reference_member_offsets"))?;
+        }
+        if draft.reference_members.offsets().count() != draft.reference_members.len()
+            || draft
+                .reference_members
+                .offsets()
+                .next_back()
+                .and_then(|offset| offset.checked_add(18))
+                != Some(draft.kind_offset)
+        {
+            return Err(fail("reference_member_offsets/kind_offset"));
+        }
+        Ok(Self {
+            id: draft.id,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            kind_offset: draft.kind_offset,
+            feature_ordinal: draft.feature_ordinal,
+            feature_ordinal_offset: draft.feature_ordinal_offset,
+            history_state_id: draft.history_state_id,
+            previous_history_state_id: draft.previous_history_state_id,
+            previous_history_state_id_offset: draft.previous_history_state_id_offset,
+            reference_count_offset: draft.reference_count_offset,
+            reference_members: draft.reference_members,
+            payload: draft.payload,
+            unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
+            paired_class_tag: draft.paired_class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+        })
+    }
+
+    pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
+        DesignParameterScopeDraft {
+            id: self.id,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            kind_offset: self.kind_offset,
+            feature_ordinal: self.feature_ordinal,
+            feature_ordinal_offset: self.feature_ordinal_offset,
+            history_state_id: self.history_state_id,
+            previous_history_state_id: self.previous_history_state_id,
+            previous_history_state_id_offset: self.previous_history_state_id_offset,
+            reference_count_offset: self.reference_count_offset,
+            reference_members: self.reference_members,
+            payload: self.payload,
+            unclosed_construction_operand_groups: self.unclosed_construction_operand_groups,
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+
+    pub(crate) fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut DesignParameterScopeDraft),
+    ) -> Result<(), DesignParameterScopePayloadError> {
+        let mut draft = self.clone().into_draft();
+        edit(&mut draft);
+        *self = Self::try_new(draft)?;
+        Ok(())
+    }
+
+    pub(crate) fn payload_mut(&mut self) -> DesignScopePayloadMut<'_> {
+        self.payload.fields_mut()
+    }
+
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+    pub(crate) fn kind_offset(&self) -> u64 {
+        self.kind_offset
+    }
+    pub(crate) fn feature_ordinal_offset(&self) -> u64 {
+        self.feature_ordinal_offset
+    }
+    pub(crate) fn history_state_id(&self) -> Option<i64> {
+        self.history_state_id
+    }
+    pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
+        self.previous_history_state_id
+    }
+    pub(crate) fn previous_history_state_id_offset(&self) -> Option<u64> {
+        self.previous_history_state_id_offset
+    }
+    pub(crate) fn reference_count_offset(&self) -> u64 {
+        self.reference_count_offset
+    }
+    pub(crate) fn reference_members(&self) -> &ReferenceRun<u32> {
+        &self.reference_members
+    }
+    pub(crate) fn payload(&self) -> &DesignScopePayload {
+        &self.payload
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.paired_byte_offset
     }
 }
 
@@ -8286,25 +8526,29 @@ impl DesignParameterScope {
         P: TryInto<DesignScopePayload>,
         P::Error: std::fmt::Debug,
     {
-        Self {
+        Self::try_new(DesignParameterScopeDraft {
             id: id.to_string(),
             byte_offset: 0,
             class_tag: DesignClassTag::try_from("256".to_owned()).unwrap(),
             record_index,
-            frame_length: 0,
-            kind_offset: 0,
+            frame_length: 128,
+            kind_offset: 32,
             feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
+            feature_ordinal_offset: 48,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
-            reference_count_offset: 0,
-            reference_members: ReferenceRun::unlocated(Vec::new()),
+            reference_count_offset: 9,
+            reference_members: ReferenceRun::located(vec![Located {
+                value: record_index,
+                offset: 14,
+            }]),
             payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
-            paired_byte_offset: 0,
-        }
+            paired_byte_offset: 128,
+        })
+        .unwrap()
     }
 }
 

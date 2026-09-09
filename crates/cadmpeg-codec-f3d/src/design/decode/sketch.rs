@@ -148,8 +148,8 @@ pub fn decode_sketch_placements(
         let Some(records) = record_offsets.get(&ids::native_scope(&entry.name)) else {
             continue;
         };
-        let start = usize::try_from(scope.byte_offset).ok();
-        let end = usize::try_from(scope.paired_byte_offset).ok();
+        let start = usize::try_from(scope.byte_offset()).ok();
+        let end = usize::try_from(scope.paired_byte_offset()).ok();
         let Some(frame) = start
             .zip(end)
             .and_then(|(start, end)| bytes.get(start..end))
@@ -233,8 +233,8 @@ pub fn decode_sketch_placements(
             .filter(|scope| {
                 design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                     && native_stream(&scope.id) == Some(stream)
-                    && scope.byte_offset > entity.byte_offset
-                    && next_entity_offset.is_none_or(|end| scope.byte_offset < end)
+                    && scope.byte_offset() > entity.byte_offset
+                    && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
             })
             .collect::<Vec<_>>();
         if let [scope] = matching_scopes.as_slice() {

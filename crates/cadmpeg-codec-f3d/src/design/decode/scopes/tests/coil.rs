@@ -204,7 +204,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         header.byte_offset,
     )
     .expect("compact Coil new-body scope");
-    assert_eq!(scope.frame_length, 442);
+    assert_eq!(scope.frame_length(), 442);
     assert_eq!(
         scope.kind(),
         crate::records::feature::DesignFeatureKind::CoilPrimitive
@@ -213,9 +213,9 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         scope.coil_operation(),
         Some(DesignExtrudeOperation::NewBody)
     );
-    assert_eq!(scope.history_state_id, Some(3));
-    assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, None);
+    assert_eq!(scope.history_state_id(), Some(3));
+    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id_offset(), None);
 }
 
 #[test]

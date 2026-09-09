@@ -207,7 +207,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         crate::records::feature::DesignFeatureKind::Combine,
         80,
     );
-    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut combine_scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) =
+        combine_scope.payload_mut()
+    {
         *slot = Some(crate::records::feature::DesignCombineOperation {
             form: crate::records::feature::DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
@@ -407,7 +409,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     let next_at = header(&mut bytes, *b"306", 104);
-    let scope = DesignParameterScope {
+    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:scope#1".into(),
         byte_offset: 1000,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
@@ -433,7 +435,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
-    };
+    })
+    .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -468,8 +471,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.resolved_edge_slot, None);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
-    work_point_scope.payload = crate::records::feature::DesignFeatureKind::WorkPoint
-        .try_into()
+    work_point_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::WorkPoint
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     let work_point_operand = parse_edge_operand(
         &bytes,
@@ -484,8 +491,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(work_point_operand.next_record_index, 105);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
-    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep
-        .try_into()
+    sweep_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Sweep
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     let sweep_operand = parse_edge_operand(
         &bytes,
@@ -1421,8 +1432,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     let face_next_at = header(&mut face_bytes, *b"306", 104);
     let mut face_scope = scope;
-    face_scope.payload = crate::records::feature::DesignFeatureKind::Extrude
-        .try_into()
+    face_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
@@ -1796,7 +1811,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     namespaced_slot.resolved_face_slots = vec![51];
     assert!(resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)).is_none());
     let mut historical_face_scope = face_scope.clone();
-    historical_face_scope.previous_history_state_id = Some(49);
+    historical_face_scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(49);
+        })
+        .unwrap();
     assert!(matches!(
         crate::design::feature_project::direct_face_selection(
             &historical_face_scope,
@@ -1841,10 +1860,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("split-face context recipe structure");
     let mut split_scope = face_scope.clone();
-    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace
-        .try_into()
+    split_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::SplitFace
+                .try_into()
+                .unwrap();
+            draft.previous_history_state_id = Some(49);
+        })
         .unwrap();
-    split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
     split_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
@@ -1914,7 +1937,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_historical_split_face_target_group(
             &split_scope,
-            split_scope.previous_history_state_id,
+            split_scope.previous_history_state_id(),
             &split_group,
             &[split_selected.clone(), split_context.clone()],
         ),
@@ -1935,7 +1958,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     candidate_context.recipe_program = vec![0, -1, 2];
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
-        split_scope.previous_history_state_id,
+        split_scope.previous_history_state_id(),
         &split_group,
         &[split_selected.clone(), candidate_context],
     )
@@ -1947,7 +1970,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     assert!(resolved_historical_split_face_target_group(
         &split_scope,
-        split_scope.previous_history_state_id,
+        split_scope.previous_history_state_id(),
         &split_group,
         &[split_selected, unresolved_context],
     )

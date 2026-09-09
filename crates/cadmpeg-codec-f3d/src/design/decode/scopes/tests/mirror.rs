@@ -79,10 +79,14 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("413".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 0;
+            draft.previous_history_state_id_offset = Some(43);
+            draft.frame_length = 89;
+            draft.paired_byte_offset = 89;
+        })
+        .unwrap();
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
     bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
     bytes[59..63].copy_from_slice(&89_u32.to_le_bytes());
@@ -108,10 +112,14 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 0;
+            draft.previous_history_state_id_offset = Some(43);
+            draft.frame_length = 89;
+            draft.paired_byte_offset = 89;
+        })
+        .unwrap();
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
     bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
     bytes[59..63].copy_from_slice(&89_u32.to_le_bytes());
@@ -142,10 +150,14 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("391".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(42);
-    scope.frame_length = 88;
-    scope.paired_byte_offset = 88;
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 0;
+            draft.previous_history_state_id_offset = Some(42);
+            draft.frame_length = 88;
+            draft.paired_byte_offset = 88;
+        })
+        .unwrap();
     bytes[46..50].copy_from_slice(&94_u32.to_le_bytes());
     bytes[50..58].copy_from_slice(&0.25_f64.to_le_bytes());
     bytes[58..62].copy_from_slice(&94_u32.to_le_bytes());
@@ -176,10 +188,14 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("440".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(43);
-    scope.frame_length = 89;
-    scope.paired_byte_offset = 89;
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 0;
+            draft.previous_history_state_id_offset = Some(43);
+            draft.frame_length = 89;
+            draft.paired_byte_offset = 89;
+        })
+        .unwrap();
     bytes[47..51].copy_from_slice(&100_u32.to_le_bytes());
     bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
     bytes[59..63].copy_from_slice(&100_u32.to_le_bytes());
@@ -206,10 +222,14 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
-    scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = Some(42);
-    scope.frame_length = 84;
-    scope.paired_byte_offset = 84;
+    scope
+        .try_edit(|draft| {
+            draft.kind_offset = 0;
+            draft.previous_history_state_id_offset = Some(42);
+            draft.frame_length = 84;
+            draft.paired_byte_offset = 84;
+        })
+        .unwrap();
     bytes[46..50].copy_from_slice(&61_u32.to_le_bytes());
     bytes[50..58].copy_from_slice(&0.125_f64.to_le_bytes());
     bytes[58] = 1;
@@ -258,8 +278,12 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
+        })
+        .unwrap();
     let records = IndexedRecordOffsets::build(&bytes);
 
     assert_eq!(

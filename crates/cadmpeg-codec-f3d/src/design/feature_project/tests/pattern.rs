@@ -71,8 +71,9 @@ fn rectangular_scope() -> DesignParameterScope {
         crate::records::feature::DesignFeatureKind::RPattern,
         10,
     );
-    if let crate::records::feature::DesignScopePayload::RPattern(slot)
-    | crate::records::feature::DesignScopePayload::RectangularPattern(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::DesignScopePayloadMut::RectangularPattern(slot) =
+        scope.payload_mut()
     {
         *slot = Some(
             DesignRectangularPatternConstruction::try_from(

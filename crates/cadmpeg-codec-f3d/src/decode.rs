@@ -4286,10 +4286,10 @@ fn extend_related_design_records(
             native
                 .design_record_headers
                 .push(crate::records::DesignRecordHeader {
-                    id: format!("{stream}:design-record-header#{}", scope.byte_offset),
+                    id: format!("{stream}:design-record-header#{}", scope.byte_offset()),
                     record_index: scope.record_index,
                     class_tag: scope.class_tag.clone(),
-                    byte_offset: scope.byte_offset,
+                    byte_offset: scope.byte_offset(),
                 });
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
@@ -4316,7 +4316,7 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             scope
-                .reference_members
+                .reference_members()
                 .values()
                 .map(move |record_index| (stream.clone(), *record_index))
         })

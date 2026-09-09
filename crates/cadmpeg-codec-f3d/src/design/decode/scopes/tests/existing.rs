@@ -122,7 +122,11 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             20,
         );
         scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
-        scope.frame_length = 64;
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 64;
+            })
+            .unwrap();
         let construction = exact_path_feature_construction(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
@@ -197,17 +201,21 @@ fn compact_coil_placement_fixture(
         crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
-    scope.frame_length = 442;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        selection_record_index,
-        transform_record_index,
-        300,
-        301,
-        302,
-        303,
-        304,
-        305,
-    ]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 442;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                selection_record_index,
+                transform_record_index,
+                300,
+                301,
+                302,
+                303,
+                304,
+                305,
+            ]);
+        })
+        .unwrap();
     (bytes, scope, transform_start)
 }
 
@@ -291,7 +299,11 @@ fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usi
     indexed_header(&mut bytes, *b"259", 200);
     scope.class_tag = crate::records::DesignClassTag::try_from("353".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    scope.frame_length = 427;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 427;
+        })
+        .unwrap();
     (bytes, scope, transform_start)
 }
 
@@ -388,20 +400,28 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
     indexed_header(&mut bytes, *b"258", 200);
     scope.class_tag = crate::records::DesignClassTag::try_from("393".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 427;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 427;
+        })
+        .unwrap();
     (bytes, scope, transform_start)
 }
 
 fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
-    scope.frame_length = 411;
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.pop();
-        crate::records::ReferenceRun::unlocated(values)
-    };
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 411;
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.pop();
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -461,17 +481,21 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
-    scope.frame_length = 432;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        selection_record_index,
-        transform_record_index,
-        300,
-        301,
-        302,
-        303,
-        304,
-        305,
-    ]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 432;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                selection_record_index,
+                transform_record_index,
+                300,
+                301,
+                302,
+                303,
+                304,
+                305,
+            ]);
+        })
+        .unwrap();
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
         byte_offset: recipe_byte_offset as u64,
@@ -503,7 +527,11 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         .enumerate()
     {
         let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(matrix);
-        scope.frame_length = if ordinal == 0 { 432 } else { 442 };
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = if ordinal == 0 { 432 } else { 442 };
+            })
+            .unwrap();
         let records = IndexedRecordOffsets::build(&bytes);
         let placement =
             exact_coil_placement(&bytes, &records, &scope, &[]).expect("compact Coil placement");
@@ -691,8 +719,8 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
 #[test]
 fn compact_coil_seven_reference_form_requires_spiral_extent() {
     let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -961,11 +989,15 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
         crate::records::feature::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.push(55);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(55);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     (bytes, scope, position_at, input_reference_at)
 }
 
@@ -1102,11 +1134,15 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         crate::records::feature::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.push(100);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(100);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     let selection = exact_hole_face_selection(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

@@ -58,13 +58,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::records::feature::DesignFeatureKind::Sketch
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
-    assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
-    assert_eq!(scope.history_state_id, Some(7));
-    assert_eq!(scope.previous_history_state_id, Some(2));
-    assert_eq!(scope.reference_count_offset, reference_count_at as u64);
+    assert_eq!(scope.feature_ordinal_offset(), feature_ordinal_at as u64);
+    assert_eq!(scope.history_state_id(), Some(7));
+    assert_eq!(scope.previous_history_state_id(), Some(2));
+    assert_eq!(scope.reference_count_offset(), reference_count_at as u64);
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -72,15 +72,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(
         scope
-            .reference_members
+            .reference_members()
             .offsets()
             .copied()
             .collect::<Vec<_>>(),
         [reference_at as u64]
     );
-    assert_eq!(scope.frame_length, paired_at as u64);
+    assert_eq!(scope.frame_length(), paired_at as u64);
     assert_eq!(scope.paired_class_tag.as_str(), "261");
-    assert_eq!(scope.paired_byte_offset, paired_at as u64);
+    assert_eq!(scope.paired_byte_offset(), paired_at as u64);
     let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -113,8 +113,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         compact.kind(),
         crate::records::feature::DesignFeatureKind::Sketch
     );
-    assert_eq!(compact.frame_length, paired_at as u64 - 1);
-    assert_eq!(compact.previous_history_state_id, Some(2));
+    assert_eq!(compact.frame_length(), paired_at as u64 - 1);
+    assert_eq!(compact.previous_history_state_id(), Some(2));
     assert!(
         !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
     );
@@ -140,9 +140,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             decoded.kind(),
             crate::records::feature::DesignFeatureKind::Sketch
         );
-        assert_eq!(decoded.previous_history_state_id, Some(2));
+        assert_eq!(decoded.previous_history_state_id(), Some(2));
         assert_eq!(
-            decoded.previous_history_state_id_offset,
+            decoded.previous_history_state_id_offset(),
             Some((feature_ordinal_at + 30) as u64)
         );
     }
@@ -163,9 +163,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         header.byte_offset,
     )
     .expect("scope with extended fixed tail");
-    assert_eq!(extended.previous_history_state_id, Some(3));
+    assert_eq!(extended.previous_history_state_id(), Some(3));
     assert_eq!(
-        extended.previous_history_state_id_offset,
+        extended.previous_history_state_id_offset(),
         Some((feature_ordinal_at + 41) as u64)
     );
 
@@ -189,8 +189,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             decoded.kind(),
             crate::records::feature::DesignFeatureKind::Sketch
         );
-        assert_eq!(decoded.previous_history_state_id, None);
-        assert_eq!(decoded.previous_history_state_id_offset, None);
+        assert_eq!(decoded.previous_history_state_id(), None);
+        assert_eq!(decoded.previous_history_state_id_offset(), None);
     }
 
     let mut copy_scope = Vec::new();
@@ -226,14 +226,17 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::records::feature::DesignFeatureKind::CopyPasteBodies
     );
     assert_eq!(copy.feature_ordinal.get(), 2);
-    assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
-    assert_eq!(copy.history_state_id, None);
-    assert_eq!(copy.previous_history_state_id, None);
     assert_eq!(
-        copy.previous_history_state_id_offset,
+        copy.feature_ordinal_offset(),
+        copy_feature_ordinal_at as u64
+    );
+    assert_eq!(copy.history_state_id(), None);
+    assert_eq!(copy.previous_history_state_id(), None);
+    assert_eq!(
+        copy.previous_history_state_id_offset(),
         Some((copy_feature_ordinal_at + 53) as u64)
     );
-    assert_eq!(copy.frame_length, copy_paired_at as u64);
+    assert_eq!(copy.frame_length(), copy_paired_at as u64);
 
     let mut operation_bytes = vec![0; 80];
     operation_bytes[29] = 1;
@@ -264,9 +267,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         operation_bytes.extend_from_slice(&[0; 10]);
     }
     let mut operation_scope = copy.clone();
-    operation_scope.byte_offset = 0;
-    operation_scope.paired_byte_offset = 60;
-    operation_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![55, 66]);
+    operation_scope
+        .try_edit(|draft| {
+            draft.byte_offset = 0;
+            draft.paired_byte_offset = 60;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![55, 66]);
+        })
+        .unwrap();
     let operation = crate::design::decode::scopes::exact_copy_paste_bodies_operation(
         &operation_bytes,
         &IndexedRecordOffsets::build(&operation_bytes),
@@ -326,7 +333,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(
         generic_scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -377,7 +384,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extended.extend_from_slice(&57u32.to_le_bytes());
     bytes.extend_from_slice(&extended);
     let mut extended_scope = scope.clone();
-    extended_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![57]);
+    extended_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![57]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -403,7 +414,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     direct.extend_from_slice(&56u32.to_le_bytes());
     bytes.extend_from_slice(&direct);
     let mut direct_scope = scope.clone();
-    direct_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![56]);
+    direct_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![56]);
+        })
+        .unwrap();
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &direct_scope)
             .expect("direct WorkPlane frame");
@@ -426,7 +441,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     extended_direct.extend_from_slice(&61u32.to_le_bytes());
     bytes.extend_from_slice(&extended_direct);
     let mut extended_direct_scope = scope.clone();
-    extended_direct_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![61]);
+    extended_direct_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![61]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -452,7 +471,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     large_direct.extend_from_slice(&62u32.to_le_bytes());
     bytes.extend_from_slice(&large_direct);
     let mut large_direct_scope = scope.clone();
-    large_direct_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![62]);
+    large_direct_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![62]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -498,11 +521,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut axis_scope = scope.clone();
     axis_scope.id = "f3d:native/BulkStream.dat:parameter-scope#55".into();
-    axis_scope.payload = crate::records::feature::DesignFeatureKind::WorkAxis
-        .try_into()
+    axis_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::WorkAxis
+                .try_into()
+                .unwrap();
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
+        })
         .unwrap();
-    axis_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
     let construction = exact_work_axis_construction(
         &axis_bytes,
         &IndexedRecordOffsets::build(&axis_bytes),
@@ -520,7 +547,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
-    if let crate::records::feature::DesignScopePayload::WorkAxis(slot) = &mut axis_scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::WorkAxis(slot) = axis_scope.payload_mut()
+    {
         *slot = Some(construction);
     }
     let (axis_features, _) = project_parameter_design(
@@ -556,7 +584,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact.extend_from_slice(&58u32.to_le_bytes());
     bytes.extend_from_slice(&compact);
     let mut compact_scope = scope.clone();
-    compact_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![58]);
+    compact_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![58]);
+        })
+        .unwrap();
     let decoded =
         exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_scope)
             .expect("compact direct WorkPlane frame");
@@ -578,7 +610,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_431.extend_from_slice(&67u32.to_le_bytes());
     bytes.extend_from_slice(&compact_431);
     let mut compact_431_scope = scope.clone();
-    compact_431_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![67]);
+    compact_431_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![67]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -604,7 +640,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_364.extend_from_slice(&65u32.to_le_bytes());
     bytes.extend_from_slice(&compact_364);
     let mut compact_364_scope = scope.clone();
-    compact_364_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![65]);
+    compact_364_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![65]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -630,7 +670,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_364_variant.extend_from_slice(&66u32.to_le_bytes());
     bytes.extend_from_slice(&compact_364_variant);
     let mut compact_364_variant_scope = scope.clone();
-    compact_364_variant_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![66]);
+    compact_364_variant_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![66]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -658,7 +702,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_450.extend_from_slice(&59u32.to_le_bytes());
     bytes.extend_from_slice(&compact_450);
     let mut compact_450_scope = scope.clone();
-    compact_450_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![59]);
+    compact_450_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![59]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -683,7 +731,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     class_279.extend_from_slice(&69u32.to_le_bytes());
     bytes.extend_from_slice(&class_279);
     let mut class_279_scope = scope.clone();
-    class_279_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![69]);
+    class_279_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![69]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -702,7 +754,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_409_short[333..337].copy_from_slice(&64u32.to_le_bytes());
     bytes.extend_from_slice(&compact_409_short);
     let mut compact_409_short_scope = scope.clone();
-    compact_409_short_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![64]);
+    compact_409_short_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![64]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -727,7 +783,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_409.extend_from_slice(&63u32.to_le_bytes());
     bytes.extend_from_slice(&compact_409);
     let mut compact_409_scope = scope.clone();
-    compact_409_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![63]);
+    compact_409_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![63]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -754,10 +814,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     joint_origin.extend_from_slice(&60u32.to_le_bytes());
     bytes.extend_from_slice(&joint_origin);
     let mut joint_origin_scope = scope.clone();
-    joint_origin_scope.payload = crate::records::feature::DesignFeatureKind::JointOrigin
-        .try_into()
+    joint_origin_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![60]);
+        })
         .unwrap();
-    joint_origin_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![60]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -770,7 +834,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 
     for frame_length in [300, 322, 344] {
         let mut construction_scope = joint_origin_scope.clone();
-        construction_scope.frame_length = frame_length;
+        construction_scope
+            .try_edit(|draft| {
+                draft.frame_length = frame_length;
+            })
+            .unwrap();
         assert!(
             exact_joint_origin_frame(
                 &bytes,
@@ -797,11 +865,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_joint_origin.extend_from_slice(&67u32.to_le_bytes());
     bytes.extend_from_slice(&compact_joint_origin);
     let mut compact_joint_origin_scope = scope.clone();
-    compact_joint_origin_scope.payload = crate::records::feature::DesignFeatureKind::JointOrigin
-        .try_into()
+    compact_joint_origin_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![67]);
+        })
         .unwrap();
-    compact_joint_origin_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![67]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -832,10 +903,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     legacy_joint_origin.extend_from_slice(&72u32.to_le_bytes());
     bytes.extend_from_slice(&legacy_joint_origin);
     let mut legacy_joint_origin_scope = scope.clone();
-    legacy_joint_origin_scope.payload = crate::records::feature::DesignFeatureKind::JointOrigin
-        .try_into()
+    legacy_joint_origin_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
+        })
         .unwrap();
-    legacy_joint_origin_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
     let decoded = exact_joint_origin_frame(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -879,10 +954,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     move_frame.extend_from_slice(&90u32.to_le_bytes());
     bytes.extend_from_slice(&move_frame);
     let mut move_scope = scope.clone();
-    move_scope.payload = crate::records::feature::DesignFeatureKind::Move
-        .try_into()
+    move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![90]);
+        })
         .unwrap();
-    move_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![90]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -908,10 +987,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_move.extend_from_slice(&91u32.to_le_bytes());
     bytes.extend_from_slice(&compact_move);
     let mut compact_move_scope = scope.clone();
-    compact_move_scope.payload = crate::records::feature::DesignFeatureKind::Move
-        .try_into()
+    compact_move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![91]);
+        })
         .unwrap();
-    compact_move_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![91]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -949,10 +1032,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     class_433_move.extend_from_slice(&92u32.to_le_bytes());
     bytes.extend_from_slice(&class_433_move);
     let mut class_433_move_scope = scope.clone();
-    class_433_move_scope.payload = crate::records::feature::DesignFeatureKind::Move
-        .try_into()
+    class_433_move_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Move
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![92]);
+        })
         .unwrap();
-    class_433_move_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![92]);
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -977,13 +1064,17 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     scale[64..68].copy_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&scale);
     let mut scale_scope = scope.clone();
-    scale_scope.byte_offset = scale_at as u64;
-    scale_scope.payload = crate::records::feature::DesignFeatureKind::Massstab
-        .try_into()
+    scale_scope
+        .try_edit(|draft| {
+            draft.byte_offset = scale_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::Massstab
+                .try_into()
+                .unwrap();
+            draft.frame_length = 317;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+        })
         .unwrap();
-    scale_scope.frame_length = 317;
-    scale_scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
     let scale_records = IndexedRecordOffsets::build(&bytes);
     assert_eq!(
         exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
@@ -1022,11 +1113,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     diameter.extend_from_slice(&70u32.to_le_bytes());
     bytes.extend_from_slice(&diameter);
     let mut sphere_scope = scope.clone();
-    sphere_scope.byte_offset = sphere_at as u64;
-    sphere_scope.payload = crate::records::feature::DesignFeatureKind::SpherePrimitive
-        .try_into()
+    sphere_scope
+        .try_edit(|draft| {
+            draft.byte_offset = sphere_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::SpherePrimitive
+                .try_into()
+                .unwrap();
+            draft.frame_length = 462;
+        })
         .unwrap();
-    sphere_scope.frame_length = 462;
     assert!(matches!(
         exact_solid_primitive(
             &bytes,
@@ -1074,11 +1169,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         bytes.extend_from_slice(&diameter);
     }
     let mut torus_scope = scope.clone();
-    torus_scope.byte_offset = torus_at as u64;
-    torus_scope.payload = crate::records::feature::DesignFeatureKind::TorusPrimitive
-        .try_into()
+    torus_scope
+        .try_edit(|draft| {
+            draft.byte_offset = torus_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::TorusPrimitive
+                .try_into()
+                .unwrap();
+            draft.frame_length = 486;
+        })
         .unwrap();
-    torus_scope.frame_length = 486;
     assert!(matches!(
         exact_solid_primitive(
             &bytes,
@@ -1111,12 +1210,16 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     distance.extend_from_slice(&73u32.to_le_bytes());
     bytes.extend_from_slice(&distance);
     let mut offset_scope = scope.clone();
-    offset_scope.byte_offset = offset_at as u64;
-    offset_scope.payload = crate::records::feature::DesignFeatureKind::OffsetFaces
-        .try_into()
+    offset_scope
+        .try_edit(|draft| {
+            draft.byte_offset = offset_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::OffsetFaces
+                .try_into()
+                .unwrap();
+            draft.frame_length = 286;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 73]);
+        })
         .unwrap();
-    offset_scope.frame_length = 286;
-    offset_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 73]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
@@ -1144,9 +1247,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_distance.extend_from_slice(b"259");
     compact_distance.extend_from_slice(&1_777u32.to_le_bytes());
     bytes.extend_from_slice(&compact_distance);
-    offset_scope.byte_offset = compact_offset_at as u64;
-    offset_scope.frame_length = 275;
-    offset_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 1_777]);
+    offset_scope
+        .try_edit(|draft| {
+            draft.byte_offset = compact_offset_at as u64;
+            draft.frame_length = 275;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 1_777]);
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
@@ -1173,12 +1280,16 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thickness.extend_from_slice(&74u32.to_le_bytes());
     bytes.extend_from_slice(&thickness);
     let mut thicken_scope = scope.clone();
-    thicken_scope.byte_offset = thicken_at as u64;
-    thicken_scope.payload = crate::records::feature::DesignFeatureKind::Thicken
-        .try_into()
+    thicken_scope
+        .try_edit(|draft| {
+            draft.byte_offset = thicken_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::Thicken
+                .try_into()
+                .unwrap();
+            draft.frame_length = 301;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 74]);
+        })
         .unwrap();
-    thicken_scope.frame_length = 301;
-    thicken_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 74]);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
@@ -1189,7 +1300,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             }
         ))
     ));
-    thicken_scope.frame_length = 295;
+    thicken_scope
+        .try_edit(|draft| {
+            draft.frame_length = 295;
+        })
+        .unwrap();
     assert_eq!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         None
@@ -1200,7 +1315,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_thicken[46] = 1;
     compact_thicken[47..51].copy_from_slice(&74u32.to_le_bytes());
     bytes.extend_from_slice(&compact_thicken);
-    thicken_scope.byte_offset = compact_thicken_at as u64;
+    thicken_scope
+        .try_edit(|draft| {
+            draft.byte_offset = compact_thicken_at as u64;
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
@@ -1218,12 +1337,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shifted_thicken[46..48].copy_from_slice(&[1, 1]);
     shifted_thicken[48..52].copy_from_slice(&74u32.to_le_bytes());
     bytes.extend_from_slice(&shifted_thicken);
-    let shifted_thicken_scope = DesignParameterScope {
-        byte_offset: shifted_thicken_at as u64,
-        frame_length: 312,
-        reference_members: crate::records::ReferenceRun::unlocated(vec![74, 200, 201, 202]),
-        ..thicken_scope.clone()
-    };
+    let shifted_thicken_scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            byte_offset: shifted_thicken_at as u64,
+            frame_length: 312,
+            reference_members: crate::records::ReferenceRun::unlocated(vec![74, 200, 201, 202]),
+            ..thicken_scope.clone().into_draft()
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(
             &bytes,
@@ -1244,19 +1365,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &thicken_scope,
         );
-        match (&mut thicken_scope.payload, construction) {
+        match (thicken_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayload::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayload::DecalerLesFaces(slot),
+                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Shell(slot)
-                | crate::records::feature::DesignScopePayload::Schale(slot),
+                crate::records::feature::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Thicken(slot),
+                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
             ) => *slot = Some(value),
             _ => {}
@@ -1350,35 +1471,40 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shell_thickness.extend_from_slice(&1_778u32.to_le_bytes());
     bytes.extend_from_slice(&shell_thickness);
     let mut shell_scope = scope.clone();
-    shell_scope.byte_offset = shell_at as u64;
-    shell_scope.payload = crate::records::feature::DesignFeatureKind::Shell
-        .try_into()
+    shell_scope
+        .try_edit(|draft| {
+            draft.byte_offset = shell_at as u64;
+            draft.payload = crate::records::feature::DesignFeatureKind::Shell
+                .try_into()
+                .unwrap();
+            draft.frame_length = 278;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![200, 201, 1_778]);
+        })
         .unwrap();
-    shell_scope.frame_length = 278;
-    shell_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![200, 201, 1_778]);
     {
         let construction =
             exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
-        match (&mut shell_scope.payload, construction) {
+        match (shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayload::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayload::DecalerLesFaces(slot),
+                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Shell(slot)
-                | crate::records::feature::DesignScopePayload::Schale(slot),
+                crate::records::feature::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Thicken(slot),
+                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
             ) => *slot = Some(value),
             _ => {}
         }
     }
     assert!(matches!(
-        &shell_scope.payload,
+        &shell_scope.payload(),
         crate::records::feature::DesignScopePayload::Shell(Some(
             crate::records::feature::DesignShellOperation {
                 thickness: 0.5,
@@ -1433,12 +1559,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_shell_thickness.extend_from_slice(b"258");
     compact_shell_thickness.extend_from_slice(&9_000u32.to_le_bytes());
     bytes.extend_from_slice(&compact_shell_thickness);
-    let mut compact_shell_scope = DesignParameterScope {
-        byte_offset: compact_shell_at as u64,
-        frame_length: 268,
-        reference_members: crate::records::ReferenceRun::unlocated(vec![200, 201, 9_000]),
-        ..shell_scope.clone()
-    };
+    let mut compact_shell_scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            byte_offset: compact_shell_at as u64,
+            frame_length: 268,
+            reference_members: crate::records::ReferenceRun::unlocated(vec![200, 201, 9_000]),
+            ..shell_scope.clone().into_draft()
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
@@ -1459,12 +1587,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shifted_shell[55] = 1;
     shifted_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
     bytes.extend_from_slice(&shifted_shell);
-    let shifted_shell_scope = DesignParameterScope {
-        byte_offset: shifted_shell_at as u64,
-        frame_length: 278,
-        reference_members: crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]),
-        ..shell_scope.clone()
-    };
+    let shifted_shell_scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            byte_offset: shifted_shell_at as u64,
+            frame_length: 278,
+            reference_members: crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]),
+            ..shell_scope.clone().into_draft()
+        })
+        .unwrap();
     assert!(matches!(
         exact_direct_face_operation(
             &bytes,
@@ -1485,19 +1615,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &compact_shell_scope,
         );
-        match (&mut compact_shell_scope.payload, construction) {
+        match (compact_shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayload::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayload::DecalerLesFaces(slot),
+                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Shell(slot)
-                | crate::records::feature::DesignScopePayload::Schale(slot),
+                crate::records::feature::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Thicken(slot),
+                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
             ) => *slot = Some(value),
             _ => {}
@@ -1525,19 +1655,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &IndexedRecordOffsets::build(&bytes),
             &offset_scope,
         );
-        match (&mut offset_scope.payload, construction) {
+        match (offset_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayload::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayload::DecalerLesFaces(slot),
+                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Shell(slot)
-                | crate::records::feature::DesignScopePayload::Schale(slot),
+                crate::records::feature::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayload::Thicken(slot),
+                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
                 Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
             ) => *slot = Some(value),
             _ => {}
@@ -1584,12 +1714,17 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         bytes.extend_from_slice(&scalar);
     }
     let mut extrude_scope = scope.clone();
-    extrude_scope.payload = crate::records::feature::DesignFeatureKind::Extrude
-        .try_into()
+    extrude_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut extrude_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+        extrude_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -1610,7 +1745,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
                 start_offset: 42,
             });
     }
-    extrude_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1634,7 +1773,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             }),
         })
     );
-    extrude_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 51]);
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 51]);
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1654,12 +1797,16 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             taper_angle: None,
         })
     );
-    extrude_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
-    extrude_scope.reference_members = {
-        let mut values: Vec<u32> = extrude_scope.reference_members.values().copied().collect();
-        values.push(75);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(75);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1743,15 +1890,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 
     let mut extend_scope = scope.clone();
     extend_scope.id = "f3d:native/BulkStream.dat:parameter-scope#12".into();
-    extend_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend
-        .try_into()
+    extend_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend
+                .try_into()
+                .unwrap();
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                extend_distance_record_index,
+                extend_boundary_record_index,
+                extend_edge_record_indices[0],
+                extend_edge_record_indices[1],
+            ]);
+        })
         .unwrap();
-    extend_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        extend_distance_record_index,
-        extend_boundary_record_index,
-        extend_edge_record_indices[0],
-        extend_edge_record_indices[1],
-    ]);
     let operation =
         exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
             .expect("exact SurfaceExtend construction");
@@ -1771,8 +1922,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
         }
     );
-    if let crate::records::feature::DesignScopePayload::SurfaceExtend(slot) =
-        &mut extend_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) =
+        extend_scope.payload_mut()
     {
         *slot = Some(operation);
     }
@@ -1803,11 +1954,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes[extend_boundary_at + extend_boundary_tail + 21
         ..extend_boundary_at + extend_boundary_tail + 25]
         .copy_from_slice(&65u32.to_le_bytes());
-    extend_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceOffset
-        .try_into()
+    extend_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignFeatureKind::SurfaceOffset
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
-    if let crate::records::feature::DesignScopePayload::SurfaceExtend(slot) =
-        &mut extend_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) =
+        extend_scope.payload_mut()
     {
         *slot = None;
     }
@@ -1830,8 +1985,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             },
         }
     );
-    if let crate::records::feature::DesignScopePayload::SurfaceOffset(slot) =
-        &mut extend_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SurfaceOffset(slot) =
+        extend_scope.payload_mut()
     {
         *slot = Some(operation);
     }
@@ -1892,11 +2047,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     grouped.extend_from_slice(&grouped_record_index.to_le_bytes());
     bytes.extend_from_slice(&grouped);
     let mut grouped_scope = extend_scope.clone();
-    grouped_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        extend_distance_record_index,
-        grouped_record_index,
-        grouped_member_record_index,
-    ]);
+    grouped_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                extend_distance_record_index,
+                grouped_record_index,
+                grouped_member_record_index,
+            ]);
+        })
+        .unwrap();
     let grouped_operation = exact_surface_offset_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -1961,13 +2120,17 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     embedded_distance.extend_from_slice(b"258");
     embedded_distance.extend_from_slice(&embedded_distance_record_index.to_le_bytes());
     bytes.extend_from_slice(&embedded_distance);
-    extrude_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        50,
-        273,
-        274,
-        embedded_distance_record_index,
-        51,
-    ]);
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                50,
+                273,
+                274,
+                embedded_distance_record_index,
+                51,
+            ]);
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -1991,11 +2154,15 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             }),
         })
     );
-    extrude_scope.reference_members = {
-        let mut values: Vec<u32> = extrude_scope.reference_members.values().copied().collect();
-        values.insert(2, 273);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    extrude_scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.insert(2, 273);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,

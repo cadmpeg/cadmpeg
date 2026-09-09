@@ -132,7 +132,7 @@ fn parse_decal_image(
         bytes,
         stream,
         scope.record_index,
-        usize::try_from(scope.byte_offset).ok()?,
+        usize::try_from(scope.byte_offset()).ok()?,
     )
 }
 

@@ -918,21 +918,21 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
         let scope: DesignParameterScope = serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&scope).unwrap(), wire);
         assert_eq!(
-            scope.reference_members.values().len(),
-            scope.reference_members.len()
+            scope.reference_members().values().len(),
+            scope.reference_members().len()
         );
         assert_eq!(
             scope
-                .reference_members
-                .values_in(0..scope.reference_members.len())
+                .reference_members()
+                .values_in(0..scope.reference_members().len())
                 .unwrap()
                 .copied()
                 .collect::<Vec<_>>(),
             serde_json::from_str::<Vec<u32>>(values).unwrap()
         );
         assert!(scope
-            .reference_members
-            .values_in(0..scope.reference_members.len() + 1)
+            .reference_members()
+            .values_in(0..scope.reference_members().len() + 1)
             .is_none());
     }
     for (values, offsets) in [("[]", "[0]"), ("[10]", "[0,11]"), ("[10,20,30]", "[0,11]")] {
@@ -1606,7 +1606,11 @@ fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
 fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
     for kind_offset in [0_u64, 8, 100, u64::MAX] {
         let mut scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
-        scope.kind_offset = kind_offset;
+        scope
+            .try_edit(|draft| {
+                draft.kind_offset = kind_offset;
+            })
+            .unwrap();
         let wire = serde_json::to_value(&scope).expect("serialize scope");
         assert_eq!(
             wire["history_state_id_offset"],
@@ -1756,4 +1760,75 @@ fn required_surface_operations_reject_absence() {
         let error = serde_json::from_value::<DesignParameterScope>(wire).unwrap_err();
         assert!(error.to_string().contains(field));
     }
+}
+
+#[test]
+fn parameter_scope_layout_rejects_invalid_admission_and_preserves_failed_edits() {
+    use super::DesignParameterScopeDraft;
+    let scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
+    let invalid: &[fn(&mut DesignParameterScopeDraft)] = &[
+        |draft| draft.byte_offset = u64::MAX,
+        |draft| draft.frame_length = 89,
+        |draft| draft.paired_byte_offset += 1,
+        |draft| draft.kind_offset = draft.byte_offset,
+        |draft| draft.feature_ordinal_offset = draft.kind_offset,
+        |draft| draft.feature_ordinal_offset += 1,
+        |draft| draft.previous_history_state_id = Some(1),
+        |draft| draft.previous_history_state_id_offset = Some(1),
+        |draft| draft.reference_count_offset = draft.byte_offset,
+        |draft| draft.reference_members = crate::records::ReferenceRun::located(Vec::new()),
+        |draft| draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1]),
+        |draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::located(vec![crate::records::Located {
+                    value: 1,
+                    offset: 15,
+                }])
+        },
+        |draft| draft.kind_offset += 1,
+    ];
+    for edit in invalid {
+        let mut draft = scope.clone().into_draft();
+        edit(&mut draft);
+        assert!(DesignParameterScope::try_new(draft).is_err());
+        let mut edited = scope.clone();
+        assert!(edited.try_edit(edit).is_err());
+        assert_eq!(edited, scope);
+    }
+    for (field, value) in [
+        ("frame_length", serde_json::json!(89)),
+        ("paired_byte_offset", serde_json::json!(129)),
+        ("kind_offset", serde_json::json!(0)),
+        ("feature_ordinal_offset", serde_json::json!(49)),
+        ("previous_history_state_id", serde_json::json!(1)),
+        ("previous_history_state_id_offset", serde_json::json!(1)),
+        ("reference_count_offset", serde_json::json!(0)),
+        ("reference_member_offsets", serde_json::json!([15])),
+    ] {
+        let mut wire = serde_json::to_value(&scope).unwrap();
+        wire[field] = value;
+        assert!(
+            serde_json::from_value::<DesignParameterScope>(wire).is_err(),
+            "{field}"
+        );
+    }
+    let wire = serde_json::to_value(&scope).unwrap();
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+}
+
+#[test]
+fn parameter_scope_located_absent_history_states_remain_legal() {
+    let mut scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 125;
+            draft.paired_byte_offset = 125;
+            draft.previous_history_state_id_offset = Some(79);
+        })
+        .unwrap();
+    let wire = serde_json::to_value(&scope).unwrap();
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(decoded, scope);
+    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
 }

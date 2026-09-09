@@ -139,7 +139,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     }
     assert!(cursor <= 171);
 
-    let scope = DesignParameterScope {
+    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
@@ -165,7 +165,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 375,
-    };
+    })
+    .unwrap();
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("generated Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -218,9 +219,13 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     expanded_scope.class_tag = crate::records::DesignClassTag::try_from("384".to_owned()).unwrap();
     expanded_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
-    expanded_scope.frame_length = 366;
-    expanded_scope.kind_offset = 265;
-    expanded_scope.paired_byte_offset = 366;
+    expanded_scope
+        .try_edit(|draft| {
+            draft.frame_length = 366;
+            draft.kind_offset = 265;
+            draft.paired_byte_offset = 366;
+        })
+        .unwrap();
     let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -350,20 +355,31 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
 
     let mut snapshot_scope = scope;
     snapshot_scope.class_tag = crate::records::DesignClassTag::try_from("314".to_owned()).unwrap();
-    snapshot_scope.frame_length = 485;
-    snapshot_scope.kind_offset = 373;
-    snapshot_scope.feature_ordinal_offset = 397;
-    snapshot_scope.history_state_id = Some(7);
+    snapshot_scope
+        .try_edit(|draft| {
+            draft.frame_length = 485;
+            draft.kind_offset = 373;
+            draft.feature_ordinal_offset = 397;
+            draft.history_state_id = Some(7);
 
-    snapshot_scope.previous_history_state_id = None;
-    snapshot_scope.previous_history_state_id_offset = None;
-    snapshot_scope.reference_count_offset = 350;
-    snapshot_scope.reference_members =
-        crate::records::ReferenceRun::from_columns(vec![301], vec![355], "reference_members")
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+            draft.reference_count_offset = 350;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![301],
+                vec![355],
+                "reference_members",
+            )
             .unwrap();
+        })
+        .unwrap();
     snapshot_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    snapshot_scope.paired_byte_offset = 485;
+    snapshot_scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = 485;
+        })
+        .unwrap();
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
         .expect("body-snapshot Base Feature frame is canonical");
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
@@ -424,7 +440,11 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(related_guid_offsets, [67, 143, 275]);
 
     let mut invalid_scope = snapshot_scope;
-    invalid_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![302]);
+    invalid_scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![302]);
+        })
+        .unwrap();
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
@@ -465,11 +485,19 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
         70,
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
-    scope.frame_length = 314;
-    scope.kind_offset = 213;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 314;
+            draft.kind_offset = 213;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
-    scope.paired_byte_offset = 314;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = 314;
+        })
+        .unwrap();
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -550,10 +578,14 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         scope.class_tag = crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope.frame_length = frame_length as u64;
-        scope.kind_offset = (frame_length + 102) as u64;
-        scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = frame_length as u64;
+                draft.kind_offset = (frame_length + 102) as u64;
+                draft.paired_byte_offset = frame_length as u64;
+                draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+            })
+            .unwrap();
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -633,11 +665,15 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     zero_scope.class_tag = crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
     zero_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    zero_scope.byte_offset = prefix as u64;
-    zero_scope.frame_length = 258;
-    zero_scope.kind_offset = (prefix + 157) as u64;
-    zero_scope.paired_byte_offset = (prefix + 258) as u64;
-    zero_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![701]);
+    zero_scope
+        .try_edit(|draft| {
+            draft.byte_offset = prefix as u64;
+            draft.frame_length = 258;
+            draft.kind_offset = (prefix + 157) as u64;
+            draft.paired_byte_offset = (prefix + 258) as u64;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![701]);
+        })
+        .unwrap();
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -662,10 +698,6 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     let mut nonzero_padding = zero_body.clone();
     nonzero_padding[prefix + 47] = 1;
     assert!(exact_base_feature_construction(&nonzero_padding, &zero_scope).is_none());
-
-    let mut mismatched_pair = zero_scope;
-    mismatched_pair.paired_byte_offset -= 1;
-    assert!(exact_base_feature_construction(&zero_body, &mismatched_pair).is_none());
 }
 
 #[test]
@@ -713,10 +745,14 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("290".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.frame_length = frame_length as u64;
-    scope.kind_offset = (frame_length + 102) as u64;
-    scope.paired_byte_offset = frame_length as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = frame_length as u64;
+            draft.kind_offset = (frame_length + 102) as u64;
+            draft.paired_byte_offset = frame_length as u64;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+        })
+        .unwrap();
     assert_eq!(cursor, 155);
 
     let construction = exact_base_feature_construction(&bytes, &scope)
@@ -797,10 +833,14 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         scope.class_tag = crate::records::DesignClassTag::try_from("444".to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
-        scope.frame_length = frame_length as u64;
-        scope.kind_offset = (frame_length + 102) as u64;
-        scope.paired_byte_offset = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = frame_length as u64;
+                draft.kind_offset = (frame_length + 102) as u64;
+                draft.paired_byte_offset = frame_length as u64;
+                draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
+            })
+            .unwrap();
         assert!(cursor <= frame_length);
         (bytes, scope)
     }
@@ -870,17 +910,21 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     zero_scope.class_tag = crate::records::DesignClassTag::try_from("444".to_owned()).unwrap();
     zero_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
-    zero_scope.byte_offset = prefix as u64;
-    zero_scope.frame_length = 258;
-    zero_scope.kind_offset = (prefix + 157) as u64;
-    zero_scope.paired_byte_offset = (prefix + 258) as u64;
-    zero_scope.reference_count_offset = (prefix + 134) as u64;
-    zero_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![701],
-        vec![(prefix + 139) as u64],
-        "reference_members",
-    )
-    .unwrap();
+    zero_scope
+        .try_edit(|draft| {
+            draft.byte_offset = prefix as u64;
+            draft.frame_length = 258;
+            draft.kind_offset = (prefix + 157) as u64;
+            draft.paired_byte_offset = (prefix + 258) as u64;
+            draft.reference_count_offset = (prefix + 134) as u64;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![701],
+                vec![(prefix + 139) as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -909,10 +953,6 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     let mut mismatched_reference = zero_body.clone();
     mismatched_reference[prefix + 139] = 1;
     assert!(exact_base_feature_construction(&mismatched_reference, &zero_scope).is_none());
-
-    let mut mismatched_pair = zero_scope;
-    mismatched_pair.paired_byte_offset -= 1;
-    assert!(exact_base_feature_construction(&zero_body, &mismatched_pair).is_none());
 }
 
 #[test]
@@ -983,25 +1023,38 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         crate::records::feature::DesignFeatureKind::BaseFeature,
         193,
     );
-    scope.byte_offset = 0;
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 0;
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("377".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    scope.paired_byte_offset = class_377::LEN as u64;
-    scope.frame_length = class_377::LEN as u64;
-    scope.kind_offset = class_377::KIND as u64;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = class_377::LEN as u64;
+            draft.frame_length = class_377::LEN as u64;
+            draft.kind_offset = class_377::KIND as u64;
+        })
+        .unwrap();
     scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
-    scope.history_state_id = Some(20);
+    scope
+        .try_edit(|draft| {
+            draft.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
+            draft.history_state_id = Some(20);
 
-    scope.previous_history_state_id = Some(19);
-    scope.previous_history_state_id_offset = Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
-    scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(
-        vec![196],
-        vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64],
-        "reference_members",
-    )
-    .unwrap();
+            draft.previous_history_state_id = Some(19);
+            draft.previous_history_state_id_offset =
+                Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
+            draft.reference_count_offset = class_377::REFERENCE_COUNT as u64;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![196],
+                vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+                "reference_members",
+            )
+            .unwrap();
+        })
+        .unwrap();
 
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-377/class-259 Base Feature frame is canonical");
@@ -1067,7 +1120,11 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert!(exact_base_feature_construction(&nonzero_field, &scope).is_none());
 
     let mut mismatched_previous = scope.clone();
-    mismatched_previous.previous_history_state_id = Some(18);
+    mismatched_previous
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(18);
+        })
+        .unwrap();
     assert!(exact_base_feature_construction(&bytes, &mismatched_previous).is_none());
 
     let mut mismatched_pair = scope;
@@ -1160,25 +1217,38 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             crate::records::feature::DesignFeatureKind::BaseFeature,
             452,
         );
-        scope.byte_offset = 0;
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 0;
+            })
+            .unwrap();
         scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![scope_reference]);
-        scope.reference_count_offset = reference_count as u64;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(
-            scope.reference_members.values().copied().collect(),
-            vec![generic_record as u64],
-            "reference_members",
-        )
-        .unwrap();
-        scope.history_state_id = Some(i64::from(current_state));
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::ReferenceRun::unlocated(vec![scope_reference]);
+                draft.reference_count_offset = reference_count as u64;
+                draft.reference_members = crate::records::ReferenceRun::from_columns(
+                    draft.reference_members.values().copied().collect(),
+                    vec![generic_record as u64],
+                    "reference_members",
+                )
+                .unwrap();
+                draft.history_state_id = Some(i64::from(current_state));
 
-        scope.previous_history_state_id = Some(i64::from(previous_state));
-        scope.previous_history_state_id_offset = None;
-        scope.kind_offset = kind as u64;
+                draft.previous_history_state_id = Some(i64::from(previous_state));
+                draft.previous_history_state_id_offset = None;
+                draft.kind_offset = kind as u64;
+            })
+            .unwrap();
         scope.feature_ordinal = std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal");
-        scope.feature_ordinal_offset = feature_ordinal as u64;
+        scope
+            .try_edit(|draft| {
+                draft.feature_ordinal_offset = feature_ordinal as u64;
+            })
+            .unwrap();
         scope
     }
 
@@ -1230,24 +1300,32 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope.class_tag = crate::records::DesignClassTag::try_from("452".to_owned()).unwrap();
     compact_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    compact_scope.frame_length = compact::LEN as u64;
-    compact_scope.paired_byte_offset = compact::LEN as u64;
-    compact_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![196]);
-    compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
-    compact_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        compact_scope.reference_members.values().copied().collect(),
-        vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64],
-        "reference_members",
-    )
-    .unwrap();
-    compact_scope.history_state_id = Some(20);
+    compact_scope
+        .try_edit(|draft| {
+            draft.frame_length = compact::LEN as u64;
+            draft.paired_byte_offset = compact::LEN as u64;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![196]);
+            draft.reference_count_offset = compact::REFERENCE_COUNT as u64;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                draft.reference_members.values().copied().collect(),
+                vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+                "reference_members",
+            )
+            .unwrap();
+            draft.history_state_id = Some(20);
 
-    compact_scope.previous_history_state_id = Some(19);
-    compact_scope.previous_history_state_id_offset =
-        Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
-    compact_scope.kind_offset = compact::KIND as u64;
+            draft.previous_history_state_id = Some(19);
+            draft.previous_history_state_id_offset =
+                Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
+            draft.kind_offset = compact::KIND as u64;
+        })
+        .unwrap();
     compact_scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    compact_scope.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
+    compact_scope
+        .try_edit(|draft| {
+            draft.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
+        })
+        .unwrap();
     let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
@@ -1410,20 +1488,24 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         2,
     );
     put_u32(&mut expanded_bytes, expanded::PREVIOUS_HISTORY_STATE_ID, 54);
-    expanded_scope.frame_length = expanded::LEN as u64;
-    expanded_scope.paired_byte_offset = expanded::LEN as u64;
-    expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
-    expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(
-        expanded_scope.reference_members.values().copied().collect(),
-        vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64],
-        "reference_members",
-    )
-    .unwrap();
+    expanded_scope
+        .try_edit(|draft| {
+            draft.frame_length = expanded::LEN as u64;
+            draft.paired_byte_offset = expanded::LEN as u64;
+            draft.reference_count_offset = expanded::REFERENCE_COUNT as u64;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                draft.reference_members.values().copied().collect(),
+                vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+                "reference_members",
+            )
+            .unwrap();
 
-    expanded_scope.previous_history_state_id_offset =
-        Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);
-    expanded_scope.kind_offset = expanded::KIND as u64;
-    expanded_scope.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
+            draft.previous_history_state_id_offset =
+                Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);
+            draft.kind_offset = expanded::KIND as u64;
+            draft.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
+        })
+        .unwrap();
     let expanded_construction = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {

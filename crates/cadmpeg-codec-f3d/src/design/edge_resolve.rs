@@ -2456,7 +2456,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 edge_identity_operands,
                 vertex_operands,
                 histories,
-                scope.previous_history_state_id,
+                scope.previous_history_state_id(),
                 &neutral_feature_id(scope),
                 edge_radius,
             );

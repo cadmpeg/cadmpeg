@@ -31,11 +31,11 @@ pub(crate) fn exact_surface_trim_operation(
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::SurfaceTrim
-        || scope.reference_members.len() != 4
+        || scope.reference_members().len() != 4
     {
         return None;
     }
-    let selection_record_index = *scope.reference_members.values().nth(3)?;
+    let selection_record_index = *scope.reference_members().values().nth(3)?;
     let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
     let selection_class_tag =
         exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
@@ -169,7 +169,7 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope) else {
             continue;
         };
-        operation.id = native_design_surface_trim_operation_id(&entry.name, scope.byte_offset);
+        operation.id = native_design_surface_trim_operation_id(&entry.name, scope.byte_offset());
         out.push(operation);
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));

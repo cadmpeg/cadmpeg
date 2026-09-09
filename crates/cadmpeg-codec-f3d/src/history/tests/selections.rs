@@ -186,7 +186,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         crate::records::feature::DesignFeatureKind::Hole,
         42,
     );
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
 
@@ -625,7 +625,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::feature::DesignFeatureKind::Combine,
         10,
     );
-    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
         *slot = Some(crate::records::feature::DesignCombineOperation {
             form: crate::records::feature::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
@@ -1444,18 +1444,22 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         crate::records::feature::DesignFeatureKind::Extrude,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    scope.reference_members = {
-        let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
-        let reference_offsets = vec![0; reference_values.len()];
-        crate::records::ReferenceRun::from_columns(
-            reference_values,
-            reference_offsets,
-            "reference_members",
-        )
-        .unwrap()
-    };
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.reference_members = {
+                let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
+                let reference_offsets = vec![0; reference_values.len()];
+                crate::records::ReferenceRun::from_columns(
+                    reference_values,
+                    reference_offsets,
+                    "reference_members",
+                )
+                .unwrap()
+            };
+        })
+        .unwrap();
     let groups = vec![
         group(100, 0, vec![110, 120]),
         group(110, 1, vec![111]),
@@ -1660,10 +1664,14 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         crate::records::feature::DesignFeatureKind::Mirror,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Mirror(slot)
-    | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) = scope.payload_mut()
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({

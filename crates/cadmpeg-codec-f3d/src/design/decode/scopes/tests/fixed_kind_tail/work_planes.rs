@@ -23,7 +23,11 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
         1,
     );
     let mut scope = scope;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+        })
+        .unwrap();
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-380 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
@@ -60,7 +64,11 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+            })
+            .unwrap();
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("class-256 WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
@@ -84,7 +92,11 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         2,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
+        })
+        .unwrap();
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
         None
@@ -148,7 +160,12 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             1,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::ReferenceRun::unlocated(vec![record_index]);
+            })
+            .unwrap();
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("opaque-prefix WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
@@ -171,7 +188,11 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         2,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![84]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![84]);
+        })
+        .unwrap();
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
         None

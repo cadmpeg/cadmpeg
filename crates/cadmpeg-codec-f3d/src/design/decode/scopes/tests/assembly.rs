@@ -19,10 +19,18 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         scope_record_index,
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("273".to_owned()).unwrap();
-    scope.frame_length = 637;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 637;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    scope.paired_byte_offset = 637;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = 637;
+        })
+        .unwrap();
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
         crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
@@ -436,11 +444,15 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     )
     .is_some_and(|alignment| alignment.operand_frames().is_none()));
 
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.push(99);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(99);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     assert_eq!(
         exact_assembly_alignment(
             &assembly_bytes,
@@ -461,14 +473,22 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         scope_record_index,
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("383".to_owned()).unwrap();
-    scope.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.paired_byte_offset = scope.frame_length;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![
-        100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203, 204, 205,
-        206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216, 217, 116, 117, 118,
-        119, 400,
-    ]);
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = draft.frame_length;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203,
+                204, 205, 206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216,
+                217, 116, 117, 118, 119, 400,
+            ]);
+        })
+        .unwrap();
     let owners = (0_usize..20)
         .map(|ordinal| {
             crate::records::DesignParameterOwner::try_from(
@@ -503,7 +523,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     let bytes = legacy_class_383_258_fixture(
         scope_record_index,
         &scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .collect::<Vec<_>>(),
@@ -592,17 +612,25 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("388".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
-    scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
-    scope.paired_byte_offset = scope.frame_length;
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+            draft.paired_byte_offset = draft.frame_length;
+        })
+        .unwrap();
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
-    scope.reference_members = crate::records::ReferenceRun::unlocated(
-        (0..24)
-            .map(|ordinal| 1_000 + ordinal)
-            .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
-            .chain((24..28).map(|ordinal| 1_000 + ordinal))
-            .chain([1_034])
-            .collect(),
-    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::ReferenceRun::unlocated(
+                (0..24)
+                    .map(|ordinal| 1_000 + ordinal)
+                    .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
+                    .chain((24..28).map(|ordinal| 1_000 + ordinal))
+                    .chain([1_034])
+                    .collect(),
+            );
+        })
+        .unwrap();
     let owners = (0..28)
         .map(|ordinal| {
             crate::records::DesignParameterOwner::try_from(
@@ -673,7 +701,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         bytes[403 + ordinal * 2..405 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }
     bytes[478..482].copy_from_slice(&35_u32.to_le_bytes());
-    for (ordinal, record_index) in scope.reference_members.values().copied().enumerate() {
+    for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
         write_reference(&mut bytes, 482 + ordinal * 11, record_index);
     }
     bytes[867..871].copy_from_slice(&[0xff; 4]);
@@ -884,10 +912,18 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         scope_record_index,
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("439".to_owned()).unwrap();
-    scope.frame_length = 399;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 399;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+        })
+        .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope.paired_byte_offset = 399;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = 399;
+        })
+        .unwrap();
 
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
         crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
@@ -1089,18 +1125,22 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.paired_class_tag =
             crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        scope.frame_length = 421;
-        scope.paired_byte_offset = 421;
-        scope.reference_count_offset = 185;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(
-            reference_members.to_vec(),
-            (0..11)
-                .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
-                .collect(),
-            "reference_members",
-        )
-        .unwrap();
-        scope.feature_ordinal_offset = 334;
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 421;
+                draft.paired_byte_offset = 421;
+                draft.reference_count_offset = 185;
+                draft.reference_members = crate::records::ReferenceRun::from_columns(
+                    reference_members.to_vec(),
+                    (0..11)
+                        .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
+                        .collect(),
+                    "reference_members",
+                )
+                .unwrap();
+                draft.feature_ordinal_offset = 334;
+            })
+            .unwrap();
 
         let mut bytes = vec![0_u8; 421];
         bytes[185..189].copy_from_slice(&11_u32.to_le_bytes());
@@ -1894,7 +1934,9 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         record_index,
     );
-    if let crate::records::feature::DesignScopePayload::ComponentInsert(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::ComponentInsert(slot) =
+        scope.payload_mut()
+    {
         *slot = Some(DesignComponentInsertConstruction {
             relation_record_index: record_index + 1,
             carrier_record_index: record_index + 2,

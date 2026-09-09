@@ -25,8 +25,12 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("405".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+        })
+        .unwrap();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::DesignPipeConstruction {
@@ -41,7 +45,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
 
     let parameter = |record_index: u32,
@@ -155,7 +163,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
     let hollow_definition = crate::design::feature_project::project_fixed_pipe(
         &scope,
@@ -199,7 +211,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
@@ -224,14 +240,22 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
 
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.push(23);
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.push(23);
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -241,11 +265,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_none());
 
-    scope.reference_members = {
-        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
-        values.pop();
-        crate::records::ReferenceRun::unlocated(values)
-    };
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = {
+                let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
+                values.pop();
+                crate::records::ReferenceRun::unlocated(values)
+            };
+        })
+        .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("475".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(crate::design::feature_project::project_fixed_pipe(
@@ -273,7 +301,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 value_offsets: [40, 151, 262, 373],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,

@@ -29,7 +29,7 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count == 0
         && scope.class_tag.as_str() == "330"
         && scope.paired_class_tag.as_str() == "258"
-        && scope.frame_length == 476
+        && scope.frame_length() == 476
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
@@ -137,7 +137,7 @@ pub(crate) fn resolved_direct_face_selection(
                 && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
-                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                     == Some(&operand.record_index)
         })
         .collect::<Vec<_>>();
@@ -177,7 +177,7 @@ pub(crate) fn resolved_historical_face_operand(
     scope: &DesignParameterScope,
     operand: &DesignFaceOperand,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let previous_state_id = scope.previous_history_state_id?;
+    let previous_state_id = scope.previous_history_state_id()?;
     let face_slot = resolve_face_operand_history_candidates(operand)?;
     historical_face_selection_with_native(
         scope,
@@ -272,7 +272,7 @@ pub(crate) fn resolved_profile_face_group(
     use cadmpeg_ir::features::ProfileRef;
 
     let selection =
-        resolved_historical_face_group(scope, scope.previous_history_state_id, group, operands)?;
+        resolved_historical_face_group(scope, scope.previous_history_state_id(), group, operands)?;
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
@@ -630,7 +630,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     {
         return None;
     }
-    let previous_state_id = scope.previous_history_state_id?;
+    let previous_state_id = scope.previous_history_state_id()?;
     let stream = native_stream(&group.id)?;
     let group_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
     let mut member_ids = HashSet::new();
@@ -642,7 +642,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     {
         return None;
     }
-    if scope.reference_members.values().nth(group_ordinal) != Some(&group.record_index) {
+    if scope.reference_members().values().nth(group_ordinal) != Some(&group.record_index) {
         return None;
     }
     let member_operands = group
@@ -656,7 +656,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
                 .checked_add(1)?
                 .checked_add(u32::try_from(ordinal).ok()?)?;
             if scope
-                .reference_members
+                .reference_members()
                 .values()
                 .nth(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
                 != Some(record_index)
@@ -853,7 +853,7 @@ fn historical_face_selection(
     group: &DesignConstructionOperandGroup,
     faces: Vec<i64>,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let previous_state_id = scope.previous_history_state_id?;
+    let previous_state_id = scope.previous_history_state_id()?;
     historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
 
@@ -2493,7 +2493,7 @@ mod tests {
 
         let selection = resolved_historical_split_face_target_group_with_updated_faces(
             &scope,
-            scope.previous_history_state_id,
+            scope.previous_history_state_id(),
             &group,
             &operands,
             &[10, 20, 30],
@@ -2522,7 +2522,7 @@ mod tests {
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
                 &scope,
-                scope.previous_history_state_id,
+                scope.previous_history_state_id(),
                 &group,
                 &operands,
                 &[10, 20]
@@ -2532,7 +2532,7 @@ mod tests {
         assert!(
             resolved_historical_split_face_target_group_with_updated_faces(
                 &scope,
-                scope.previous_history_state_id,
+                scope.previous_history_state_id(),
                 &group,
                 &operands,
                 &[10, 20, 40]

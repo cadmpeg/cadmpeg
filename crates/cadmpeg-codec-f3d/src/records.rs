@@ -4847,7 +4847,7 @@ impl DesignMeshScope {
             < crate::layout::paramesh_feature_scope_prefix::LEN as u64 + base_length
         {
             return Err(
-                "scope_record.frame_length must contain the prefix and closing base".into(),
+                "scope_record.frame_length() must contain the prefix and closing base".into(),
             );
         }
         if base_record.record_index() != record.record_index()

@@ -224,12 +224,12 @@ pub fn decode_parameter_scopes(
             ) else {
                 continue;
             };
-            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
+            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset());
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
-                let start = usize::try_from(scope.byte_offset).ok();
-                let end = usize::try_from(scope.paired_byte_offset).ok();
+                let start = usize::try_from(scope.byte_offset()).ok();
+                let end = usize::try_from(scope.paired_byte_offset()).ok();
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
@@ -259,25 +259,25 @@ pub fn decode_parameter_scopes(
                     }
                 }
                 if let [(entity, relative_offset)] = matches.as_slice() {
-                    if let crate::records::feature::DesignScopePayload::Sketch(slot)
-                    | crate::records::feature::DesignScopePayload::Esquisse(slot)
-                    | crate::records::feature::DesignScopePayload::Skizze(slot)
-                    | crate::records::feature::DesignScopePayload::Esboco(slot) =
-                        &mut scope.payload
+                    let entity_reference_offset =
+                        scope.byte_offset().saturating_add(*relative_offset as u64);
+                    if let crate::records::feature::DesignScopePayloadMut::Sketch(slot)
+                    | crate::records::feature::DesignScopePayloadMut::Esquisse(slot)
+                    | crate::records::feature::DesignScopePayloadMut::Skizze(slot)
+                    | crate::records::feature::DesignScopePayloadMut::Esboco(slot) =
+                        scope.payload_mut()
                     {
                         *slot = Some(crate::records::feature::DesignSketchEntityBinding {
                             entity_id: entity.entity_id.clone(),
-                            entity_reference_offset: scope
-                                .byte_offset
-                                .saturating_add(*relative_offset as u64),
+                            entity_reference_offset,
                         });
                     }
                 }
             }
             if scope.kind() == crate::records::feature::DesignFeatureKind::WorkPlane {
                 if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
-                    if let crate::records::feature::DesignScopePayload::WorkPlane(slot) =
-                        &mut scope.payload
+                    if let crate::records::feature::DesignScopePayloadMut::WorkPlane(slot) =
+                        scope.payload_mut()
                     {
                         *slot = Some(crate::records::feature::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
@@ -294,16 +294,16 @@ pub fn decode_parameter_scopes(
                 }
             }
             if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
-                if let crate::records::feature::DesignScopePayload::WorkAxis(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::WorkAxis(slot) =
+                    scope.payload_mut()
                 {
                     *slot = Some(construction);
                 }
             }
             if scope.kind() == crate::records::feature::DesignFeatureKind::JointOrigin {
                 if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
-                    if let crate::records::feature::DesignScopePayload::JointOrigin(slot) =
-                        &mut scope.payload
+                    if let crate::records::feature::DesignScopePayloadMut::JointOrigin(slot) =
+                        scope.payload_mut()
                     {
                         *slot = Some(crate::records::feature::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
@@ -321,23 +321,24 @@ pub fn decode_parameter_scopes(
             {
                 let construction =
                     exact_work_point_construction(bytes, &records, &scope, &stream_types);
-                if let crate::records::feature::DesignScopePayload::WorkPoint(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_hole_construction(bytes, &records, &scope, &stream_types);
-                if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Hole(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             if let Some(placement) = exact_coil_placement(bytes, &records, &scope, recipes) {
-                if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-                | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+                | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) =
+                    scope.payload_mut()
                 {
                     slot.get_or_insert_with(Default::default).coil_placement = Some(placement);
                 }
@@ -345,25 +346,29 @@ pub fn decode_parameter_scopes(
             if let Some(construction) =
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners)
             {
-                scope.payload = construction.into();
+                scope
+                    .try_edit(|draft| {
+                        draft.payload = construction.into();
+                    })
+                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             }
             {
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
-                match (&mut scope.payload, construction) {
+                match (scope.payload_mut(), construction) {
                     (
-                        crate::records::feature::DesignScopePayload::OffsetFaces(slot)
-                        | crate::records::feature::DesignScopePayload::DecalerLesFaces(slot),
+                        crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
+                        | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
                         Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(
                             value,
                         )),
                     ) => *slot = Some(value),
                     (
-                        crate::records::feature::DesignScopePayload::Shell(slot)
-                        | crate::records::feature::DesignScopePayload::Schale(slot),
+                        crate::records::feature::DesignScopePayloadMut::Shell(slot)
+                        | crate::records::feature::DesignScopePayloadMut::Schale(slot),
                         Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
                     ) => *slot = Some(value),
                     (
-                        crate::records::feature::DesignScopePayload::Thicken(slot),
+                        crate::records::feature::DesignScopePayloadMut::Thicken(slot),
                         Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
                     ) => *slot = Some(value),
                     _ => {}
@@ -371,32 +376,33 @@ pub fn decode_parameter_scopes(
             }
             {
                 let construction = exact_move_operation(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::Move(slot) = &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Move(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_scale_operation(bytes, &records, &scope, &stream_types);
-                if let crate::records::feature::DesignScopePayload::Scale(slot)
-                | crate::records::feature::DesignScopePayload::Massstab(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Scale(slot)
+                | crate::records::feature::DesignScopePayloadMut::Massstab(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_surface_extend_operation(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::SurfaceExtend(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_surface_offset_operation(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::SurfaceOffset(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::SurfaceOffset(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -410,10 +416,10 @@ pub fn decode_parameter_scopes(
             ) {
                 {
                     let value = Some(parameters);
-                    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-                    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-                    | crate::records::feature::DesignScopePayload::Extrusao(slot) =
-                        &mut scope.payload
+                    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+                    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+                    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+                        scope.payload_mut()
                     {
                         slot.get_or_insert_with(Default::default)
                             .fixed_extrude_parameters = value;
@@ -422,11 +428,11 @@ pub fn decode_parameter_scopes(
             }
             {
                 let construction = exact_fixed_fillet_parameters(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::Fillet(slot)
-                | crate::records::feature::DesignScopePayload::Conge(slot)
-                | crate::records::feature::DesignScopePayload::Abrundung(slot)
-                | crate::records::feature::DesignScopePayload::Arredondamento(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Fillet(slot)
+                | crate::records::feature::DesignScopePayloadMut::Conge(slot)
+                | crate::records::feature::DesignScopePayloadMut::Abrundung(slot)
+                | crate::records::feature::DesignScopePayloadMut::Arredondamento(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -434,9 +440,9 @@ pub fn decode_parameter_scopes(
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-                if let crate::records::feature::DesignScopePayload::Chamfer(slot)
-                | crate::records::feature::DesignScopePayload::Chanfrein(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Chamfer(slot)
+                | crate::records::feature::DesignScopePayloadMut::Chanfrein(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -444,20 +450,24 @@ pub fn decode_parameter_scopes(
             if let Some(construction) =
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
             {
-                scope.payload = construction.into();
+                scope
+                    .try_edit(|draft| {
+                        draft.payload = construction.into();
+                    })
+                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             }
             {
                 let construction = exact_combine_operation(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::Combine(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Combine(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_thread_construction(bytes, &scope);
-                if let crate::records::feature::DesignScopePayload::Thread(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Thread(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -465,7 +475,8 @@ pub fn decode_parameter_scopes(
             {
                 let construction =
                     exact_draft_operation_with_owners(bytes, &records, &scope, parameter_owners);
-                if let crate::records::feature::DesignScopePayload::Draft(slot) = &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Draft(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -477,9 +488,10 @@ pub fn decode_parameter_scopes(
                     &scope,
                     parameter_owners,
                 );
-                if let crate::records::feature::DesignScopePayload::CPattern(slot)
-                | crate::records::feature::DesignScopePayload::CircularPattern(slot)
-                | crate::records::feature::DesignScopePayload::ReseauC(slot) = &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::CPattern(slot)
+                | crate::records::feature::DesignScopePayloadMut::CircularPattern(slot)
+                | crate::records::feature::DesignScopePayloadMut::ReseauC(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -491,9 +503,9 @@ pub fn decode_parameter_scopes(
                     &scope,
                     parameter_owners,
                 );
-                if let crate::records::feature::DesignScopePayload::RPattern(slot)
-                | crate::records::feature::DesignScopePayload::RectangularPattern(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::RPattern(slot)
+                | crate::records::feature::DesignScopePayloadMut::RectangularPattern(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -501,8 +513,9 @@ pub fn decode_parameter_scopes(
             {
                 let construction =
                     exact_assembly_alignment(bytes, &records, &scope, parameter_owners);
-                if let crate::records::feature::DesignScopePayload::Assemble(slot)
-                | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
+                | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -537,8 +550,8 @@ pub fn decode_parameter_scopes(
             }
             {
                 let construction = exact_component_insert_construction(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::ComponentInsert(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::ComponentInsert(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -550,8 +563,8 @@ pub fn decode_parameter_scopes(
                     &scope,
                     component_occurrences,
                 );
-                if let crate::records::feature::DesignScopePayload::DerivedInstance(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::DerivedInstance(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -563,8 +576,8 @@ pub fn decode_parameter_scopes(
                     &scope,
                     component_occurrences,
                 );
-                if let crate::records::feature::DesignScopePayload::CopyPaste(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -572,16 +585,16 @@ pub fn decode_parameter_scopes(
             bind_component_pattern_occurrences(&mut scope, component_occurrences);
             {
                 let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
-                if let crate::records::feature::DesignScopePayload::CopyPasteBodies(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::CopyPasteBodies(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_base_feature_construction(bytes, &scope);
-                if let crate::records::feature::DesignScopePayload::BaseFeature(slot) =
-                    &mut scope.payload
+                if let crate::records::feature::DesignScopePayloadMut::BaseFeature(slot) =
+                    scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -625,7 +638,7 @@ pub(crate) fn admit_history_bound_scope_variants(
             .copied()
             .filter(|index| {
                 let scope = &scopes[*index];
-                let Some(state_id) = scope.history_state_id else {
+                let Some(state_id) = scope.history_state_id() else {
                     return false;
                 };
                 let Some(previous_state_id) =
@@ -647,7 +660,7 @@ pub(crate) fn admit_history_bound_scope_variants(
             [keep] => *keep,
             [] if equivalent_payload => *indices
                 .iter()
-                .max_by_key(|index| scopes[**index].byte_offset)
+                .max_by_key(|index| scopes[**index].byte_offset())
                 .expect("equivalent duplicate scope group is non-empty"),
             _ => {
                 return Err(CodecError::Malformed(
@@ -727,19 +740,19 @@ pub(crate) fn exact_thread_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if scope.kind() != crate::records::feature::DesignFeatureKind::Thread
-        || scope.reference_members.len() < 2
-        || !scope.reference_members.len().is_multiple_of(2)
+        || scope.reference_members().len() < 2
+        || !scope.reference_members().len().is_multiple_of(2)
     {
         return None;
     }
     let (prefix_form, designation_delta) = exact_thread_prefix(bytes.get(start..)?)?;
     let designation_at = start.checked_add(designation_delta)?;
     let face_group_record_indices = match prefix_form {
-        ThreadPrefix::Standard => vec![*scope.reference_members.values().next()?],
+        ThreadPrefix::Standard => vec![*scope.reference_members().values().next()?],
         ThreadPrefix::Compact => scope
-            .reference_members
+            .reference_members()
             .values()
             .step_by(2)
             .copied()
@@ -962,8 +975,8 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
                     }
                 }),
             });
-            if let crate::records::feature::DesignScopePayload::JointOrigin(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::JointOrigin(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -1009,7 +1022,7 @@ pub(crate) fn bind_axial_assembly_operand_targets(
         .iter()
         .enumerate()
         .filter_map(|(ordinal, scope)| {
-            if !matches!(scope.frame_length, 705 | 772) {
+            if !matches!(scope.frame_length(), 705 | 772) {
                 return None;
             }
             let alignment = scope.assembly_alignment()?;
@@ -1123,9 +1136,9 @@ fn exact_assembly_axial_component_operand(
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Option<AxialComponentOperand> {
-    if !matches!(scope.frame_length, 705 | 772)
+    if !matches!(scope.frame_length(), 705 | 772)
         || scope
-            .reference_members
+            .reference_members()
             .values()
             .filter(|record_index| **record_index == frame.reference_record_index)
             .count()
@@ -1133,7 +1146,7 @@ fn exact_assembly_axial_component_operand(
     {
         return None;
     }
-    let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
+    let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
     let mut candidates = records
         .offsets(frame.reference_record_index)
         .iter()
@@ -1185,15 +1198,15 @@ fn exact_assembly_axial_component_operand_at(
         [second_axis_record_index, second_selector_record_index],
     ] {
         if scope
-            .reference_members
+            .reference_members()
             .values()
-            .zip(scope.reference_members.values().skip(1))
+            .zip(scope.reference_members().values().skip(1))
             .filter(|(first, second)| [**first, **second] == pair)
             .count()
             != 1
             || pair.iter().any(|record_index| {
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .filter(|member| *member == record_index)
                     .count()
@@ -1203,7 +1216,7 @@ fn exact_assembly_axial_component_operand_at(
             return None;
         }
     }
-    let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
+    let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
     let first_axis = exact_paired_indexed_record_between(
         bytes,
         records,
@@ -1434,12 +1447,12 @@ fn exact_single_joint_origin_frame(
     if scope.kind() != crate::records::feature::DesignFeatureKind::Assemble
         || scope.class_tag.as_str() != "276"
         || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length != 604
+        || scope.frame_length() != 604
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    if usize::try_from(scope.paired_byte_offset).ok()? != start.checked_add(604)?
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if usize::try_from(scope.paired_byte_offset()).ok()? != start.checked_add(604)?
         || bytes.get(start + 11..start + 24)? != [0; 13]
         || bytes.get(start + 29..start + 36)? != [0; 7]
         || bytes.get(start + 169..start + 175)? != [0; 6]
@@ -1537,8 +1550,8 @@ fn exact_surface_offset_face_groups(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
         return None;
     }
-    let distance_record_index = scope.reference_members.values().next()?;
-    let support_reference_count = scope.reference_members.len() - 1;
+    let distance_record_index = scope.reference_members().values().next()?;
+    let support_reference_count = scope.reference_members().len() - 1;
     if support_reference_count == 0 {
         return None;
     }
@@ -1550,7 +1563,7 @@ fn exact_surface_offset_face_groups(
     let mut group_record_indices = Vec::new();
     let mut covered_references = HashSet::new();
     for (scope_reference_ordinal, record_index) in scope
-        .reference_members
+        .reference_members()
         .values()
         .copied()
         .enumerate()
@@ -1576,7 +1589,7 @@ fn exact_surface_offset_face_groups(
         for member in group.members().iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .skip(1)
                     .any(|value| value == member)
@@ -1656,7 +1669,7 @@ fn exact_surface_boundary_operation(
     if design_feature_family(&scope.kind()) != Some(family) {
         return None;
     }
-    let mut references = scope.reference_members.values();
+    let mut references = scope.reference_members().values();
     let distance_record_index = references.next()?;
     let boundary_record_index = references.next()?;
     let edge_record_indices = references;
@@ -1808,18 +1821,18 @@ pub(crate) fn exact_assembly_alignment(
         return None;
     }
     let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )
     .is_some();
     let legacy_class_383 = crate::design::assembly::legacy_class_383_258_scope(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
     let generation = crate::design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
@@ -1851,7 +1864,7 @@ pub(crate) fn exact_assembly_alignment(
         .ok();
     }
     let (angle, offset, owners) = {
-        if matches!(scope.frame_length, 671 | 744 | 748)
+        if matches!(scope.frame_length(), 671 | 744 | 748)
             && generation.operand_frame_variant().is_none()
         {
             return None;
@@ -1885,7 +1898,7 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal)
+                    scope.reference_members().values().nth(scope_ordinal)
                         == Some(&owner.record_index())
                 });
             if lanes
@@ -1893,7 +1906,7 @@ pub(crate) fn exact_assembly_alignment(
                 .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .skip(4)
                     .take(4)
@@ -1906,7 +1919,7 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal)
+                    scope.reference_members().values().nth(scope_ordinal)
                         == Some(&owner.record_index())
                 });
             if lanes
@@ -1914,7 +1927,7 @@ pub(crate) fn exact_assembly_alignment(
                 .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .skip(8)
                     .take(4)
@@ -1929,10 +1942,10 @@ pub(crate) fn exact_assembly_alignment(
             if lanes
                 .iter()
                 .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
-                || (0..scope.reference_members.len())
+                || (0..scope.reference_members().len())
                     .filter(|&start| {
                         scope
-                            .reference_members
+                            .reference_members()
                             .values_in(start..start + owners.len())
                             .is_some_and(|values| {
                                 values.eq(owners.iter().map(|owner| &owner.value))
@@ -1944,7 +1957,7 @@ pub(crate) fn exact_assembly_alignment(
                 return None;
             }
         } else if !scope
-            .reference_members
+            .reference_members()
             .values()
             .rev()
             .take(owners.len())
@@ -2009,12 +2022,12 @@ pub(crate) fn exact_derived_instance_construction(
     if scope.kind() != crate::records::feature::DesignFeatureKind::DerivedInstance
         || scope.class_tag.as_str() != "279"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length != derived_instance_279_261::LEN as u64
-        || scope.reference_members.len() != 1
+        || scope.frame_length() != derived_instance_279_261::LEN as u64
+        || scope.reference_members().len() != 1
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if bytes.get(
         start + derived_instance_279_261::REFERENCE_MARKER
             ..start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
@@ -2026,7 +2039,7 @@ pub(crate) fn exact_derived_instance_construction(
         || View::u32_le_at(bytes, start + derived_instance_279_261::REFERENCE_COUNT)?
             != derived_instance_279_261::REFERENCE_COUNT_VALUE
         || marked_record_reference(bytes, start + derived_instance_279_261::RELATION_REFERENCE)?
-            != *scope.reference_members.values().next()?
+            != *scope.reference_members().values().next()?
         || bytes.get(start + derived_instance_279_261::RELATION_REFERENCE + 11) != Some(&0)
     {
         return None;
@@ -2038,7 +2051,7 @@ pub(crate) fn exact_derived_instance_construction(
     let transform_offset = start + derived_instance_279_261::TRANSFORM;
     let transform = rigid_transform_at(bytes, transform_offset)?;
 
-    let relation_record_index = *scope.reference_members.values().next()?;
+    let relation_record_index = *scope.reference_members().values().next()?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
     let (relation_kind, _) = lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
     if relation_at >= start
@@ -2108,15 +2121,15 @@ pub(crate) fn exact_component_insert_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignComponentInsertConstruction> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    let relation_record_index = *scope.reference_members.values().next()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let relation_record_index = *scope.reference_members().values().next()?;
     if scope.kind() != crate::records::feature::DesignFeatureKind::ComponentInsert
-        || scope.reference_members.len() != 1
+        || scope.reference_members().len() != 1
     {
         return None;
     }
     let (transform, transform_at, occurrence_identity) =
-        match (scope.frame_length, scope.paired_class_tag.as_str()) {
+        match (scope.frame_length(), scope.paired_class_tag.as_str()) {
             (399, "259")
                 if bytes.get(start + 11..start + 20)? == [0; 9]
                     && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
@@ -2220,7 +2233,7 @@ pub(crate) fn exact_component_insert_construction(
             _ => return None,
         };
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
-    let (carrier_record_index, placements) = if scope.frame_length == 404 {
+    let (carrier_record_index, placements) = if scope.frame_length() == 404 {
         if relation_at >= start
             || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
             || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
@@ -2346,7 +2359,7 @@ pub(crate) fn exact_component_insert_construction(
                     placements.push((role, at + 4, Some(transform_at)));
                 }
             }
-            if scope.frame_length == 381 {
+            if scope.frame_length() == 381 {
                 placements.extend(legacy_component_insert_placements(
                     bytes,
                     carrier_at,
@@ -2854,16 +2867,16 @@ fn exact_copy_paste_component_operation(
     occurrences: &[DesignComponentOccurrence],
 ) -> Option<DesignCopyPasteComponentOperation> {
     let stream = native_stream(&scope.id)?;
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    let relation_record_index = *scope.reference_members.values().next()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let relation_record_index = *scope.reference_members().values().next()?;
     // The compact frame omits one four-byte prologue field, so both placements
     // and every marked reference before them move four bytes earlier.
-    let source_at = match (scope.kind_name(), scope.frame_length) {
+    let source_at = match (scope.kind_name(), scope.frame_length()) {
         ("CopyPaste", 529) => 38,
         ("CopyPaste", 525) => 34,
         _ => return None,
     };
-    if scope.reference_members.len() != 1 {
+    if scope.reference_members().len() != 1 {
         return None;
     }
     let source_transform = rigid_transform_at(bytes, start + source_at)?;
@@ -2931,7 +2944,7 @@ fn bind_component_pattern_occurrences(
     let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
         return;
     };
-    let byte_offset = scope.byte_offset;
+    let byte_offset = scope.byte_offset();
     let Some(instances) = scope
         .rectangular_pattern_construction_mut()
         .and_then(|construction| construction.instances.as_mut())
@@ -3035,9 +3048,9 @@ fn exact_assembly_operand_frames(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )
@@ -3073,8 +3086,8 @@ fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
         crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
     };
-    if usize::try_from(scope.paired_byte_offset).ok()?
-        != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
+    if usize::try_from(scope.paired_byte_offset()).ok()?
+        != start.checked_add(usize::try_from(scope.frame_length()).ok()?)?
         || bytes.get(start + 11..start + 20)? != [0; 9]
     {
         return None;
@@ -3101,7 +3114,7 @@ fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
-        let standard_tail_marker_offset = if scope.frame_length == class_383_scope::LEN as u64
+        let standard_tail_marker_offset = if scope.frame_length() == class_383_scope::LEN as u64
             && scope.class_tag.as_str() == "383"
             && scope.paired_class_tag.as_str() == "258"
         {
@@ -3167,13 +3180,13 @@ fn exact_assembly_operand_frames(
 fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> Option<()> {
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
-        || scope.frame_length != class_388_assemble::LEN as u64
-        || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+        || scope.frame_length() != class_388_assemble::LEN as u64
+        || scope.reference_members().len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    let paired = usize::try_from(scope.paired_byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset()).ok()?;
     let zero_prefix = bytes.get(start + 11..start + class_388_assemble::SCOPE_FLAGS)?;
     let scope_flags = bytes.get(
         start + class_388_assemble::SCOPE_FLAGS..start + class_388_assemble::SCOPE_FLAGS + 6,
@@ -3261,7 +3274,7 @@ fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> O
     {
         return None;
     }
-    for (ordinal, record_index) in scope.reference_members.values().enumerate() {
+    for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         let at = start
             .checked_add(class_388_assemble::REFERENCE_ENTRIES)?
             .checked_add(ordinal.checked_mul(ASSEMBLY_MARKED_REFERENCE_LEN)?)?;
@@ -3332,10 +3345,10 @@ fn exact_legacy_class_383_operand_paths(
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !crate::design::assembly::legacy_class_383_258_scope(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    ) || scope.reference_members.len() != 38
+    ) || scope.reference_members().len() != 38
     {
         return None;
     }
@@ -3357,7 +3370,7 @@ fn exact_legacy_class_383_operand_path(
     frame: &DesignAssemblyOperandFrame,
     spec: LegacyClass383OperandSpec,
 ) -> Option<DesignAssemblyOperandPath> {
-    let member = |ordinal| scope.reference_members.values().nth(ordinal).copied();
+    let member = |ordinal| scope.reference_members().values().nth(ordinal).copied();
     let leading_record_index = member(spec.leading_ordinal)?;
     let leading_identity_record_index = member(spec.leading_identity_ordinal)?;
     let child_record_index = member(spec.child_ordinal)?;
@@ -3552,7 +3565,7 @@ fn exact_legacy_class_383_operand_path(
             return None;
         }
     }
-    let scope_at = usize::try_from(scope.byte_offset).ok()?;
+    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
     let locator_reference_at = scope_at.checked_add(spec.scope_operand_reference_offset)?;
     let (locator_record_index, locator_reference_offset) =
         exact_same_segment_record_reference(bytes, locator_reference_at)?;
@@ -3659,18 +3672,18 @@ fn exact_legacy_class_388_operand_paths(
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !matches!(
         crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length,
+            scope.frame_length(),
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str()
         )
         .operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
-    ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+    ) || scope.reference_members().len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
         return None;
     }
-    let scope_at = usize::try_from(scope.byte_offset).ok()?;
-    let search_start = usize::try_from(scope.paired_byte_offset)
+    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+    let search_start = usize::try_from(scope.paired_byte_offset())
         .ok()?
         .checked_add(11)?;
     let locator_offsets = [
@@ -3968,12 +3981,12 @@ fn exact_assembly_operand_paths(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
-    let scope_at = usize::try_from(scope.byte_offset).ok()?;
-    let search_start = usize::try_from(scope.paired_byte_offset)
+    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
+    let search_start = usize::try_from(scope.paired_byte_offset())
         .ok()?
         .checked_add(11)?;
     let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )
@@ -4416,9 +4429,9 @@ fn exact_rectangular_pattern_instances(
     };
     let count = usize::try_from(*count).ok()?;
     if count > 4_096
-        || scope.reference_members.len() != count.checked_add(6)?
+        || scope.reference_members().len() != count.checked_add(6)?
         || !scope
-            .reference_members
+            .reference_members()
             .values()
             .skip(1)
             .take(4)
@@ -4427,15 +4440,15 @@ fn exact_rectangular_pattern_instances(
         return None;
     }
     let mut record_indices = Vec::with_capacity(count);
-    record_indices.push(*scope.reference_members.values().next()?);
+    record_indices.push(*scope.reference_members().values().next()?);
     record_indices.extend(
         scope
-            .reference_members
+            .reference_members()
             .values_in(6..count.checked_add(5)?)?
             .copied(),
     );
     let reference_starts = scope
-        .reference_members
+        .reference_members()
         .values()
         .map(|record_index| {
             records
@@ -4604,9 +4617,9 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     }
     let mut axis_candidates = Vec::new();
     for (record_index, selection_record_index) in scope
-        .reference_members
+        .reference_members()
         .values()
-        .zip(scope.reference_members.values().skip(1))
+        .zip(scope.reference_members().values().skip(1))
     {
         for (start, paired_at) in records.frames(*record_index) {
             if let Some((origin, direction)) = exact_circular_pattern_axis(
@@ -4630,7 +4643,7 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
             }
         }
     }
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         for (start, paired_at) in records.frames(*record_index) {
             if let Some((axis, selection_record_index)) = exact_legacy_circular_pattern_axis(
                 bytes,
@@ -4672,10 +4685,15 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     });
     let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
     if count_candidates.is_empty() {
-        count_candidates.extend(scope.reference_members.values().filter_map(|record_index| {
-            exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
-                .map(|(count, count_offset)| (count, *record_index, count_offset))
-        }));
+        count_candidates.extend(
+            scope
+                .reference_members()
+                .values()
+                .filter_map(|record_index| {
+                    exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
+                        .map(|(count, count_offset)| (count, *record_index, count_offset))
+                }),
+        );
     }
     count_candidates.sort_unstable();
     count_candidates.dedup();
@@ -4696,13 +4714,18 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     });
     let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
     if angle_candidates.is_empty() {
-        angle_candidates.extend(scope.reference_members.values().filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index)
-                && scalar.ordinal == 1
-                && scalar.value > 0.0)
-                .then_some((scalar.value, *record_index, scalar.value_offset))
-        }));
+        angle_candidates.extend(
+            scope
+                .reference_members()
+                .values()
+                .filter_map(|record_index| {
+                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
+                    (scalar.owner_record_index == Some(scope.record_index)
+                        && scalar.ordinal == 1
+                        && scalar.value > 0.0)
+                        .then_some((scalar.value, *record_index, scalar.value_offset))
+                }),
+        );
     }
     angle_candidates.sort_by(|left, right| {
         left.0
@@ -4814,7 +4837,7 @@ fn exact_legacy_circular_pattern_axis(
     }
     let selection_record_index = marked_record_reference(bytes, selection_at)?;
     if !scope
-        .reference_members
+        .reference_members()
         .values()
         .any(|value| value == &selection_record_index)
         || bytes.get(selection_at + 5..selection_at + 11) != Some(&[0; 6])
@@ -4945,7 +4968,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return None;
     }
-    let count_record_index = *scope.reference_members.values().nth(3)?;
+    let count_record_index = *scope.reference_members().values().nth(3)?;
     let [start, paired] = records.offsets(count_record_index) else {
         return None;
     };
@@ -5059,17 +5082,17 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         _ => return None,
     };
     let kind_code_units = scope.kind_name().encode_utf16().count();
-    let kind_end = usize::try_from(scope.kind_offset)
+    let kind_end = usize::try_from(scope.kind_offset())
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
-    let previous = usize::try_from(scope.previous_history_state_id_offset?).ok()?;
+    let previous = usize::try_from(scope.previous_history_state_id_offset()?).ok()?;
     if previous != kind_end.checked_add(previous_state)? {
         return None;
     }
-    let paired = usize::try_from(scope.paired_byte_offset).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset()).ok()?;
     if paired != kind_end.checked_add(tail_length)?
-        || paired.checked_sub(usize::try_from(scope.byte_offset).ok()?)?
-            != usize::try_from(scope.frame_length).ok()?
+        || paired.checked_sub(usize::try_from(scope.byte_offset()).ok()?)?
+            != usize::try_from(scope.frame_length()).ok()?
     {
         return None;
     }
@@ -5329,9 +5352,9 @@ pub fn bind_mirror_constructions(
                 plane_selection_record_index,
                 plane: None,
             });
-            if let crate::records::feature::DesignScopePayload::Mirror(slot)
-            | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) =
-                &mut scopes[index].payload
+            if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
+            | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) =
+                scopes[index].payload_mut()
             {
                 *slot = construction;
             }
@@ -5513,17 +5536,17 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     scope: &DesignParameterScope,
 ) -> Option<DesignCopyPasteBodiesOperation> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::CopyPasteBodies
-        || scope.reference_members.len() < 2
+        || scope.reference_members().len() < 2
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let body_group_record_index = marked_record_reference(bytes, start + 29)?;
     let relation_record_index = marked_record_reference(bytes, start + 40)?;
-    if *scope.reference_members.values().next()? != body_group_record_index {
+    if *scope.reference_members().values().next()? != body_group_record_index {
         return None;
     }
-    let search_at = usize::try_from(scope.paired_byte_offset)
+    let search_at = usize::try_from(scope.paired_byte_offset())
         .ok()?
         .checked_add(1)?;
     let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
@@ -5535,12 +5558,12 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     }
     let body_group_count_at = body_group_after_index.checked_add(10)?;
     let body_group_count = usize::try_from(View::u32_le_at(bytes, body_group_count_at)?).ok()?;
-    if body_group_count != scope.reference_members.len().checked_sub(1)? {
+    if body_group_count != scope.reference_members().len().checked_sub(1)? {
         return None;
     }
     let mut operands = Vec::with_capacity(body_group_count);
     let mut body_group_cursor = body_group_count_at.checked_add(4)?;
-    for expected in scope.reference_members.values().skip(1) {
+    for expected in scope.reference_members().values().skip(1) {
         let actual = marked_record_reference(bytes, body_group_cursor)?;
         if actual != *expected {
             return None;
@@ -5563,7 +5586,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         return None;
     }
     let reference_count = usize::try_from(View::u32_le_at(bytes, count_at + 1)?).ok()?;
-    let body_count = scope.reference_members.len().checked_sub(1)?;
+    let body_count = scope.reference_members().len().checked_sub(1)?;
     if reference_count != body_count.checked_mul(2)? {
         return None;
     }
@@ -5625,12 +5648,15 @@ pub(crate) fn exact_base_feature_construction(
     {
         return Some(body_based_on_faces);
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    if scope.frame_length == 267 {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if scope.frame_length() == 267 {
         return Some(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
-            metadata_record: View::u32_le_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
-            metadata_record_offset: scope.byte_offset + 37,
+            metadata_record: View::u32_le_at(
+                bytes,
+                usize::try_from(scope.byte_offset()).ok()? + 37,
+            )?,
+            metadata_record_offset: scope.byte_offset() + 37,
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
         });
     }
@@ -5642,8 +5668,9 @@ pub(crate) fn exact_base_feature_construction(
         scope.class_tag.as_str() == "409" && scope.paired_class_tag.as_str() == "262";
     let legacy_444_263 =
         scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
-    if legacy_409_262 && scope.frame_length == 258 {
-        if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset) {
+    if legacy_409_262 && scope.frame_length() == 258 {
+        if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        {
             return None;
         }
         let metadata_record = u32::try_from(View::u64_le_at(
@@ -5661,14 +5688,16 @@ pub(crate) fn exact_base_feature_construction(
             )? != [0; 11]
             || bytes.get(start + legacy_zero_body::SHARED_METADATA_MARKER) != Some(&1)
             || !scope
-                .reference_members
+                .reference_members()
                 .values()
                 .copied()
                 .eq([metadata_record])
         {
             return None;
         }
-        let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
+        let uuid_offset = usize::try_from(scope.kind_offset())
+            .ok()?
+            .checked_sub(102)?;
         if uuid_offset < start + legacy_zero_body::ZERO_PADDING_8 {
             return None;
         }
@@ -5682,7 +5711,7 @@ pub(crate) fn exact_base_feature_construction(
         return Some(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
-            metadata_record_offset: scope.byte_offset
+            metadata_record_offset: scope.byte_offset()
                 + u64::try_from(legacy_zero_body::SHARED_METADATA_RECORD).ok()?,
             metadata_field: bytes
                 .get(
@@ -5692,19 +5721,21 @@ pub(crate) fn exact_base_feature_construction(
                 .to_vec(),
         });
     }
-    if legacy_444_263 && scope.frame_length == 258 {
-        if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset)
-            || scope.reference_members.len() != 1
-            || scope.reference_count_offset
-                != scope.byte_offset + u64::try_from(legacy_444_zero_body::REFERENCE_COUNT).ok()?
+    if legacy_444_263 && scope.frame_length() == 258 {
+        if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+            || scope.reference_members().len() != 1
+            || scope.reference_count_offset()
+                != scope.byte_offset()
+                    + u64::try_from(legacy_444_zero_body::REFERENCE_COUNT).ok()?
             || !scope
-                .reference_members
+                .reference_members()
                 .offsets()
                 .copied()
-                .eq([scope.byte_offset
+                .eq([scope.byte_offset()
                     + u64::try_from(legacy_444_zero_body::SCOPE_REFERENCE_RECORD).ok()?])
-            || scope.kind_offset
-                != scope.byte_offset + u64::try_from(legacy_444_zero_body::KIND_LENGTH + 4).ok()?
+            || scope.kind_offset()
+                != scope.byte_offset()
+                    + u64::try_from(legacy_444_zero_body::KIND_LENGTH + 4).ok()?
         {
             return None;
         }
@@ -5733,7 +5764,7 @@ pub(crate) fn exact_base_feature_construction(
             || bytes.get(start + legacy_444_zero_body::SHARED_METADATA_MARKER)
                 != Some(&legacy_444_zero_body::SHARED_METADATA_MARKER_VALUE)
             || !scope
-                .reference_members
+                .reference_members()
                 .values()
                 .copied()
                 .eq([metadata_record])
@@ -5765,7 +5796,7 @@ pub(crate) fn exact_base_feature_construction(
         return Some(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
-            metadata_record_offset: scope.byte_offset
+            metadata_record_offset: scope.byte_offset()
                 + u64::try_from(legacy_444_zero_body::SHARED_METADATA_RECORD).ok()?,
             metadata_field: bytes
                 .get(
@@ -5806,7 +5837,7 @@ pub(crate) fn exact_base_feature_construction(
     } else {
         271
     };
-    if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
+    if scope.frame_length() != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
     let mut cursor = start + result_body::LEN;
@@ -5948,7 +5979,9 @@ pub(crate) fn exact_base_feature_construction(
         ));
         cursor += 11;
     }
-    let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
+    let uuid_offset = usize::try_from(scope.kind_offset())
+        .ok()?
+        .checked_sub(102)?;
     let admitted = cursor <= uuid_offset
         && bytes
             .get(cursor..uuid_offset)
@@ -5975,18 +6008,18 @@ fn exact_base_feature_body_snapshot(
     const FIXED_FRAME_LENGTH: u64 = 431;
     if scope.class_tag.as_str() != "314"
         || scope.paired_class_tag.as_str() != "259"
-        || scope.reference_members.len() != 1
+        || scope.reference_members().len() != 1
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let body_count = usize::try_from(View::u32_le_at(bytes, start + snapshot::BODY_COUNT)?).ok()?;
     let kind_width = scope.kind_name().encode_utf16().count().checked_mul(2)?;
     let expected_frame_length = FIXED_FRAME_LENGTH
         .checked_add(u64::try_from(body_count.checked_mul(snapshot_entry::LEN)?).ok()?)?
         .checked_add(u64::try_from(kind_width).ok()?)?;
     if !(1..=200_000).contains(&body_count)
-        || scope.frame_length != expected_frame_length
+        || scope.frame_length() != expected_frame_length
         || bytes.get(start + snapshot::ZERO_RUN_8..start + snapshot::BODY_COUNT_MARKER)? != [0; 8]
         || bytes.get(start + snapshot::BODY_COUNT_MARKER) != Some(&1)
     {
@@ -6056,7 +6089,7 @@ fn exact_base_feature_body_snapshot(
         after_guids + snapshot_tail::LINKAGE_RECORD,
     )?)
     .ok()?;
-    if linkage_record != *scope.reference_members.values().next()?
+    if linkage_record != *scope.reference_members().values().next()?
         || bytes.get(
             after_guids + snapshot_tail::ZERO_RUN_6..after_guids + snapshot_tail::RELATION_COUNT,
         )? != [0; 6]
@@ -6090,16 +6123,16 @@ fn exact_base_feature_body_snapshot(
         || View::u32_le_at(bytes, reference_count_at)? != 1
         || bytes.get(reference_marker) != Some(&1)
         || View::u32_le_at(bytes, reference_marker + 1)?
-            != *scope.reference_members.values().next()?
+            != *scope.reference_members().values().next()?
         || bytes.get(reference_marker + 5..state_at)? != [0; 6]
-        || scope.reference_count_offset != u64::try_from(reference_count_at).ok()?
-        || scope.reference_members.offsets().next().copied()
+        || scope.reference_count_offset() != u64::try_from(reference_count_at).ok()?
+        || scope.reference_members().offsets().next().copied()
             != Some(u64::try_from(reference_marker + 1).ok()?)
-        || scope.kind_offset != u64::try_from(kind_at + 4).ok()?
+        || scope.kind_offset() != u64::try_from(kind_at + 4).ok()?
     {
         return None;
     }
-    match scope.history_state_id {
+    match scope.history_state_id() {
         Some(history_state_id)
             if View::u32_le_at(bytes, state_at)? != u32::try_from(history_state_id).ok()? =>
         {
@@ -6111,14 +6144,14 @@ fn exact_base_feature_body_snapshot(
     let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
     if kind != scope.kind_name()
         || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal.get()
-        || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
-        || scope.previous_history_state_id.is_some()
-        || scope.previous_history_state_id_offset.is_some()
+        || scope.feature_ordinal_offset() != u64::try_from(kind_end).ok()?
+        || scope.previous_history_state_id().is_some()
+        || scope.previous_history_state_id_offset().is_some()
     {
         return None;
     }
-    if scope.paired_byte_offset
-        != u64::try_from(start.checked_add(usize::try_from(scope.frame_length).ok()?)?).ok()?
+    if scope.paired_byte_offset()
+        != u64::try_from(start.checked_add(usize::try_from(scope.frame_length()).ok()?)?).ok()?
     {
         return None;
     }
@@ -6211,7 +6244,7 @@ fn exact_pipe_owner_lanes(
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
                 && scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .any(|value| value == &owner.record_index())
                 && owner.class_tag().as_str() == "342"
@@ -6255,18 +6288,18 @@ fn exact_legacy_thicken_class_347(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "347"
         || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length != u64::try_from(thicken_347::LEN).ok()?
-        || scope.reference_members.len() != 3
+        || scope.frame_length() != u64::try_from(thicken_347::LEN).ok()?
+        || scope.reference_members().len() != 3
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if bytes.get(start + thicken_347::ZERO_RUN_10..start + thicken_347::FEATURE_FORM)
         != Some(&[0; 10])
         || View::u32_le_at(bytes, start + thicken_347::FEATURE_FORM)? != 4
         || View::u32_le_at(bytes, start + thicken_347::GROUP_FORM)? != 1
         || marked_record_reference(bytes, start + thicken_347::GROUP_REFERENCE)?
-            != scope.reference_members.values().next().copied()?
+            != scope.reference_members().values().next().copied()?
         || bytes.get(start + thicken_347::SCALAR_PREFIX..start + thicken_347::SCALAR_REFERENCE)
             != Some(&[1, 1])
         || View::u32_le_at(bytes, start + thicken_347::AUXILIARY_COUNT)? != 1
@@ -6298,7 +6331,7 @@ fn exact_legacy_thicken_class_347(
     ];
     for (offset, expected) in reference_entries
         .into_iter()
-        .zip(scope.reference_members.values().copied())
+        .zip(scope.reference_members().values().copied())
     {
         if marked_record_reference(bytes, start + offset) != Some(expected) {
             return None;
@@ -6306,7 +6339,7 @@ fn exact_legacy_thicken_class_347(
     }
     let thickness_record_index =
         marked_record_reference(bytes, start + thicken_347::SCALAR_REFERENCE)?;
-    if scope.reference_members.values().next_back().copied()? != thickness_record_index {
+    if scope.reference_members().values().next_back().copied()? != thickness_record_index {
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
@@ -6326,12 +6359,12 @@ fn exact_shell_class_369_261(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length != shell_369_261::LEN as u64
-        || scope.reference_members.len() != 3
+        || scope.frame_length() != shell_369_261::LEN as u64
+        || scope.reference_members().len() != 3
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if bytes.get(start + shell_369_261::ZERO_RUN_9..start + shell_369_261::FEATURE_FORM)
         != Some(&[0; 9])
         || bytes.get(start + shell_369_261::FEATURE_FORM)
@@ -6390,13 +6423,13 @@ fn exact_shell_class_369_261(
     ];
     for (offset, expected) in reference_entries
         .into_iter()
-        .zip(scope.reference_members.values().copied())
+        .zip(scope.reference_members().values().copied())
     {
         if marked_record_reference(bytes, start + offset) != Some(expected) {
             return None;
         }
     }
-    let thickness_record_index = scope.reference_members.values().next().copied()?;
+    let thickness_record_index = scope.reference_members().values().next().copied()?;
     if marked_record_reference(bytes, start + shell_369_261::SCALAR_REFERENCE)
         != Some(thickness_record_index)
     {
@@ -6422,7 +6455,7 @@ pub(crate) fn exact_direct_face_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
         && scope.class_tag.as_str() == "369"
         && scope.paired_class_tag.as_str() == "261"
@@ -6434,13 +6467,13 @@ pub(crate) fn exact_direct_face_operation(
             if matches!(
                 (
                     parameter_scope_payload_length(scope),
-                    scope.reference_members.len()
+                    scope.reference_members().len()
                 ),
                 (Some(264), 4) | (Some(253), 3)
             ) && bytes.get(start + 25) == Some(&1) =>
         {
             let distance_record_index = View::u32_le_at(bytes, start + 26)?;
-            if scope.reference_members.values().next_back() != Some(&distance_record_index) {
+            if scope.reference_members().values().next_back() != Some(&distance_record_index) {
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
@@ -6452,7 +6485,7 @@ pub(crate) fn exact_direct_face_operation(
                 },
             ))
         }
-        DesignFeatureFamily::Thicken if scope.reference_members.len() >= 3 => {
+        DesignFeatureFamily::Thicken if scope.reference_members().len() >= 3 => {
             if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
                 return Some(operation);
             }
@@ -6461,16 +6494,18 @@ pub(crate) fn exact_direct_face_operation(
                 Some(length)
                     if length
                         == 276
-                            + 11 * u64::try_from(scope.reference_members.len().checked_sub(2)?)
-                                .ok()?
+                            + 11 * u64::try_from(
+                                scope.reference_members().len().checked_sub(2)?,
+                            )
+                            .ok()?
                         && bytes.get(start + 34) == Some(&1)
                         && View::u32_le_at(bytes, start + 35)
-                            == scope.reference_members.values().nth(1).copied()
+                            == scope.reference_members().values().nth(1).copied()
                         && bytes.get(start + 39..start + 45) == Some(&[0; 6])
                         && matches!(bytes.get(start + 45), Some(0 | 1))
                         && bytes.get(start + 46..start + 48) == Some(&[1, 1])
                         && View::u32_le_at(bytes, start + 48)
-                            == scope.reference_members.values().next().copied() =>
+                            == scope.reference_members().values().next().copied() =>
                 {
                     (47, true)
                 }
@@ -6485,9 +6520,9 @@ pub(crate) fn exact_direct_face_operation(
             };
             let thickness_record_index = View::u32_le_at(bytes, start + reference_offset + 1)?;
             let expected_thickness = if thickness_is_first {
-                scope.reference_members.values().next()
+                scope.reference_members().values().next()
             } else {
-                scope.reference_members.values().next_back()
+                scope.reference_members().values().next_back()
             };
             if expected_thickness != Some(&thickness_record_index) {
                 return None;
@@ -6504,7 +6539,7 @@ pub(crate) fn exact_direct_face_operation(
                 },
             ))
         }
-        DesignFeatureFamily::Shell if scope.reference_members.len() == 3 => {
+        DesignFeatureFamily::Shell if scope.reference_members().len() == 3 => {
             let (thickness_record_index, thickness_is_first, outward, outward_offset) =
                 match parameter_scope_payload_length(scope) {
                     Some(268)
@@ -6518,7 +6553,7 @@ pub(crate) fn exact_direct_face_operation(
                             && View::u32_le_at(bytes, start + 51) == Some(1)
                             && bytes.get(start + 55) == Some(&1)
                             && View::u32_le_at(bytes, start + 56)
-                                == scope.reference_members.values().nth(1).copied()
+                                == scope.reference_members().values().nth(1).copied()
                             && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
                     {
                         (
@@ -6535,7 +6570,7 @@ pub(crate) fn exact_direct_face_operation(
                             && View::u32_le_at(bytes, start + 51) == Some(1)
                             && bytes.get(start + 55) == Some(&1)
                             && View::u32_le_at(bytes, start + 56)
-                                == scope.reference_members.values().next().copied() =>
+                                == scope.reference_members().values().next().copied() =>
                     {
                         (
                             View::u32_le_at(bytes, start + 28)?,
@@ -6552,7 +6587,7 @@ pub(crate) fn exact_direct_face_operation(
                             && View::u32_le_at(bytes, start + 42) == Some(1)
                             && bytes.get(start + 46) == Some(&1)
                             && View::u32_le_at(bytes, start + 47)
-                                == scope.reference_members.values().next().copied()
+                                == scope.reference_members().values().next().copied()
                             && bytes.get(start + 51..start + 57) == Some(&[0; 6]) =>
                     {
                         (
@@ -6565,9 +6600,9 @@ pub(crate) fn exact_direct_face_operation(
                     _ => return None,
                 };
             let expected_thickness = if thickness_is_first {
-                scope.reference_members.values().next()
+                scope.reference_members().values().next()
             } else {
-                scope.reference_members.values().next_back()
+                scope.reference_members().values().next_back()
             };
             if expected_thickness != Some(&thickness_record_index) {
                 return None;
@@ -6599,7 +6634,7 @@ pub(crate) fn exact_move_operation(
         return None;
     }
     let mut candidates = Vec::new();
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
@@ -6683,12 +6718,13 @@ pub(crate) fn exact_scale_operation(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
-        if parameter_scope_payload_length(scope) == Some(303) && scope.reference_members.len() == 5
+        if parameter_scope_payload_length(scope) == Some(303)
+            && scope.reference_members().len() == 5
         {
             let [factor_record_index, body_group_record_index, _, _, center_record_index] =
-                scope.reference_members.values_array()?;
+                scope.reference_members().values_array()?;
             if View::u32_le_at(bytes, start + 20)? != 1
                 || bytes.get(start + 24) != Some(&0)
                 || marked_record_reference(bytes, start + 33)? != *center_record_index
@@ -6715,11 +6751,11 @@ pub(crate) fn exact_scale_operation(
                 center,
             )
         } else if scope.kind() == crate::records::feature::DesignFeatureKind::Scale
-            && matches!(scope.reference_members.len(), 5 | 6)
-            && scope.frame_length
-                == 307 + u64::try_from(scope.reference_members.len().saturating_sub(5)).ok()? * 11
+            && matches!(scope.reference_members().len(), 5 | 6)
+            && scope.frame_length()
+                == 307 + u64::try_from(scope.reference_members().len().saturating_sub(5)).ok()? * 11
         {
-            let mut references = scope.reference_members.values();
+            let mut references = scope.reference_members().values();
             let factor_record_index = references.next()?;
             let body_group_record_index = references.next()?;
             let center_record_index = references.next_back()?;
@@ -6778,7 +6814,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
         return None;
     }
     let fixed_lanes = scope
-        .reference_members
+        .reference_members()
         .values()
         .filter_map(|record_index| {
             let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -6787,7 +6823,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
         })
         .collect::<Vec<_>>();
     let embedded_distances = scope
-        .reference_members
+        .reference_members()
         .values()
         .filter_map(|record_index| {
             exact_embedded_extrude_distance(bytes, records, *record_index, scope.record_index)
@@ -6921,7 +6957,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
         return None;
     }
     let lanes = scope
-        .reference_members
+        .reference_members()
         .values()
         .filter_map(|record_index| {
             let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -6998,7 +7034,7 @@ pub(crate) fn exact_fixed_chamfer_parameters(
         return None;
     }
     let lanes = scope
-        .reference_members
+        .reference_members()
         .values()
         .filter_map(|record_index| {
             let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -7039,7 +7075,7 @@ fn unique_revolve_angle_owner<'a>(
         native_stream(owner.id()) == native_stream(&scope.id)
             && owner.scope_record_index() == scope.record_index
             && scope
-                .reference_members
+                .reference_members()
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
@@ -7057,7 +7093,7 @@ pub(crate) fn exact_path_feature_construction(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignPathFeatureConstruction> {
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let operation = |offset| {
         Some(match View::u32_le_at(bytes, offset)? {
             1 => DesignExtrudeOperation::Join,
@@ -7069,7 +7105,7 @@ pub(crate) fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
-            if matches!(scope.reference_members.len(), 6 | 8)
+            if matches!(scope.reference_members().len(), 6 | 8)
                 && bytes.get(start + revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
@@ -7092,12 +7128,12 @@ pub(crate) fn exact_path_feature_construction(
         }
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(372)
-                && scope.reference_members.len() == 7
+                && scope.reference_members().len() == 7
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0) =>
         {
             let lanes = scope
-                .reference_members
+                .reference_members()
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -7135,7 +7171,7 @@ pub(crate) fn exact_path_feature_construction(
             if scope.class_tag.as_str() == "407"
                 && scope.paired_class_tag.as_str() == "258"
                 && parameter_scope_payload_length(scope) == Some(363)
-                && scope.reference_members.len() == 8
+                && scope.reference_members().len() == 8
                 && View::u32_le_at(bytes, start + 25) == Some(2)
                 && bytes.get(start + 29) == Some(&0)
                 && View::u32_le_at(bytes, start + 30) == Some(1)
@@ -7143,7 +7179,7 @@ pub(crate) fn exact_path_feature_construction(
                 && bytes.get(start + 43..start + 45) == Some(&[0; 2]) =>
         {
             let angle_record_index = u32::try_from(View::u64_le_at(bytes, start + 35)?).ok()?;
-            if scope.reference_members.values().nth(6) != Some(&angle_record_index) {
+            if scope.reference_members().values().nth(6) != Some(&angle_record_index) {
                 return None;
             }
             let angle =
@@ -7164,8 +7200,8 @@ pub(crate) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if scope.class_tag.as_str() == "403"
                 && scope.paired_class_tag.as_str() == "258"
-                && scope.frame_length == 387
-                && scope.reference_members.len() == 8
+                && scope.frame_length() == 387
+                && scope.reference_members().len() == 8
                 && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + class_403_revolve::DIRECTION_KIND..start + 31)
                     == Some(&[0, 1]) =>
@@ -7216,7 +7252,7 @@ pub(crate) fn exact_path_feature_construction(
         }
         DesignFeatureFamily::Sweep => {
             let lanes = scope
-                .reference_members
+                .reference_members()
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -7265,7 +7301,7 @@ pub(crate) fn exact_path_feature_construction(
                 exact_pipe_owner_lanes(scope, parameter_owners)?.to_vec()
             } else {
                 scope
-                    .reference_members
+                    .reference_members()
                     .values()
                     .filter_map(|record_index| {
                         let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
@@ -7334,7 +7370,7 @@ pub(crate) fn exact_work_plane_frame(
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     let mut candidates = Vec::new();
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
@@ -7527,7 +7563,7 @@ fn exact_two_point_work_axis_construction(
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
     let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
-        scope.reference_members.values_array()?;
+        scope.reference_members().values_array()?;
     let axis_frames = records.frames(*axis_record_index).collect::<Vec<_>>();
     let [(axis_start, axis_paired)] = axis_frames.as_slice() else {
         return None;
@@ -7600,7 +7636,7 @@ fn exact_direct_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let [carrier_record_index, support_record_index] = scope.reference_members.values_array()?;
+    let [carrier_record_index, support_record_index] = scope.reference_members().values_array()?;
     let (
         carrier_class,
         carrier_paired_class,
@@ -7614,7 +7650,7 @@ fn exact_direct_work_axis_construction(
     ) = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-        scope.frame_length,
+        scope.frame_length(),
     ) {
         ("302", "262", 268) => (
             "297",
@@ -7708,12 +7744,12 @@ pub(crate) fn exact_joint_origin_frame(
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::JointOrigin
-        || matches!(scope.frame_length, 300 | 322 | 344)
+        || matches!(scope.frame_length(), 300 | 322 | 344)
     {
         return None;
     }
     let mut candidates = Vec::new();
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             if paired.checked_sub(start)? == joint_origin_class_337_266::LEN
                 && bytes.get(start + 4..start + 7) == Some(b"337")
@@ -7910,7 +7946,7 @@ pub(crate) fn exact_work_point_construction(
     exact_point_data_construction(
         bytes,
         records,
-        scope.reference_members.values(),
+        scope.reference_members().values(),
         stream_types,
     )
 }
@@ -8016,7 +8052,7 @@ pub(crate) fn exact_hole_construction(
     }
     let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
     let mut candidates = Vec::new();
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
             continue;
         };
@@ -8067,7 +8103,7 @@ fn exact_hole_face_selection(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignHoleFaceSelection> {
     let mut candidates = Vec::new();
-    for record_index in scope.reference_members.values() {
+    for record_index in scope.reference_members().values() {
         if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
         {
             continue;
@@ -8233,18 +8269,18 @@ pub(crate) fn exact_combine_operation(
     scope: &DesignParameterScope,
 ) -> Option<DesignCombineOperation> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
-        || scope.reference_members.len() < 4
-        || !scope.reference_members.len().is_multiple_of(2)
+        || scope.reference_members().len() < 4
+        || !scope.reference_members().len().is_multiple_of(2)
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let compact = scope.class_tag.as_str() == "387"
         && scope.paired_class_tag.as_str() == "258"
         && parameter_scope_payload_length(scope) == Some(314);
     let extended_reference = scope.class_tag.as_str() == "329"
         && scope.paired_class_tag.as_str() == "261"
-        && scope.frame_length == 363;
+        && scope.frame_length() == 363;
     let (form, operation_offset, keep_tools_offset) = if compact {
         if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
             != [0; 10]
@@ -8311,12 +8347,12 @@ pub(crate) fn exact_combine_operation(
         _ => return None,
     };
     let mut target = None;
-    let mut tools = Vec::with_capacity(scope.reference_members.len() / 2);
+    let mut tools = Vec::with_capacity(scope.reference_members().len() / 2);
     for (operation_record_index, selection_record_index) in scope
-        .reference_members
+        .reference_members()
         .values()
         .step_by(2)
-        .zip(scope.reference_members.values().skip(1).step_by(2))
+        .zip(scope.reference_members().values().skip(1).step_by(2))
     {
         let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
             return None;
@@ -8612,13 +8648,13 @@ pub(crate) fn exact_draft_operation_with_owners(
     // properties instead. They are the only scope-owned fixed scalars among the
     // references, and their local ordinals order them.
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Draft)
-        || scope.reference_members.len() < 6
+        || scope.reference_members().len() < 6
     {
         return None;
     }
     let scope_stream = native_stream(&scope.id);
     let mut lanes = scope
-        .reference_members
+        .reference_members()
         .values()
         .filter_map(|record_index| {
             if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) {
@@ -8970,54 +9006,59 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
-    let mut scope = DesignParameterScope {
-        id: String::new(),
-        byte_offset,
-        class_tag: class_tag.clone(),
-        record_index,
-        frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
-        kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
-        feature_ordinal,
-        feature_ordinal_offset: u64::try_from(kind_end).ok()?,
-        history_state_id,
+    let mut scope =
+        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+            id: String::new(),
+            byte_offset,
+            class_tag: class_tag.clone(),
+            record_index,
+            frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
+            kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+            feature_ordinal,
+            feature_ordinal_offset: u64::try_from(kind_end).ok()?,
+            history_state_id,
 
-        previous_history_state_id,
-        previous_history_state_id_offset: previous_history_state_id_offset
-            .and_then(|offset| u64::try_from(offset).ok())
-            .filter(|&offset| offset != 0),
-        reference_count_offset: u64::try_from(*reference_count_at).ok()?,
-        reference_members: crate::records::ReferenceRun::located(
-            reference_members
-                .iter()
-                .copied()
-                .zip(reference_member_offsets.iter().copied())
-                .map(|(value, offset)| crate::records::Located { value, offset })
-                .collect(),
-        ),
-        payload: match kind {
-            crate::records::feature::DesignFeatureKind::SurfaceStitch => {
-                crate::records::feature::DesignScopePayload::SurfaceStitch(
-                    surface_stitch_operation?,
-                )
-            }
-            crate::records::feature::DesignFeatureKind::SurfaceRuled => {
-                crate::records::feature::DesignScopePayload::SurfaceRuled(ruled_surface_operation?)
-            }
-            kind => kind.try_into().ok()?,
-        },
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: paired_class_tag.try_into().ok()?,
-        paired_byte_offset: paired_at as u64,
-    };
+            previous_history_state_id,
+            previous_history_state_id_offset: previous_history_state_id_offset
+                .and_then(|offset| u64::try_from(offset).ok())
+                .filter(|&offset| offset != 0),
+            reference_count_offset: u64::try_from(*reference_count_at).ok()?,
+            reference_members: crate::records::ReferenceRun::located(
+                reference_members
+                    .iter()
+                    .copied()
+                    .zip(reference_member_offsets.iter().copied())
+                    .map(|(value, offset)| crate::records::Located { value, offset })
+                    .collect(),
+            ),
+            payload: match kind {
+                crate::records::feature::DesignFeatureKind::SurfaceStitch => {
+                    crate::records::feature::DesignScopePayload::SurfaceStitch(
+                        surface_stitch_operation?,
+                    )
+                }
+                crate::records::feature::DesignFeatureKind::SurfaceRuled => {
+                    crate::records::feature::DesignScopePayload::SurfaceRuled(
+                        ruled_surface_operation?,
+                    )
+                }
+                kind => kind.try_into().ok()?,
+            },
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: paired_class_tag.try_into().ok()?,
+            paired_byte_offset: paired_at as u64,
+        })
+        .ok()?;
     if let Some(prologue) = extrude_prologue {
         {
             let construction = Some(crate::records::feature::DesignExtrudeScope {
                 extrude_prologue: Some(prologue),
                 ..crate::records::feature::DesignExtrudeScope::default()
             });
-            if let crate::records::feature::DesignScopePayload::Extrude(slot)
-            | crate::records::feature::DesignScopePayload::Extrusion(slot)
-            | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+            | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+            | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -9026,9 +9067,9 @@ pub(crate) fn parse_parameter_scope(
     if let Some(coil) = coil {
         {
             let construction = Some(coil);
-            if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-            | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+            | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -9037,8 +9078,8 @@ pub(crate) fn parse_parameter_scope(
     if !surface_patch_boundaries.is_empty() {
         {
             let construction = surface_patch_boundaries;
-            if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -9050,8 +9091,8 @@ pub(crate) fn parse_parameter_scope(
                 base_flange_operation: Some(operation),
                 ..crate::records::feature::DesignBaseFlangeScope::default()
             });
-            if let crate::records::feature::DesignScopePayload::BaseFlange(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -9060,8 +9101,8 @@ pub(crate) fn parse_parameter_scope(
     if let Some(operation) = edge_flange_operation {
         {
             let construction = Some(operation);
-            if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) =
-                &mut scope.payload
+            if let crate::records::feature::DesignScopePayloadMut::EdgeFlange(slot) =
+                scope.payload_mut()
             {
                 *slot = construction;
             }
@@ -9159,8 +9200,8 @@ fn exact_coil_placement(
     match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-        scope.frame_length,
-        scope.reference_members.len(),
+        scope.frame_length(),
+        scope.reference_members().len(),
     ) {
         ("393", "258", 427, 8) => {}
         ("353", "259", 427, 8) => {}
@@ -9168,8 +9209,8 @@ fn exact_coil_placement(
         (_, _, 432 | 442, 8) => {}
         _ => return None,
     }
-    let selection_record_index = *scope.reference_members.values().next()?;
-    let transform_record_index = *scope.reference_members.values().nth(1)?;
+    let selection_record_index = *scope.reference_members().values().next()?;
+    let transform_record_index = *scope.reference_members().values().nth(1)?;
     let selection_frames = records.frames(selection_record_index).collect::<Vec<_>>();
     let [(selection_start, _)] = selection_frames.as_slice() else {
         return None;
@@ -9814,8 +9855,9 @@ fn bind_coil_extent_from_parameters(
         _ => None,
     };
     if let Some(extent) = extent {
-        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) =
+            scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).coil_extent =
                 Some(crate::records::RecordedValue {
@@ -9837,7 +9879,7 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
     let kind_bytes = u64::try_from(scope.kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
-    scope.frame_length.checked_sub(kind_bytes)
+    scope.frame_length().checked_sub(kind_bytes)
 }
 
 mod base_feature;
