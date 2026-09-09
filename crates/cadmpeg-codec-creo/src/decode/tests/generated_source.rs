@@ -56,6 +56,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
     let table = crate::feature::FeatureEntityTable {
@@ -127,20 +129,26 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         row(42, crate::surface::SurfaceKind::Cone),
         row(43, crate::surface::SurfaceKind::TorusOrSphere),
     ];
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-        ratio: 1.0,
-        half_angle: 0.5,
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            1.0,
+            0.5,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
     assert_eq!(
         analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
         Some(42)
@@ -204,13 +212,16 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
     );
-    let torus = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 1.0,
-    };
+    let torus = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            1.0,
+        )
+        .expect("valid TorusSurface fixture"),
+    );
     assert_eq!(
         ordered_analytic_surface_id_for_feature(
             &rows,
@@ -1106,12 +1117,15 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
 
 #[test]
 fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
-    let carrier = SurfaceGeometry::Cylinder {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 0.3125,
-    };
+    let carrier = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.3125,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
     let sources = vec![vec![10, 11], vec![30, 31]];
 
@@ -1124,9 +1138,10 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
             matches!(geometry, crate::decode::holes::placement::HoleCylinder { origin, axis, radius, .. }
-                if *origin == Point3::new(1.0, 2.0, 3.0)
+                if { *origin == Point3::new(1.0, 2.0, 3.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && (*radius - 0.098).abs() < 1.0e-12)
+                    && (*radius - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
+            })
         }));
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
@@ -1138,12 +1153,17 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         })
     );
     let mut conflicting_patch = existing.clone();
-    let SurfaceGeometry::Cylinder { radius, .. } =
+    let SurfaceGeometry::Cylinder(cylinder_surface) =
         conflicting_patch.get_mut(&31).expect("second patch")
     else {
         unreachable!()
     };
-    *radius = 0.25;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 0.25;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .expect("valid CylinderSurface fixture");
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &conflicting_patch, 0.625),
         None
@@ -1372,11 +1392,14 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     ];
     let plane = |id: &str, native_id: u32| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: Some(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
             object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
@@ -1413,7 +1436,8 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             revision_form: None,
         },
         None,
-    )];
+    )
+    .unwrap()];
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 
@@ -1459,10 +1483,13 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     let curves = vec![
         Curve {
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid LineCurve fixture"),
+            ),
             source_object: Some(source(41)),
         },
         Curve {
@@ -1792,7 +1819,7 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end);
+        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end).expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
@@ -1926,7 +1953,8 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam);
+        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam)
+            .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");

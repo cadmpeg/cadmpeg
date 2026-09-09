@@ -229,15 +229,10 @@ fn cylinder_frame_agrees_with_model(
         [surface] => surface,
         _ => return false,
     };
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = &surface.geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &surface.geometry else {
         return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
     };
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
         normalize(frame.axis()),
         normalize([axis.x, axis.y, axis.z]),

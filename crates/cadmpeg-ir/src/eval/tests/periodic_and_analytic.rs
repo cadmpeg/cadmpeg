@@ -121,24 +121,19 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
 fn analytic_parabola_and_hyperbola_use_step_parameterization() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let major = Vector3::new(1.0, 0.0, 0.0);
-    let parabola = CurveGeometry::Parabola {
-        vertex: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        major_direction: major,
-        focal_distance: 2.0,
-    };
+    let parabola = CurveGeometry::Parabola(
+        crate::geometry::ParabolaCurve::try_new(Point3::new(0.0, 0.0, 0.0), axis, major, 2.0)
+            .unwrap(),
+    );
     assert_eq!(
         crate::eval::curve_point(&parabola, 1.5),
         Some(Point3::new(4.5, 6.0, 0.0))
     );
 
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis,
-        major_direction: major,
-        major_radius: 2.0,
-        minor_radius: 3.0,
-    };
+    let hyperbola = CurveGeometry::Hyperbola(
+        crate::geometry::HyperbolaCurve::try_new(Point3::new(1.0, 2.0, 3.0), axis, major, 2.0, 3.0)
+            .unwrap(),
+    );
     let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
     assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
     assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
@@ -155,10 +150,13 @@ fn transformed_carriers_preserve_basis_parameters() {
     ])
     .expect("affine transform");
     let curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line {
-            origin: Point3::new(1.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(CurveGeometry::Line(
+            crate::geometry::LineCurve::try_new(
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform,
     };
     assert_eq!(
@@ -167,11 +165,14 @@ fn transformed_carriers_preserve_basis_parameters() {
     );
 
     let surface = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(SurfaceGeometry::Plane(
+            crate::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform,
     };
     assert_eq!(

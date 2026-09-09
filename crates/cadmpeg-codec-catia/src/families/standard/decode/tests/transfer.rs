@@ -15,6 +15,8 @@ use crate::test_support::*;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
+
 #[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
@@ -141,28 +143,30 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .links
         .contains(&"catia:standard:circle#0".to_string()));
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder { radius, axis, .. } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (_, axis, _, radius) = cylinder_surface.parts();
             assert!((radius - 5.0).abs() < 1.0e-6);
             assert!((axis.z - 1.0).abs() < 1.0e-6);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        &surface.geometry,
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        }
-            if (origin.x - 1.0).abs() < 1.0e-6
-                && (origin.y - 2.0).abs() < 1.0e-6
-                && (origin.z - 3.0).abs() < 1.0e-6
-                && normal.x.abs() < 1.0e-6
-                && normal.y.abs() < 1.0e-6
-                && (normal.z.abs() - 1.0).abs() < 1.0e-6
-                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0).abs() < 1.0e-6
-                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1.0e-6
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && normal.x.abs() < EPS_TRANSFER_PLANE_FRAME
+                && normal.y.abs() < EPS_TRANSFER_PLANE_FRAME
+                && (normal.z.abs() - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
+                    .abs()
+                    < EPS_TRANSFER_PLANE_FRAME
+                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
+                    < EPS_TRANSFER_PLANE_FRAME
+        })
+    ));
 
     // Stored face/carrier rows do not establish a B-rep without a complete
     // trim and edge graph. Carriers remain free and vertices receive only the
@@ -520,12 +524,13 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .iter()
         .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
         .expect("refined standard cylinder");
-    assert!(matches!(
-        surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { origin, axis, .. }
-            if origin.x == exact_x
-                && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-    ));
+    assert!(
+        matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, _, _) = cylinder_surface.parts();
+            origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        })
+    );
     assert_eq!(
         decoded
             .report()
@@ -570,8 +575,8 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cylinder pcurve");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cylinder pcurve");
     let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
     let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
@@ -622,8 +627,8 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    let pcurve = context.sides[0].pcurve.as_ref().expect("cone pcurve");
+    assert!(context.sides().iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides()[0].pcurve.as_ref().expect("cone pcurve");
     let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
     let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
@@ -657,11 +662,11 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
         else {
             panic!("two resolved support sides form an intersection");
         };
-        let surface_id = context.sides[1]
+        let surface_id = context.sides()[1]
             .surface
             .as_ref()
             .expect("resolved NURBS support");
-        let pcurve = context.sides[1].pcurve.as_ref().expect("NURBS pcurve");
+        let pcurve = context.sides()[1].pcurve.as_ref().expect("NURBS pcurve");
         let start = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("pcurve start");
         let end = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("pcurve end");
         assert_eq!([start.u, start.v], [0.0, 0.0]);
@@ -827,18 +832,20 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         &surface.geometry,
         SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { degree, stations } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");
     };
+    let degree = jet.degree();
+    let stations = jet.stations();
     let knots: Vec<_> = stations.iter().map(|station| station.knot).collect();
     let multiplicities: Vec<_> = stations
         .iter()
         .map(|station| station.multiplicity)
         .collect();
     let sites: Vec<_> = stations.iter().map(|station| &station.site).collect();
-    assert_eq!(*degree, 5);
+    assert_eq!(degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
     assert_eq!(multiplicities, &[6, 6]);
     assert_eq!(sites.len(), 2);

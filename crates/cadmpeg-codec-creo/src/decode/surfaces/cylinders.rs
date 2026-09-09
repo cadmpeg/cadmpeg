@@ -112,6 +112,18 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             continue;
         }
         let frame = datum.frame;
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Vector3::new(
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
+            ),
+            frame.radius(),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -122,16 +134,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
-                axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                ref_direction: Vector3::new(
-                    frame.ref_direction()[0],
-                    frame.ref_direction()[1],
-                    frame.ref_direction()[2],
-                ),
-                radius: frame.radius(),
-            },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -221,6 +224,18 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
             .expect("identity grammar");
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
+            Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
+            Vector3::new(
+                cylinder.ref_direction[0],
+                cylinder.ref_direction[1],
+                cylinder.ref_direction[2],
+            ),
+            cylinder.radius,
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -231,16 +246,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
-                axis: Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
-                ref_direction: Vector3::new(
-                    cylinder.ref_direction[0],
-                    cylinder.ref_direction[1],
-                    cylinder.ref_direction[2],
-                ),
-                radius: cylinder.radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -285,19 +291,13 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     ) {
         let sibling = SurfaceId::mint(format!("creo:visibgeom:surface#{sibling_id}"))
             .expect("identity grammar");
-        let Some(SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        }) = exactly_one(
+        let Some(SurfaceGeometry::Cylinder(cylinder_surface)) = exactly_one(
             ir.model
                 .surfaces
                 .iter()
                 .filter(|surface| surface.id == sibling),
         )
-        .map(|surface| &surface.geometry)
-        else {
+        .map(|surface| &surface.geometry) else {
             continue;
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{rowless_id}"))
@@ -315,12 +315,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: *origin,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: *radius,
-            },
+            geometry: SurfaceGeometry::Cylinder(*cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -380,7 +375,8 @@ pub(in super::super) fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: geometry.into(),
+                geometry: SurfaceGeometry::try_from(geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -471,11 +467,16 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-        let plane_geometry = SurfaceGeometry::Plane {
-            origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-            normal,
-            u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
-        };
+        let plane_geometry = SurfaceGeometry::Plane(
+            match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal,
+                cadmpeg_ir::geometry::derive_reference_direction(normal),
+            ) {
+                Ok(payload) => payload,
+                Err(_) => continue,
+            },
+        );
         let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane_geometry, bounds)
         else {
             continue;
@@ -1145,20 +1146,21 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .iter_mut()
                     .find(|surface| surface.id == id)
                 {
-                    surface.geometry = SurfaceGeometry::Cylinder {
-                        origin: Point3::new(
-                            frame.origin()[0],
-                            frame.origin()[1],
-                            frame.origin()[2],
-                        ),
-                        axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                        ref_direction: Vector3::new(
-                            frame.ref_direction()[0],
-                            frame.ref_direction()[1],
-                            frame.ref_direction()[2],
-                        ),
-                        radius: frame.radius(),
-                    };
+                    surface.geometry = SurfaceGeometry::Cylinder(
+                        match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+                            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+                            Vector3::new(
+                                frame.ref_direction()[0],
+                                frame.ref_direction()[1],
+                                frame.ref_direction()[2],
+                            ),
+                            frame.radius(),
+                        ) {
+                            Ok(payload) => payload,
+                            Err(_) => continue,
+                        },
+                    );
                     annotate(
                         annotations,
                         &id,
@@ -1171,6 +1173,18 @@ pub(in super::super) fn transfer_positional_cylinders(
             }
             continue;
         }
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Vector3::new(
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
+            ),
+            frame.radius(),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -1181,16 +1195,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
-                axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                ref_direction: Vector3::new(
-                    frame.ref_direction()[0],
-                    frame.ref_direction()[1],
-                    frame.ref_direction()[2],
-                ),
-                radius: frame.radius(),
-            },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -1414,6 +1419,20 @@ pub(in super::super) fn transfer_positional_cones(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
+        let Ok(cone_surface) = cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Vector3::new(
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
+            ),
+            0.0,
+            1.0,
+            frame.half_angle(),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -1424,18 +1443,7 @@ pub(in super::super) fn transfer_positional_cones(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cone {
-                origin: Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
-                axis: Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                ref_direction: Vector3::new(
-                    frame.ref_direction()[0],
-                    frame.ref_direction()[1],
-                    frame.ref_direction()[2],
-                ),
-                radius: 0.0,
-                ratio: 1.0,
-                half_angle: frame.half_angle(),
-            },
+            geometry: SurfaceGeometry::Cone(cone_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -1498,7 +1506,8 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: sweep.geometry.into(),
+                geometry: SurfaceGeometry::try_from(sweep.geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -1546,6 +1555,13 @@ pub(in super::super) fn transfer_cross_section_planes(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
+        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(origin[0], origin[1], origin[2]),
+            Vector3::new(normal[0], normal[1], normal[2]),
+            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -1556,11 +1572,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
+            geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -1588,6 +1600,13 @@ pub(in super::super) fn transfer_cross_section_planes(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
+        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+            Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
             &id,
@@ -1598,11 +1617,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
-            },
+            geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

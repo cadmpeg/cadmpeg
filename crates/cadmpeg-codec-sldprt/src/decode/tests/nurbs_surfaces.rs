@@ -144,7 +144,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
         )
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+        matches!(surface.geometry, SurfaceGeometry::Plane(_))
             && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
@@ -194,7 +194,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .collect();
     assert!(matches!(
         support_surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ));
     assert!(matches!(
         support_surfaces[1].geometry,
@@ -462,10 +462,11 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&cyl, 0).unwrap() {
         Carrier::Surface(SurfaceCarrier {
-            geometry: SurfaceGeometry::Cylinder { radius, axis, .. },
+            geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             ..
         }) => {
-            assert_eq!(radius, 50.0); // 0.05 m ×1000
+            let (_, axis, _, radius) = cylinder_surface.parts();
+            assert_eq!(*radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
@@ -484,9 +485,12 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
-            geometry: CurveGeometry::Circle { radius, .. },
+            geometry: CurveGeometry::Circle(circle_curve),
             ..
-        }) => assert_eq!(radius, 3.0),
+        }) => {
+            let (_, _, _, radius) = circle_curve.parts();
+            assert_eq!(*radius, 3.0);
+        }
         other => panic!("expected circle, got {other:?}"),
     }
 

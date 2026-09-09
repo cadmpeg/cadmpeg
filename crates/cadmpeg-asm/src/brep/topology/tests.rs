@@ -128,7 +128,8 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 &HashSet::new(),
                 &HashSet::new(),
                 format,
-            );
+            )
+            .expect("valid carrier fixture");
             assert_eq!(out.surfaces.len(), 1);
             assert!(matches!(
                 out.surfaces[0].geometry,

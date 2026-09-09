@@ -105,20 +105,26 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 2.0),
-                normal: Vector3::new(0.0, 0.0, -1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 2.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         },
         Surface {

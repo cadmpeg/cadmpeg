@@ -49,8 +49,8 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         ProceduralCurve::new(
             ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(incident[0].clone()),
                             pcurve: None,
@@ -60,12 +60,14 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     complete_intersection_supports_from_edge_incidence(&mut ir);
@@ -74,17 +76,18 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     else {
         panic!("intersection");
     };
-    assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
+    assert_eq!(context.sides()[1].surface.as_ref(), Some(&incident[1]));
 
     let pcurve_id = PcurveId::mint("nx:test:pcurve#0").expect("identity grammar");
-    let pcurve_geometry = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let pcurve_geometry = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some([0.0, 1.0]), None)
+            .unwrap(),
     });
     let second_face = ir
         .model
@@ -120,7 +123,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         panic!("intersection");
     };
     assert_eq!(
-        context.sides[1]
+        context.sides()[1]
             .pcurve
             .as_ref()
             .map(|binding| &binding.geometry),

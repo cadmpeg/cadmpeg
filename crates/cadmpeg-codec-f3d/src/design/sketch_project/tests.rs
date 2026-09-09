@@ -1098,7 +1098,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &surfaces,
         &relations,
         1.0e-6,
-    );
+    )
+    .unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
     assert!(entities
@@ -1217,7 +1218,8 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let (planar, planar_entities) =
         project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION);
     let (spatial, spatial_entities) =
-        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION);
+        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
+            .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());
     assert_eq!(spatial.len(), 1);

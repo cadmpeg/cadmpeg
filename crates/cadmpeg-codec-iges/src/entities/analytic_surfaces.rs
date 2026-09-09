@@ -226,11 +226,15 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Plane {
-                    origin: location,
-                    normal: axis,
-                    u_axis,
-                }
+                SurfaceGeometry::Plane(
+                    match cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                )
             }
             192 => {
                 let axis = match transformed_direction(
@@ -280,12 +284,20 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cylinder {
-                    origin: location,
-                    axis,
-                    ref_direction,
-                    radius,
-                }
+                SurfaceGeometry::Cylinder(
+                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        location,
+                        axis,
+                        ref_direction,
+                        radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                )
             }
             194 => {
                 let axis = match transformed_direction(
@@ -341,14 +353,22 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cone {
-                    origin: location,
-                    axis,
-                    ref_direction,
-                    radius,
-                    ratio: 1.0,
-                    half_angle,
-                }
+                SurfaceGeometry::Cone(
+                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                        location,
+                        axis,
+                        ref_direction,
+                        radius,
+                        1.0,
+                        half_angle,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                )
             }
             196 => {
                 let Some(radius) = record
@@ -401,12 +421,20 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Sphere {
-                    center: location,
-                    axis,
-                    ref_direction,
-                    radius,
-                }
+                SurfaceGeometry::Sphere(
+                    match cadmpeg_ir::geometry::SphereSurface::try_new(
+                        location,
+                        axis,
+                        ref_direction,
+                        radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                )
             }
             198 => {
                 let axis = match transformed_direction(
@@ -462,13 +490,21 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Torus {
-                    center: location,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius,
-                }
+                SurfaceGeometry::Torus(
+                    match cadmpeg_ir::geometry::TorusSurface::try_new(
+                        location,
+                        axis,
+                        ref_direction,
+                        major_radius,
+                        minor_radius,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                )
             }
             _ => {
                 losses.push(entity_loss(entry, "analytic surface type is unsupported"));

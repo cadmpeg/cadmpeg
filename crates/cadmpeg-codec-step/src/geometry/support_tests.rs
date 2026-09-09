@@ -11,10 +11,13 @@ fn rejects_transform_that_step_operator_cannot_represent() {
     ])
     .expect("affine transform");
     let curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform: anisotropic,
     };
 

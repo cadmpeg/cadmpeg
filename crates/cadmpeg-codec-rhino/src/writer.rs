@@ -670,13 +670,7 @@ fn prepare_write(
                 curve.id.as_str()
             )));
         }
-        let CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } = &curve.geometry
-        else {
+        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 curves.push((curve.id.as_str(), WritableObjectCurve::Nurbs(nurbs)));
@@ -687,6 +681,7 @@ fn prepare_write(
                 curve.id.as_str()
             )));
         };
+        let (center, axis, ref_direction, radius) = circle_curve.parts();
         let axis_norm = axis.norm();
         let reference_norm = ref_direction.norm();
         let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
@@ -1166,7 +1161,7 @@ fn close_point(
 
 fn brep_c3_curve(model: &WritableModel<'_>, edge: &WritableEdge<'_>) -> ([u8; 16], Vec<u8>) {
     match edge.curve {
-        WritableEdgeCurve::Line { .. } => {
+        WritableEdgeCurve::Line(_) => {
             let from = model.vertices[edge.start].point;
             let to = model.vertices[edge.end].point;
             (
@@ -1189,7 +1184,7 @@ fn generated_projected_brep_c2_curve(
     use cadmpeg_ir::topology::Sense;
 
     Ok(match edge.curve {
-        WritableEdgeCurve::Line { .. } => {
+        WritableEdgeCurve::Line(_) => {
             let (from, to) = if sense == Sense::Forward {
                 (edge.start, edge.end)
             } else {
@@ -1273,7 +1268,8 @@ fn admit_pcurve<'a>(
     }
     let domain = edge.domain;
     let (payload, hull) = match &pcurve.geometry {
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } => {
+        cadmpeg_ir::geometry::PcurveGeometry::Line(line) => {
+            let (origin, direction) = line.parts();
             if !origin.u.is_finite()
                 || !origin.v.is_finite()
                 || !direction.u.is_finite()

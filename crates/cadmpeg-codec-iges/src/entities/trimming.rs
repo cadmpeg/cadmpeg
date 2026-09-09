@@ -304,13 +304,16 @@ fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64,
         }
         ProceduralSourceParameterMap::Unavailable => None,
         ProceduralSourceParameterMap::NotApplicable => match support.geometry {
-            SurfaceGeometry::Plane { .. } => Some((1.0, 0.0, 1.0, 0.0)),
-            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-                Some((1.0 / support.factor, 0.0, 1.0, 0.0))
+            SurfaceGeometry::Plane(_) => Some((1.0, 0.0, 1.0, 0.0)),
+            SurfaceGeometry::Cylinder(_) => Some((1.0 / support.factor, 0.0, 1.0, 0.0)),
+            SurfaceGeometry::Cone(_) => Some((1.0 / support.factor, 0.0, 1.0, 0.0)),
+            SurfaceGeometry::Sphere(_) => {
+                Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
-            SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Torus { .. }
-            | SurfaceGeometry::Nurbs(_) => {
+            SurfaceGeometry::Torus(_) => {
+                Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
+            }
+            SurfaceGeometry::Nurbs(_) => {
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
             SurfaceGeometry::Procedural { .. } => None,
@@ -415,7 +418,7 @@ fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
             return false;
         }
         match geometry {
-            CurveGeometry::Line { .. } => true,
+            CurveGeometry::Line(_) => true,
             CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
             _ => false,
         }
@@ -834,7 +837,7 @@ fn linear_boundary_model_points(
     for item in items {
         let curve = index.curves(item.model_curve.as_str())?;
         let mut curve_points = match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Line { .. } => vec![item.start, item.end],
+            CurveGeometry::Line(_) => vec![item.start, item.end],
             CurveGeometry::Nurbs(nurbs) => {
                 linear_model_nurbs_points(nurbs, item.source_edge.param_range?)?
             }
@@ -880,9 +883,10 @@ fn linear_boundary_geometry(
     closure_tolerance: f64,
     surface_kind: BoundarySurfaceKind,
 ) -> Option<LinearBoundaryGeometry> {
-    let SurfaceGeometry::Plane { origin, normal, .. } = support else {
+    let SurfaceGeometry::Plane(plane_surface) = support else {
         return None;
     };
+    let (origin, normal, _) = plane_surface.parts();
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
     let model_plane = (*origin, *normal);
     if items.iter().any(|item| {
@@ -1081,7 +1085,7 @@ fn linear_boundary_relationship_is_valid(
             }
         }
         Some(_) => return None,
-        None if !matches!(support, SurfaceGeometry::Plane { .. }) => return None,
+        None if !matches!(support, SurfaceGeometry::Plane(_)) => return None,
         None => {}
     }
     Some(rings.iter().enumerate().all(|(left_index, left)| {
@@ -2220,7 +2224,7 @@ pub(super) fn project(
                     param_range: item.source_edge.param_range,
                     tolerance: Some(checked_sewing_tolerance),
                 });
-                let pcurve_uses = item
+                let pcurve_uses = match item
                     .pcurves
                     .into_iter()
                     .enumerate()
@@ -2234,19 +2238,26 @@ pub(super) fn project(
                         candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                                 None,
                                 Some(parameter_range),
                                 None,
-                            ),
+                            )?,
                         });
-                        PcurveUse {
+                        Ok(PcurveUse {
                             pcurve: id,
                             isoparametric: None,
                             parameter_range: None,
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, &'static str>>() {
+                    Ok(uses) => uses,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error));
+                        valid = false;
+                        break;
+                    }
+                };
                 let coedge_id = coedge_ids[segment_index].clone();
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.clone(),
@@ -2317,7 +2328,7 @@ pub(super) fn project(
             });
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
-                ProceduralSurface::new(
+                match ProceduralSurface::new(
                     ProceduralSurfaceId::mint(format!(
                         "iges:model:procedural-surface#D{}:implicit-outer",
                         entry.sequence
@@ -2330,7 +2341,13 @@ pub(super) fn project(
                         implicit_outer: true,
                     },
                     support_parameter_bounds,
-                ),
+                ) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error.to_string()));
+                        continue;
+                    }
+                },
             );
             derived_surface_id
         } else {

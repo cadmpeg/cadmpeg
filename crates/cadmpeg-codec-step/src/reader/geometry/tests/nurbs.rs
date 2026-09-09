@@ -244,11 +244,14 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
         geometry: CurveGeometry::Composite {
-            segments: vec![CompositeCurveSegment {
-                curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
-                same_sense: true,
-                transition: CompositeCurveTransition::Continuous,
-            }],
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
+                CompositeCurveSegment {
+                    curve: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
+                    same_sense: true,
+                    transition: CompositeCurveTransition::Continuous,
+                },
+            ])
+            .unwrap(),
             self_intersect: Some(false),
         },
         source_object: None,

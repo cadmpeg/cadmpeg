@@ -373,7 +373,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             transferred += 1;
         }
@@ -432,11 +433,13 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
                 };
+                let geometry = CurveGeometry::try_from(geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 pending.push((
                     CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
                     )).expect("identity grammar"),
-                    CurveGeometry::from(geometry),
+                    geometry,
                     transform.offset,
                     format!(
                         "FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"
@@ -510,7 +513,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         };
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
-                let geometry = extruded_section_line(transform, *point);
+                let Some(geometry) = extruded_section_line(transform, *point) else {
+                    continue;
+                };
                 pending.push((
                     CurveId::mint(format!(
                         "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"

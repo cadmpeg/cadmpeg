@@ -1751,11 +1751,14 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
         && direction.iter().all(|value| value.is_finite());
     let valid_tail =
         tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
-    (valid_direction && valid_tail).then_some(SurfaceGeometry::Plane {
-        origin: Point3::new(point[0], point[1], 0.0),
-        normal,
-        u_axis,
-    })
+    (valid_direction && valid_tail).then_some(SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(point[0], point[1], 0.0),
+            normal,
+            u_axis,
+        )
+        .ok()?,
+    ))
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
@@ -2122,17 +2125,20 @@ impl B2Cylinder {
             .then(|| cylinder_range_origin(self.radius, self.u_range))
     }
 
-    pub(crate) fn surface_geometry(&self) -> SurfaceGeometry {
-        SurfaceGeometry::Cylinder {
-            origin: Point3::new(self.origin[0], self.origin[1], self.origin[2]),
-            axis: Vector3::new(self.axis[0], self.axis[1], self.axis[2]),
-            ref_direction: Vector3::new(
-                self.reference_direction[0],
-                self.reference_direction[1],
-                self.reference_direction[2],
-            ),
-            radius: self.radius,
-        }
+    pub(crate) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
+        Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(self.origin[0], self.origin[1], self.origin[2]),
+                Vector3::new(self.axis[0], self.axis[1], self.axis[2]),
+                Vector3::new(
+                    self.reference_direction[0],
+                    self.reference_direction[1],
+                    self.reference_direction[2],
+                ),
+                self.radius,
+            )
+            .ok()?,
+        ))
     }
 }
 
@@ -2881,52 +2887,61 @@ pub(crate) fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]
 
 /// Convert a decoded B2 slant-coordinate cone chart to its equivalent IR carrier.
 #[must_use]
-pub fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
+pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
     let slant = cone.slant_range[0];
     let axial = slant * cone.half_angle.cos();
-    SurfaceGeometry::Cone {
-        origin: Point3::new(
-            cone.apex[0] + axial * cone.axis[0],
-            cone.apex[1] + axial * cone.axis[1],
-            cone.apex[2] + axial * cone.axis[2],
-        ),
-        axis: Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
-        ref_direction: Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
-        radius: slant * cone.half_angle.sin(),
-        ratio: 1.0,
-        half_angle: cone.half_angle,
-    }
+    Some(SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(
+                cone.apex[0] + axial * cone.axis[0],
+                cone.apex[1] + axial * cone.axis[1],
+                cone.apex[2] + axial * cone.axis[2],
+            ),
+            Vector3::new(cone.axis[0], cone.axis[1], cone.axis[2]),
+            Vector3::new(cone.t1[0], cone.t1[1], cone.t1[2]),
+            slant * cone.half_angle.sin(),
+            1.0,
+            cone.half_angle,
+        )
+        .ok()?,
+    ))
 }
 
 /// Build the exact neutral carrier of a validated radius-scaled sphere chart.
 #[must_use]
-pub fn b2_sphere_geometry(sphere: &B2Sphere) -> SurfaceGeometry {
-    SurfaceGeometry::Sphere {
-        center: Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
-        axis: Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
-        ref_direction: Vector3::new(
-            sphere.direction_x[0],
-            sphere.direction_x[1],
-            sphere.direction_x[2],
-        ),
-        radius: sphere.radius,
-    }
+pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
+    Some(SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
+            Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
+            Vector3::new(
+                sphere.direction_x[0],
+                sphere.direction_x[1],
+                sphere.direction_x[2],
+            ),
+            sphere.radius,
+        )
+        .ok()?,
+    ))
 }
 
 /// Build the exact neutral carrier of a validated doubly periodic torus chart.
 #[must_use]
-pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
-    SurfaceGeometry::Torus {
-        center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
-        axis: Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
-        ref_direction: Vector3::new(
-            torus.direction_x[0],
-            torus.direction_x[1],
-            torus.direction_x[2],
-        ),
-        major_radius: torus.major_radius,
-        minor_radius: torus.minor_radius,
-    }
+pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
+    Some(SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+            Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
+            Vector3::new(
+                torus.direction_x[0],
+                torus.direction_x[1],
+                torus.direction_x[2],
+            ),
+            torus.major_radius,
+            torus.minor_radius,
+        )
+        .ok()?,
+    ))
 }
 
 /// Decode standalone `b2 03 28` analytic cylinder supports.

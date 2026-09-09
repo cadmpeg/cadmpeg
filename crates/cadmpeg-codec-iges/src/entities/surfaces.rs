@@ -126,13 +126,13 @@ fn bounded_nurbs(
 
 fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
     match geometry {
-        CurveGeometry::Line { .. } => true,
-        CurveGeometry::Circle { radius, .. } => radius.is_finite() && *radius > 0.0,
-        CurveGeometry::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => {
+        CurveGeometry::Line(_) => true,
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, _, _, radius) = circle_curve.parts();
+            radius.is_finite() && *radius > 0.0
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
             major_radius.is_finite()
                 && minor_radius.is_finite()
                 && *major_radius > 0.0
@@ -356,7 +356,7 @@ fn is_line_carrier(geometry: &CurveGeometry, depth: usize) -> bool {
         return false;
     }
     match geometry {
-        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Line(_) => true,
         CurveGeometry::Transformed { basis, .. } => is_line_carrier(basis, depth + 1),
         _ => false,
     }
@@ -991,71 +991,79 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
 
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
     match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => Some(SurfaceGeometry::Plane {
-            origin: origin.translated(*normal, distance),
-            normal: *normal,
-            u_axis: *u_axis,
-        }),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => Some(SurfaceGeometry::Cylinder {
-            origin: *origin,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: radius + distance,
-        }),
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => Some(SurfaceGeometry::Sphere {
-            center: *center,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: radius + distance,
-        }),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => Some(SurfaceGeometry::Torus {
-            center: *center,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            major_radius: *major_radius,
-            minor_radius: minor_radius + distance,
-        }),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } if *ratio == 1.0 => Some(SurfaceGeometry::Cone {
-            origin: origin.translated(*axis, -distance * half_angle.sin()),
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: radius + distance * half_angle.cos(),
-            ratio: *ratio,
-            half_angle: *half_angle,
-        }),
-        SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal(_)
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            Some(SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin.translated(*normal, distance),
+                    *normal,
+                    *u_axis,
+                )
+                .ok()?,
+            ))
+        }
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            Some(SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    *origin,
+                    *axis,
+                    *ref_direction,
+                    radius + distance,
+                )
+                .ok()?,
+            ))
+        }
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            Some(SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    *center,
+                    *axis,
+                    *ref_direction,
+                    radius + distance,
+                )
+                .ok()?,
+            ))
+        }
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            Some(SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    *center,
+                    *axis,
+                    *ref_direction,
+                    *major_radius,
+                    minor_radius + distance,
+                )
+                .ok()?,
+            ))
+        }
+        SurfaceGeometry::Cone(cone_surface)
+            if {
+                let (_, _, _, _, ratio, _) = cone_surface.parts();
+                *ratio == 1.0
+            } =>
+        {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            Some(SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin.translated(*axis, -distance * half_angle.sin()),
+                    *axis,
+                    *ref_direction,
+                    radius + distance * half_angle.cos(),
+                    *ratio,
+                    *half_angle,
+                )
+                .ok()?,
+            ))
+        }
+        SurfaceGeometry::Cone(_) => None,
+        SurfaceGeometry::Nurbs(_) => None,
+        SurfaceGeometry::Procedural { .. } => None,
+        SurfaceGeometry::Polygonal(_) => None,
+        SurfaceGeometry::Transformed { .. } => None,
+        SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -1254,11 +1262,14 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: transform.point(local_origin),
-                normal,
-                u_axis,
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    transform.point(local_origin),
+                    normal,
+                    u_axis,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             source_object: Some(source_object(entry)?),
         });
         decoded.insert(entry.sequence);
@@ -1386,7 +1397,8 @@ pub(super) fn project(
                     Some(second_interval[0]),
                     Some(second_interval[1]),
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         losses.push(
             IgesLossCode::RuledDevelopabilityNotTransferred
@@ -1536,7 +1548,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
             continue;
@@ -1665,7 +1678,8 @@ pub(super) fn project(
                     None,
                     None,
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }
@@ -1732,17 +1746,14 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "revolution axis carrier is missing"));
             continue;
         };
-        let CurveGeometry::Line {
-            origin: axis_origin,
-            direction: axis_direction,
-        } = axis_curve.geometry
-        else {
+        let CurveGeometry::Line(line_curve) = axis_curve.geometry else {
             losses.push(entity_loss(
                 entry,
                 "revolution axis is not a Line Entity carrier",
             ));
             continue;
         };
+        let (&axis_origin, &axis_direction) = line_curve.parts();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
             losses.push(entity_loss(
                 entry,
@@ -1835,7 +1846,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
             continue;
@@ -1998,7 +2010,8 @@ pub(super) fn project(
                         None,
                         None,
                     ]),
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
         decoded.insert(entry.sequence);
@@ -2366,7 +2379,8 @@ pub(super) fn project(
                     Some(v_range[0]),
                     Some(v_range[1]),
                 ]),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }
@@ -2451,16 +2465,23 @@ pub(super) fn project(
             continue;
         };
         let regular = match &geometry {
-            SurfaceGeometry::Cylinder { radius, .. } | SurfaceGeometry::Sphere { radius, .. } => {
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (_, _, _, radius) = cylinder_surface.parts();
                 *radius > 0.0
             }
-            SurfaceGeometry::Torus {
-                major_radius,
-                minor_radius,
-                ..
-            } => *major_radius > 0.0 && *minor_radius > 0.0,
-            SurfaceGeometry::Cone { radius, .. } => *radius > 0.0,
-            SurfaceGeometry::Plane { .. } => true,
+            SurfaceGeometry::Sphere(sphere_surface) => {
+                let (_, _, _, radius) = sphere_surface.parts();
+                *radius > 0.0
+            }
+            SurfaceGeometry::Torus(torus_surface) => {
+                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                *major_radius > 0.0 && *minor_radius > 0.0
+            }
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (_, _, _, radius, _, _) = cone_surface.parts();
+                *radius > 0.0
+            }
+            SurfaceGeometry::Plane(_) => true,
             SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Polygonal(_)
@@ -2500,7 +2521,8 @@ pub(super) fn project(
                     ),
                 },
                 None,
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
     }

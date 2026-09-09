@@ -36,28 +36,31 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 .find(|surface| surface.id.as_str() == surface_id)
                 .unwrap();
             match (entity_type, &surface.geometry) {
-                (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. }) => {
+                (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface)) => {
+                    let (origin, _, _) = plane_surface.parts();
                     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
                 }
-                (192, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. })
-                    if *radius == 2.0 => {}
-                (
-                    194,
-                    cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                        radius, half_angle, ..
-                    },
-                ) if *radius == 2.0
-                    && (*half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15 => {}
-                (196, cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. })
-                    if *radius == 2.0 => {}
-                (
-                    198,
-                    cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-                        major_radius,
-                        minor_radius,
-                        ..
-                    },
-                ) if *major_radius == 4.0 && *minor_radius == 1.0 => {}
+                (192, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface))
+                    if {
+                        let (_, _, _, radius) = cylinder_surface.parts();
+                        *radius == 2.0
+                    } => {}
+                (194, cadmpeg_ir::geometry::SurfaceGeometry::Cone(cone_surface))
+                    if {
+                        let (_, _, _, radius, _, half_angle) = cone_surface.parts();
+                        *radius == 2.0
+                            && (*half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15
+                    } => {}
+                (196, cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface))
+                    if {
+                        let (_, _, _, radius) = sphere_surface.parts();
+                        *radius == 2.0
+                    } => {}
+                (198, cadmpeg_ir::geometry::SurfaceGeometry::Torus(torus_surface))
+                    if {
+                        let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                        *major_radius == 4.0 && *minor_radius == 1.0
+                    } => {}
                 _ => panic!(
                     "unexpected type {entity_type} form {form} projection: {:?}",
                     surface.geometry

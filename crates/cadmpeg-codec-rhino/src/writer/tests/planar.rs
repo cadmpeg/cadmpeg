@@ -288,21 +288,27 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     });
     ir.model.curves.push(Curve {
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(5.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(5.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.finalize();
@@ -335,11 +341,14 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle { radius: 2.0, .. })));
-        assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(
-            surface.geometry,
-            SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
-        )));
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })));
+        assert!(decoded.ir().model.surfaces.iter().any(
+            |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                origin.z == 3.0
+            })
+        ));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }

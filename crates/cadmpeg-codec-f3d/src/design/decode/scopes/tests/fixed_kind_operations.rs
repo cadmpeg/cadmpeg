@@ -1044,11 +1044,14 @@ pub(super) fn continue_fixed_kind_operations(
         }],
         &[cadmpeg_ir::geometry::Surface {
             id: surface_id,
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-                origin: Point3::new(4.0, 5.0, 6.0),
-                normal: Vector3::new(0.0, 0.0, -2.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         }],
     )
@@ -1155,23 +1158,29 @@ pub(super) fn continue_fixed_kind_operations(
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: Point3::new(1.0, 2.0, 3.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                radius: 4.0,
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
                 .expect("identity grammar"),
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin: Point3::new(1.0, 2.0, 8.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                radius: 5.0,
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(1.0, 2.0, 8.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ];
@@ -1202,12 +1211,15 @@ pub(super) fn continue_fixed_kind_operations(
         .unwrap(),
         ..feature
     };
-    axis_surfaces[1].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-        origin: Point3::new(2.0, 2.0, 8.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        radius: 5.0,
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    axis_surfaces[1].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(2.0, 2.0, 8.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut conflicting_face_axis_feature),
         std::slice::from_ref(&indexed_revolve_scope),

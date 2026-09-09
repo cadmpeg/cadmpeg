@@ -432,7 +432,7 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         /// The sense boolean of the boundary.
         sense: bool,
         /// The fit tolerance of the boundary approximation.
-        fit_tolerance: f64,
+        fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
     },
     /// A planar boundary carried by a normal and an embedded curve.
     Plane {
@@ -472,7 +472,7 @@ pub struct EmbeddedVertexBlend {
     /// The approximation grid size.
     pub grid_size: i64,
     /// The fit tolerance of the patch approximation.
-    pub fit_tolerance: f64,
+    pub fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
 }
 
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
@@ -528,13 +528,13 @@ pub struct EmbeddedG2Side {
 /// The shape block serialized after a G2 blend's first side.
 pub enum EmbeddedG2FirstShape {
     /// The full form: an optional surface cache and tolerance.
-    Full(Option<(NurbsSurface, f64)>),
+    Full(Option<(NurbsSurface, cadmpeg_ir::geometry::FitTolerance)>),
     /// The reduced form: nine coefficients and a tolerance.
     None {
         /// Nine shape coefficients.
         coefficients: [f64; 9],
         /// The fit tolerance.
-        tolerance: f64,
+        tolerance: cadmpeg_ir::geometry::FitTolerance,
         /// The bridge token serialized after the tolerance, when present.
         extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
         /// The embedded parameter curve closing the block, when present.
@@ -704,7 +704,7 @@ fn g2_blend_spl_sur(
                     shape_parameter,
                     shape_length,
                     shape_tail,
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     tail_extensions,
@@ -722,14 +722,18 @@ fn g2_blend_spl_sur(
             cur.set_pos(saved);
             let (surface, surface_end) = surface_block(span, cur.pos())?;
             cur.set_pos(surface_end);
-            EmbeddedG2FirstShape::Full(Some((surface, cur.take_f64()? * LEN_TO_MM)))
+            EmbeddedG2FirstShape::Full(Some((
+                surface,
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?,
+            )))
         }
     } else {
         let mut coefficients = [0.0; 9];
         for coefficient in &mut coefficients {
             *coefficient = cur.take_f64()?;
         }
-        let tolerance = cur.take_f64()? * LEN_TO_MM;
+        let tolerance =
+            cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
         let extension = (!matches!(cur.peek(), Some(token)
             if matches!(token, Token::Str(_)) || token.is_payload_ident()))
         .then(|| bridge_token(&mut cur))
@@ -1951,7 +1955,7 @@ fn revision_loft(
                     revision,
                     flags,
                     ints,
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                 }),
@@ -2140,7 +2144,7 @@ fn revision_compound_loft(
         DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
-                cache: cache.into_form(),
+                cache: cache.into_form()?,
                 discontinuities,
                 tail_flag,
                 base_profile,
@@ -2651,7 +2655,8 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         }
         1 => {
             let parameters = [cur.take_float_array()?, cur.take_float_array()?];
-            let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
+            let fit_tolerance =
+                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
             let closures = [cur.take_enum()?, cur.take_enum()?];
             let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
@@ -3145,7 +3150,7 @@ fn revision_sweep_sur(
                     primary_flag,
                     profile_endpoints,
                     path_endpoints,
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                 },
                 profile,
                 tail,
@@ -3218,7 +3223,7 @@ fn taper_spl_sur(
                     reference_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3331,11 +3336,13 @@ pub enum RevisionSurfaceCache {
 
 impl RevisionSurfaceCache {
     /// Convert cache metadata to its neutral representation.
-    pub(crate) fn into_form(self) -> RevisionCacheForm {
-        match self {
-            Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache { fit_tolerance },
+    pub(crate) fn into_form(self) -> Option<RevisionCacheForm> {
+        Some(match self {
+            Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache {
+                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(fit_tolerance).ok()?,
+            },
             Self::Parameterized(parameters) => RevisionCacheForm::Parameterization(parameters),
-        }
+        })
     }
 }
 
@@ -3450,7 +3457,7 @@ fn off_spl_sur(
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: flags.try_into().ok()?,
-                        cache: cache.into_form(),
+                        cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3549,7 +3556,7 @@ fn rot_spl_sur(
                     reference_endpoints: profile_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3633,7 +3640,7 @@ fn sum_spl_sur(
                     reference_endpoints: first_endpoints,
                     second_endpoints,
                     flags: Vec::new(),
-                    cache: cache.into_form(),
+                    cache: cache.into_form()?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3735,7 +3742,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: Vec::new(),
-                        cache: cache.into_form(),
+                        cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -3804,7 +3811,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             reference_endpoints: [None; 2],
             second_endpoints: [None; 2],
             flags: Vec::new(),
-            cache: cache.into_form(),
+            cache: cache.into_form()?,
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
@@ -3848,14 +3855,15 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 Some(cur.take_bool()?)
             };
             let values = cur.take_str()?.to_string();
-            TSplineSubtransform::Inline {
-                program,
-                separator,
-                values,
-            }
+            TSplineSubtransform::Inline(
+                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
+                    program, separator, values,
+                )
+                .ok()?,
+            )
         }
         "ref" => TSplineSubtransform::Reference {
-            index: cur.take_long()?,
+            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
             resolved: None,
         },
         _ => return None,
@@ -4147,7 +4155,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
                         flags: Vec::new(),
-                        cache: cache.into_form(),
+                        cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
@@ -4184,9 +4192,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 }
 
 pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::{
-        HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
-    };
+    use cadmpeg_ir::geometry::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
@@ -4222,53 +4228,58 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             return None;
         }
     }
-    let path = HelixPathConstruction {
-        angle_range: path_angle_range,
-        center: Point3::new(
+    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_new(
+        path_angle_range,
+        Point3::new(
             center[0] * LEN_TO_MM,
             center[1] * LEN_TO_MM,
             center[2] * LEN_TO_MM,
         ),
-        major: Vector3::new(
+        Vector3::new(
             major[0] * LEN_TO_MM,
             major[1] * LEN_TO_MM,
             major[2] * LEN_TO_MM,
         ),
-        minor: Vector3::new(
+        Vector3::new(
             minor[0] * LEN_TO_MM,
             minor[1] * LEN_TO_MM,
             minor[2] * LEN_TO_MM,
         ),
-        pitch: Vector3::new(
+        Vector3::new(
             pitch[0] * LEN_TO_MM,
             pitch[1] * LEN_TO_MM,
             pitch[2] * LEN_TO_MM,
         ),
         apex_factor,
         axis,
-    };
+    )
+    .ok()?;
     let profile = if let Some(length) = length {
-        HelixSurfaceProfile::Circle {
-            length,
-            radius: cur.take_f64()? * LEN_TO_MM,
-        }
+        HelixSurfaceProfile::Circle(
+            cadmpeg_ir::geometry::HelixCircleProfile::try_new(length, cur.take_f64()? * LEN_TO_MM)
+                .ok()?,
+        )
     } else {
         let direction = take_frame_vector(&mut cur)?;
-        HelixSurfaceProfile::Line {
-            direction: Vector3::new(
+        HelixSurfaceProfile::Line(
+            cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(
                 direction[0] * LEN_TO_MM,
                 direction[1] * LEN_TO_MM,
                 direction[2] * LEN_TO_MM,
-            ),
-        }
+            ))
+            .ok()?,
+        )
     };
     Some(DecodedProceduralSurface::legacy(
-        DecodedProceduralSurfaceDefinition::Helix(Box::new(HelixSurfaceConstruction {
-            angle_range,
-            dimension_range,
-            path,
-            profile,
-        })),
+        DecodedProceduralSurfaceDefinition::Helix(Box::new(
+            cadmpeg_ir::geometry::HelixSurfaceConstruction::try_new(
+                angle_range,
+                dimension_range,
+                path,
+                profile,
+            )
+            .ok()?,
+        )),
         None,
     ))
 }
@@ -4287,14 +4298,15 @@ fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSpline
                 Some(cur.take_bool()?)
             };
             let values = cur.take_str()?.to_string();
-            Some(TSplineSubtransform::Inline {
-                program,
-                separator,
-                values,
-            })
+            Some(TSplineSubtransform::Inline(
+                cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(
+                    program, separator, values,
+                )
+                .ok()?,
+            ))
         }
         "ref" => Some(TSplineSubtransform::Reference {
-            index: cur.take_long()?,
+            index: cadmpeg_ir::geometry::SubtypeTableIndex::try_new(cur.take_long()?).ok()?,
             resolved: None,
         }),
         _ => None,
@@ -4305,7 +4317,7 @@ fn resolve_t_spline_subtransform(
     index: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
+) -> Option<cadmpeg_ir::geometry::InlineTSplineSubtransform> {
     use cadmpeg_ir::geometry::TSplineSubtransform;
 
     if seen.contains(&index) {
@@ -4314,9 +4326,9 @@ fn resolve_t_spline_subtransform(
     seen.push(index);
     let decoded = t_spline_subtransform(table.span(index)?)?;
     match decoded {
-        inline @ TSplineSubtransform::Inline { .. } => Some(inline),
+        TSplineSubtransform::Inline(inline) => Some(inline),
         TSplineSubtransform::Reference { index, .. } => {
-            resolve_t_spline_subtransform(usize::try_from(index).ok()?, table, seen)
+            resolve_t_spline_subtransform(usize::try_from(index.get()).ok()?, table, seen)
         }
     }
 }
@@ -4364,16 +4376,10 @@ fn procedural_resolving_refs(
                 &mut construction.subtransform
             {
                 let inline = resolve_t_spline_subtransform(
-                    usize::try_from(*index).ok()?,
+                    usize::try_from(index.get()).ok()?,
                     table,
                     &mut Vec::new(),
                 )?;
-                if !matches!(
-                    inline,
-                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { .. }
-                ) {
-                    return None;
-                }
                 *resolved = Some(Box::new(inline));
             }
         }

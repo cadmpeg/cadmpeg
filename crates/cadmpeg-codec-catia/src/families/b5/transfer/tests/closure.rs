@@ -53,16 +53,22 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(translated.control_points(), nurbs.control_points());
 
-    let line = CurveGeometry::Line {
-        origin: Point3::new(10.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(10.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert_eq!(
         curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
-        Some(CurveGeometry::Line {
-            origin: Point3::new(20.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        })
+        Some(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(20.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .expect("valid LineCurve fixture")
+        ))
     );
     assert_eq!(
         curve_on_parameter_range(
@@ -81,17 +87,26 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
-            CurveGeometry::Line {
-                origin: Point3::new(10.0, 0.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-            },
+            CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(10.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0)
+                )
+                .expect("valid LineCurve fixture")
+            ),
             [10.0, 20.0],
             [0.0, 2.0],
         ),
-        Some(CurveGeometry::Line {
-            origin: Point3::new(20.0, 0.0, 0.0),
-            direction: Vector3::new(5.0, 0.0, 0.0),
-        })
+        Some(CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 2.0, 2.0],
+                vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("valid NurbsCurve fixture")
+        ))
     );
 }
 
@@ -625,14 +640,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
             SurfaceId::mint("catia:test:surface#surface-11".to_string()).expect("identity grammar"),
         ),
     ]);
-    let pcurve_20 = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    let pcurve_21 = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 1.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let pcurve_20 = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .expect("valid LinePcurve fixture"),
+    );
+    let pcurve_21 = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
+            .expect("valid LinePcurve fixture"),
+    );
     let pcurves = BTreeMap::from([
         (20, (pcurve_20.clone(), false, [2.0, 4.0])),
         (21, (pcurve_21.clone(), false, [2.0, 5.0])),
@@ -643,14 +658,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         one_sided,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range == [2.0, 4.0]
-                && family.context().sides[0].surface == Some(surfaces[&10].clone())
-                && family.context().sides[0]
+            if family.context().parameter_range() == [2.0, 4.0]
+                && family.context().sides()[0].surface == Some(surfaces[&10].clone())
+                && family.context().sides()[0]
                     .pcurve
                     .as_ref()
                     .map(|pcurve| &pcurve.geometry)
                     == Some(&pcurve_20)
-                && family.context().sides[1].surface.is_none()
+                && family.context().sides()[1].surface.is_none()
     ));
 
     let (_, _, intersection) = b5_edge_support_definition(
@@ -663,15 +678,14 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         intersection,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range == [2.0, 4.0]
-                && context.sides[1].surface == Some(surfaces[&11].clone())
-                && context.sides[1]
+            if context.parameter_range() == [2.0, 4.0]
+                && context.sides()[1].surface == Some(surfaces[&11].clone())
+                && context.sides()[1]
                     .pcurve
                     .as_ref()
                     .map(|pcurve| &pcurve.geometry)
                     == Some(&pcurve_21)
-            && context
-                .sides
+            && context.sides()
                 .iter()
                 .all(|side| side.pcurve_parameter_range().is_none())
     ));
@@ -685,9 +699,9 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range == [0.0, 1.0]
-            && context.sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
-            && context.sides[1].pcurve_parameter_range() == Some([5.0, 2.0])
+            if context.parameter_range() == [0.0, 1.0]
+            && context.sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            && context.sides()[1].pcurve_parameter_range() == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(10, 20, [2.0, 4.0])],
@@ -699,19 +713,22 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range == [0.0, 8.0]
-            && family.context().sides[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            if family.context().parameter_range() == [0.0, 8.0]
+            && family.context().sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
     ));
 }
 
 #[test]
 fn procedural_support_requires_physical_edge_endpoint_agreement() {
     let plane = || SurfacePlan {
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         procedure: None,
     };
     let surfaces = BTreeMap::from([(10, plane()), (11, plane())]);
@@ -719,10 +736,13 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         (
             20,
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 false,
                 [0.0, 1.0],
             ),
@@ -730,10 +750,13 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         (
             21,
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(1.0, 0.0),
-                    direction: Point2::new(-1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(1.0, 0.0),
+                        Point2::new(-1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 false,
                 [0.0, 1.0],
             ),
@@ -1161,11 +1184,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     let surfaces = BTreeMap::from([(
         4,
         SurfacePlan {
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             procedure: None,
         },
     )]);

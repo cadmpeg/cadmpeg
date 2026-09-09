@@ -58,12 +58,15 @@ pub(super) fn sphere_great_circle_geometry(
         scale(*direction_x, -phase.sin()),
         scale(*direction_y, phase.cos()),
     );
-    Some(CurveGeometry::Circle {
-        center: point3(*center),
-        axis: vector(plane_axis),
-        ref_direction: vector(ref_direction),
-        radius: *radius,
-    })
+    Some(CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            point3(*center),
+            vector(plane_axis),
+            vector(scale(ref_direction, radius.signum())),
+            radius.abs(),
+        )
+        .ok()?,
+    ))
 }
 
 pub(super) fn sphere_great_circle_pcurve(
@@ -80,12 +83,15 @@ pub(super) fn sphere_great_circle_pcurve(
         && plane_phase.is_finite()
         && pcurve.slope.is_finite())
     .then_some((
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin: 0.0,
-            azimuth_rate,
-            plane_phase,
-            plane_slope: pcurve.slope,
-        },
+        PcurveGeometry::SphericalGreatCircle(
+            cadmpeg_ir::geometry::SphericalGreatCirclePcurve::try_new(
+                0.0,
+                azimuth_rate,
+                plane_phase,
+                pcurve.slope,
+            )
+            .ok()?,
+        ),
         parameter_range,
     ))
 }
@@ -95,9 +101,10 @@ pub(super) fn oriented_line_plan(
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
+    let (origin, direction) = line_curve.parts();
     let origin = [origin.x, origin.y, origin.z];
     let mut direction = [direction.x, direction.y, direction.z];
     let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
@@ -120,10 +127,9 @@ pub(super) fn oriented_line_plan(
         range = [-range[0], -range[1]];
     }
     Some(CurvePlan {
-        geometry: CurveGeometry::Line {
-            origin: point3(origin),
-            direction: vector(direction),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(point3(origin), vector(direction)).ok()?,
+        ),
         parameter_range: Some(range),
         edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
             Some(cadmpeg_ir::units::PositiveScalar::new(
@@ -176,26 +182,13 @@ pub(super) fn oriented_circle_plan(
         return None;
     }
 
-    let CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
-    if !radius.is_finite() || *radius == 0.0 {
-        return None;
-    }
+    let (center, axis, ref_direction, radius) = circle_curve.parts();
     let mut axis = *axis;
-    let mut ref_direction = *ref_direction;
-    let radius = if *radius < 0.0 {
-        ref_direction = Vector3::new(-ref_direction.x, -ref_direction.y, -ref_direction.z);
-        -*radius
-    } else {
-        *radius
-    };
+    let ref_direction = *ref_direction;
+    let radius = *radius;
     let oriented_angles = if delta < 0.0 {
         axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         [-angles[0], -angles[1]]
@@ -203,12 +196,9 @@ pub(super) fn oriented_circle_plan(
         angles
     };
     let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
-    let geometry = CurveGeometry::Circle {
-        center: *center,
-        axis,
-        ref_direction,
-        radius,
-    };
+    let geometry = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(*center, axis, ref_direction, radius).ok()?,
+    );
     let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
     let [Some(start), Some(end)] = evaluated else {
         return None;
@@ -441,10 +431,10 @@ pub(super) fn lifted_curve_geometry(
                 *angular_scale,
                 *first,
             );
-            Some(CurveGeometry::Line {
-                origin: point3(line_origin),
-                direction: vector(*axis),
-            })
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(point3(line_origin), vector(*axis))
+                    .ok()?,
+            ))
         }
         B5Surface::Cone {
             apex,
@@ -461,13 +451,16 @@ pub(super) fn lifted_curve_geometry(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
             );
-            Some(CurveGeometry::Line {
-                origin: point3(*apex),
-                direction: vector(add(
-                    scale(*axis, half_angle.cos()),
-                    scale(radial, half_angle.sin()),
-                )),
-            })
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    point3(*apex),
+                    vector(add(
+                        scale(*axis, half_angle.cos()),
+                        scale(radial, half_angle.sin()),
+                    )),
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Torus {
             center,
@@ -486,12 +479,15 @@ pub(super) fn lifted_curve_geometry(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
             );
-            Some(CurveGeometry::Circle {
-                center: point3(add(*center, scale(radial, *major_radius))),
-                axis: vector(cross(radial, *axis)),
-                ref_direction: vector(radial),
-                radius: *minor_radius,
-            })
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point3(add(*center, scale(radial, *major_radius))),
+                    vector(cross(radial, *axis)),
+                    vector(scale(radial, minor_radius.signum())),
+                    minor_radius.abs(),
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Torus {
             center,
@@ -505,13 +501,15 @@ pub(super) fn lifted_curve_geometry(
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
-            (signed_radius.is_finite() && signed_radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
-                axis: vector(*axis),
-                ref_direction: vector(scale(*direction_x, signed_radius.signum())),
-                radius: signed_radius.abs(),
-            })
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
+                    vector(*axis),
+                    vector(scale(*direction_x, signed_radius.signum())),
+                    signed_radius.abs(),
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Cone {
             apex,
@@ -522,13 +520,15 @@ pub(super) fn lifted_curve_geometry(
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
             let radius = slant * half_angle.sin();
-            (radius.is_finite() && radius != 0.0).then_some(())?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                axis: vector(*axis),
-                ref_direction: vector(*direction_x),
-                radius,
-            })
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                    vector(*axis),
+                    vector(scale(*direction_x, radius.signum())),
+                    radius.abs(),
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Cylinder {
             origin,
@@ -538,12 +538,15 @@ pub(super) fn lifted_curve_geometry(
             ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
-            Some(CurveGeometry::Circle {
-                center: point3(add(*origin, scale(*axis, v))),
-                axis: vector(*axis),
-                ref_direction: vector(*reference_x),
-                radius: *radius,
-            })
+            Some(CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    point3(add(*origin, scale(*axis, v))),
+                    vector(*axis),
+                    vector(scale(*reference_x, radius.signum())),
+                    radius.abs(),
+                )
+                .ok()?,
+            ))
         }
         B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface).map(CurveGeometry::Nurbs),
         B5Surface::Revolution { .. } => None,
@@ -640,18 +643,21 @@ pub(super) fn cylinder_helix(
     );
     let tangent = cross(*axis, radial);
     let sweep = delta_angle.abs();
-    let definition = ProceduralCurveDefinition::Helix {
-        angle_range: [0.0, sweep],
-        center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
-        major: vector(scale(radial, *radius)),
-        minor: vector(scale(tangent, radius * delta_angle.signum())),
-        pitch: vector(scale(
-            *axis,
-            delta_height / sweep * 2.0 * std::f64::consts::PI,
-        )),
-        apex_factor: 0.0,
-        axis: vector(*axis),
-    };
+    let definition = ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [0.0, sweep],
+            point3(add(*origin, scale(*axis, endpoints[0][1]))),
+            vector(scale(radial, *radius)),
+            vector(scale(tangent, radius * delta_angle.signum())),
+            vector(scale(
+                *axis,
+                delta_height / sweep * 2.0 * std::f64::consts::PI,
+            )),
+            0.0,
+            vector(*axis),
+        )
+        .ok()?,
+    );
     let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
     let cache_start = cache.curve.control_points().first()?;
     let cache_end = cache.curve.control_points().last()?;
@@ -746,11 +752,12 @@ pub(super) fn emit_pcurves(
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                     None,
                     Some(parameter_range),
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             });
         }
     }

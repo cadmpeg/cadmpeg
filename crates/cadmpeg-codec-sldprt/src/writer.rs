@@ -609,9 +609,8 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     }
     for surface in &ir.model.surfaces {
         match &surface.geometry {
-            SurfaceGeometry::Cone {
-                ratio, half_angle, ..
-            } => {
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (_, _, _, _, ratio, half_angle) = cone_surface.parts();
                 if *ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
@@ -625,17 +624,25 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
                     )));
                 }
             }
-            SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
+            SurfaceGeometry::Sphere(sphere_surface)
+                if {
+                    let (_, _, _, radius) = sphere_surface.parts();
+                    *radius < 0.0
+                } =>
+            {
+                let (_, _, _, radius) = sphere_surface.parts();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
                 )));
             }
-            SurfaceGeometry::Torus {
-                major_radius,
-                minor_radius,
-                ..
-            } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
+            SurfaceGeometry::Torus(torus_surface)
+                if {
+                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                    !(*major_radius > *minor_radius && *minor_radius > 0.0)
+                } =>
+            {
+                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
@@ -2327,7 +2334,7 @@ pub(crate) fn brep_body(
         .curves
         .iter()
         .filter(|curve| {
-            matches!(curve.geometry, CurveGeometry::Degenerate { .. })
+            matches!(curve.geometry, CurveGeometry::Degenerate(_))
                 && curve
                     .id
                     .as_str()
@@ -3012,48 +3019,43 @@ pub(super) fn surface_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => (
-            0x32,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                normal.x,
-                normal.y,
-                normal.z,
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } => (
-            0x33,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*radius),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            radius,
-            ratio,
-            half_angle,
-            ..
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, _) = plane_surface.parts();
+            (
+                0x32,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    normal.x,
+                    normal.y,
+                    normal.z,
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, _, radius) = cylinder_surface.parts();
+            (
+                0x33,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(*radius),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, _, radius, ratio, half_angle) = cone_surface.parts();
             if *ratio != 1.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
@@ -3082,12 +3084,8 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, _, radius) = sphere_surface.parts();
             if *radius < 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact sphere carriers require a positive radius".into(),
@@ -3110,13 +3108,8 @@ pub(super) fn surface_values(
                 ],
             )
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, _, major_radius, minor_radius) = torus_surface.parts();
             if !(*major_radius > *minor_radius && *minor_radius > 0.0) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),
@@ -3426,23 +3419,22 @@ pub(super) fn curve_values(
 ) -> Result<(u8, Vec<f64>), CodecError> {
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
-        CurveGeometry::Line { origin, direction } => (
-            0x1e,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                direction.x,
-                direction.y,
-                direction.z,
-            ],
-        ),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            (
+                0x1e,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    direction.x,
+                    direction.y,
+                    direction.z,
+                ],
+            )
+        }
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             let reference = *ref_direction;
             (
                 0x1f,
@@ -3460,34 +3452,36 @@ pub(super) fn curve_values(
                 ],
             )
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            0x20,
-            vec![
-                scaled(center.x),
-                scaled(center.y),
-                scaled(center.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                major_direction.x,
-                major_direction.y,
-                major_direction.z,
-                scaled(*major_radius),
-                scaled(*minor_radius),
-            ],
-        ),
-        CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            (
+                0x20,
+                vec![
+                    scaled(center.x),
+                    scaled(center.y),
+                    scaled(center.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    major_direction.x,
+                    major_direction.y,
+                    major_direction.z,
+                    scaled(*major_radius),
+                    scaled(*minor_radius),
+                ],
+            )
+        }
+        CurveGeometry::Parabola(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
             ))
         }
-        CurveGeometry::Degenerate { .. } => {
+        CurveGeometry::Hyperbola(_) => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support parabola or hyperbola curves".into(),
+            ))
+        }
+        CurveGeometry::Degenerate(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support degenerate curves".into(),
             ))
@@ -3523,27 +3517,26 @@ pub(super) fn curve_values(
 
 pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     match geometry {
-        SurfaceGeometry::Plane { u_axis, .. } => *u_axis,
-        SurfaceGeometry::Cylinder {
-            axis: _,
-            ref_direction,
-            ..
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (_, _, u_axis) = plane_surface.parts();
+            *u_axis
         }
-        | SurfaceGeometry::Cone {
-            axis: _,
-            ref_direction,
-            ..
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (_, _, ref_direction, _) = cylinder_surface.parts();
+            *ref_direction
         }
-        | SurfaceGeometry::Torus {
-            axis: _,
-            ref_direction,
-            ..
-        } => *ref_direction,
-        SurfaceGeometry::Sphere {
-            axis: _,
-            ref_direction,
-            ..
-        } => *ref_direction,
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (_, _, ref_direction, _, _, _) = cone_surface.parts();
+            *ref_direction
+        }
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (_, _, ref_direction, _, _) = torus_surface.parts();
+            *ref_direction
+        }
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (_, _, ref_direction, _) = sphere_surface.parts();
+            *ref_direction
+        }
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Polygonal(_)

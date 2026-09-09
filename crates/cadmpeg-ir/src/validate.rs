@@ -15,7 +15,6 @@ use crate::features::Feature;
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
 use crate::topology::Coedge;
@@ -37,7 +36,6 @@ mod referential_integrity;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
-mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
@@ -56,16 +54,10 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use subd::check_procedural_surfaces;
 use topology::{
     check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
     check_wire_topology,
 };
-
-/// A radius/length that is not a finite positive number is invalid geometry.
-fn nonpositive(x: f64) -> bool {
-    !(x.is_finite() && x > 0.0)
-}
 
 /// Count the records represented by the IR arenas without running validation.
 ///
@@ -105,7 +97,6 @@ fn validate_model_with_index(
     check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
-    check_procedural_surfaces(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);

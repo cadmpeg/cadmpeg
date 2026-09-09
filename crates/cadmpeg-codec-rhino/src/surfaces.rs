@@ -53,9 +53,7 @@ pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
 #[derive(Debug, Clone)]
 pub(crate) enum TypedSurface {
     Plane {
-        origin: Point3,
-        normal: Vector3,
-        u_axis: Vector3,
+        plane: cadmpeg_ir::geometry::PlaneSurface,
         parameterization: PlaneParameterization,
     },
     Nurbs(NurbsSurface),
@@ -73,16 +71,7 @@ impl TypedSurface {
 
     pub(crate) fn into_geometry(self) -> SurfaceGeometry {
         match self {
-            Self::Plane {
-                origin,
-                normal,
-                u_axis,
-                ..
-            } => SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            },
+            Self::Plane { plane, .. } => SurfaceGeometry::Plane(plane),
             Self::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs),
         }
     }
@@ -151,13 +140,17 @@ pub(crate) enum DecodedProceduralSurface {
 }
 
 impl DecodedProceduralSurface {
-    pub(crate) fn into_definition(
+    pub(crate) fn into_definition<E>(
         self,
-        mut commit_child: impl FnMut(usize, &'static str, DecodedCurve) -> cadmpeg_ir::ids::CurveId,
-    ) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+        mut commit_child: impl FnMut(
+            usize,
+            &'static str,
+            DecodedCurve,
+        ) -> Result<cadmpeg_ir::ids::CurveId, E>,
+    ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
-        match self {
+        Ok(match self {
             Self::Revolution {
                 children,
                 axis_origin,
@@ -168,7 +161,7 @@ impl DecodedProceduralSurface {
             } => {
                 let [directrix] = *children;
                 ProceduralSurfaceDefinition::Revolution {
-                    directrix: commit_child(0, "directrix", directrix),
+                    directrix: commit_child(0, "directrix", directrix)?,
                     axis_origin,
                     axis_direction,
                     angular_interval,
@@ -184,13 +177,13 @@ impl DecodedProceduralSurface {
             } => {
                 let [first, second] = *children;
                 ProceduralSurfaceDefinition::Sum {
-                    first: commit_child(0, "first", first),
-                    second: commit_child(1, "second", second),
+                    first: commit_child(0, "first", first)?,
+                    second: commit_child(1, "second", second)?,
                     basepoint,
                     revision_form: None,
                 }
             }
-        }
+        })
     }
 }
 
@@ -985,10 +978,13 @@ fn read_plane_surface_with_parameterization(
         (domain, v_domain)
     };
     let geometry = TypedSurface::Plane {
-        origin: scale_native_point(native_plane.origin, scale)
-            .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
-        normal: vector(native_plane.zaxis),
-        u_axis: vector(native_plane.xaxis),
+        plane: cadmpeg_ir::geometry::PlaneSurface::try_new(
+            scale_native_point(native_plane.origin, scale)
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            vector(native_plane.zaxis),
+            vector(native_plane.xaxis),
+        )
+        .map_err(|message| error(reader.position(), message))?,
         parameterization: PlaneParameterization {
             u_domain: domain,
             v_domain,

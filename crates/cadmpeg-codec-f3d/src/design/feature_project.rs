@@ -6021,10 +6021,22 @@ fn analytic_surface_axis(
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let (origin, direction) = match geometry {
-        SurfaceGeometry::Plane { origin, normal, .. } => (*origin, *normal),
-        SurfaceGeometry::Cylinder { origin, axis, .. }
-        | SurfaceGeometry::Cone { origin, axis, .. } => (*origin, *axis),
-        SurfaceGeometry::Torus { center, axis, .. } => (*center, *axis),
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, _) = plane_surface.parts();
+            (*origin, *normal)
+        }
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, _, _) = cylinder_surface.parts();
+            (*origin, *axis)
+        }
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, _, _, _, _) = cone_surface.parts();
+            (*origin, *axis)
+        }
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, _, _, _) = torus_surface.parts();
+            (*center, *axis)
+        }
         _ => return None,
     };
     let length = direction.norm();

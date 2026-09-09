@@ -94,7 +94,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -193,23 +193,26 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             );
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(
-                        transform.origin()[0] + offset * transform.normal()[0],
-                        transform.origin()[1] + offset * transform.normal()[1],
-                        transform.origin()[2] + offset * transform.normal()[2],
-                    ),
-                    normal: Vector3::new(
-                        transform.normal()[0],
-                        transform.normal()[1],
-                        transform.normal()[2],
-                    ),
-                    u_axis: Vector3::new(
-                        transform.u_axis()[0],
-                        transform.u_axis()[1],
-                        transform.u_axis()[2],
-                    ),
-                },
+                geometry: SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(
+                            transform.origin()[0] + offset * transform.normal()[0],
+                            transform.origin()[1] + offset * transform.normal()[1],
+                            transform.origin()[2] + offset * transform.normal()[2],
+                        ),
+                        Vector3::new(
+                            transform.normal()[0],
+                            transform.normal()[1],
+                            transform.normal()[2],
+                        ),
+                        Vector3::new(
+                            transform.u_axis()[0],
+                            transform.u_axis()[1],
+                            transform.u_axis()[2],
+                        ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 source_object: None,
             });
         }
@@ -288,37 +291,43 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             })) else {
                                 continue;
                             };
-                            CurveGeometry::Line {
-                                origin: Point3::new(
-                                    placed_start[0] + offset * transform.normal()[0],
-                                    placed_start[1] + offset * transform.normal()[1],
-                                    placed_start[2] + offset * transform.normal()[2],
-                                ),
-                                direction: Vector3::new(direction[0], direction[1], direction[2]),
-                            }
+                            CurveGeometry::Line(
+                                cadmpeg_ir::geometry::LineCurve::try_new(
+                                    Point3::new(
+                                        placed_start[0] + offset * transform.normal()[0],
+                                        placed_start[1] + offset * transform.normal()[1],
+                                        placed_start[2] + offset * transform.normal()[2],
+                                    ),
+                                    Vector3::new(direction[0], direction[1], direction[2]),
+                                )
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            )
                         }
                         ProfileGeometry::Arc { center, radius, .. }
                         | ProfileGeometry::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
                             let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
-                            CurveGeometry::Circle {
-                                center: Point3::new(
-                                    center[0] + offset * transform.normal()[0],
-                                    center[1] + offset * transform.normal()[1],
-                                    center[2] + offset * transform.normal()[2],
-                                ),
-                                axis: Vector3::new(
-                                    axis_sign * transform.normal()[0],
-                                    axis_sign * transform.normal()[1],
-                                    axis_sign * transform.normal()[2],
-                                ),
-                                ref_direction: Vector3::new(
-                                    transform.u_axis()[0],
-                                    transform.u_axis()[1],
-                                    transform.u_axis()[2],
-                                ),
-                                radius: radius.get(),
-                            }
+                            CurveGeometry::Circle(
+                                cadmpeg_ir::geometry::CircleCurve::try_new(
+                                    Point3::new(
+                                        center[0] + offset * transform.normal()[0],
+                                        center[1] + offset * transform.normal()[1],
+                                        center[2] + offset * transform.normal()[2],
+                                    ),
+                                    Vector3::new(
+                                        axis_sign * transform.normal()[0],
+                                        axis_sign * transform.normal()[1],
+                                        axis_sign * transform.normal()[2],
+                                    ),
+                                    Vector3::new(
+                                        transform.u_axis()[0],
+                                        transform.u_axis()[1],
+                                        transform.u_axis()[2],
+                                    ),
+                                    radius.get(),
+                                )
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            )
                         }
                         ProfileGeometry::Nurbs { .. } => {
                             let Some(nurbs) =
@@ -390,18 +399,21 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let origin = section_point_in_model(transform, start);
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
-                    geometry: CurveGeometry::Line {
-                        origin: Point3::new(
-                            origin[0] + span.lower * transform.normal()[0],
-                            origin[1] + span.lower * transform.normal()[1],
-                            origin[2] + span.lower * transform.normal()[2],
-                        ),
-                        direction: Vector3::new(
-                            transform.normal()[0],
-                            transform.normal()[1],
-                            transform.normal()[2],
-                        ),
-                    },
+                    geometry: CurveGeometry::Line(
+                        cadmpeg_ir::geometry::LineCurve::try_new(
+                            Point3::new(
+                                origin[0] + span.lower * transform.normal()[0],
+                                origin[1] + span.lower * transform.normal()[1],
+                                origin[2] + span.lower * transform.normal()[2],
+                            ),
+                            Vector3::new(
+                                transform.normal()[0],
+                                transform.normal()[1],
+                                transform.normal()[2],
+                            ),
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                     source_object: None,
                 });
                 ir.model.edges.push(Edge {
@@ -472,8 +484,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end),
-                );
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "extrusion pcurve geometry is invalid",
+                            )
+                        },
+                    )?,
+                )?;
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: bottom_loop.clone(),
@@ -508,8 +526,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end),
-                );
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "extrusion pcurve geometry is invalid",
+                            )
+                        },
+                    )?,
+                )?;
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: top_loop.clone(),
@@ -618,8 +642,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ))
                         .expect("identity grammar"),
                         transform.offset,
-                        line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]),
-                    );
+                        line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]).ok_or_else(
+                            || {
+                                cadmpeg_core::CodecError::malformed(
+                                    "extrusion pcurve geometry is invalid",
+                                )
+                            },
+                        )?,
+                    )?;
                     ir.model.coedges.push(Coedge {
                         id: coedges[use_index].clone(),
                         owner_loop: loop_id.clone(),
@@ -709,7 +739,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]

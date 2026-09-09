@@ -852,7 +852,10 @@ pub(in super::super) fn round_placed_cylinder_radius(
         SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
-            SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (_, _, _, &radius) = cylinder_surface.parts();
+                Some(radius)
+            }
             _ => None,
         }
     })
@@ -995,17 +998,10 @@ fn chamfer_cone_equation(
     let id =
         SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
-    let SurfaceGeometry::Cone {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-        ratio,
-        half_angle,
-    } = &surface.geometry
-    else {
+    let SurfaceGeometry::Cone(cone_surface) = &surface.geometry else {
         return None;
     };
+    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
     ConeEquation::new(
         [origin.x, origin.y, origin.z],
         [axis.x, axis.y, axis.z],
@@ -1063,7 +1059,7 @@ pub(in super::super) fn chamfer_constant_distance(
                     .collect::<Vec<_>>();
                 match model_surfaces.as_slice() {
                     [] => false,
-                    [surface] => matches!(&surface.geometry, SurfaceGeometry::Plane { .. }),
+                    [surface] => matches!(&surface.geometry, SurfaceGeometry::Plane(_)),
                     _ => return None,
                 }
             }

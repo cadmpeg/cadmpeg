@@ -284,9 +284,10 @@ pub(crate) fn walk_reachable_topology(
                             if purpose == DecodePurpose::History {
                                 pcurve_geo
                                     .entry(super::PcurveRecordIndex(pc))
-                                    .or_insert_with(|| PcurveGeometry::Line {
-                                        origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                                    .or_insert_with(|| {
+                                        PcurveGeometry::Line(
+                                            cadmpeg_ir::geometry::LinePcurve::U_AXIS,
+                                        )
                                     });
                                 kept_pcurves.insert(pc);
                             } else {
@@ -437,9 +438,9 @@ pub(crate) fn walk_reachable_topology(
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                                                     &crec.tokens,
                                                     token_table,
-                                                )
+                                                ).and_then(|definition| definition.into_definition().ok())
                                             {
-                                                let mut definition = definition.into_definition();
+                                                let mut definition = definition;
                                                 if record_reversed(crec) {
                                                     reverse_procedural_curve_definition(
                                                         &mut definition,
@@ -720,8 +721,9 @@ fn keep_wire_edge(
                     &curve_record.tokens,
                     token_table,
                 )
+                .and_then(|definition| definition.into_definition().ok())
             {
-                let mut definition = definition.into_definition();
+                let mut definition = definition;
                 if record_reversed(curve_record) {
                     reverse_procedural_curve_definition(&mut definition);
                 }

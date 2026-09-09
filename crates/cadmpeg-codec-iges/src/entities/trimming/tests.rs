@@ -330,19 +330,25 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let candidates = vec![
@@ -410,10 +416,10 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ]);
 
     let pcurves = vec![(
-        PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(2.0, 0.0),
-        },
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(2.0, 0.0))
+                .unwrap(),
+        ),
         [0.0, 1.0],
     )];
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
@@ -681,11 +687,14 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
         [0.0, 0.0],
     ]))];
     let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter).unwrap();
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
 
     assert_eq!(
         linear_boundary_relationship_is_valid(

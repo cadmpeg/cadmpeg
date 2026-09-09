@@ -767,7 +767,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         );
         assert_eq!(construction.boundaries.len(), 4);
         assert_eq!(construction.grid_size, 17);
-        assert_eq!(construction.fit_tolerance, 0.03);
+        assert_eq!(construction.fit_tolerance.get(), 0.03);
         let VertexBlendBoundaryGeometry::Circle {
             twists,
             parameters,
@@ -821,10 +821,15 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .iter_mut()
                 .find(|candidate| candidate.id == *curve)
                 .expect("vertex-blend boundary curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
+                    cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -960,20 +965,22 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval,
-            direction,
-            native_position,
-            ..
-        } = definition
-        else {
-            panic!("expected extrusion")
-        };
-        *parameter_interval = Some([-0.5, 1.25]);
-        *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
-        *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
-    });
+    edited.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Extrusion {
+                parameter_interval,
+                direction,
+                native_position,
+                ..
+            } = definition
+            else {
+                panic!("expected extrusion")
+            };
+            *parameter_interval = Some([-0.5, 1.25]);
+            *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+            *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+        })
+        .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -1299,8 +1306,8 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let (support_ids, spine_id) =
-        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+    let (support_ids, spine_id) = source_less.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend {
                 supports,
                 spine: Some(spine),
@@ -1323,18 +1330,25 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                 signed_radius: -2.0,
             };
             (support_ids, spine_id)
-        });
+        })
+        .unwrap();
     let support_geometry = [
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 1.0, 0.0),
-        },
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
     ];
     for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
         source_less
@@ -1379,24 +1393,22 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .model
         .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
         .expect("rolling-ball carrier");
-    assert!(matches!(
-        round_trip
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == carrier_id)
-            .expect("rolling-ball carrier")
-            .geometry.solved_cache().expect("solved rolling-ball cache"),
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } if *origin == Point3::new(2.0, 2.0, -4.0)
-            && *axis == Vector3::new(0.0, 0.0, 1.0)
-            && *radius == 2.0
-    ));
+    assert!(matches!(round_trip
+    .ir()
+    .model
+    .surfaces
+    .iter()
+    .find(|surface| &surface.id == carrier_id)
+    .expect("rolling-ball carrier")
+    .geometry
+    .solved_cache()
+    .expect("solved rolling-ball cache"), SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (origin, axis, _, radius) = cylinder_surface.parts();
+            *origin == Point3::new(2.0, 2.0, -4.0)
+                && *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *radius == 2.0
+        }));
 }
 
 #[test]
@@ -1443,15 +1455,17 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rolling-ball decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { radius, .. } = definition else {
-            panic!("expected rolling-ball blend")
-        };
-        *radius = BlendRadiusLaw::Linear {
-            start: -2.0,
-            end: -4.0,
-        };
-    });
+    edited.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { radius, .. } = definition else {
+                panic!("expected rolling-ball blend")
+            };
+            *radius = BlendRadiusLaw::Linear {
+                start: -2.0,
+                end: -4.0,
+            };
+        })
+        .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)

@@ -44,7 +44,10 @@ fn edge_uses_decoded_line_curve() {
 
     assert_eq!(result.ir().model.curves.len(), 1);
     match &result.ir().model.curves[0].geometry {
-        CurveGeometry::Line { direction, .. } => assert_eq!(direction.x, 1.0),
+        CurveGeometry::Line(line_curve) => {
+            let (_, direction) = line_curve.parts();
+            assert_eq!(direction.x, 1.0);
+        }
         other => panic!("expected line, got {other:?}"),
     }
     assert_eq!(
@@ -166,11 +169,11 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
 
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Line(_)
     ));
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ));
 }
 

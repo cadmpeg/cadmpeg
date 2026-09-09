@@ -122,12 +122,15 @@ fn periodic_curve_parameter_domain_is_checked() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+        .geometry = CurveGeometry::Circle(
+        crate::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
     ir.model.edges[0].param_range = Some([0.0, 7.0]);
     assert!(validate_neutral(&ir, Vec::new())
         .findings

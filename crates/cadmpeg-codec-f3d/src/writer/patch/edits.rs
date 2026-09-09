@@ -3022,31 +3022,26 @@ pub(crate) fn validate_curve_edits(
         }
         edited.insert(id.to_owned());
         let valid = match after {
-            CurveGeometry::Line { origin, direction }
-                if matches!(before, CurveGeometry::Line { .. }) =>
-            {
+            CurveGeometry::Line(line_curve) if { matches!(before, CurveGeometry::Line(_)) } => {
+                let (origin, direction) = line_curve.parts();
                 finite_point(*origin)
                     && finite_vector(*direction)
                     && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
             }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, CurveGeometry::Circle { .. }) => {
+            CurveGeometry::Circle(circle_curve)
+                if { matches!(before, CurveGeometry::Circle(_)) } =>
+            {
+                let (center, axis, ref_direction, radius) = circle_curve.parts();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius > 0.0
             }
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } if matches!(before, CurveGeometry::Ellipse { .. }) => {
+            CurveGeometry::Ellipse(ellipse_curve)
+                if { matches!(before, CurveGeometry::Ellipse(_)) } =>
+            {
+                let (center, axis, major_direction, major_radius, minor_radius) =
+                    ellipse_curve.parts();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *major_direction)
                     && major_radius.is_finite()
@@ -3055,9 +3050,10 @@ pub(crate) fn validate_curve_edits(
                     && *minor_radius > 0.0
                     && *minor_radius <= *major_radius
             }
-            CurveGeometry::Degenerate { point }
-                if matches!(before, CurveGeometry::Degenerate { .. }) =>
+            CurveGeometry::Degenerate(degenerate_curve)
+                if { matches!(before, CurveGeometry::Degenerate(_)) } =>
             {
+                let (point,) = degenerate_curve.parts();
                 finite_point(*point)
             }
             CurveGeometry::Nurbs(after) => {
@@ -3164,10 +3160,7 @@ pub(crate) fn validate_pcurve_edits(
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
             && after
                 .parameter_range()
-                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1])
-            && after
-                .fit_tolerance()
-                .is_none_or(|tolerance| tolerance.is_finite() && tolerance >= 0.0);
+                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1]);
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3180,7 +3173,7 @@ pub(crate) fn validate_pcurve_edits(
             .flatten();
         let edit = match &before.metadata {
             cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
-                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+                if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
                     native_geometry: after_native,
@@ -3243,31 +3236,26 @@ pub(crate) fn validate_surface_edits(
             continue;
         }
         let valid = match after {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } if matches!(before, SurfaceGeometry::Plane { .. }) => {
+            SurfaceGeometry::Plane(plane_surface)
+                if { matches!(before, SurfaceGeometry::Plane(_)) } =>
+            {
+                let (origin, normal, u_axis) = plane_surface.parts();
                 finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
             }
-            SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, SurfaceGeometry::Sphere { .. }) => {
+            SurfaceGeometry::Sphere(sphere_surface)
+                if { matches!(before, SurfaceGeometry::Sphere(_)) } =>
+            {
+                let (center, axis, ref_direction, radius) = sphere_surface.parts();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
             }
-            SurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            } if matches!(before, SurfaceGeometry::Torus { .. }) => {
+            SurfaceGeometry::Torus(torus_surface)
+                if { matches!(before, SurfaceGeometry::Torus(_)) } =>
+            {
+                let (center, axis, ref_direction, major_radius, minor_radius) =
+                    torus_surface.parts();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
@@ -3275,25 +3263,19 @@ pub(crate) fn validate_surface_edits(
                     && *major_radius != 0.0
                     && *minor_radius != 0.0
             }
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } if matches!(before, SurfaceGeometry::Cylinder { .. }) => {
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if { matches!(before, SurfaceGeometry::Cylinder(_)) } =>
+            {
+                let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && *radius != 0.0
             }
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } if matches!(before, SurfaceGeometry::Cone { .. }) => {
+            SurfaceGeometry::Cone(cone_surface)
+                if { matches!(before, SurfaceGeometry::Cone(_)) } =>
+            {
+                let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
@@ -3538,8 +3520,8 @@ pub(crate) fn validate_procedural_curve_edits(
         let after = target[id];
         let definition = match (before.definition(), after.definition()) {
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
             ) if before.definition() != after.definition() => Some(after.definition().clone()),
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
@@ -3579,12 +3561,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     context: after_context,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3600,12 +3582,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     base: after_base,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_base == after_base
                 && before.definition() != after.definition() =>
             {
@@ -3638,12 +3620,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     tail: after_tail,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_source == after_source
                 && matches!(
                     (before_tail, after_tail),
@@ -3668,12 +3650,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     context: after_context,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3689,12 +3671,12 @@ pub(crate) fn validate_procedural_curve_edits(
                     third: after_third,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
+            ) if before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
                 && before_third == after_third
                 && before.definition() != after.definition() =>
             {
@@ -3708,13 +3690,17 @@ pub(crate) fn validate_procedural_curve_edits(
                     family: after_family,
                 },
             ) if before_family.has_same_form(after_family)
-                && before_family.context().sides == after_family.context().sides
+                && before_family.context().sides() == after_family.context().sides()
                 && before_family
                     .context()
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_family.context().discontinuities.iter().map(Vec::len))
+                    .eq(after_family
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3741,18 +3727,14 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: before_components,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
-                    components: after_components,
-                    ..
-                },
-            ) if before_components
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
+            ) if before_compound
+                .parts()
+                .1
                 .iter()
                 .map(|item| &item.component)
-                .eq(after_components.iter().map(|item| &item.component))
+                .eq(after_compound.parts().1.iter().map(|item| &item.component))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3831,12 +3813,12 @@ fn spring_patch_shape_agrees(
                 ..
             },
         ) => {
-            before_context.sides == after_context.sides
+            before_context.sides() == after_context.sides()
                 && before_context
-                    .discontinuities
+                    .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_context.discontinuities().iter().map(Vec::len))
         }
         _ => false,
     }

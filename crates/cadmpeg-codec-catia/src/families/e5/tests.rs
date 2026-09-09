@@ -18,12 +18,8 @@ fn e5_circle_parser_reads_framed_carrier() {
     let circles = crate::families::e5::records::e5_circles(&stream);
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
+        cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, _, radius) = circle_curve.parts();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(*radius, 2.5);
@@ -31,10 +27,9 @@ fn e5_circle_parser_reads_framed_carrier() {
         other => panic!("expected circle, got {other:?}"),
     }
     let surfaces = crate::families::e5::records::e5_surfaces(&stream);
-    assert!(matches!(
-        surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.5, .. }
-    ));
+    assert!(
+        matches!(surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { *cylinder_surface.parts().3 == 2.5 })
+    );
 
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
@@ -277,13 +272,8 @@ fn e5_surface_parser_reads_framed_torus() {
     let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream());
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
@@ -298,14 +288,13 @@ fn e5_surface_parser_reads_framed_torus() {
     let mut large = e5_torus_stream();
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-    assert!(matches!(
-        crate::families::e5::records::e5_surfaces(&large)[0].geometry,
-        SurfaceGeometry::Torus {
-            major_radius: 2_000_000.0,
-            minor_radius: 1_500_000.0,
-            ..
-        }
-    ));
+    assert!(
+        matches!(crate::families::e5::records::e5_surfaces(&large)[0].geometry, SurfaceGeometry::Torus(torus_surface)
+        if {
+            (*torus_surface.parts().3 == 2_000_000.0)
+                && (*torus_surface.parts().4 == 1_500_000.0)
+        })
+    );
 
     let mut tiny = e5_torus_stream();
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
@@ -405,7 +394,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     }));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
+        cadmpeg_ir::geometry::CurveGeometry::Circle(_)
     ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links
@@ -442,13 +431,9 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-            degree: 5,
-            ref stations,
-        } if stations.iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
-            && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
-            && stations.len() == 2
-    ));
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot).collect::<Vec<_>>() == [2.0, 5.0]
+            && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
+            && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

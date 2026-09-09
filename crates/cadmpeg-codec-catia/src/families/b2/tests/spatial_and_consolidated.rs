@@ -77,10 +77,9 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.0, .. }
-    ));
+    assert!(
+        matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Cylinder(cylinder_surface) if { *cylinder_surface.parts().3 == 2.0 })
+    );
 }
 
 #[test]

@@ -8,7 +8,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
@@ -35,26 +34,9 @@ pub(in super::super) fn analytic_curve_branches(
     tag: &'static str,
 ) -> Vec<(CurveGeometry, &'static str)> {
     let mut branches = vec![(geometry.clone(), tag)];
-    if let CurveGeometry::Hyperbola {
-        center,
-        axis,
-        major_direction,
-        major_radius,
-        minor_radius,
-    } = geometry
-    {
+    if let CurveGeometry::Hyperbola(hyperbola_curve) = geometry {
         branches.push((
-            CurveGeometry::Hyperbola {
-                center: *center,
-                axis: *axis,
-                major_direction: Vector3::new(
-                    -major_direction.x,
-                    -major_direction.y,
-                    -major_direction.z,
-                ),
-                major_radius: *major_radius,
-                minor_radius: *minor_radius,
-            },
+            CurveGeometry::Hyperbola(hyperbola_curve.opposite_branch()),
             tag,
         ));
     }
@@ -228,14 +210,28 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 crate::surface::SurfaceKind::Extrusion(_),
                 crate::surface::SurfaceKind::Plane,
                 SurfaceGeometry::Nurbs(nurbs),
-                SurfaceGeometry::Plane { origin, normal, .. },
-            )
-            | (
+                SurfaceGeometry::Plane(plane_surface),
+            ) => {
+                let (origin, normal, _) = plane_surface.parts();
+                let plane = PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                };
+                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane) {
+                    Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
+                } else {
+                    cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
+                        (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
+                    })
+                }
+            }
+            (
                 crate::surface::SurfaceKind::Plane,
                 crate::surface::SurfaceKind::Extrusion(_),
-                SurfaceGeometry::Plane { origin, normal, .. },
+                SurfaceGeometry::Plane(plane_surface_2),
                 SurfaceGeometry::Nurbs(nurbs),
             ) => {
+                let (origin, normal, _) = plane_surface_2.parts();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -440,21 +436,27 @@ mod tests {
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 2.0, 0.0),
-                    normal: Vector3::new(0.0, 1.0, 0.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 2.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                ),
                 source_object: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
                     .expect("identity grammar"),
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid PlaneSurface fixture"),
+                ),
                 source_object: None,
             },
             Surface {
@@ -478,20 +480,22 @@ mod tests {
                 CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
             ])
         );
-        assert!(matches!(
-            ir.model
-                .curves
-                .iter()
-                .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
-                .map(|curve| &curve.geometry),
-            Some(CurveGeometry::Line { origin, direction })
-                if origin.x == 0.0
+        assert!(matches!(ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id
+            == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+            if {
+                let (origin, direction) = line_curve.parts();
+                origin.x == 0.0
                     && origin.y == 2.0
                     && origin.z == 0.0
                     && direction.x == 1.0
                     && direction.y == 0.0
                     && direction.z == 0.0
-        ));
+            }));
     }
 
     #[test]
@@ -554,11 +558,14 @@ mod tests {
         };
         let plane = Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         };
         let mut ir = CadIr::empty();

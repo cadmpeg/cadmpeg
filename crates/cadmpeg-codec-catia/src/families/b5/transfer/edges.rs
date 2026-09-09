@@ -128,11 +128,12 @@ pub(super) fn b5_edge_support_definition(
             mapped_range,
         ));
     }
-    let context = IntcurveSupportContext {
+    let context = IntcurveSupportContext::try_new(
         sides,
         parameter_range,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    };
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .ok()?;
     if supports.len() == 2 && supports[0].0 != supports[1].0 {
         Some((
             "intersection",
@@ -364,11 +365,11 @@ pub(super) fn emit_edges(
                     .derived(&procedural_id, "cache_fit_tolerance")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            if let Ok(procedural) =
+            let procedural =
                 ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
-            {
-                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
-            }
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }
         annotate(
             annotations,

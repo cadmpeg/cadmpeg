@@ -15,6 +15,8 @@ use crate::loss::StepLossCode;
 use crate::test_support::decode_inline;
 use crate::StepCodec;
 
+const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
+
 #[test]
 fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
     let source =
@@ -56,10 +58,10 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .expect("valid pcurve");
     assert_eq!(
         pcurve.geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(2.0, 3.0),
-            direction: Point2::new(2.0, 0.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(2.0, 3.0), Point2::new(2.0, 0.0))
+                .unwrap()
+        )
     );
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
@@ -154,7 +156,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
         curve.id.as_str() == "step:data:curve#70"
             && matches!(
                 *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
-                CurveGeometry::Line { .. }
+                CurveGeometry::Line(_)
             )
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
@@ -199,13 +201,13 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("trimmed pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Trimmed {
-            parameter_range: [start, end],
-            ..
-        } if *start == 0.0 && *end == 1.0
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
+        if {
+            let ([start, end], _, _) = trimmed_pcurve.parts();
+            *start == 0.0 && *end == 1.0
+        })
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -263,11 +265,13 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("cylindrical pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
-            if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        if {
+            let (_, direction) = line_pcurve.parts();
+            direction.u.abs() < EPS_PCURVE_PARAMETERS && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
+        })
+    );
 }
 
 #[test]
@@ -379,10 +383,13 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
         .expect("linear extrusion pcurve");
     assert_eq!(
         pcurve.geometry,
-        PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(10_000.0, 1.0),
-        }
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(10_000.0, 1.0)
+            )
+            .unwrap()
+        )
     );
     assert!(decoded
         .ir()
@@ -461,11 +468,13 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("planar pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
-            if (direction.u - 10.0).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        if {
+            let (_, direction) = line_pcurve.parts();
+            (direction.u - 10.0).abs() < EPS_PCURVE_PARAMETERS
+        })
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -527,14 +536,16 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
         .expect("surface-chart pcurve");
-    assert!(matches!(
-        &pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
-            if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
-                && origin.v.abs() < 1.0e-12
-                && direction.u.abs() < 1.0e-12
-                && (direction.v - 10.0).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        if {
+            let (origin, direction) = line_pcurve.parts();
+            (origin.u - std::f64::consts::PI).abs() < EPS_PCURVE_PARAMETERS
+                && origin.v.abs() < EPS_PCURVE_PARAMETERS
+                && direction.u.abs() < EPS_PCURVE_PARAMETERS
+                && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
+        })
+    );
 
     let invalid_source = String::from_utf8(source.to_vec())
         .expect("fixture is UTF-8")

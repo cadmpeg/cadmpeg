@@ -64,12 +64,17 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             axis,
             radius,
             ..
-        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Cylinder {
-            origin: point(*origin),
-            axis: vector(*axis),
-            ref_direction: vector(*reference_x),
-            radius: *radius,
-        }),
+        } => cadmpeg_ir::geometry::CylinderSurface::try_new(
+            point(*origin),
+            vector(*axis),
+            vector(*reference_x),
+            *radius,
+        )
+        .map(SurfaceGeometry::Cylinder)
+        .map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            B5SurfaceCarrier::Analytic,
+        ),
         B5Surface::Cone {
             apex,
             direction_x,
@@ -79,14 +84,19 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             ..
         } => {
             let slant = slant_range[0];
-            B5SurfaceCarrier::Analytic(SurfaceGeometry::Cone {
-                origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                axis: vector(*axis),
-                ref_direction: vector(*direction_x),
-                radius: slant * half_angle.sin(),
-                ratio: 1.0,
-                half_angle: *half_angle,
-            })
+            cadmpeg_ir::geometry::ConeSurface::try_new(
+                point(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                vector(*axis),
+                vector(*direction_x),
+                slant * half_angle.sin(),
+                1.0,
+                *half_angle,
+            )
+            .map(SurfaceGeometry::Cone)
+            .map_or(
+                B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+                B5SurfaceCarrier::Analytic,
+            )
         }
         B5Surface::Sphere {
             center,
@@ -94,12 +104,17 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             axis,
             radius,
             ..
-        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Sphere {
-            center: point(*center),
-            axis: vector(*axis),
-            ref_direction: vector(*direction_x),
-            radius: *radius,
-        }),
+        } => cadmpeg_ir::geometry::SphereSurface::try_new(
+            point(*center),
+            vector(*axis),
+            vector(*direction_x),
+            *radius,
+        )
+        .map(SurfaceGeometry::Sphere)
+        .map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            B5SurfaceCarrier::Analytic,
+        ),
         B5Surface::Torus {
             center,
             direction_x,
@@ -107,13 +122,18 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             major_radius,
             minor_radius,
             ..
-        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Torus {
-            center: point(*center),
-            axis: vector(*axis),
-            ref_direction: vector(*direction_x),
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        }),
+        } => cadmpeg_ir::geometry::TorusSurface::try_new(
+            point(*center),
+            vector(*axis),
+            vector(*direction_x),
+            *major_radius,
+            *minor_radius,
+        )
+        .map(SurfaceGeometry::Torus)
+        .map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            B5SurfaceCarrier::Analytic,
+        ),
         B5Surface::Nurbs(surface) => {
             B5SurfaceCarrier::Analytic(SurfaceGeometry::Nurbs(surface.clone()))
         }
@@ -485,11 +505,14 @@ pub(super) fn orthonormal_plane(
     {
         return None;
     }
-    Some(SurfaceGeometry::Plane {
-        origin: point(origin),
-        normal: vector(unit(cross(u, v))?),
-        u_axis: vector(u),
-    })
+    Some(SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            point(origin),
+            vector(unit(cross(u, v))?),
+            vector(u),
+        )
+        .ok()?,
+    ))
 }
 
 /// Emit the referenced surfaces, their procedural definitions, and the offset
@@ -607,7 +630,8 @@ pub(super) fn emit_surfaces(
                             revision_form: None,
                         },
                         None,
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 );
             }
             Some(SurfaceProcedure::RollingBall {
@@ -630,7 +654,8 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    ProceduralSurface::new(procedural_id, definition, None),
+                    ProceduralSurface::new(procedural_id, definition, None)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                 );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
@@ -673,7 +698,8 @@ pub(super) fn emit_surfaces(
                     ),
                 },
                 Some(parameter_record_bounds(offset.parameter_bounds)),
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
     Ok(surface_ids)
@@ -739,22 +765,24 @@ fn emit_extrusion_procedure(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            if let Ok(procedure) = ProceduralCurve::try_new(
+            let procedure = ProceduralCurve::try_new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
+                    context: IntcurveSupportContext::try_new(
                         sides,
-                        parameter_range: extrusion.directrix_parameter_range,
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
+                        extrusion.directrix_parameter_range,
+                        std::array::from_fn(|_| Vec::new()),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
                 },
                 Some(cache_fit_tolerance),
-            ) {
-                let _attached = ir
-                    .model
-                    .add_procedural_curve(directrix_id.clone(), procedure);
-            }
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir
+                .model
+                .add_procedural_curve(directrix_id.clone(), procedure);
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -833,7 +861,8 @@ fn emit_extrusion_procedure(
                             parameter_range: source_parameter_range,
                         }),
                     },
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
     }
@@ -858,7 +887,8 @@ fn emit_extrusion_procedure(
                 revision_form: None,
             },
             Some(parameter_record_bounds(extrusion.parameter_bounds)),
-        ),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
     );
     Ok(())
 }
@@ -924,22 +954,28 @@ mod tests {
                 supports: Box::new([
                     ResolvedExtrusionSupport {
                         surface_object_id: 10,
-                        surface: SurfaceGeometry::Plane {
-                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                            normal: Vector3::new(1.0, 0.0, 0.0),
-                            u_axis: Vector3::new(0.0, 1.0, 0.0),
-                        },
+                        surface: SurfaceGeometry::Plane(
+                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                                Vector3::new(0.0, 1.0, 0.0),
+                            )
+                            .expect("valid PlaneSurface fixture"),
+                        ),
                         pcurve: pcurve(0.0),
                         pcurve_parameter_range: [0.0, 1.0],
                         curve: None,
                     },
                     ResolvedExtrusionSupport {
                         surface_object_id: 20,
-                        surface: SurfaceGeometry::Plane {
-                            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                            normal: Vector3::new(0.0, 1.0, 0.0),
-                            u_axis: Vector3::new(1.0, 0.0, 0.0),
-                        },
+                        surface: SurfaceGeometry::Plane(
+                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                                Vector3::new(0.0, 1.0, 0.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                            )
+                            .expect("valid PlaneSurface fixture"),
+                        ),
                         pcurve: pcurve(1.0),
                         pcurve_parameter_range: [0.25, 0.75],
                         curve: None,
@@ -976,12 +1012,12 @@ mod tests {
         else {
             panic!("expected intersection directrix");
         };
-        assert_eq!(context.parameter_range, [0.0, 1.0]);
-        assert_eq!(context.sides[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(context.sides[0].pcurve_parameter_range(), None);
-        assert_eq!(context.sides[1].surface, Some(support_ids[&20].clone()));
+        assert_eq!(context.parameter_range(), [0.0, 1.0]);
+        assert_eq!(context.sides()[0].surface, Some(support_ids[&10].clone()));
+        assert_eq!(context.sides()[0].pcurve_parameter_range(), None);
+        assert_eq!(context.sides()[1].surface, Some(support_ids[&20].clone()));
         assert_eq!(
-            context.sides[1].pcurve_parameter_range(),
+            context.sides()[1].pcurve_parameter_range(),
             Some([0.25, 0.75])
         );
         assert_eq!(

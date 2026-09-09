@@ -1348,16 +1348,25 @@ pub(super) fn common_generated_surface_axis(
     let axes = surfaces
         .iter()
         .filter_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Cylinder { origin, axis, .. }
-            | SurfaceGeometry::Cone { origin, axis, .. } => Some((*origin, *axis)),
-            SurfaceGeometry::Torus { center, axis, .. } => Some((*center, *axis)),
-            SurfaceGeometry::Plane { .. }
-            | SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Nurbs(_)
-            | SurfaceGeometry::Polygonal(_)
-            | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Transformed { .. }
-            | SurfaceGeometry::Unknown { .. } => None,
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (origin, axis, _, _) = cylinder_surface.parts();
+                Some((*origin, *axis))
+            }
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (origin, axis, _, _, _, _) = cone_surface.parts();
+                Some((*origin, *axis))
+            }
+            SurfaceGeometry::Torus(torus_surface) => {
+                let (center, axis, _, _, _) = torus_surface.parts();
+                Some((*center, *axis))
+            }
+            SurfaceGeometry::Plane(_) => None,
+            SurfaceGeometry::Sphere(_) => None,
+            SurfaceGeometry::Nurbs(_) => None,
+            SurfaceGeometry::Polygonal(_) => None,
+            SurfaceGeometry::Procedural { .. } => None,
+            SurfaceGeometry::Transformed { .. } => None,
+            SurfaceGeometry::Unknown { .. } => None,
         })
         .collect::<Vec<_>>();
     let [(origin, direction), ..] = axes.as_slice() else {

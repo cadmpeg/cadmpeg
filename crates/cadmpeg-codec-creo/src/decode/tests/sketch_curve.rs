@@ -85,21 +85,27 @@ fn placed_extrusion_arc_defines_cylinder() {
     let points = BTreeMap::from([(1, [2.0, 0.0]), (2, [-2.0, 0.0]), (3, [0.0, 0.0])]);
     assert_eq!(
         extruded_segment_surface(&transform, &points, &segment),
-        Some(SurfaceGeometry::Cylinder {
-            origin: Point3::new(10.0, 20.0, 30.0),
-            axis: Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 2.0,
-        })
+        Some(SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(10.0, 20.0, 30.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                2.0
+            )
+            .expect("valid CylinderSurface fixture")
+        ))
     );
     assert_eq!(
         placed_section_curve_geometry(&transform, &points, &segment),
-        Some(CurveGeometry::Circle {
-            center: Point3::new(10.0, 20.0, 30.0),
-            axis: Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 2.0,
-        })
+        Some(CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(10.0, 20.0, 30.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                2.0
+            )
+            .expect("valid CircleCurve fixture")
+        ))
     );
     assert_eq!(
         placed_section_geometry_curve(
@@ -110,12 +116,15 @@ fn placed_extrusion_arc_defines_cylinder() {
             })
             .expect("valid test fixture"),
         ),
-        Some(CurveGeometry::Circle {
-            center: Point3::new(10.0, 23.0, 26.0),
-            axis: Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 2.0,
-        })
+        Some(CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(10.0, 23.0, 26.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                2.0
+            )
+            .expect("valid CircleCurve fixture")
+        ))
     );
 }
 

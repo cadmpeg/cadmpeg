@@ -119,7 +119,8 @@ pub(super) fn project_edge(
         )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
-        Some(CurveGeometry::Circle { center, radius, .. }) => {
+        Some(CurveGeometry::Circle(circle_curve)) => {
+            let (center, _, _, radius) = circle_curve.parts();
             let center = project_point(*center, origin, u_axis, v_axis);
             if !circle_contains_point(center, *radius, start, tolerance)
                 || !circle_contains_point(center, *radius, end, tolerance)
@@ -155,13 +156,8 @@ pub(super) fn project_edge(
                 )
             }
         }
-        Some(CurveGeometry::Ellipse {
-            center,
-            major_direction,
-            major_radius,
-            minor_radius,
-            ..
-        }) => {
+        Some(CurveGeometry::Ellipse(ellipse_curve)) => {
+            let (center, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let center = project_point(*center, origin, u_axis, v_axis);
             let major_u = major_direction.dot(u_axis);
             let major_v = major_direction.dot(v_axis);
@@ -233,7 +229,7 @@ pub(super) fn project_edge(
         None if edge.start == edge.end => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
-        Some(CurveGeometry::Line { .. }) | None => line(),
+        Some(CurveGeometry::Line(_)) | None => line(),
         Some(other) => Some(SketchGeometry::native(
             cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
         )),

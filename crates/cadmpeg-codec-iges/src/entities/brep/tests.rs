@@ -21,10 +21,13 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.edges.extend([
@@ -70,12 +73,15 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.0,
-        },
+        geometry: CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.edges.extend([

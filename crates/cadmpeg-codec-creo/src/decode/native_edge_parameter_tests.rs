@@ -15,22 +15,28 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn circle() -> CurveGeometry {
-    CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    }
+    CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    )
 }
 
 fn ellipse() -> CurveGeometry {
-    CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    }
+    CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            2.0,
+        )
+        .expect("valid EllipseCurve fixture"),
+    )
 }
 
 fn evaluated(geometry: &CurveGeometry, parameter: f64) -> [f64; 3] {
@@ -52,23 +58,33 @@ fn nurbs_curve(
 }
 
 #[test]
-fn preserves_scaled_line_parameterization_and_orders_the_interval() {
-    let line = CurveGeometry::Line {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        direction: Vector3::new(2.0, 0.0, 0.0),
-    };
+fn preserves_unit_line_parameterization_and_orders_the_interval() {
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(2.0, 0.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert_eq!(
         exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.0, 3.0]]),
-        Some([-2.0, 3.0])
+        Some([-4.0, 6.0])
     );
 }
 
 #[test]
 fn withholds_parameters_for_points_off_the_line() {
-    let line = CurveGeometry::Line {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        direction: Vector3::new(2.0, 0.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(2.0, 0.0, 0.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert_eq!(
         exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.1, 3.0]]),
         None
@@ -288,13 +304,16 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
     assert!((range[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((range[1] - (std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU)).abs() < 1.0e-12);
 
-    let ellipse = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    };
+    let ellipse = CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            2.0,
+        )
+        .expect("valid EllipseCurve fixture"),
+    );
     assert_eq!(
         full_periodic_conic_edge_parameter_range(&ellipse, [4.0, 0.0, 0.0]),
         Some([0.0, std::f64::consts::TAU])
@@ -307,12 +326,15 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
 
 #[test]
 fn nonperiodic_conics_recover_their_native_parameters() {
-    let parabola = CurveGeometry::Parabola {
-        vertex: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        focal_distance: 2.0,
-    };
+    let parabola = CurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid ParabolaCurve fixture"),
+    );
     let parabola_points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
     assert_eq!(
         nonperiodic_conic_edge_parameter_range(&parabola, parabola_points),
@@ -323,13 +345,16 @@ fn nonperiodic_conics_recover_their_native_parameters() {
         None
     );
 
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 3.0,
-        minor_radius: 2.0,
-    };
+    let hyperbola = CurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            2.0,
+        )
+        .expect("valid HyperbolaCurve fixture"),
+    );
     let hyperbola_points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
     let range = nonperiodic_conic_edge_parameter_range(&hyperbola, hyperbola_points)
         .expect("hyperbola range");
@@ -343,36 +368,40 @@ fn nonperiodic_conics_recover_their_native_parameters() {
 
 #[test]
 fn solved_endpoints_select_one_hyperbola_branch() {
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 3.0,
-        minor_radius: 2.0,
-    };
+    let hyperbola = CurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            2.0,
+        )
+        .expect("valid HyperbolaCurve fixture"),
+    );
     let branches = analytic_curve_branches(&hyperbola, "hyperbola");
     let points = [
         evaluated(&branches[1].0, -1.0),
         evaluated(&branches[1].0, 2.0),
     ];
     let selected = select_unique_curve_candidate(branches, points).expect("one branch");
-    let CurveGeometry::Hyperbola {
-        major_direction, ..
-    } = selected.0
-    else {
+    let CurveGeometry::Hyperbola(hyperbola_curve) = selected.0 else {
         panic!("hyperbola branch");
     };
+    let (_, _, &major_direction, _, _) = hyperbola_curve.parts();
     assert_eq!(major_direction, Vector3::new(-1.0, 0.0, 0.0));
 }
 
 #[test]
 fn surface_pcurve_midpoint_retains_periodic_path() {
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     let midpoint = native_pcurve_midpoint(
         &cylinder,
         [[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]],
@@ -385,12 +414,15 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
 
 #[test]
 fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
-    let surface_geometry = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let surface_geometry = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     let surfaces = [10, 11]
         .map(|face| Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))

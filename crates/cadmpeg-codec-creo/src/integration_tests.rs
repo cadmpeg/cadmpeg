@@ -95,7 +95,11 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
     assert!(result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Cylinder { radius, .. } if radius == 1.0)
+        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, _, _, radius) = cylinder_surface.parts();
+            *radius == 1.0
+        })
     }));
     assert_valid(&result);
 }
@@ -154,7 +158,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         .model
         .surfaces
         .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane { .. }) }));
+        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane(_)) }));
     assert_valid(&result);
 }
 

@@ -440,11 +440,14 @@ mod tests {
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: cached_surface.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: crate::math::Point3::new(0.0, 0.0, 0.0),
-                normal: crate::math::Vector3::new(0.0, 0.0, 1.0),
-                u_axis: crate::math::Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                crate::geometry::PlaneSurface::try_new(
+                    crate::math::Point3::new(0.0, 0.0, 0.0),
+                    crate::math::Vector3::new(0.0, 0.0, 1.0),
+                    crate::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         ir.model

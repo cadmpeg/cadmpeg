@@ -588,27 +588,45 @@ fn scale_decoded_curve(
                     .edit_control_points(|points| points.copy_from_slice(&scaled))
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
-            CurveGeometry::Circle { center, radius, .. } => {
-                *center = scale_ir_point(*center, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space circle is invalid")
-                })?;
-                *radius *= scale;
-                if !radius.is_finite() || *radius <= 0.0 {
-                    return Err(GeometryError::malformed(
-                        offset,
-                        "scaled plane-space circle radius is invalid",
-                    ));
-                }
+            CurveGeometry::Circle(circle_curve) => {
+                let (center, axis, ref_direction, radius) = circle_curve.parts();
+                *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+                    scale_ir_point(*center, scale).ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?,
+                    *axis,
+                    *ref_direction,
+                    *radius * scale,
+                )
+                .map_err(|message| GeometryError::malformed(offset, message))?;
             }
-            CurveGeometry::Line { origin, .. } => {
-                *origin = scale_ir_point(*origin, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space line is invalid")
-                })?;
+            CurveGeometry::Line(line_curve) => {
+                let (origin, direction) = line_curve.parts();
+                *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+                    scale_ir_point(*origin, scale).ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?,
+                    *direction,
+                )
+                .map_err(|message| GeometryError::malformed(offset, message))?;
             }
-            CurveGeometry::Degenerate { point } => {
-                *point = scale_ir_point(*point, scale).ok_or_else(|| {
-                    GeometryError::malformed(offset, "scaled plane-space point is invalid")
-                })?;
+            CurveGeometry::Degenerate(degenerate_curve) => {
+                let (point,) = degenerate_curve.parts();
+                *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(
+                    scale_ir_point(*point, scale).ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "scaled plane-space curve point is invalid",
+                        )
+                    })?,
+                )
+                .map_err(|message| GeometryError::malformed(offset, message))?;
             }
             CurveGeometry::Unknown { .. } => {
                 return Err(GeometryError::malformed(
@@ -640,12 +658,8 @@ pub(crate) fn exact_nurbs(
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Nurbs(nurbs) => Ok(nurbs.clone()),
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
+            CurveGeometry::Circle(circle_curve) => {
+                let (center, axis, ref_direction, radius) = circle_curve.parts();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center: *center,
@@ -1347,12 +1361,15 @@ fn read_arc(
     }
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
-            CurveGeometry::Circle {
-                center: circle.center,
-                axis: circle.axis,
-                ref_direction: circle.xaxis,
-                radius: circle.radius,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    circle.center,
+                    circle.axis,
+                    circle.xaxis,
+                    circle.radius,
+                )
+                .map_err(|message| error(reader.position(), message))?,
+            ),
             warnings,
         ));
     }
@@ -1875,12 +1892,15 @@ mod tests {
     fn analytic_full_circle_converts_to_exact_quadratic_nurbs() {
         let circle = unit_circle();
         let decoded = DecodedCurve::leaf(
-            CurveGeometry::Circle {
-                center: circle.center,
-                axis: circle.axis,
-                ref_direction: circle.xaxis,
-                radius: circle.radius,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    circle.center,
+                    circle.axis,
+                    circle.xaxis,
+                    circle.radius,
+                )
+                .unwrap(),
+            ),
             Vec::new(),
         );
         let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");

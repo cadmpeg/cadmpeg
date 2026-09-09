@@ -2665,16 +2665,11 @@ impl<'a> Builder<'a> {
                 )
             }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
-                let SurfaceGeometry::Torus {
-                    center,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius,
-                } = solved
-                else {
+                let SurfaceGeometry::Torus(torus_surface) = solved else {
                     return None;
                 };
+                let (center, axis, ref_direction, major_radius, minor_radius) =
+                    torus_surface.parts();
                 let placement =
                     geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
                 Some(self.emitter.emit(
@@ -3736,12 +3731,12 @@ impl<'a> Builder<'a> {
             .surfaces
             .iter()
             .filter(|surface| match &surface.geometry {
-                SurfaceGeometry::Sphere { radius, .. } => *radius < 0.0,
-                SurfaceGeometry::Torus {
-                    major_radius,
-                    minor_radius,
-                    ..
-                } => {
+                SurfaceGeometry::Sphere(sphere_surface) => {
+                    let (_, _, _, radius) = sphere_surface.parts();
+                    *radius < 0.0
+                }
+                SurfaceGeometry::Torus(torus_surface) => {
+                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
                     *major_radius < 0.0
                         || *minor_radius < 0.0
                         || (minor_radius.abs() > major_radius.abs()
@@ -3775,10 +3770,11 @@ impl<'a> Builder<'a> {
             .surfaces
             .iter()
             .filter(|surface| {
-                matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Cone { ratio, .. } if ratio != 1.0
-                )
+                matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+                if {
+                    let (_, _, _, _, &ratio, _) = cone_surface.parts();
+                    ratio != 1.0
+                })
             })
             .count();
         if elliptical_cones > 0 {

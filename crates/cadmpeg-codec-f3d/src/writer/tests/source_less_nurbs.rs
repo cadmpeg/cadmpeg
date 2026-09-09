@@ -32,13 +32,16 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected = SurfaceGeometry::Torus {
-        center: cadmpeg_ir::math::Point3::new(3.0, -6.0, 9.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.5,
-        minor_radius: -6.0,
-    };
+    let expected = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::math::Point3::new(3.0, -6.0, 9.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            4.5,
+            -6.0,
+        )
+        .unwrap(),
+    );
     source_less.model.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
@@ -284,14 +287,14 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let pcurve = &mut source_less.model.pcurves[0];
-    pcurve.geometry = PcurveGeometry::Line {
-        origin: Point2::new(2.0, -1.0),
-        direction: Point2::new(0.5, 2.0),
-    };
+    pcurve.geometry = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(2.0, -1.0), Point2::new(0.5, 2.0))
+            .unwrap(),
+    );
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.parameter_range = [-2.0, 3.0];
+    inline.set_parameter_range([-2.0, 3.0]).unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -365,18 +368,24 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected_surface = SurfaceGeometry::Cylinder {
-        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+    let expected_surface = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
     source_less.model.surfaces[1].geometry = expected_surface.clone();
     let curve_id = CurveId::mint("generated:test:shared_line#0").expect("identity grammar");
-    let expected_curve = CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    };
+    let expected_curve = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
@@ -749,21 +758,27 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected_surface = SurfaceGeometry::Torus {
-        center: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 8.0,
-        minor_radius: -3.0,
-    };
+    let expected_surface = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            8.0,
+            -3.0,
+        )
+        .unwrap(),
+    );
     source_less.model.surfaces[1].geometry = expected_surface.clone();
     let curve_id = CurveId::mint("generated:test:shared_circle#0").expect("identity grammar");
-    let expected_curve = CurveGeometry::Circle {
-        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+    let expected_curve = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
@@ -801,30 +816,39 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 8.0,
-        ratio: 1.0,
-        half_angle: 0.35,
-    };
-    let sphere = SurfaceGeometry::Sphere {
-        center: Point3::new(-1.0, 4.0, 2.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: -12.0,
-    };
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            8.0,
+            1.0,
+            0.35,
+        )
+        .unwrap(),
+    );
+    let sphere = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(-1.0, 4.0, 2.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -12.0,
+        )
+        .unwrap(),
+    );
     source_less.model.surfaces[0].geometry = cone.clone();
     source_less.model.surfaces[1].geometry = sphere.clone();
     let curve_id = CurveId::mint("generated:test:shared_ellipse#0").expect("identity grammar");
-    let ellipse = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 9.0,
-        minor_radius: 4.0,
-    };
+    let ellipse = CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            9.0,
+            4.0,
+        )
+        .unwrap(),
+    );
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: ellipse.clone(),
@@ -867,10 +891,19 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .iter_mut()
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(5.0, 10.0, -5.0),
-        direction: cadmpeg_ir::math::Vector3::new(2.0, -4.0, 1.0),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.25, 0.25, 0.75, 0.75],
+            vec![
+                cadmpeg_ir::math::Point3::new(5.5, 9.0, -4.75),
+                cadmpeg_ir::math::Point3::new(6.5, 7.0, -4.25),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -973,16 +1006,18 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
 
     // The directrix sense Boolean is stored, not assumed: the opposite value
     // survives the same round trip.
-    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            revision_form: Some(form),
-            ..
-        } = definition
-        else {
-            unreachable!("revision-gated extrusion")
-        };
-        form.flags = vec![false];
-    });
+    source_less.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Extrusion {
+                revision_form: Some(form),
+                ..
+            } = definition
+            else {
+                unreachable!("revision-gated extrusion")
+            };
+            form.flags = vec![false];
+        })
+        .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1178,32 +1213,37 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let directrix = source_less.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            direction,
-            ..
-        } = definition
-        else {
-            panic!("expected extrusion definition")
-        };
-        *parameter_interval = Some([0.0, std::f64::consts::TAU]);
-        *direction = Vector3::new(0.0, 0.0, -20.0);
-        directrix.clone()
-    });
+    let directrix = source_less.model.procedural_surfaces[0]
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                parameter_interval,
+                direction,
+                ..
+            } = definition
+            else {
+                panic!("expected extrusion definition")
+            };
+            *parameter_interval = Some([0.0, std::f64::consts::TAU]);
+            *direction = Vector3::new(0.0, 0.0, -20.0);
+            directrix.clone()
+        })
+        .unwrap();
     source_less
         .model
         .curves
         .iter_mut()
         .find(|curve| curve.id == directrix)
         .expect("extrusion directrix")
-        .geometry = CurveGeometry::Circle {
-        center: Point3::new(2.0, 3.0, 4.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+        .geometry = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(2.0, 3.0, 4.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1226,18 +1266,14 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 == Some(&surface.id)
         })
         .expect("extrusion carrier");
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = surface
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface
         .geometry
         .solved_cache()
         .expect("extrusion solved cache")
     else {
         panic!("unexpected extrusion carrier: {:?}", surface.geometry)
     };
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
     assert!((origin.x - 2.0).abs() < 1.0e-12);
     assert!((origin.y - 3.0).abs() < 1.0e-12);
     assert!((origin.z - 4.0).abs() < 1.0e-12);
@@ -1276,17 +1312,23 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         _ => unreachable!(),
     };
     let support_geometries = [
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        },
-        cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-            center: cadmpeg_ir::math::Point3::new(10.0, -5.0, 2.0),
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            radius: 7.5,
-        },
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        cadmpeg_ir::geometry::SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::math::Point3::new(10.0, -5.0, 2.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                7.5,
+            )
+            .unwrap(),
+        ),
     ];
     for (support, geometry) in supports.iter().zip(&support_geometries) {
         source_less
@@ -1303,10 +1345,19 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .iter_mut()
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
-        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
-        direction: cadmpeg_ir::math::Vector3::new(3.0, -1.0, 2.0),
-    };
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
+                cadmpeg_ir::math::Point3::new(1.0, 3.0, 3.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
     let expected = source_less.model.procedural_surfaces[0].clone();
 
     let mut encoded = Vec::new();

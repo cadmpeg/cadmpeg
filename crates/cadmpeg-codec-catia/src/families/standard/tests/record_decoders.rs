@@ -29,18 +29,13 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
         },
     )
     .expect("signed torus carrier");
-    let SurfaceGeometry::Torus {
-        axis,
-        major_radius,
-        minor_radius,
-        ..
-    } = surface
-    else {
+    let SurfaceGeometry::Torus(torus_surface) = surface else {
         panic!("torus geometry");
     };
-    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
-    assert_eq!(major_radius, 20.0);
-    assert_eq!(minor_radius, 5.0);
+    let (_, axis, _, major_radius, minor_radius) = torus_surface.parts();
+    assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
+    assert_eq!(*major_radius, 20.0);
+    assert_eq!(*minor_radius, 5.0);
 }
 
 #[test]
@@ -67,10 +62,18 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
             },
         )
         .expect("large analytic carrier");
-        let (SurfaceGeometry::Sphere { radius, .. } | SurfaceGeometry::Cylinder { radius, .. }) =
-            surface
-        else {
-            panic!("expected sphere or cylinder");
+        let (radius,) = match surface {
+            SurfaceGeometry::Sphere(sphere_surface) => {
+                let (_, _, _, radius) = sphere_surface.parts();
+                (*radius,)
+            }
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (_, _, _, radius) = cylinder_surface.parts();
+                (*radius,)
+            }
+            _ => {
+                panic!("expected sphere or cylinder");
+            }
         };
         assert_eq!(radius, expected_radius);
     }
@@ -79,21 +82,18 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
     for value in [0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0, 1_500_000.0] {
         bytes.extend_from_slice(&value.to_be_bytes());
     }
-    assert!(matches!(
-        crate::families::standard::records::decode_curved(
-            &bytes,
-            &crate::families::standard::records::SurfacePrefix {
-                pos: 0,
-                target: 0,
-                kind: AnalyticSurfaceKind::Torus,
-            },
-        ),
-        Some(SurfaceGeometry::Torus {
-            major_radius: 2_000_000.0,
-            minor_radius: 1_500_000.0,
-            ..
-        })
-    ));
+    assert!(matches!(crate::families::standard::records::decode_curved(
+        &bytes,
+        &crate::families::standard::records::SurfacePrefix {
+            pos: 0,
+            target: 0,
+            kind: AnalyticSurfaceKind::Torus,
+        },
+    ), Some(SurfaceGeometry::Torus(torus_surface))
+            if {
+                (*torus_surface.parts().3 == 2_000_000.0)
+                    && (*torus_surface.parts().4 == 1_500_000.0)
+            }));
 }
 
 #[test]
@@ -112,17 +112,13 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         },
     )
     .expect("near-unit cylinder carrier");
-    let SurfaceGeometry::Cylinder {
-        axis,
-        ref_direction,
-        ..
-    } = surface
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface else {
         panic!("cylinder geometry");
     };
+    let (_, axis, ref_direction, _) = cylinder_surface.parts();
     assert!((axis.norm() - 1.0).abs() < 1.0e-12);
     assert!((ref_direction.norm() - 1.0).abs() < 1.0e-12);
-    assert!(axis.dot(ref_direction).abs() < 1.0e-12);
+    assert!(axis.dot(*ref_direction).abs() < 1.0e-12);
 
     let plane = crate::families::standard::records::decode_plane(
         &crate::families::standard::records::PlaneParams {
@@ -132,12 +128,13 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
         },
     )
     .expect("near-unit plane carrier");
-    let SurfaceGeometry::Plane { normal, u_axis, .. } = plane else {
+    let SurfaceGeometry::Plane(plane_surface) = plane else {
         panic!("plane geometry");
     };
+    let (_, normal, u_axis) = plane_surface.parts();
     assert!((normal.norm() - 1.0).abs() < 1.0e-12);
     assert!((u_axis.norm() - 1.0).abs() < 1.0e-12);
-    assert!(normal.dot(u_axis).abs() < 1.0e-12);
+    assert!(normal.dot(*u_axis).abs() < 1.0e-12);
     assert!(crate::families::standard::records::decode_plane(
         &crate::families::standard::records::PlaneParams {
             target: 0,
@@ -1160,11 +1157,11 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
     );
     assert!(matches!(
         evidence.surface_geometries.get(&100),
-        Some(SurfaceGeometry::Plane { .. })
+        Some(SurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         evidence.surface_geometries.get(&501),
-        Some(SurfaceGeometry::Plane { .. })
+        Some(SurfaceGeometry::Plane(_))
     ));
 }
 
@@ -1235,15 +1232,11 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         Some(
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 0x1234_5678,
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-                    degree: 5,
-                    ..
-                },
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet),
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        )
-    ));
+        ) if jet.degree() == 5));
 }
 
 #[test]
@@ -1347,7 +1340,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
         Some(
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 110,
-                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(_),
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }

@@ -422,8 +422,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 };
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
-                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
@@ -470,7 +469,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 };
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
@@ -1069,7 +1068,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     );
                 }
             }
-            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            ProceduralSurfaceDefinition::RollingBallJet(_)
             | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -1136,7 +1135,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
     }
     for procedural in &ir.model.procedural_curves {
         match procedural.definition() {
-            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
                 context,
                 primary,
@@ -1168,7 +1167,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         _ => {}
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1186,7 +1185,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Compound { components, .. } => {
+            ProceduralCurveDefinition::Compound(compound) => {
+                let (_, components) = compound.parts();
+
                 for component in components {
                     if ids.curves(component.component.as_str()).is_none() {
                         ref_error(
@@ -1199,7 +1200,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1212,7 +1213,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                ..
+            } => {
+                let (supports, _, _) = intersection.parts();
+
                 for surface in supports {
                     if ids.surfaces(surface.as_str()).is_none() {
                         ref_error(
@@ -1225,7 +1231,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
-                for side in context.sides.iter().chain(std::iter::once(third)) {
+                for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1239,7 +1245,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
-                for side in &family.context().sides {
+                for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1265,7 +1271,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         cast_surface.as_str(),
                     );
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1282,7 +1288,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 if ids.curves(base.as_str()).is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", base.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1295,21 +1301,28 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { layout, .. } => {
-                let context = layout.support_context();
-                for side in &context.sides {
-                    if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
-                            ref_error(
-                                findings,
-                                procedural.id.as_str(),
-                                "surface",
-                                surface.as_str(),
-                            );
+            ProceduralCurveDefinition::Spring { layout, .. } => match layout.support_context() {
+                Ok(context) => {
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            if ids.surfaces(surface.as_str()).is_none() {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
                         }
                     }
                 }
-            }
+                Err(error) => ref_error(
+                    findings,
+                    procedural.id.as_str(),
+                    "spring support context",
+                    error,
+                ),
+            },
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {
@@ -1318,7 +1331,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1337,7 +1350,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 if ids.curves(source.as_str()).is_none() {
                     ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(
@@ -1390,7 +1403,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.as_str()).is_none() {
                             ref_error(

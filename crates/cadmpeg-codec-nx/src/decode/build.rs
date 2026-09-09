@@ -322,11 +322,11 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                SurfaceGeometry::Plane { .. } => counts.planes += 1,
-                SurfaceGeometry::Cylinder { .. } => counts.cylinders += 1,
-                SurfaceGeometry::Cone { .. } => counts.cones += 1,
-                SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
-                SurfaceGeometry::Torus { .. } => counts.tori += 1,
+                SurfaceGeometry::Plane(_) => counts.planes += 1,
+                SurfaceGeometry::Cylinder(_) => counts.cylinders += 1,
+                SurfaceGeometry::Cone(_) => counts.cones += 1,
+                SurfaceGeometry::Sphere(_) => counts.spheres += 1,
+                SurfaceGeometry::Torus(_) => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Procedural { .. }
                 | SurfaceGeometry::Polygonal(_)
@@ -428,7 +428,7 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            if let Ok(procedural) = ProceduralSurface::try_new(
+            let procedural = ProceduralSurface::try_new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset {
                     support,
@@ -443,11 +443,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 cache_fit_tolerance,
                 None,
-            ) {
-                let _attached = ir
-                    .model
-                    .add_procedural_surface(surface_id.clone(), procedural);
-            }
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir
+                .model
+                .add_procedural_surface(surface_id.clone(), procedural);
+
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
         }
@@ -506,7 +508,8 @@ pub(crate) fn try_decode_geometry(
                         native: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             if attached.is_ok() {
                 pending_blend_supports.push((
@@ -534,14 +537,16 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural.edit_definition(|definition| {
-                if let ProceduralSurfaceDefinition::Blend {
-                    supports: slots, ..
-                } = definition
-                {
-                    *slots = supports;
-                }
-            });
+            procedural
+                .edit_definition(|definition| {
+                    if let ProceduralSurfaceDefinition::Blend {
+                        supports: slots, ..
+                    } = definition
+                    {
+                        *slots = supports;
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
 
         for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
@@ -549,18 +554,18 @@ pub(crate) fn try_decode_geometry(
             .enumerate()
         {
             match &geometry {
-                CurveGeometry::Line { .. } => counts.lines += 1,
-                CurveGeometry::Circle { .. } => counts.circles += 1,
-                CurveGeometry::Ellipse { .. } => counts.ellipses += 1,
-                CurveGeometry::Parabola { .. }
-                | CurveGeometry::Hyperbola { .. }
-                | CurveGeometry::Degenerate { .. }
-                | CurveGeometry::Composite { .. }
-                | CurveGeometry::Nurbs(_)
-                | CurveGeometry::Procedural { .. }
-                | CurveGeometry::Polyline(_)
-                | CurveGeometry::Transformed { .. }
-                | CurveGeometry::Unknown { .. } => {}
+                CurveGeometry::Line(_) => counts.lines += 1,
+                CurveGeometry::Circle(_) => counts.circles += 1,
+                CurveGeometry::Ellipse(_) => counts.ellipses += 1,
+                CurveGeometry::Parabola(_) => {}
+                CurveGeometry::Hyperbola(_) => {}
+                CurveGeometry::Degenerate(_) => {}
+                CurveGeometry::Composite { .. } => {}
+                CurveGeometry::Nurbs(_) => {}
+                CurveGeometry::Procedural { .. } => {}
+                CurveGeometry::Polyline(_) => {}
+                CurveGeometry::Transformed { .. } => {}
+                CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId::mint(format!("nx:s{si}:crv#{ci}")).expect("identity grammar");
             annotate_node(
@@ -610,7 +615,7 @@ pub(crate) fn try_decode_geometry(
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt, id);
@@ -789,18 +794,20 @@ pub(crate) fn try_decode_geometry(
                         .map(|uv| (uv, parameters.as_slice())),
                 );
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides: [first, second],
-                        parameter_range: charted.samples.parameter_range(),
-                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                    },
+                    context: IntcurveSupportContext::try_new(
+                        [first, second],
+                        charted.samples.parameter_range(),
+                        [Vec::new(), Vec::new(), Vec::new()],
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
                 }
             } else if let Some((supports, endpoints, tolerance)) = uncharted {
                 ProceduralCurveDefinition::TolerantIntersection {
-                    supports,
-                    endpoints,
-                    tolerance,
+                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                        supports, endpoints, tolerance,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     parameterization: None,
                 }
             } else {
@@ -809,13 +816,15 @@ pub(crate) fn try_decode_geometry(
                     record: Some(unknown_id),
                 }
             };
-            if let Ok(procedural) = ProceduralCurve::try_new(
+            let procedural = ProceduralCurve::try_new(
                 procedural_id,
                 definition,
                 charted.map(|charted| charted.fit_tolerance),
-            ) {
-                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
-            }
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
+            let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
+
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
@@ -826,11 +835,13 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural.edit_definition(|definition| {
-                if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
-                    *slot = Some(spine);
-                }
-            });
+            procedural
+                .edit_definition(|definition| {
+                    if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
+                        *slot = Some(spine);
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
@@ -914,11 +925,15 @@ pub(crate) fn try_decode_geometry(
                             .map(cadmpeg_ir::units::PositiveScalar::get);
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
-                                metadata.fit_tolerance = fit_tolerance;
+                                metadata
+                                    .set_fit_tolerance(fit_tolerance)
+                                    .map_err(CodecError::malformed)?;
                             }
                             cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => {
                                 if let Some(fit_tolerance) = fit_tolerance {
-                                    inline.fit_tolerance = fit_tolerance;
+                                    inline
+                                        .set_fit_tolerance(fit_tolerance)
+                                        .map_err(CodecError::malformed)?;
                                 }
                             }
                         }
@@ -1255,13 +1270,17 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    used_surfaces
-                        .extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                    used_surfaces.extend(
+                        context
+                            .sides()
+                            .iter()
+                            .filter_map(|side| side.surface.clone()),
+                    );
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => used_surfaces.extend(
                     family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.clone()),
                 ),
@@ -1715,12 +1734,17 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                    surfaces.extend(
+                        context
+                            .sides()
+                            .iter()
+                            .filter_map(|side| side.surface.clone()),
+                    );
                 }
                 ProceduralCurveDefinition::SurfaceCurve { family } => surfaces.extend(
                     family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.clone()),
                 ),

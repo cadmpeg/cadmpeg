@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 
 use crate::decode::blend::{
@@ -37,6 +38,9 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
+const EPS_BOUNDARY_FIT: f64 = 1.0e-8;
 
 #[test]
 fn active_body_selection_accepts_a_complete_singleton_membership() {
@@ -112,46 +116,58 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ir.model.surfaces.extend([
         Surface {
             id: cone.clone(),
-            geometry: SurfaceGeometry::Cone {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-                ratio: 0.5,
-                half_angle: 0.25_f64.atan(),
-            },
+            geometry: SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    0.5,
+                    0.25_f64.atan(),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: sphere.clone(),
-            geometry: SurfaceGeometry::Sphere {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: torus.clone(),
-            geometry: SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 3.0,
-                minor_radius: 1.0,
-            },
+            geometry: SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                    1.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
     let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: plane.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 1.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let cone_ellipse =
@@ -163,33 +179,42 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ir.model.curves.extend([
         Curve {
             id: cone_ellipse.clone(),
-            geometry: CurveGeometry::Ellipse {
-                center: Point3::new(0.0, 0.0, 1.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                major_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 2.25,
-                minor_radius: 1.125,
-            },
+            geometry: CurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    Point3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.25,
+                    1.125,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: sphere_circle.clone(),
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 1.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0_f64.sqrt(),
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0_f64.sqrt(),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: torus_circle.clone(),
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(3.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, -1.0, 0.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(3.0, 0.0, 0.0),
+                    Vector3::new(0.0, -1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -219,27 +244,23 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         1.0e-12,
     )
     .expect("torus meridian");
-    assert!(matches!(
-        sphere_pcurve,
-        PcurveGeometry::Line { origin, direction }
-            if (origin.v - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-                && direction.u == 1.0
-                && direction.v == 0.0
-    ));
-    assert!(matches!(
-        torus_pcurve,
-        PcurveGeometry::Line { origin, direction }
-            if origin.u.abs() < 1.0e-12
-                && direction.u == 0.0
-                && direction.v == 1.0
-    ));
-    assert!(matches!(
-        cone_pcurve,
-        PcurveGeometry::Line { origin, direction }
-            if (origin.v - 1.0).abs() < 1.0e-12
-                && direction.u == 1.0
-                && direction.v == 0.0
-    ));
+    assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
+            && direction.u == 1.0
+            && direction.v == 0.0
+    }));
+    assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
+    }));
+    assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
+    if {
+        let (origin, direction) = line_pcurve.parts();
+        (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
+    }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
         for (curve, surface, pcurve) in [
             (&cone_ellipse, &cone, &cone_pcurve),
@@ -272,15 +293,19 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
-                supports: [sphere, plane],
-                endpoints: [
-                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                ],
-                tolerance: 1.0e-8,
+                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    [sphere, plane],
+                    [
+                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                        Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                    ],
+                    TOLERANT_INTERSECTION_FIT,
+                )
+                .unwrap(),
                 parameterization: None,
             },
-        ),
+        )
+        .unwrap(),
     );
     let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
     let vertex =
@@ -338,14 +363,16 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     )
     .expect("valid exactness fields");
     let ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization: Some(parameterization),
         ..
     } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection parameterization");
     };
-    assert_eq!(parameterization.parameter_range, range);
+    let (supports, _, _) = intersection.parts();
+
+    assert_eq!(parameterization.parameter_range(), range);
     assert_eq!(ir.model.edges[0].param_range, Some(range));
     assert!(parameterization
         .pcurves
@@ -415,11 +442,14 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     });
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -433,10 +463,16 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     )
     .is_none());
 
-    ir.model.curves[0].geometry = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(10.0, 0.0, 0.0),
-    };
+    ir.model.curves[0].geometry = CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
     assert!(matches!(
         exact_boundary_pcurve(
             &ir,
@@ -444,9 +480,9 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             &surface,
             [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             [0.0, 1.0],
-            1.0e-8,
+            EPS_BOUNDARY_FIT,
         ),
-        Some(PcurveGeometry::Line { .. })
+        Some(PcurveGeometry::Line(_))
     ));
 }
 
@@ -459,10 +495,16 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(3.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -471,18 +513,18 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         source_object: None,
     });
 
-    assert!(matches!(
-        exact_boundary_pcurve(
-            &ir,
-            &curve,
-            &surface,
-            [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
-            [0.0, 1.0],
-            1.0e-8,
-        ),
-        Some(PcurveGeometry::Line { origin, direction })
-            if origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
-    ));
+    assert!(matches!(exact_boundary_pcurve(
+        &ir,
+        &curve,
+        &surface,
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+        [0.0, 1.0],
+        EPS_BOUNDARY_FIT,
+    ), Some(PcurveGeometry::Line(line_pcurve))
+            if {
+                let (origin, direction) = line_pcurve.parts();
+                origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+            }));
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
@@ -665,11 +707,14 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.points.extend([
@@ -706,10 +751,10 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
     let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
-    let pcurve = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(1.0, 0.0),
-    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .unwrap(),
+    );
 
     assert!(
         !crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
@@ -1059,11 +1104,14 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for surface in &surfaces {
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
     }
@@ -1078,15 +1126,21 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        procedural,
-        ProceduralCurveDefinition::TolerantIntersection {
-            supports: surfaces.clone(),
-            endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-            tolerance: 0.01,
-            parameterization: None,
-        },
-    ));
+    ir.model.procedural_curves.push(
+        ProceduralCurve::new(
+            procedural,
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    surfaces.clone(),
+                    [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                    0.01,
+                )
+                .unwrap(),
+                parameterization: None,
+            },
+        )
+        .unwrap(),
+    );
     let points = [
         PointId::mint("nx:test:point#0").expect("identity grammar"),
         PointId::mint("nx:test:point#1").expect("identity grammar"),
@@ -1137,15 +1191,19 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for index in 0..2 {
         ir.model.pcurves.push(Pcurve {
             id: pcurves[index].clone(),
-            geometry: PcurveGeometry::Line {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(1.0, 0.0),
-            },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            geometry: PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 None,
                 Some([0.0, 10.0]),
                 Some(0.02),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
@@ -1210,7 +1268,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
             panic!("fixture uses general pcurve metadata")
         };
-        metadata.fit_tolerance = Some(0.01);
+        metadata.set_fit_tolerance(Some(0.01)).unwrap();
     }
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1225,7 +1283,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("serialized branch transferred");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 10.0]);
+    assert_eq!(parameterization.parameter_range(), [0.0, 10.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
     assert_eq!(
         cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1242,23 +1300,28 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         )
     );
 
-    ir.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TolerantIntersection {
-            parameterization, ..
-        } = definition
-        else {
-            unreachable!();
-        };
-        *parameterization = None;
-    });
+    ir.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                parameterization, ..
+            } = definition
+            else {
+                unreachable!();
+            };
+            *parameterization = None;
+        })
+        .unwrap();
     let edge = &mut ir.model.edges[0];
     edge.param_range = None;
     std::mem::swap(&mut edge.start, &mut edge.end);
     for pcurve in &mut ir.model.pcurves {
-        pcurve.geometry = PcurveGeometry::Line {
-            origin: Point2::new(10.0, 0.0),
-            direction: Point2::new(-1.0, 0.0),
-        };
+        pcurve.geometry = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(10.0, 0.0),
+                Point2::new(-1.0, 0.0),
+            )
+            .unwrap(),
+        );
     }
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1272,22 +1335,27 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("reversed serialized branch transferred");
     };
-    assert!(parameterization.pcurves.iter().all(|pcurve| matches!(
-        pcurve,
-        PcurveGeometry::Line { origin, direction }
-            if origin.u == 0.0 && direction.u == 1.0
-    )));
+    assert!(parameterization.pcurves.iter().all(
+        |pcurve| matches!(pcurve, PcurveGeometry::Line(line_pcurve)
+        if {
+            let (origin, direction) = line_pcurve.parts();
+            origin.u == 0.0 && direction.u == 1.0
+        })
+    ));
     assert_eq!(ir.model.edges[0].start, vertices[0]);
     assert_eq!(ir.model.edges[0].end, vertices[1]);
 
     let range = [-1.5, 1.5];
-    let canonical = PcurveGeometry::Ellipse {
-        center: Point2::new(5.0, 0.0),
-        x_axis: Point2::new(1.0, 0.0),
-        y_axis: Point2::new(0.0, 1.0),
-        major_radius: 4.0,
-        minor_radius: 2.0,
-    };
+    let canonical = PcurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipsePcurve::try_new(
+            Point2::new(5.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            4.0,
+            2.0,
+        )
+        .unwrap(),
+    );
     let endpoints = range.map(|parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(&canonical, parameter).unwrap();
         Point3::new(uv.u, uv.v, 0.0)
@@ -1295,18 +1363,26 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
         point.position = position;
     }
-    ir.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TolerantIntersection {
-            endpoints: stored_endpoints,
-            parameterization,
-            ..
-        } = definition
-        else {
-            unreachable!();
-        };
-        *stored_endpoints = endpoints;
-        *parameterization = None;
-    });
+    ir.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                parameterization,
+                ..
+            } = definition
+            else {
+                unreachable!();
+            };
+            let (supports, _, tolerance) = intersection.parts();
+            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                supports.clone(),
+                endpoints,
+                *tolerance,
+            )
+            .unwrap();
+            *parameterization = None;
+        })
+        .unwrap();
     ir.model.edges[0].param_range = None;
     for coedge in &mut ir.model.coedges {
         coedge.pcurves[0].parameter_range = Some(range);
@@ -1315,14 +1391,17 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
             panic!("fixture uses general pcurve metadata")
         };
-        metadata.parameter_range = Some(range);
-        pcurve.geometry = PcurveGeometry::Ellipse {
-            center: Point2::new(5.0, 0.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, -1.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        };
+        metadata.set_parameter_range(Some(range)).unwrap();
+        pcurve.geometry = PcurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                Point2::new(5.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, -1.0),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        );
     }
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1336,24 +1415,35 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("reversed symmetric conic branches transferred");
     };
-    assert_eq!(parameterization.parameter_range, range);
-    assert!(parameterization.pcurves.iter().all(|pcurve| matches!(
-        pcurve,
-        PcurveGeometry::Ellipse { y_axis, .. } if y_axis.v == 1.0
-    )));
+    assert_eq!(parameterization.parameter_range(), range);
+    assert!(parameterization.pcurves.iter().all(
+        |pcurve| matches!(pcurve, PcurveGeometry::Ellipse(ellipse_pcurve)
+        if {
+            let (_, _, y_axis, _, _) = ellipse_pcurve.parts();
+            y_axis.v == 1.0
+        })
+    ));
 
-    ir.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::TolerantIntersection {
-            tolerance,
-            parameterization,
-            ..
-        } = definition
-        else {
-            unreachable!();
-        };
-        *tolerance = 10.0;
-        *parameterization = None;
-    });
+    ir.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                parameterization,
+                ..
+            } = definition
+            else {
+                unreachable!();
+            };
+            let (supports, endpoints, _) = intersection.parts();
+            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                supports.clone(),
+                *endpoints,
+                10.0,
+            )
+            .unwrap();
+            *parameterization = None;
+        })
+        .unwrap();
     ir.model.edges[0].param_range = None;
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1378,29 +1468,38 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
-    let pcurve = PcurveGeometry::Circle {
-        center: Point2::new(0.0, 0.0),
-        x_axis: Point2::new(1.0, 0.0),
-        y_axis: Point2::new(0.0, 1.0),
-        radius: 2.0,
-    };
+    let pcurve = PcurveGeometry::Circle(
+        cadmpeg_ir::geometry::CirclePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            2.0,
+        )
+        .unwrap(),
+    );
     let endpoint = Point3::new(2.0, 0.0, 0.0);
 
     let oriented = orient_tolerant_intersection_pcurve(
@@ -1439,8 +1538,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let procedural = ProceduralCurve::try_new(
         ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: None,
                         pcurve: None,
@@ -1450,9 +1549,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                         pcurve: None,
                     },
                 ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(2.0),
@@ -1506,11 +1606,14 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1522,20 +1625,23 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: 1.0,
-            u_sense: Some(0),
-            v_sense: Some(0),
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance: 1.0,
+                u_sense: Some(0),
+                v_sense: Some(0),
+                support_extension: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
             1,
@@ -1606,10 +1712,10 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             source_object: None,
         },
     ]);
-    let pcurve = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 0.0),
-        direction: Point2::new(0.0, 1.0),
-    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.0, 1.0))
+            .unwrap(),
+    );
     assert!(coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],

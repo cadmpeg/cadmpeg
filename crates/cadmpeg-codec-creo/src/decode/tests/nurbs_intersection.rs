@@ -127,40 +127,52 @@ fn source_ir() -> CadIr {
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         },
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(4.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 3.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(4.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    3.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            ),
             source_object: None,
         },
     ]);
@@ -203,18 +215,19 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar")
         ])
     );
-    assert!(matches!(
-        with_witness
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
-        .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Line { origin, direction })
-            if (origin.x - 2.0).abs() <= EPS_POSITION
+    assert!(matches!(with_witness
+    .model
+    .curves
+    .iter()
+    .find(|curve| curve.id
+        == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
+    .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+        if {
+            let (origin, direction) = line_curve.parts();
+            (origin.x - 2.0).abs() <= EPS_POSITION
                 && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
                 && direction.z == 1.0
-    ));
+        }));
 
     let mut without_witness = source_ir();
     assert!(transfer_carrier_intersection_curves(

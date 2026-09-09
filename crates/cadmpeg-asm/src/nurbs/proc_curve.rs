@@ -537,16 +537,20 @@ pub struct HelixDefinition {
 }
 
 impl HelixDefinition {
-    pub(crate) fn into_definition(self) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            angle_range: self.angle_range,
-            center: self.center,
-            major: self.major,
-            minor: self.minor,
-            pitch: self.pitch,
-            apex_factor: self.apex_factor,
-            axis: self.axis,
-        }
+    pub(crate) fn into_definition(
+        self,
+    ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
+        Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                self.angle_range,
+                self.center,
+                self.major,
+                self.minor,
+                self.pitch,
+                self.apex_factor,
+                self.axis,
+            )?,
+        ))
     }
 }
 
@@ -2042,7 +2046,10 @@ fn cache_first_curve_context(
             let (_, end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(end);
             cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-                fit_tolerance: cur.take_f64()? * LEN_TO_MM,
+                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
+                    cur.take_f64()? * LEN_TO_MM,
+                )
+                .ok()?,
             }
         }
         2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(
@@ -2778,11 +2785,9 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Plane {
-                    origin: point,
-                    normal,
-                    u_axis,
-                },
+                SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
+                ),
                 ranges,
             ))
         }
@@ -2808,28 +2813,32 @@ fn embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Cylinder {
-                    origin: point,
-                    axis: native_axis,
-                    ref_direction,
-                    radius,
-                }
+                SurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        point,
+                        native_axis,
+                        ref_direction,
+                        radius,
+                    )
+                    .ok()?,
+                )
             } else {
                 let axis = if sine * cosine < 0.0 {
                     Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Cone {
-                    origin: point,
-                    axis,
-                    ref_direction,
-                    radius,
-                    ratio,
-                    // See `brep/geometry.rs`: `atan2` keeps half-angle recovery
-                    // stable across libm implementations.
-                    half_angle: sine.abs().atan2(cosine.abs()),
-                }
+                SurfaceGeometry::Cone(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        radius,
+                        ratio,
+                        sine.abs().atan2(cosine.abs()),
+                    )
+                    .ok()?,
+                )
             };
             Some((surface, ranges))
         }
@@ -2847,12 +2856,15 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Sphere {
-                    center: point,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
+                SurfaceGeometry::Sphere(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 ranges,
             ))
         }
@@ -2871,13 +2883,16 @@ fn embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Torus {
-                    center: point,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius,
-                },
+                SurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        major_radius,
+                        minor_radius,
+                    )
+                    .ok()?,
+                ),
                 ranges,
             ))
         }
@@ -2928,11 +2943,9 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Plane {
-                    origin: point,
-                    normal,
-                    u_axis,
-                },
+                SurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
+                ),
                 ranges,
             ))
         }
@@ -2958,28 +2971,32 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Cylinder {
-                    origin: point,
-                    axis: native_axis,
-                    ref_direction,
-                    radius,
-                }
+                SurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        point,
+                        native_axis,
+                        ref_direction,
+                        radius,
+                    )
+                    .ok()?,
+                )
             } else {
                 let axis = if sine * cosine < 0.0 {
                     Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Cone {
-                    origin: point,
-                    axis,
-                    ref_direction,
-                    radius,
-                    ratio,
-                    // See `brep/geometry.rs`: `atan2` keeps half-angle recovery
-                    // stable across libm implementations.
-                    half_angle: sine.abs().atan2(cosine.abs()),
-                }
+                SurfaceGeometry::Cone(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        radius,
+                        ratio,
+                        sine.abs().atan2(cosine.abs()),
+                    )
+                    .ok()?,
+                )
             };
             Some((surface, ranges))
         }
@@ -2997,12 +3014,15 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Sphere {
-                    center: point,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
+                SurfaceGeometry::Sphere(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 ranges,
             ))
         }
@@ -3021,13 +3041,16 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             Some((
-                SurfaceGeometry::Torus {
-                    center: point,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius,
-                },
+                SurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                        point,
+                        axis,
+                        ref_direction,
+                        major_radius,
+                        minor_radius,
+                    )
+                    .ok()?,
+                ),
                 ranges,
             ))
         }

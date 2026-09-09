@@ -465,10 +465,10 @@ fn decode_emits_charted_surface_intersection_construction() {
     else {
         panic!("typed surface intersection");
     };
-    assert!(context.sides[0].surface.is_some());
-    assert!(context.sides[0].pcurve.is_some());
-    assert!(context.sides[1].surface.is_none());
-    assert_eq!(context.parameter_range, [0.0, 0.01]);
+    assert!(context.sides()[0].surface.is_some());
+    assert!(context.sides()[0].pcurve.is_some());
+    assert!(context.sides()[1].surface.is_none());
+    assert_eq!(context.parameter_range(), [0.0, 0.01]);
     assert!(result.ir().model.coedges[0].pcurves.is_empty());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Geometry
@@ -508,9 +508,12 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
     else {
         panic!("typed intersection");
     };
-    let second = context.sides[1].surface.as_ref().expect("bridged support");
-    assert_ne!(context.sides[0].surface.as_ref(), Some(second));
-    assert!(context.sides[1].pcurve.is_some());
+    let second = context.sides()[1]
+        .surface
+        .as_ref()
+        .expect("bridged support");
+    assert_ne!(context.sides()[0].surface.as_ref(), Some(second));
+    assert!(context.sides()[1].pcurve.is_some());
 }
 
 #[test]

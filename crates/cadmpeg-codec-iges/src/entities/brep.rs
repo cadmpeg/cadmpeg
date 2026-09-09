@@ -182,7 +182,7 @@ fn project_pcurve_uses(
     resolved: Vec<(PcurveGeometry, [f64; 2])>,
     fit_tolerance: Option<f64>,
     id_stem: &str,
-) -> Vec<PcurveUse> {
+) -> Result<Vec<PcurveUse>, &'static str> {
     uses.iter()
         .zip(resolved)
         .enumerate()
@@ -191,17 +191,17 @@ fn project_pcurve_uses(
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                     None,
                     Some(range),
                     fit_tolerance,
-                ),
+                )?,
             });
-            PcurveUse {
+            Ok(PcurveUse {
                 pcurve: id,
                 isoparametric: Some(*isoparametric),
                 parameter_range: None,
-            }
+            })
         })
         .collect()
 }
@@ -892,7 +892,7 @@ pub(super) fn project(
                                 valid = false;
                                 break;
                             };
-                            let projected = project_pcurve_uses(
+                            let projected = match project_pcurve_uses(
                                 &mut candidate,
                                 pcurves,
                                 resolved,
@@ -900,7 +900,14 @@ pub(super) fn project(
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
-                            );
+                            ) {
+                                Ok(projected) => projected,
+                                Err(error) => {
+                                    losses.push(entity_loss(entry, error));
+                                    valid = false;
+                                    break;
+                                }
+                            };
                             loop_vertex_uses.push((vertex, after, projected));
                             continue;
                         };
@@ -1028,13 +1035,20 @@ pub(super) fn project(
                             edge_ids.insert(edge_key, id.clone());
                             id
                         };
-                        let projected = project_pcurve_uses(
+                        let projected = match project_pcurve_uses(
                             &mut candidate,
                             pcurves,
                             resolved,
                             Some(tolerance),
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
-                        );
+                        ) {
+                            Ok(projected) => projected,
+                            Err(error) => {
+                                losses.push(entity_loss(entry, error));
+                                valid = false;
+                                break;
+                            }
+                        };
                         let Some(coedge_position) = edge_use_indices
                             .iter()
                             .position(|index| *index == use_index)

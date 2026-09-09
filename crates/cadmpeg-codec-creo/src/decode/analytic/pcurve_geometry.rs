@@ -34,25 +34,25 @@ pub fn surface_of_revolution_parallel_pcurve(
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
     let (center, conic_axis, conic_x, conic_radii) = match geometry {
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } if radius.is_finite() && *radius > 0.0 => {
+        CurveGeometry::Circle(circle_curve)
+            if {
+                let (_, _, _, radius) = circle_curve.parts();
+                radius.is_finite() && *radius > 0.0
+            } =>
+        {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             (*center, *axis, *ref_direction, [*radius, *radius])
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } if major_radius.is_finite()
-            && minor_radius.is_finite()
-            && *major_radius > 0.0
-            && *minor_radius > 0.0 =>
+        CurveGeometry::Ellipse(ellipse_curve)
+            if {
+                let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+                major_radius.is_finite()
+                    && minor_radius.is_finite()
+                    && *major_radius > 0.0
+                    && *minor_radius > 0.0
+            } =>
         {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             (
                 *center,
                 *axis,
@@ -63,25 +63,17 @@ pub fn surface_of_revolution_parallel_pcurve(
         _ => return None,
     };
     let (origin, axis, ref_direction, radial) = match surface {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } if radius.is_finite() && *radius > 0.0 => (
-            *origin,
-            *axis,
-            *ref_direction,
-            RevolutionRadii::Cylinder(*radius),
-        ),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } if radius.is_finite() && ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite() => {
+        SurfaceGeometry::Cylinder(cylinder) if *cylinder.parts().3 > 0.0 => {
+            let (origin, axis, ref_direction, radius) = cylinder.parts();
+            (
+                *origin,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Cylinder(*radius),
+            )
+        }
+        SurfaceGeometry::Cone(cone) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone.parts();
             half_angle.tan().is_finite().then_some(())?;
             (
                 *origin,
@@ -94,28 +86,17 @@ pub fn surface_of_revolution_parallel_pcurve(
                 },
             )
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } if radius.is_finite() && *radius > 0.0 => (
-            *center,
-            *axis,
-            *ref_direction,
-            RevolutionRadii::Sphere(*radius),
-        ),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if major_radius.is_finite()
-            && minor_radius.is_finite()
-            && *major_radius > 0.0
-            && *minor_radius > 0.0 =>
-        {
+        SurfaceGeometry::Sphere(sphere) if *sphere.parts().3 > 0.0 => {
+            let (center, axis, ref_direction, radius) = sphere.parts();
+            (
+                *center,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Sphere(*radius),
+            )
+        }
+        SurfaceGeometry::Torus(torus) if *torus.parts().3 > 0.0 && *torus.parts().4 > 0.0 => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus.parts();
             (
                 *center,
                 *axis,
@@ -216,10 +197,13 @@ pub fn surface_of_revolution_parallel_pcurve(
     });
     let orientation = radius_sign * dot(conic_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= EPS_ORTHO).then_some(())?;
-    Some(PcurveGeometry::Line {
-        origin: Point2::new(phase, v),
-        direction: Point2::new(orientation.signum(), 0.0),
-    })
+    Some(PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(
+            Point2::new(phase, v),
+            Point2::new(orientation.signum(), 0.0),
+        )
+        .ok()?,
+    ))
 }
 
 pub fn meridian_circle_pcurve(
@@ -227,23 +211,25 @@ pub fn meridian_circle_pcurve(
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
     let (surface_center, surface_axis, surface_x, major_radius, meridian_radius) = match surface {
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } if radius.is_finite() && *radius > 0.0 => (*center, *axis, *ref_direction, None, *radius),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } if major_radius.is_finite()
-            && minor_radius.is_finite()
-            && *major_radius > 0.0
-            && *minor_radius > 0.0 =>
+        SurfaceGeometry::Sphere(sphere_surface)
+            if {
+                let (_, _, _, radius) = sphere_surface.parts();
+                radius.is_finite() && *radius > 0.0
+            } =>
         {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            (*center, *axis, *ref_direction, None, *radius)
+        }
+        SurfaceGeometry::Torus(torus_surface)
+            if {
+                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                major_radius.is_finite()
+                    && minor_radius.is_finite()
+                    && *major_radius > 0.0
+                    && *minor_radius > 0.0
+            } =>
+        {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             (
                 *center,
                 *axis,
@@ -254,15 +240,10 @@ pub fn meridian_circle_pcurve(
         }
         _ => return None,
     };
-    let CurveGeometry::Circle {
-        center: circle_center,
-        axis: circle_axis,
-        ref_direction: circle_x,
-        radius: circle_radius,
-    } = geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
+    let (circle_center, circle_axis, circle_x, circle_radius) = circle_curve.parts();
     (circle_radius.is_finite() && *circle_radius > 0.0).then_some(())?;
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
@@ -308,45 +289,44 @@ pub fn meridian_circle_pcurve(
     });
     let orientation = dot(circle_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= EPS_ORTHO).then_some(())?;
-    Some(PcurveGeometry::Line {
-        origin: Point2::new(u, phase),
-        direction: Point2::new(0.0, orientation.signum()),
-    })
+    Some(PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(
+            Point2::new(u, phase),
+            Point2::new(0.0, orientation.signum()),
+        )
+        .ok()?,
+    ))
 }
 
 pub fn ruled_generator_line_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
-    let CurveGeometry::Line {
-        origin: line_origin,
-        direction: line_direction,
-    } = geometry
-    else {
+    let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
+    let (line_origin, line_direction) = line_curve.parts();
     let (surface_origin, surface_axis, surface_x, reference_radius, radius_ratio, radius_slope) =
         match surface {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } if radius.is_finite() && *radius > 0.0 => {
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (_, _, _, radius) = cylinder_surface.parts();
+                    radius.is_finite() && *radius > 0.0
+                } =>
+            {
+                let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
                 (*origin, *axis, *ref_direction, *radius, 1.0, 0.0)
             }
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } if radius.is_finite()
-                && ratio.is_finite()
-                && *ratio > 0.0
-                && half_angle.is_finite() =>
+            SurfaceGeometry::Cone(cone_surface)
+                if {
+                    let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
+                    radius.is_finite()
+                        && ratio.is_finite()
+                        && *ratio > 0.0
+                        && half_angle.is_finite()
+                } =>
             {
+                let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
                 let slope = half_angle.tan();
                 slope.is_finite().then_some((
                     *origin,
@@ -405,8 +385,11 @@ pub fn ruled_generator_line_pcurve(
         && parameter_scale.abs() > 0.0
         && dot(residual, residual).sqrt() <= EPS_ORTHO * direction_length)
         .then_some(())?;
-    Some(PcurveGeometry::Line {
-        origin: Point2::new(u, v),
-        direction: Point2::new(0.0, parameter_scale),
-    })
+    Some(PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(
+            Point2::new(u, v),
+            Point2::new(0.0, parameter_scale),
+        )
+        .ok()?,
+    ))
 }

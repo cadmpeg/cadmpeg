@@ -79,10 +79,11 @@ pub fn counterbore_dimensions(
         .into_iter()
         .filter_map(|(surface_id, geometry)| {
             generated_cylinders.contains(&surface_id).then_some(())?;
-            let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
+            let SurfaceGeometry::Cylinder(cylinder_surface) = geometry else {
                 return None;
             };
-            Some(radius)
+            let (_, _, _, radius) = cylinder_surface.parts();
+            Some(*radius)
         })
         .collect::<Vec<_>>();
     let dimension_tables = || {
@@ -848,15 +849,10 @@ pub fn counterbore_source_boundary_circle(
                         == CurveId::mint(format!("creo:visibgeom:curve#{}", edge.id))
                             .expect("identity grammar")
                 }))?;
-                let CurveGeometry::Circle {
-                    center,
-                    axis,
-                    radius: candidate,
-                    ..
-                } = &curve.geometry
-                else {
+                let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
                     return None;
                 };
+                let (center, axis, _, candidate) = circle_curve.parts();
                 ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalize([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
@@ -959,15 +955,13 @@ pub fn counterbore_source_patch_geometries(
         ref_direction,
         radius,
     };
+    let counterbore_geometry = geometry(counterbore_radius);
+    let bore_geometry = geometry(0.5 * bore_diameter);
     Some(
         counterbore_source
             .iter()
-            .map(|id| (*id, geometry(counterbore_radius)))
-            .chain(
-                bore_source
-                    .iter()
-                    .map(|id| (*id, geometry(0.5 * bore_diameter))),
-            )
+            .map(|id| (*id, counterbore_geometry))
+            .chain(bore_source.iter().map(|id| (*id, bore_geometry)))
             .collect(),
     )
 }
@@ -1036,15 +1030,10 @@ pub fn complete_cylinder_source_carrier(
         .map(|id| existing_geometries.get(id))
         .collect::<Option<Vec<_>>>()?;
     let first = *carriers.first()?;
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius: candidate,
-    } = first
-    else {
+    let SurfaceGeometry::Cylinder(cylinder) = first else {
         return None;
     };
+    let (origin, axis, ref_direction, candidate) = cylinder.parts();
     ((*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
         && carriers.iter().all(|candidate| *candidate == first))
     .then_some(HoleCylinder {

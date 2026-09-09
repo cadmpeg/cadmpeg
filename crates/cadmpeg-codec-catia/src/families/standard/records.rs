@@ -604,11 +604,14 @@ pub fn plane_params<S: std::hash::BuildHasher>(
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
 pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     let normal = unit_vector(params.normal)?;
-    Some(SurfaceGeometry::Plane {
-        origin: params.origin,
-        normal,
-        u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
-    })
+    Some(SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            params.origin,
+            normal,
+            cadmpeg_ir::geometry::derive_reference_direction(normal),
+        )
+        .ok()?,
+    ))
 }
 
 /// Geometry family carried by one positional standard `0x60` edge row.
@@ -801,12 +804,15 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
                 return None;
             }
-            Some(SurfaceGeometry::Sphere {
-                center: pt(cx, cy, cz),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: r as f64,
-            })
+            Some(SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    pt(cx, cy, cz),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    r as f64,
+                )
+                .ok()?,
+            ))
         }
         AnalyticSurfaceKind::Torus => {
             // torus: cx cy cz ax ay signed_major minor; sign(major) carries sign(az).
@@ -826,13 +832,16 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, major)?;
-            Some(SurfaceGeometry::Torus {
-                center: pt(cx, cy, cz),
-                axis,
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-                major_radius: major.abs() as f64,
-                minor_radius: minor as f64,
-            })
+            Some(SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    pt(cx, cy, cz),
+                    axis,
+                    cadmpeg_ir::geometry::derive_reference_direction(axis),
+                    major.abs() as f64,
+                    minor as f64,
+                )
+                .ok()?,
+            ))
         }
         AnalyticSurfaceKind::Cylinder => {
             // cylinder: px py pz ax ay radius; sign(radius) carries sign(az).
@@ -851,12 +860,15 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, radius)?;
-            Some(SurfaceGeometry::Cylinder {
-                origin: pt(px, py, pz),
-                axis,
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-                radius: radius.abs() as f64,
-            })
+            Some(SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    pt(px, py, pz),
+                    axis,
+                    cadmpeg_ir::geometry::derive_reference_direction(axis),
+                    radius.abs() as f64,
+                )
+                .ok()?,
+            ))
         }
         AnalyticSurfaceKind::Cone => {
             // cone: apex_x apex_y apex_z ax ay semi_angle; radius at apex is 0.
@@ -875,14 +887,17 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 return None;
             }
             let axis = axis_from_xy(ax, ay, semi)?;
-            Some(SurfaceGeometry::Cone {
-                origin: pt(x, y, z),
-                axis,
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-                radius: 0.0,
-                ratio: 1.0,
-                half_angle: semi.abs() as f64,
-            })
+            Some(SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    pt(x, y, z),
+                    axis,
+                    cadmpeg_ir::geometry::derive_reference_direction(axis),
+                    0.0,
+                    1.0,
+                    semi.abs() as f64,
+                )
+                .ok()?,
+            ))
         }
         AnalyticSurfaceKind::Plane => None, // plane: parameters in a separate bridged record.
     }

@@ -241,7 +241,7 @@ pub fn write_semantic(
             .and_then(|edge| edge.curve.as_ref())
             .is_some_and(|curve_id| {
                 target.model.curves.iter().any(|curve| {
-                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
+                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line(_))
                 })
             });
         if is_line {
@@ -429,9 +429,12 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Line { origin, direction } => edited_curves
-                .contains(curve.id.as_str())
-                .then(|| (curve.id.as_str().to_owned(), (origin, direction))),
+            CurveGeometry::Line(line_curve) => {
+                let (&origin, &direction) = line_curve.parts();
+                edited_curves
+                    .contains(curve.id.as_str())
+                    .then(|| (curve.id.as_str().to_owned(), (origin, direction)))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -440,29 +443,25 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_curves.contains(curve.id.as_str()).then(|| {
-                (
-                    curve.id.as_str().to_owned(),
-                    (center, axis, ref_direction, radius, radius),
-                )
-            }),
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => edited_curves.contains(curve.id.as_str()).then(|| {
-                (
-                    curve.id.as_str().to_owned(),
-                    (center, axis, major_direction, major_radius, minor_radius),
-                )
-            }),
+            CurveGeometry::Circle(circle_curve) => {
+                let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+                edited_curves.contains(curve.id.as_str()).then(|| {
+                    (
+                        curve.id.as_str().to_owned(),
+                        (center, axis, ref_direction, radius, radius),
+                    )
+                })
+            }
+            CurveGeometry::Ellipse(ellipse_curve) => {
+                let (&center, &axis, &major_direction, &major_radius, &minor_radius) =
+                    ellipse_curve.parts();
+                edited_curves.contains(curve.id.as_str()).then(|| {
+                    (
+                        curve.id.as_str().to_owned(),
+                        (center, axis, major_direction, major_radius, minor_radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -471,9 +470,12 @@ pub fn write_semantic(
         .curves
         .iter()
         .filter_map(|curve| match curve.geometry {
-            CurveGeometry::Degenerate { point } => edited_curves
-                .contains(curve.id.as_str())
-                .then(|| (curve.id.as_str().to_owned(), point)),
+            CurveGeometry::Degenerate(degenerate_curve) => {
+                let (&point,) = degenerate_curve.parts();
+                edited_curves
+                    .contains(curve.id.as_str())
+                    .then(|| (curve.id.as_str().to_owned(), point))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -482,13 +484,12 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => edited_surfaces
-                .contains(surface.id.as_str())
-                .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis))),
+            SurfaceGeometry::Plane(plane_surface) => {
+                let (&origin, &normal, &u_axis) = plane_surface.parts();
+                edited_surfaces
+                    .contains(surface.id.as_str())
+                    .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis)))
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -497,17 +498,15 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (center, axis, ref_direction, radius),
-                )
-            }),
+            SurfaceGeometry::Sphere(sphere_surface) => {
+                let (&center, &axis, &ref_direction, &radius) = sphere_surface.parts();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (center, axis, ref_direction, radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -516,18 +515,16 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (center, axis, ref_direction, major_radius, minor_radius),
-                )
-            }),
+            SurfaceGeometry::Torus(torus_surface) => {
+                let (&center, &axis, &ref_direction, &major_radius, &minor_radius) =
+                    torus_surface.parts();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (center, axis, ref_direction, major_radius, minor_radius),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -536,30 +533,25 @@ pub fn write_semantic(
         .surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (origin, axis, ref_direction, radius, 1.0, 0.0),
-                )
-            }),
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                ratio,
-                half_angle,
-            } => edited_surfaces.contains(surface.id.as_str()).then(|| {
-                (
-                    surface.id.as_str().to_owned(),
-                    (origin, axis, ref_direction, radius, ratio, half_angle),
-                )
-            }),
+            SurfaceGeometry::Cylinder(cylinder_surface) => {
+                let (&origin, &axis, &ref_direction, &radius) = cylinder_surface.parts();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (origin, axis, ref_direction, radius, 1.0, 0.0),
+                    )
+                })
+            }
+            SurfaceGeometry::Cone(cone_surface) => {
+                let (&origin, &axis, &ref_direction, &radius, &ratio, &half_angle) =
+                    cone_surface.parts();
+                edited_surfaces.contains(surface.id.as_str()).then(|| {
+                    (
+                        surface.id.as_str().to_owned(),
+                        (origin, axis, ref_direction, radius, ratio, half_angle),
+                    )
+                })
+            }
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();

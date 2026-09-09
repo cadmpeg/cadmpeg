@@ -458,9 +458,9 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                         .and_then(|parameters| {
                             oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
                         })
-                } else if matches!(geometry, CurveGeometry::Line { .. }) {
+                } else if matches!(geometry, CurveGeometry::Line(_)) {
                     oriented_line_plan(&geometry, edge_start, edge_end)
-                } else if matches!(geometry, CurveGeometry::Circle { .. }) {
+                } else if matches!(geometry, CurveGeometry::Circle(_)) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
                         oriented_circle_plan(
                             pcurve, surface, &geometry, parameters, edge_start, edge_end,
@@ -1001,18 +1001,40 @@ fn curve_on_parameter_range(
                 .ok()?;
             Some(CurveGeometry::Nurbs(curve))
         }
-        CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
-            origin: Point3::new(
-                origin.x + (source[0] - target[0] * source_per_target) * direction.x,
-                origin.y + (source[0] - target[0] * source_per_target) * direction.y,
-                origin.z + (source[0] - target[0] * source_per_target) * direction.z,
-            ),
-            direction: Vector3::new(
-                direction.x * source_per_target,
-                direction.y * source_per_target,
-                direction.z * source_per_target,
-            ),
-        }),
+        CurveGeometry::Line(line_curve) => {
+            let (&origin, &direction) = line_curve.parts();
+            if source_per_target != 1.0 {
+                return NurbsCurve::new(
+                    1,
+                    vec![target[0], target[0], target[1], target[1]],
+                    source
+                        .into_iter()
+                        .map(|parameter| {
+                            Point3::new(
+                                origin.x + parameter * direction.x,
+                                origin.y + parameter * direction.y,
+                                origin.z + parameter * direction.z,
+                            )
+                        })
+                        .collect(),
+                    None,
+                    false,
+                )
+                .ok()
+                .map(CurveGeometry::Nurbs);
+            }
+            Some(CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(
+                        origin.x + (source[0] - target[0] * source_per_target) * direction.x,
+                        origin.y + (source[0] - target[0] * source_per_target) * direction.y,
+                        origin.z + (source[0] - target[0] * source_per_target) * direction.z,
+                    ),
+                    direction,
+                )
+                .ok()?,
+            ))
+        }
         _ => None,
     }
 }
@@ -1095,15 +1117,10 @@ fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
 }
 
 fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool {
-    let CurveGeometry::Circle {
-        center,
-        axis,
-        radius,
-        ..
-    } = geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = geometry else {
         return false;
     };
+    let (center, axis, _, radius) = circle_curve.parts();
     let center = [center.x, center.y, center.z];
     let axis = [axis.x, axis.y, axis.z];
     points.iter().all(|point| {

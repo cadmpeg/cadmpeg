@@ -240,3 +240,41 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
+
+#[test]
+fn spring_support_reference_findings_name_the_construction() {
+    use crate::geometry::{
+        ProceduralCurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve, SpringSupport,
+    };
+    use crate::ids::{ProceduralCurveId, SurfaceId};
+
+    let mut ir = unit_cube();
+    let owner = ProceduralCurveId::mint("test:model:procedural-curve#spring").unwrap();
+    let missing = SurfaceId::mint("test:model:surface#missing").unwrap();
+    ir.model.procedural_curves.push(
+        ProceduralCurve::new(
+            owner.clone(),
+            ProceduralCurveDefinition::Spring {
+                layout: SpringLayout::ContextFirst {
+                    supports: [
+                        SpringSupport::Surface(missing.clone()),
+                        SpringSupport::Ranges([[0.0, 1.0]; 2]),
+                    ],
+                    first_pcurve: SpringPcurve::Range([0.0, 1.0]),
+                    second_pcurve: None,
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    discontinuity_flag: false,
+                },
+                direction: 1,
+            },
+        )
+        .unwrap(),
+    );
+    let report = validate_neutral(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(owner.as_str())
+            && finding.message == format!("references missing surface `{missing}`")
+    }));
+}

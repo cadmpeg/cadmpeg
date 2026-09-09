@@ -53,6 +53,8 @@ fn assert_ambiguous_length_uncertainty(
     );
 }
 
+const EPS_CONE_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn unresolvable_length_unit_reports_an_error_loss() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
@@ -167,12 +169,18 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         curve.id.as_str() == "step:data:curve#45"
             && matches!(curve.geometry, CurveGeometry::Composite { .. })
     }));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Line { origin, direction }
-            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
-                && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
-    )));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
+        if {
+            let (origin, direction) = line_curve.parts();
+            origin.x == 1.0
+                && origin.y == 2.0
+                && origin.z == 3.0
+                && direction.x == 0.0
+                && direction.y == 0.0
+                && direction.z == 1.0
+        })
+    ));
     assert!(!result.report().losses.iter().any(|loss| loss
         .message
         .contains("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51")));
@@ -188,11 +196,13 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 ..
             } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
         )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Ellipse { major_radius, minor_radius, .. }
-            if major_radius == 6.0 && minor_radius == 2.0
-    )));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
+        if {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            *major_radius == 6.0 && *minor_radius == 2.0
+        })
+    ));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Nurbs(nurbs)
@@ -264,11 +274,13 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             && nurbs.degree() == 1
             && nurbs.knots() == [0.0, 0.0, 1.0, 2.0, 2.0]
     )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Plane { origin, normal, .. }
-            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, normal, _) = plane_surface.parts();
+            origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
+        })
+    ));
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Nurbs(nurbs)
@@ -280,29 +292,41 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             && nurbs.v_knots() == [0.0, 0.0, 1.0, 1.0]
             && nurbs.weights() == Some(&[1.0, 1.0, 1.0, 0.75][..])
     )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if radius == 5.0
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { radius, ratio, half_angle, .. }
-            if radius == 5.0 && ratio == 1.0 && half_angle == 0.25
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Sphere { radius, .. } if radius == 5.0
-    )));
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Torus { major_radius, minor_radius, .. }
-            if major_radius == 8.0 && minor_radius == 2.0
-    )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Circle { center, radius, .. }
-            if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, _, _, radius) = cylinder_surface.parts();
+            *radius == 5.0
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
+            *radius == 5.0 && *ratio == 1.0 && *half_angle == 0.25
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
+        if {
+            let (_, _, _, radius) = sphere_surface.parts();
+            *radius == 5.0
+        })
+    ));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
+        if {
+            let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+            *major_radius == 8.0 && *minor_radius == 2.0
+        })
+    ));
+    assert!(result.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && *radius == 4.0
+        })
+    ));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
     let cartesian_trim = result
@@ -402,11 +426,13 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode degree cone");
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { radius, half_angle, .. }
-            if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
-    )));
+    assert!(result.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
+        if {
+            let (_, _, _, radius, _, half_angle) = cone_surface.parts();
+            *radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
+        })
+    ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(
         validation

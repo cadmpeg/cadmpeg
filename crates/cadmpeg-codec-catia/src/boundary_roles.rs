@@ -155,14 +155,10 @@ pub(crate) fn classify_planar_boundary_roles(
     if boundaries.len() == 1 {
         return vec![LoopBoundaryRole::Outer];
     }
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface
-    else {
+    let SurfaceGeometry::Plane(plane_surface) = surface else {
         return unspecified();
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
     let Some(normal) = normal.unit() else {
         return unspecified();
     };
@@ -280,11 +276,14 @@ mod tests {
     use super::classify_planar_boundary_roles;
 
     fn plane() -> SurfaceGeometry {
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )
     }
 
     fn square(min_u: f64, min_v: f64, max_u: f64, max_v: f64) -> Vec<Point3> {

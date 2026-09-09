@@ -108,20 +108,26 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ir.model.surfaces.extend([
         Surface {
             id: first.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: second.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -170,21 +176,27 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ir.model.surfaces.extend([
         Surface {
             id: cylinder.clone(),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: section_plane.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -224,21 +236,27 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ir.model.surfaces.extend([
         Surface {
             id: tangent_cylinder.clone(),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 1.0),
-                axis: Vector3::new(0.0, 1.0, 0.0),
-                ref_direction: Vector3::new(0.0, 0.0, -1.0),
-                radius: 1.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 1.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                    1.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: tangent_plane.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -289,11 +307,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         },
         Surface {
             id: nurbs_section.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.5),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.5),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -325,20 +346,26 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     ir.model.surfaces.extend([
         Surface {
             id: horizontal.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin,
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: vertical.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin,
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin,
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -405,20 +432,23 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            constructions[side].clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: surfaces[1 - side].clone(),
-                distance: 1.0,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
-            None,
-        ));
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                constructions[side].clone(),
+                ProceduralSurfaceDefinition::Offset {
+                    support: surfaces[1 - side].clone(),
+                    distance: 1.0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
+                    support_extension: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                },
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -666,12 +696,15 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         SurfaceId::mint("test:model:entity#synthetic:offset-cylinder").expect("identity grammar");
     let cylinder = |id, radius| Surface {
         id,
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(-46.75, 0.0, -112.06),
-            axis: Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: Vector3::new(0.0, 0.0, -1.0),
-            radius,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(-46.75, 0.0, -112.06),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                radius,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     ir.model.surfaces.extend([
@@ -683,10 +716,15 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         constant_surface_offset_between(&ir, &support, &offset, 0),
         Some(5.0)
     );
-    let SurfaceGeometry::Cylinder { origin, .. } = &mut ir.model.surfaces[1].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let mut origin = *origin;
     origin.y = 1.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+            .unwrap();
     assert!(constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 
     let support_plane =
@@ -695,11 +733,14 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         SurfaceId::mint("test:model:entity#synthetic:offset-plane").expect("identity grammar");
     let plane = |id, origin| Surface {
         id,
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     ir.model.surfaces.extend([
@@ -710,10 +751,13 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0),
         Some(5.0)
     );
-    let SurfaceGeometry::Plane { origin, .. } = &mut ir.model.surfaces[3].geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = &mut ir.model.surfaces[3].geometry else {
         unreachable!()
     };
+    let (origin, normal, u_axis) = plane_surface.parts();
+    let mut origin = *origin;
     origin.x += 1.0;
+    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     assert!(constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0).is_none());
 }
 
@@ -732,11 +776,9 @@ fn blend_contact_matches_concentric_blend_carriers() {
         SurfaceId::mint("test:model:entity#synthetic:second-offset").expect("identity grammar");
     let plane = |id, origin, normal, u_axis| Surface {
         id,
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+        ),
         source_object: None,
     };
     ir.model.surfaces.extend([
@@ -786,24 +828,27 @@ fn blend_contact_matches_concentric_blend_carriers() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: supports.map(|surface| {
-                    Some(BlendSupport {
-                        surface,
-                        reversed: false,
-                    })
-                }),
-                spine: Some(spine.clone()),
-                radius: BlendRadiusLaw::Constant {
-                    signed_radius: radius,
+        ir.model.procedural_surfaces.push(
+            ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Blend {
+                    supports: supports.map(|surface| {
+                        Some(BlendSupport {
+                            surface,
+                            reversed: false,
+                        })
+                    }),
+                    spine: Some(spine.clone()),
+                    radius: BlendRadiusLaw::Constant {
+                        signed_radius: radius,
+                    },
+                    cross_section: BlendCrossSection::Circular,
+                    native: None,
                 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
-            None,
-        ));
+                None,
+            )
+            .unwrap(),
+        );
     }
 
     assert_eq!(
@@ -820,12 +865,14 @@ fn blend_contact_matches_concentric_blend_carriers() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
-            unreachable!()
-        };
-        supports[0].as_mut().unwrap().reversed = true;
-    });
+    outer_definition
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                unreachable!()
+            };
+            supports[0].as_mut().unwrap().reversed = true;
+        })
+        .unwrap();
     assert!(constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
@@ -863,11 +910,14 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             .expect("identity grammar");
     let plane = |id, origin, normal| Surface {
         id,
-        geometry: SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin,
+                normal,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -911,34 +961,41 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 ),
             },
             None,
-        ),
+        )
+        .unwrap(),
     );
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        blend_construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: support.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: other.clone(),
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine.clone()),
-            radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            blend_construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     ir.model.curves.push(Curve {
         id: spine.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let contact_pcurve = test_pcurve(
@@ -952,8 +1009,8 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         ProceduralCurve::new(
             spine_procedural,
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(support_offset),
                             pcurve: Some(contact_pcurve.clone().into()),
@@ -963,12 +1020,14 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                             pcurve: Some(contact_pcurve.into()),
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
 
     let source_pcurve = test_pcurve(
@@ -1014,13 +1073,16 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let ellipse =
         CurveId::mint("test:model:entity#synthetic:ellipse-spine").expect("identity grammar");
-    let geometry = CurveGeometry::Ellipse {
-        center: Point3::new(2.0, 3.0, 4.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 12.0,
-        minor_radius: 5.0,
-    };
+    let geometry = CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(2.0, 3.0, 4.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            12.0,
+            5.0,
+        )
+        .unwrap(),
+    );
     let parameter = 1.2;
     let mut point = cadmpeg_ir::eval::curve_point(&geometry, parameter).unwrap();
     point.y += 3.0;
@@ -1080,20 +1142,26 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.surfaces.extend([
         Surface {
             id: first.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: second.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
@@ -1104,30 +1172,39 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.surfaces.extend([
         Surface {
             id: first_spine_side.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
             id: second_spine_side.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-                u_axis: Vector3::new(0.0, 0.0, 1.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ]);
     let spine = CurveId::mint("test:model:entity#synthetic:spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: spine.clone(),
-        geometry: CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let surface = SurfaceId::mint("test:model:entity#synthetic:blend").expect("identity grammar");
@@ -1141,26 +1218,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface: first.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: second.clone(),
-                    reversed: false,
-                }),
-            ],
-            spine: Some(spine.clone()),
-            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: first.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let expected = Point2::new(8.0, 0.35);
     let point = blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
     let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
@@ -1178,32 +1258,39 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         ProceduralCurveId::mint("test:model:entity#synthetic:spine-construction")
             .expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
+            context: IntcurveSupportContext::try_new(
+                [
                     IntcurveSupportSide {
                         surface: Some(first_spine_side),
                         pcurve: Some(
-                            PcurveGeometry::Line {
-                                origin: Point2::new(0.0, -2.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }
+                            PcurveGeometry::Line(
+                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    Point2::new(0.0, -2.0),
+                                    Point2::new(1.0, 0.0),
+                                )
+                                .unwrap(),
+                            )
                             .into(),
                         ),
                     },
                     IntcurveSupportSide {
                         surface: Some(second_spine_side),
                         pcurve: Some(
-                            PcurveGeometry::Line {
-                                origin: Point2::new(0.0, 2.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }
+                            PcurveGeometry::Line(
+                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    Point2::new(0.0, 2.0),
+                                    Point2::new(1.0, 0.0),
+                                )
+                                .unwrap(),
+                            )
                             .into(),
                         ),
                     },
                 ],
-                parameter_range: [0.0, 10.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
+                [0.0, 10.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(0.75),
@@ -1291,12 +1378,15 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         panic!("procedural spine carrier");
     };
     *cache = Some(
-        cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Parabola {
-            vertex: cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
-            axis: Vector3::new(0.0, 1.0, 0.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            focal_distance: 0.5,
-        })
+        cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Parabola(
+            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                0.5,
+            )
+            .unwrap(),
+        ))
         .expect("solved parabola"),
     );
     varying_frame
@@ -1313,14 +1403,22 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            context.sides[0].pcurve = Some(
-                PcurveGeometry::Offset {
-                    distance: 0.1,
-                    basis: Box::new(context.sides[0].pcurve.take().unwrap().geometry),
-                }
-                .into(),
-            );
-        });
+            context
+                .edit(|context_sides, _, _| {
+                    (*context_sides)[0].pcurve = Some(
+                        PcurveGeometry::Offset(
+                            cadmpeg_ir::geometry::OffsetPcurve::try_new(
+                                0.1,
+                                Box::new((*context_sides)[0].pcurve.take().unwrap().geometry),
+                            )
+                            .unwrap(),
+                        )
+                        .into(),
+                    );
+                })
+                .unwrap();
+        })
+        .unwrap();
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
         .expect("complete rolling-ball frame has an exact derivative");
@@ -1340,10 +1438,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     let mut translated = ir.clone();
     for carrier in &mut translated.model.surfaces {
-        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+        if let SurfaceGeometry::Plane(plane_surface) = &mut carrier.geometry {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
             origin.z += 1.0e12;
+            *plane_surface =
+                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
         }
     }
     let carrier = translated
@@ -1359,12 +1461,15 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         panic!("procedural spine cache");
     };
     let mut geometry = cache.as_geometry().clone();
-    let CurveGeometry::Line { origin, .. } = &mut geometry else {
+    let CurveGeometry::Line(line_curve) = &mut geometry else {
         panic!("line spine cache");
     };
+    let (origin, direction) = line_curve.parts();
+    let mut origin = *origin;
     origin.x += 1.0e12;
     origin.y += 1.0e12;
     origin.z += 1.0e12;
+    *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
     *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(geometry).expect("translated line");
     let translated_point =
         blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
@@ -1392,15 +1497,18 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")
                 .expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
+                context: IntcurveSupportContext::try_new(
+                    [
                         IntcurveSupportSide {
                             surface: Some(first.clone()),
                             pcurve: Some(
-                                PcurveGeometry::Line {
-                                    origin: Point2::new(0.0, -2.0),
-                                    direction: Point2::new(1.0, 0.0),
-                                }
+                                PcurveGeometry::Line(
+                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                        Point2::new(0.0, -2.0),
+                                        Point2::new(1.0, 0.0),
+                                    )
+                                    .unwrap(),
+                                )
                                 .into(),
                             ),
                         },
@@ -1409,12 +1517,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                             pcurve: None,
                         },
                     ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
+                    [0.0, 1.0],
+                    [Vec::new(), Vec::new(), Vec::new()],
+                )
+                .unwrap(),
                 discontinuity_flag: false,
             },
-        ),
+        )
+        .unwrap(),
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
@@ -1436,7 +1546,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { nurbs } = &context.sides[1].pcurve.as_ref().unwrap().geometry
+    let PcurveGeometry::Nurbs { nurbs } = &context.sides()[1].pcurve.as_ref().unwrap().geometry
     else {
         unreachable!()
     };
@@ -1465,7 +1575,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .replace_definition(ProceduralCurveDefinition::Unknown {
             native_kind: None,
             record: None,
-        });
+        })
+        .unwrap();
     assert_eq!(
         blend_boundary_parameter_from_support_spine(
             &ir,
@@ -1532,21 +1643,27 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         SurfaceId::mint("test:model:entity#synthetic:third-plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: third.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 8.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 8.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let outer_spine =
         CurveId::mint("test:model:entity#synthetic:outer-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: outer_spine.clone(),
-        geometry: CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let outer =
@@ -1562,26 +1679,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        outer_construction,
-        ProceduralSurfaceDefinition::Blend {
-            supports: [
-                Some(BlendSupport {
-                    surface,
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: third,
-                    reversed: false,
-                }),
-            ],
-            spine: Some(outer_spine),
-            radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        None,
-    ));
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::new(
+            outer_construction,
+            ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface,
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: third,
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(outer_spine),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
+        .unwrap(),
+    );
     let expected = Point2::new(4.0, 0.2);
     let point = blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
     let outer_geometry = ir
@@ -1620,11 +1740,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition.edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
-            panic!("blend definition");
-        };
-        supports[0].as_mut().unwrap().surface = outer.clone();
-    });
+    outer_definition
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                panic!("blend definition");
+            };
+            supports[0].as_mut().unwrap().surface = outer.clone();
+        })
+        .unwrap();
     assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }
