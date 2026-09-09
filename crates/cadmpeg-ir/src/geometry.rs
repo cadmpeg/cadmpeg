@@ -4862,7 +4862,7 @@ impl ProceduralSurfaceDefinition {
                             range.iter().flatten().all(|value| value.is_finite())
                                 && match (range[0], range[1]) {
                                     (Some(lower), Some(upper)) => lower <= upper,
-                                    (None, None) | (None, Some(_)) | (Some(_), None) => true,
+                                    (None | Some(_), None) | (None, Some(_)) => true,
                                 }
                         });
                 let sides_valid = construction.sides.iter().all(|side| {
@@ -4964,7 +4964,7 @@ impl ProceduralSurfaceDefinition {
                             range.iter().flatten().all(|value| value.is_finite())
                                 && match range {
                                     [Some(lower), Some(upper)] => lower <= upper,
-                                    [None, None] | [None, Some(_)] | [Some(_), None] => true,
+                                    [None | Some(_), None] | [None, Some(_)] => true,
                                 }
                         });
                 let selector_valid = match construction.radius_selector {
