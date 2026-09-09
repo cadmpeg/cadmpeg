@@ -131,7 +131,7 @@ fn parse_canvas_image(
     stream: &str,
     scope: &DesignParameterScope,
 ) -> Option<DesignCanvasImage> {
-    let scope_at = usize::try_from(scope.byte_offset).ok()?;
+    let scope_at = usize::try_from(scope.byte_offset()).ok()?;
     let geometry_reference_at = if bytes.get(scope_at + 11..scope_at + 21)? == [0; 10] {
         scope_at + 21
     } else if bytes.get(scope_at + 11..scope_at + 20)? == [0; 9]

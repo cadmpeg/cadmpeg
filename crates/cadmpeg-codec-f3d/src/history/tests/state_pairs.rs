@@ -132,8 +132,13 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::DesignFeatureKind::Revolve,
         100,
     );
-    scope.history_state_id = Some(9);
-    scope.previous_history_state_id = Some(2);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(9);
+            draft.previous_history_state_id = Some(2);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let next_scope = crate::records::feature::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
         crate::records::feature::DesignFeatureKind::Sketch,
@@ -163,48 +168,50 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         histories[1].id
     );
 
-    let operand = DesignBodyRecipeOperand {
-        id: format!("{stream}:design-body-recipe-operand#120"),
-        scope_record_index: scope.record_index,
-        owner: DesignOperandOwner::ScopeReference {
-            scope_reference_ordinal: 0,
-        },
-        record_index: 120,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let operand =
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: format!("{stream}:design-body-recipe-operand#120"),
+            scope_record_index: scope.record_index,
+            owner: DesignOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 120,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![DesignBodyRecipeReference {
-            design_reference: 1,
-            design_reference_offset: 0,
-            form: 4,
-            form_offset: 0,
-            candidate_faces: vec![
-                FaceId::mint("f3d:brep/second.smbh/brep:entity#1").expect("identity grammar")
-            ],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 123,
-        nested_record_index_offset: 0,
-        recipe_id: format!("{stream}:construction-recipe#1"),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 124,
-        next_byte_offset: 0,
-    };
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 1,
+                design_reference_offset: 25,
+                form: 4,
+                form_offset: 33,
+                candidate_faces: vec![
+                    FaceId::mint("f3d:brep/second.smbh/brep:entity#1").expect("identity grammar")
+                ],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 123,
+            nested_record_index_offset: 38,
+            recipe_id: format!("{stream}:construction-recipe#1"),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 124,
+            next_byte_offset: 256,
+        })
+        .unwrap();
     let bindings = bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
@@ -257,7 +264,11 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::feature::DesignFeatureKind::Fillet,
         0,
     );
-    omitted_predecessor.history_state_id = Some(10);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(10);
+        })
+        .unwrap();
     assert_eq!(
         effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
         Some(6)
@@ -268,14 +279,22 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::feature::DesignFeatureKind::BaseFlange,
         1,
     );
-    root.history_state_id = Some(4);
+    root.try_edit(|draft| {
+        draft.history_state_id = Some(4);
+    })
+    .unwrap();
     let mut successor = crate::records::feature::DesignParameterScope::empty(
         "f3d:native:scope#2",
         crate::records::feature::DesignFeatureKind::EdgeFlange,
         2,
     );
-    successor.history_state_id = Some(10);
-    successor.previous_history_state_id = Some(6);
+    successor
+        .try_edit(|draft| {
+            draft.history_state_id = Some(10);
+            draft.previous_history_state_id = Some(6);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let scopes = vec![root, successor];
     let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);

@@ -70,54 +70,64 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("301".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 290;
-    scope.previous_history_state_id = Some(254);
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 290;
+            draft.previous_history_state_id = Some(254);
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
 
     let replacement_group = group(1129, 0, 1130, 1133, DesignOperandRole::ROLE_0X9);
     let target_group = group(1129, 2, 1137, 1140, DesignOperandRole::ROLE_0X10);
-    let replacement = DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
-        scope_record_index: 1129,
-        owner: DesignOperandOwner::Group {
-            group_record_index: 1130,
-            group_member_ordinal: 0,
-        },
-        record_index: 1133,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let replacement =
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
+            scope_record_index: 1129,
+            owner: DesignOperandOwner::Group {
+                group_record_index: 1130,
+                group_member_ordinal: 0,
+            },
+            record_index: 1133,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![DesignBodyRecipeReference {
-            design_reference: 326,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: Vec::new(),
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 1136,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:recipe#1135".into(),
-        resolved_face_slot: Some(20),
-        resolved_body_state_id: Some(254),
-        resolved_body_slot: Some(3),
-        resolved_body_face_slots: vec![20],
-        next_record_index: 1137,
-        next_byte_offset: 0,
-    };
-    let target = DesignFaceOperand {
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 326,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 1136,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:recipe#1135".into(),
+            resolved_face_slot: Some(20),
+            resolved_body_state_id: Some(254),
+            resolved_body_slot: Some(3),
+            resolved_body_face_slots: vec![20],
+            next_record_index: 1137,
+            next_byte_offset: 256,
+        })
+        .unwrap();
+    let target = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
         scope_record_index: 1129,
         scope_reference_ordinal: 3,
@@ -128,12 +138,12 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         record_index: 1140,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+        paired_byte_offset: 16,
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 1143,
-        recipe_record_byte_offset: 0,
+        recipe_record_byte_offset: 32,
         recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
-        recipe_prefix_offset: 0,
+        recipe_prefix_offset: 43,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: Vec::new(),
         recipe_kind: ConstructionRecipeKind::BoundedFace,
@@ -150,8 +160,9 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         resolved_face_slots: vec![622],
         resolved_active_face: None,
         next_record_index: 1144,
-        next_byte_offset: 0,
-    };
+        next_byte_offset: 200,
+    })
+    .unwrap();
 
     let definition = super::project_replace_face(
         &scope,
@@ -174,7 +185,13 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             && replacement_native.as_str() == replacement_group.id)));
 
     let mut invalid_scope = scope;
-    invalid_scope.frame_length = 291;
+    invalid_scope
+        .try_edit(|draft| {
+            draft.frame_length = 291;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     assert!(super::project_replace_face(
         &invalid_scope,
         &[replacement_group, target_group],
@@ -191,50 +208,61 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         crate::records::feature::DesignFeatureKind::SurfaceTrim,
         1200,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
     let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
-    let body = DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
-        scope_record_index: 1200,
-        owner: DesignOperandOwner::Group {
-            group_record_index: 1201,
-            group_member_ordinal: 0,
-        },
-        record_index: 1202,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let body =
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
+            scope_record_index: 1200,
+            owner: DesignOperandOwner::Group {
+                group_record_index: 1201,
+                group_member_ordinal: 0,
+            },
+            record_index: 1202,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![DesignBodyRecipeReference {
-            design_reference: 326,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: Vec::new(),
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 1205,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:recipe#1206".into(),
-        resolved_face_slot: Some(20),
-        resolved_body_state_id: Some(254),
-        resolved_body_slot: Some(3),
-        resolved_body_face_slots: vec![20],
-        next_record_index: 1207,
-        next_byte_offset: 0,
-    };
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 326,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 1205,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:recipe#1206".into(),
+            resolved_face_slot: Some(20),
+            resolved_body_state_id: Some(254),
+            resolved_body_slot: Some(3),
+            resolved_body_face_slots: vec![20],
+            next_record_index: 1206,
+            next_byte_offset: 256,
+        })
+        .unwrap();
     let definition = super::project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],

@@ -794,10 +794,10 @@ fn encode_sketch_relation(
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
-    let member_count = u32::try_from(relation.members.len())
+    let member_count = u32::try_from(relation.members().len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
     record.extend_from_slice(&member_count.to_le_bytes());
-    for member in relation.members.iter() {
+    for member in relation.members().iter() {
         write_reference(&mut record, member.reference.record_index());
         record.extend_from_slice(&member.relation_ordinal.unwrap_or(0).to_le_bytes());
     }
@@ -814,17 +814,17 @@ fn encode_sketch_relation(
         None => record.push(0),
     }
     for reference in relation
-        .auxiliary_references
+        .auxiliary_references()
         .values()
         .chain(std::iter::once(&relation.owner_reference))
     {
         write_reference(&mut record, *reference);
     }
     record.extend_from_slice(&relation.definition.state().to_le_bytes());
-    let return_count = u32::try_from(relation.return_members.len())
+    let return_count = u32::try_from(relation.return_members().len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     record.extend_from_slice(&return_count.to_le_bytes());
-    for member in relation.return_members.iter() {
+    for member in relation.return_members().iter() {
         write_reference(&mut record, member.reference.record_index());
     }
     record.push(0);

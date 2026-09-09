@@ -148,8 +148,8 @@ pub fn decode_sketch_placements(
         let Some(records) = record_offsets.get(&ids::native_scope(&entry.name)) else {
             continue;
         };
-        let start = usize::try_from(scope.byte_offset).ok();
-        let end = usize::try_from(scope.paired_byte_offset).ok();
+        let start = usize::try_from(scope.byte_offset()).ok();
+        let end = usize::try_from(scope.paired_byte_offset()).ok();
         let Some(frame) = start
             .zip(end)
             .and_then(|(start, end)| bytes.get(start..end))
@@ -233,8 +233,8 @@ pub fn decode_sketch_placements(
             .filter(|scope| {
                 design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                     && native_stream(&scope.id) == Some(stream)
-                    && scope.byte_offset > entity.byte_offset
-                    && next_entity_offset.is_none_or(|end| scope.byte_offset < end)
+                    && scope.byte_offset() > entity.byte_offset
+                    && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
             })
             .collect::<Vec<_>>();
         if let [scope] = matching_scopes.as_slice() {
@@ -1221,32 +1221,35 @@ pub fn decode_sketch_relations(
                     .into_iter()
                     .map(|member| (member.value, member.offset as u32)),
             );
-            out.push(SketchRelation {
-                id: ids::native_sketch_relation_id(&entry.name, record.record_index),
-                record_index: record.record_index,
-                class_tag: record.class_tag.clone(),
-                byte_offset: record.byte_offset,
-                state_offset: parsed.state_offset as u32,
-                owner_reference: parsed.owner_reference,
-                owner_entity_id: None,
-                owner_reference_offset: parsed.owner_reference_offset as u32,
-                auxiliary_references: crate::records::ReferenceRun::located(
-                    parsed
-                        .auxiliary_references
-                        .into_iter()
-                        .map(|row| crate::records::Located {
-                            value: row.value,
-                            offset: row.offset as u32,
-                        })
-                        .collect(),
-                ),
-                rectangular_counted_reference_count,
-                members,
-                definition,
-                entity_genesis: parsed.entity_genesis,
-                return_members,
-                raw_bytes: payload.to_vec(),
-            });
+            out.push(
+                SketchRelation::try_new(crate::records::SketchRelationDraft {
+                    id: ids::native_sketch_relation_id(&entry.name, record.record_index),
+                    record_index: record.record_index,
+                    class_tag: record.class_tag.clone(),
+                    byte_offset: record.byte_offset,
+                    state_offset: parsed.state_offset as u32,
+                    owner_reference: parsed.owner_reference,
+                    owner_entity_id: None,
+                    owner_reference_offset: parsed.owner_reference_offset as u32,
+                    auxiliary_references: crate::records::ReferenceRun::located(
+                        parsed
+                            .auxiliary_references
+                            .into_iter()
+                            .map(|row| crate::records::Located {
+                                value: row.value,
+                                offset: row.offset as u32,
+                            })
+                            .collect(),
+                    ),
+                    rectangular_counted_reference_count,
+                    members,
+                    definition,
+                    entity_genesis: parsed.entity_genesis,
+                    return_members,
+                    raw_bytes: payload.to_vec(),
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?,
+            );
         }
     }
     Ok(out)
@@ -2867,8 +2870,8 @@ pub(crate) fn bind_sketch_graph(
         scoped_relations.push((
             scope,
             relation.owner_reference,
-            &mut relation.members,
-            &mut relation.return_members,
+            relation.members(),
+            relation.return_members(),
         ));
     }
     let typed_records = points
@@ -2915,7 +2918,7 @@ pub(crate) fn bind_sketch_graph(
             owners.insert((*owner_scope, record_index), owner_reference);
         }
     }
-    for &(scope, owner_reference, ref members, ref returned) in &scoped_relations {
+    for &(scope, owner_reference, members, returned) in &scoped_relations {
         for record_index in members
             .iter()
             .map(|member| member.reference.record_index())
@@ -3009,15 +3012,18 @@ pub(crate) fn bind_sketch_graph(
             ))
         }))
         .collect::<std::collections::HashMap<_, _>>();
-    for (scope, _, members, returned) in scoped_relations {
+    for relation in relations {
+        let id = relation.id.clone();
+        let scope = native_stream(&id).ok_or_else(|| {
+            CodecError::malformed(format_args!("invalid sketch relation id {id}"))
+        })?;
         let resolve = |record_index| {
             operands
                 .get(&(scope, record_index))
                 .cloned()
                 .unwrap_or(SketchRelationOperand::Record { record_index })
         };
-        members.resolve(resolve);
-        returned.resolve(resolve);
+        relation.resolve_members(resolve);
     }
     Ok(())
 }

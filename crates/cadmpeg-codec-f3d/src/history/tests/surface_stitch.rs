@@ -31,13 +31,28 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let history_id = format!("{stream}/BREP.surface:asm-1");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignFeatureKind::SurfaceStitch,
+        crate::records::feature::DesignScopePayload::SurfaceStitch(
+            crate::records::feature::DesignSurfaceStitchOperation {
+                gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
+                gap_tolerance_offset: 0,
+                tolerance_record_index: 300,
+                settings_record_index: 301,
+            },
+        ),
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let group = |record_index, scope_reference_ordinal, member| {
         DesignConstructionOperandGroup::try_from(
             crate::records::topology::DesignConstructionOperandGroupDraft {
@@ -81,42 +96,47 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .unwrap()
     };
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];
-    let operand = |group_record_index, record_index, face_slot| DesignEntitySelectionOperand {
-        id: format!("{stream}:design-entity-selection-operand#{record_index}"),
-        scope_record_index: 42,
-        group_record_index,
-        group_member_ordinal: 0,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        identity_record_index: record_index + 1,
-        identity_record_offset: 0,
-        primary_identity: face_slot as u64,
-        primary_identity_offset: 0,
-        secondary: None,
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-            history_id: history_id.clone(),
-            historical: crate::records::topology::HistoricalBinding {
-                kind: AsmHistoricalEntityKind::Coedge,
-                entity_ref: face_slot,
-                state_ids: vec![1],
+    let operand = |group_record_index, record_index, face_slot| {
+        DesignEntitySelectionOperand::try_new(
+            crate::records::topology::DesignEntitySelectionOperandDraft {
+                id: format!("{stream}:design-entity-selection-operand#{record_index}"),
+                scope_record_index: 42,
+                group_record_index,
+                group_member_ordinal: 0,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 0,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: record_index + 3,
+                identity_record_offset: 0,
+                primary_identity: face_slot as u64,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+                    history_id: history_id.clone(),
+                    historical: crate::records::topology::HistoricalBinding {
+                        kind: AsmHistoricalEntityKind::Coedge,
+                        entity_ref: face_slot,
+                        state_ids: vec![1],
+                    },
+                    face_slot,
+                }],
+                resolved_edge_slot: None,
+                next_record_index: record_index + 2,
+                next_byte_offset: 29,
             },
-            face_slot,
-        }],
-        resolved_edge_slot: None,
-        next_record_index: record_index + 2,
-        next_byte_offset: 0,
+        )
+        .unwrap()
     };
     let operands = vec![operand(100, 200, 30), operand(110, 210, 31)];
     let state = |state_id, transition| AsmDeltaState {

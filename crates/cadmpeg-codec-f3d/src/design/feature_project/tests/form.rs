@@ -373,8 +373,16 @@ fn reads_class_328_form_envelope() {
         crate::records::feature::DesignFeatureKind::Form,
         scope_record,
     );
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;

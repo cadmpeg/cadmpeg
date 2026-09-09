@@ -650,7 +650,10 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&pair.id)?;
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()];
+            let indices = [
+                pair.loci()[0].geometry_index(),
+                pair.loci()[1].geometry_index(),
+            ];
             exact_definition(scope, parameter, &indices, parameter_id)
                 .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
         })
@@ -710,7 +713,10 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&pair.id)?;
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()];
+            let indices = [
+                pair.loci()[0].geometry_index(),
+                pair.loci()[1].geometry_index(),
+            ];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair")?;
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
@@ -721,8 +727,8 @@ fn project_all_dimension_constraints(
                     symmetric_parallel_line_dimension_definition(
                         first,
                         second,
-                        pair.loci[0].role,
-                        pair.loci[1].role,
+                        pair.loci()[0].role,
+                        pair.loci()[1].role,
                         parameter,
                         parameter_id.clone(),
                         linear_tolerance,
@@ -734,8 +740,8 @@ fn project_all_dimension_constraints(
                         parameter.source_kind(),
                         None,
                         &[
-                            ("first_locus", Some(pair.loci[0].role), indices[0]),
-                            ("second_locus", Some(pair.loci[1].role), indices[1]),
+                            ("first_locus", Some(pair.loci()[0].role), indices[0]),
+                            ("second_locus", Some(pair.loci()[1].role), indices[1]),
                         ],
                         parameter_id,
                     )
@@ -820,7 +826,7 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) =
                 parameter_for(scope, frame.governing_companion_record_index)?;
             let indices = frame
-                .operands
+                .operands()
                 .iter()
                 .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
@@ -840,7 +846,7 @@ fn project_all_dimension_constraints(
                 })
                 .unwrap_or_else(|| {
                     let operands = frame
-                        .operands
+                        .operands()
                         .iter()
                         .map(|operand| match operand.geometry_record_index {
                             None => SketchNativeOperand {
@@ -900,11 +906,11 @@ fn project_all_dimension_constraints(
             }
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[1].geometry_index()];
+            let indices = [pair.loci()[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair")?;
             if design_dimension_unit(parameter) {
-                if let Some(entity) = projected.get(&(scope, pair.loci[1].geometry_index())) {
+                if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     if let Some(definition) = null_locus_dimension_definition(
                         pair,
                         entity,
@@ -939,7 +945,7 @@ fn project_all_dimension_constraints(
                     native_kind: crate::design::literals::nonempty("null_locus"),
                     field: Some(NativeOperandField {
                         name: crate::design::literals::nonempty("locus"),
-                        role: Some(pair.loci[0].role),
+                        role: Some(pair.loci()[0].role),
                     }),
                     object_index: 0,
                     native_ref: None,
@@ -947,8 +953,8 @@ fn project_all_dimension_constraints(
                 native_operand(
                     scope,
                     "locus",
-                    Some(pair.loci[1].role),
-                    pair.loci[1].geometry_index(),
+                    Some(pair.loci()[1].role),
+                    pair.loci()[1].geometry_index(),
                 ),
             ];
             Some(SketchConstraint {
@@ -3474,8 +3480,8 @@ pub(crate) fn null_locus_dimension_definition(
         return Some(definition);
     }
     if source_kind != "Angular Dimension-2"
-        || pair.loci[0].role != 14
-        || pair.loci[1].role != 3
+        || pair.loci()[0].role != 14
+        || pair.loci()[1].role != 3
         || !matches!(
             *entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -3593,23 +3599,21 @@ pub(crate) fn annotation_offset_dimension_definition(
         matches.next().is_none().then_some(curve)
     };
     let non_null_indices = frame
-        .operands
+        .operands()
         .iter()
         .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         .collect::<Vec<_>>();
     let null_locus_count = frame
-        .operands
+        .operands()
         .iter()
         .filter(|operand| operand.geometry_record_index.is_none())
         .count();
 
-    let explicit_pair = match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
-        ([first_index, second_index], [first_return, second_return])
-            if frame.operands.len() == 3
+    let explicit_pair = match non_null_indices.as_slice() {
+        [first_index, second_index]
+            if frame.operands().len() == 3
                 && null_locus_count == 1
-                && first_return.value != second_return.value
-                && non_null_indices.contains(&first_return.value.get())
-                && non_null_indices.contains(&second_return.value.get()) =>
+                && first_index != second_index =>
         {
             let first_curve = curve_for_index(*first_index)?;
             let second_curve = curve_for_index(*second_index)?;
@@ -3628,12 +3632,8 @@ pub(crate) fn annotation_offset_dimension_definition(
     let (source_record_index, explicit_result_record_index) = if let Some(pair) = explicit_pair {
         pair
     } else {
-        match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
-            ([source_record_index], [returned_record_index])
-                if frame.operands.len() == 2
-                    && null_locus_count == 1
-                    && *source_record_index == returned_record_index.value.get() =>
-            {
+        match non_null_indices.as_slice() {
+            [source_record_index] if frame.operands().len() == 2 && null_locus_count == 1 => {
                 let source_curve = curve_for_index(*source_record_index)?;
                 (source_curve.secondary_id == 0).then_some((*source_record_index, None))?
             }
@@ -3858,13 +3858,13 @@ pub fn remove_dimension_frame_relations(
     let dimension_frames =
         pairs
             .iter()
-            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset)))
+            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset())))
             .chain(groups.iter().filter_map(|group| {
                 Some((native_stream(&group.id)?.to_owned(), group.byte_offset))
             }))
             .chain(
                 null_pairs.iter().filter_map(|pair| {
-                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset))
+                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset()))
                 }),
             )
             .collect::<HashSet<_>>();
@@ -3920,8 +3920,8 @@ pub fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci[0].geometry_index(), owner)?;
-        insert_dimension_binding(&mut bindings, scope, pair.loci[1].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[0].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for group in groups {
         let Some(scope) = native_stream(&group.id) else {
@@ -3941,7 +3941,7 @@ pub fn bind_dimension_loci(
             continue;
         };
         for record_index in frame
-            .operands
+            .operands()
             .iter()
             .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         {
@@ -3961,7 +3961,7 @@ pub fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci[1].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for point in points {
         let Some(scope) = native_stream(&point.id) else {
@@ -5593,10 +5593,10 @@ pub(crate) fn exact_offset_constraint(
             relation.constraint_kinds().as_slice(),
             [SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset]
         )
-        || relation.return_members.len() < 4
-        || !relation.return_members.len().is_multiple_of(2)
-        || relation.return_members.len() != relation.members.len()
-        || relation.resolved_return_members().len() != relation.return_members.len()
+        || relation.return_members().len() < 4
+        || !relation.return_members().len().is_multiple_of(2)
+        || relation.return_members().len() != relation.members().len()
+        || relation.resolved_return_members().len() != relation.return_members().len()
     {
         return None;
     }

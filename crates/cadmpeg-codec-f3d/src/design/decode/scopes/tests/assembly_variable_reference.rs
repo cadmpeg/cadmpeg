@@ -13,10 +13,17 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
-    scope.frame_length = 637;
-    scope.paired_byte_offset = 637;
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 637;
+            draft.paired_byte_offset = 637;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                200, 201, 202, 203, 108, 109, 110, 111, 204,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let owners = (0_u32..12)
         .map(|local_ordinal| {
             crate::records::DesignParameterOwner::try_from(

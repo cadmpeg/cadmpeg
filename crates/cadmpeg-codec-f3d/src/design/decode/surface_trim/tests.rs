@@ -67,7 +67,16 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
         crate::records::feature::DesignFeatureKind::SurfaceTrim,
         800,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![801, 804, 808, 811]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![801, 804, 808, 811]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope)
 }
 

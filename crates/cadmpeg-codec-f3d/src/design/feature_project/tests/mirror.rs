@@ -68,8 +68,8 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    if let crate::records::feature::DesignScopePayload::Mirror(slot)
-    | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) = scope.payload_mut()
     {
         *slot = Some(DesignMirrorConstruction {
             count_record_index: 11,

@@ -71,8 +71,15 @@ fn class_277_258_compact_split_face_frame_projects() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 407;
-    scope.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 407;
+            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
 
     let groups = [
         group(
@@ -121,9 +128,16 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     );
     scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
-    scope.frame_length = 407;
-    scope.previous_history_state_id = Some(7);
-    scope.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 407;
+            draft.previous_history_state_id = Some(7);
+            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
 
     let groups = [
         group(
@@ -141,35 +155,40 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
             DesignOperandRole::ROLE_0X10,
         ),
     ];
-    let selections = [crate::records::topology::DesignEntitySelectionOperand {
-        id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
-        scope_record_index,
-        group_record_index: 100,
-        group_member_ordinal: 0,
-        record_index: 101,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+    let selections = [
+        crate::records::topology::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::DesignEntitySelectionOperandDraft {
+                id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
+                scope_record_index,
+                group_record_index: 100,
+                group_member_ordinal: 0,
+                record_index: 101,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 0,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: 104,
+                identity_record_offset: 0,
+                primary_identity: 225,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: Some(42),
+                next_record_index: 103,
+                next_byte_offset: 29,
+            },
         )
         .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        identity_record_index: 102,
-        identity_record_offset: 0,
-        primary_identity: 225,
-        primary_identity_offset: 0,
-        secondary: None,
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: Some(42),
-        next_record_index: 103,
-        next_byte_offset: 0,
-    }];
+    ];
 
     let definition = project_split_face(&scope, &[scope.clone()], &groups, &selections, &[], &[])
         .expect("class-277 direct edge path");

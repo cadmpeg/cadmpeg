@@ -629,15 +629,19 @@ mod tests {
             DesignFeatureKind::Assemble,
             3,
         );
-        scope.payload = DesignScopePayload::Assemble(Some(
-            DesignAssemblyAlignment::try_new(
-                0.0,
-                [0.0; 3],
-                Vec::new(),
-                Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
-            )
-            .unwrap(),
-        ));
+        scope
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(
+                        0.0,
+                        [0.0; 3],
+                        Vec::new(),
+                        Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                    )
+                    .unwrap(),
+                ));
+            })
+            .unwrap();
         scopes.push(scope);
         let native = crate::native::F3dNative {
             design_parameter_scopes: scopes,
@@ -650,7 +654,8 @@ mod tests {
         );
         assert!(matches!(
             result,
-            Err(cadmpeg_core::CodecError::NotImplemented(_))
+            Err(cadmpeg_core::CodecError::NotImplemented(m))
+                if m.contains("finite affine transform")
         ));
     }
 

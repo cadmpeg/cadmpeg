@@ -74,9 +74,16 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
         crate::records::feature::DesignFeatureKind::Massstab,
         100,
     );
-    scope.frame_length = 317;
-    scope.reference_members =
-        crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 317;
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope, position_at)
 }
 
@@ -103,8 +110,15 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
         crate::records::feature::DesignFeatureKind::Scale,
         100,
     );
-    scope.frame_length = frame_length as u64;
-    scope.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = frame_length as u64;
+            draft.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     (bytes, scope, position_at)
 }
 

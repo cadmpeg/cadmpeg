@@ -67,7 +67,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_id.suffix(), 172);
     assert_eq!(profile.entity_id.as_str(), "0_172");
-    assert_eq!(profile.paired_byte_offset, paired_at as u64);
+    assert_eq!(profile.paired_byte_offset(), paired_at as u64);
 
     bytes.truncate(paired_at - 94);
     bytes[4..7].copy_from_slice(b"319");
@@ -102,7 +102,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     )
     .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
-    assert_eq!(compact.paired_byte_offset, compact_paired_at as u64);
+    assert_eq!(compact.paired_byte_offset(), compact_paired_at as u64);
 
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
@@ -130,7 +130,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         std::slice::from_ref(&entity),
     )
     .expect("omitted-ordinal sketch-profile operand");
-    assert_eq!(omitted.paired_byte_offset, omitted_paired_at as u64);
+    assert_eq!(omitted.paired_byte_offset(), omitted_paired_at as u64);
 }
 
 #[test]
@@ -250,7 +250,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         .expect("identity chain");
     assert_eq!(
         identity
-            .wrappers
+            .wrappers()
             .iter()
             .map(|wrapper| wrapper.record_index)
             .collect::<Vec<_>>(),
@@ -258,21 +258,20 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     );
     assert_eq!(
         identity
-            .wrappers
+            .wrappers()
             .iter()
             .map(|wrapper| wrapper.byte_offset)
             .collect::<Vec<_>>(),
         [0, 24]
     );
-    assert_eq!(identity.following_record_index, 400);
-    assert_eq!(identity.following_byte_offset, 48);
+    assert_eq!(identity.following_record_index(), 400);
+    assert_eq!(identity.following_byte_offset(), 48);
     let persistent = identity
-        .persistent_identity
-        .as_ref()
+        .persistent_identity()
         .expect("fixed persistent identity leaf");
     assert_eq!(persistent.local_id, 586);
     assert_eq!(persistent.next_record_index, 900);
-    assert_eq!(persistent.next_byte_offset, 238);
+    assert_eq!(persistent.next_byte_offset(), 238);
 
     let mut expanded_bytes = bytes[..233].to_vec();
     expanded_bytes.extend_from_slice(&[0; 4]);
@@ -283,17 +282,33 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
         .expect("identity chain with expanded tail reference");
     let persistent = expanded
-        .persistent_identity
+        .persistent_identity()
         .expect("expanded persistent identity leaf");
-    assert_eq!(persistent.tail_slot_offset, 233);
+    assert_eq!(persistent.tail_slot_offset(), 233);
     assert_eq!(persistent.next_record_index, 900);
-    assert_eq!(persistent.next_byte_offset, 248);
+    assert_eq!(persistent.next_byte_offset(), 248);
 
     let mut bound_group = group;
     let mut terminating_identity = identity;
     terminating_identity.id =
         "f3d:Design/BulkStream.dat:design-construction-operand-identity#200".into();
-    terminating_identity.wrappers[0].byte_offset = 200;
+    let mut draft = terminating_identity.into_draft();
+    for wrapper in &mut draft.wrappers {
+        wrapper.byte_offset += 200;
+    }
+    draft.following_byte_offset += 200;
+    if let Some(persistent) = draft.persistent_identity.take() {
+        let mut leaf = persistent.into_draft();
+        leaf.local_id_offset += 200;
+        leaf.asset_id_offset += 200;
+        leaf.context_id_offset += 200;
+        leaf.tail_slot_offset += 200;
+        leaf.next_byte_offset += 200;
+        draft.persistent_identity = Some(
+            crate::records::topology::DesignConstructionPersistentIdentity::try_new(leaf).unwrap(),
+        );
+    }
+    terminating_identity = DesignConstructionOperandIdentity::try_new(draft).unwrap();
     bind_lost_edge_groups(
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
@@ -398,11 +413,16 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
     assert_eq!(
-        operand.secondary.map(|secondary| secondary.identity.value),
+        operand
+            .secondary()
+            .map(|secondary| secondary.identity.value),
         Some(183)
     );
-    assert_eq!(operand.identity_record_offset, identity_at as u64);
-    assert_eq!(operand.next_byte_offset, next_at as u64);
+    assert_eq!(
+        operand.clone().into_draft().identity_record_offset,
+        identity_at as u64
+    );
+    assert_eq!(operand.next_byte_offset(), next_at as u64);
 
     let mut compact = bytes[..identity_at].to_vec();
     header(&mut compact, *b"429", 103);
@@ -415,13 +435,16 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(compact_operand.primary_identity, 1331);
     assert_eq!(
         compact_operand
-            .secondary
+            .secondary()
             .map(|secondary| secondary.identity.value),
         None
     );
-    assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
-    assert_eq!(compact_operand.next_record_index, 109);
-    assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
+    assert_eq!(
+        compact_operand.clone().into_draft().identity_record_offset,
+        identity_at as u64
+    );
+    assert_eq!(compact_operand.next_record_index(), 109);
+    assert_eq!(compact_operand.next_byte_offset(), compact_next_at as u64);
 
     let mut curve_identity = bytes[..identity_at].to_vec();
     header(&mut curve_identity, *b"429", 103);
@@ -436,25 +459,25 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(curve_operand.primary_identity, 1331);
     assert_eq!(
         curve_operand
-            .secondary
+            .secondary()
             .map(|secondary| secondary.identity.value),
         Some(183)
     );
     assert_eq!(
         curve_operand
-            .secondary
+            .secondary()
             .and_then(|secondary| secondary.curve_identity)
             .map(|identity| identity.value),
         Some(77)
     );
     assert_eq!(
         curve_operand
-            .secondary
+            .secondary()
             .and_then(|secondary| secondary.curve_identity)
             .map(|identity| identity.offset),
         Some(identity_at as u64 + 21)
     );
-    assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
+    assert_eq!(curve_operand.next_byte_offset(), curve_next_at as u64);
 
     let mut class_338_curve_identity = bytes[..identity_at].to_vec();
     class_338_curve_identity[4..7].copy_from_slice(b"338");
@@ -478,28 +501,31 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(class_338_operand.primary_identity, 949);
     assert_eq!(
         class_338_operand
-            .secondary
+            .secondary()
             .map(|secondary| secondary.identity.value),
         Some(249)
     );
     assert_eq!(
         class_338_operand
-            .secondary
+            .secondary()
             .and_then(|secondary| secondary.curve_identity)
             .map(|identity| identity.value),
         None
     );
     assert_eq!(
-        class_338_operand.primary_identity_offset,
+        class_338_operand.primary_identity_offset(),
         identity_at as u64 + 33
     );
     assert_eq!(
         class_338_operand
-            .secondary
+            .secondary()
             .map(|secondary| secondary.identity.offset),
         Some(identity_at as u64 + 41)
     );
-    assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
+    assert_eq!(
+        class_338_operand.next_byte_offset(),
+        class_338_next_at as u64
+    );
 
     let mut invalid_class_338 = class_338_curve_identity.clone();
     invalid_class_338[identity_at + 20] = 0;
@@ -516,31 +542,37 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let scope = DesignParameterScope {
-        id: "f3d:Design/BulkStream.dat:scope#12".into(),
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 1100,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 1100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![100],
-            vec![1085],
-            "reference_members",
-        )
-        .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 1200,
-    };
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 1080,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100],
+                vec![1085],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: crate::records::feature::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 1200,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -608,7 +640,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
         .expect("fixed Extrude selection member");
     assert_eq!(member.local_id, 586);
-    assert_eq!(member.next_byte_offset, 190);
+    assert_eq!(member.next_byte_offset(), 190);
     assert_eq!(member.next_record_index, 201);
     assert!(!member.tail_slot_present);
     assert_eq!(member.tail_slot_offset, 185);
@@ -622,7 +654,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let terminal_member =
         parse_extrude_selection_member(&member_bytes[..190], &group, 0, &member_record)
             .expect("terminal fixed Extrude selection member");
-    assert_eq!(terminal_member.next_byte_offset, 190);
+    assert_eq!(terminal_member.next_byte_offset(), 190);
     assert_eq!(terminal_member.next_record_index, 0);
 
     let mut edge_identity_bytes = Vec::new();
@@ -671,66 +703,87 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
     member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
-    let identity = DesignConstructionOperandIdentity {
-        id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
-        group_record_index: 50,
-        wrappers: vec![crate::records::topology::DesignIdentityWrapper {
-            record_index: 150,
-            byte_offset: 50,
-            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
-        }],
-        following_record_index: 200,
-        following_byte_offset: 0,
-        following_class_tag: crate::records::DesignClassTag::try_from("290".to_owned()).unwrap(),
-        tracking_path: None,
-        persistent_identity: Some(DesignConstructionPersistentIdentity {
-            local_id: 586,
-            local_id_offset: 21,
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 33,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
-                "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 113,
-            tail_slot_present: false,
-            tail_slot_offset: 185,
-            next_record_index: 201,
-            next_byte_offset: 190,
-        }),
-    };
+    let mut relocated = member.into_draft();
+    relocated.byte_offset += 74;
+    relocated.local_id_offset += 74;
+    relocated.asset_id_offset += 74;
+    relocated.context_id_offset += 74;
+    relocated.tail_slot_offset += 74;
+    relocated.next_byte_offset += 74;
+    member = crate::records::topology::DesignExtrudeSelectionMember::try_new(relocated).unwrap();
+    let identity = DesignConstructionOperandIdentity::try_new(
+        crate::records::topology::DesignConstructionOperandIdentityDraft {
+            id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
+            group_record_index: 50,
+            wrappers: vec![crate::records::topology::DesignIdentityWrapper {
+                record_index: 150,
+                byte_offset: 50,
+                class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
+            }],
+            following_record_index: 200,
+            following_byte_offset: 74,
+            following_class_tag: crate::records::DesignClassTag::try_from("290".to_owned())
+                .unwrap(),
+            tracking_path: None,
+            persistent_identity: Some(
+                DesignConstructionPersistentIdentity::try_new(
+                    crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                        local_id: 586,
+                        local_id_offset: 95,
+                        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                            "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+                        )
+                        .unwrap(),
+                        asset_id_offset: 107,
+                        context_id: crate::records::DesignRelaxedGuidText::try_from(
+                            "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".to_owned(),
+                        )
+                        .unwrap(),
+                        context_id_offset: 187,
+                        tail_slot_present: false,
+                        tail_slot_offset: 259,
+                        next_record_index: 201,
+                        next_byte_offset: 264,
+                    },
+                )
+                .unwrap(),
+            ),
+        },
+    )
+    .unwrap();
     bind_extrude_selection_identities(
         std::slice::from_mut(&mut member),
         std::slice::from_ref(&identity),
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    if let crate::records::feature::DesignScopePayload::Extrude(slot)
-    | crate::records::feature::DesignScopePayload::Extrusion(slot)
-    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = owning_scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).extrude_profile =
-            Some(DesignSketchProfileOperand {
-                scope_reference_ordinal: 1,
-                record_index: 300,
-                byte_offset: 3000,
-                class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                    "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
-                )
-                .unwrap(),
-                asset_id_offset: 3040,
-                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
-                    .expect("valid entity identity"),
-                entity_reference_offset: 3120,
-                region_selection: None,
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+        slot.get_or_insert_with(Default::default).extrude_profile = Some(
+            DesignSketchProfileOperand::try_new(
+                crate::records::topology::DesignSketchProfileOperandDraft {
+                    scope_reference_ordinal: 1,
+                    record_index: 300,
+                    byte_offset: 3000,
+                    class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
+                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                        "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+                    )
                     .unwrap(),
-                paired_byte_offset: 3200,
-            });
+                    asset_id_offset: 3040,
+                    entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+                        .expect("valid entity identity"),
+                    entity_reference_offset: 3120,
+                    region_selection: None,
+                    paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                        .unwrap(),
+                    paired_byte_offset: 3200,
+                },
+            )
+            .unwrap(),
+        );
     }
     let curve = SketchCurveIdentity {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
@@ -813,7 +866,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     ));
     let mut point_member = member.clone();
     point_member.id = "f3d:Design/BulkStream.dat:selection-member#201".into();
-    point_member.record_index = 201;
+    let mut draft = point_member.into_draft();
+    draft.record_index = 201;
+
+    point_member = crate::records::topology::DesignExtrudeSelectionMember::try_new(draft).unwrap();
     point_member.group_member_ordinal = 1;
     point_member.local_id = 587;
     point_member.resolved_geometry = Some(SketchRelationOperand::Point {

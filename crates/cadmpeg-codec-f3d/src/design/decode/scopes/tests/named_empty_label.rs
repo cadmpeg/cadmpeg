@@ -66,7 +66,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
         scope.kind(),
         crate::records::feature::DesignFeatureKind::CylinderPrimitive
     );
-    assert_eq!(scope.frame_length, paired_at as u64);
-    assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, None);
+    assert_eq!(scope.frame_length(), paired_at as u64);
+    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id_offset(), None);
 }

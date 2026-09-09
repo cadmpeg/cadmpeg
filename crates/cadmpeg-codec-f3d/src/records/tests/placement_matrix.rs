@@ -107,8 +107,8 @@ fn placement_record_serde_routes_reject_unchecked_matrices() {
         "transform",
     );
     let single = serde_json::json!({
-        "record_index":1, "byte_offset":0, "class_tag":"123", "transform_offset":40,
-        "following_record_index":2, "following_byte_offset":200, "following_class_tag":"124",
+        "record_index":1, "byte_offset":0, "class_tag":"123", "transform_offset":22,
+        "following_record_index":2, "following_byte_offset":152, "following_class_tag":"124",
     });
     rejects_transform::<DesignConstructionOperandTransform>(single, "transform");
     for field in ["first_transform", "second_transform"] {

@@ -712,34 +712,37 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             }),
         },
     ];
-    native.sketch_relations = vec![SketchRelation {
-        id: "f3d:generated:sketch-relation#0".into(),
-        record_index: 33,
-        class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 277,
-        owner_entity_id: None,
-        owner_reference_offset: 0,
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: (vec![
-            SketchRelationMember::from_index(100),
-            SketchRelationMember::from_index(600),
-        ])
-        .try_into()
-        .expect("uniform member resolution"),
-        definition: crate::records::SketchRelationDefinition::new(0x11, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: (vec![
-            SketchRelationReturnMember::from_index(600),
-            SketchRelationReturnMember::from_index(100),
-        ])
-        .try_into()
-        .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
-    }];
+    native.sketch_relations = vec![
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
+            id: "f3d:generated:sketch-relation#0".into(),
+            record_index: 33,
+            class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 277,
+            owner_entity_id: None,
+            owner_reference_offset: 0,
+            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![
+                SketchRelationMember::from_index(100),
+                SketchRelationMember::from_index(600),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+            definition: crate::records::SketchRelationDefinition::new(0x11, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: (vec![
+                SketchRelationReturnMember::from_index(600),
+                SketchRelationReturnMember::from_index(100),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap(),
+    ];
 
     let expected_geometries = native
         .sketch_curve_identities
@@ -799,20 +802,30 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[2].version = 11;
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = ([100, 600, 100, 600, 100, 600, 100, 600]
-            .into_iter()
-            .map(SketchRelationMember::from_index)
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution");
-        relation.return_members = (relation
-            .members
-            .iter()
-            .rev()
-            .map(|member| SketchRelationReturnMember::from_index(member.reference.record_index()))
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution");
+        relation
+            .try_edit(|draft| {
+                draft.members = ([100, 600, 100, 600, 100, 600, 100, 600]
+                    .into_iter()
+                    .map(SketchRelationMember::from_index)
+                    .collect::<Vec<_>>())
+                .try_into()
+                .expect("uniform member resolution")
+            })
+            .unwrap();
+        relation
+            .try_edit(|draft| {
+                draft.return_members = (draft
+                    .members
+                    .iter()
+                    .rev()
+                    .map(|member| {
+                        SketchRelationReturnMember::from_index(member.reference.record_index())
+                    })
+                    .collect::<Vec<_>>())
+                .try_into()
+                .expect("uniform member resolution")
+            })
+            .unwrap();
     }
     let mut variable_relation = Vec::new();
     F3dCodec
@@ -831,24 +844,32 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     assert!(
         f3d_native(variable_round_trip.ir()).sketch_relations[0]
-            .raw_bytes
+            .raw_bytes()
             .len()
             > 101
     );
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = (vec![
-            SketchRelationMember::from_index(100),
-            SketchRelationMember::from_index(600),
-        ])
-        .try_into()
-        .expect("uniform member resolution");
-        relation.return_members = (vec![
-            SketchRelationReturnMember::from_index(600),
-            SketchRelationReturnMember::from_index(100),
-        ])
-        .try_into()
-        .expect("uniform member resolution");
+        relation
+            .try_edit(|draft| {
+                draft.members = (vec![
+                    SketchRelationMember::from_index(100),
+                    SketchRelationMember::from_index(600),
+                ])
+                .try_into()
+                .expect("uniform member resolution")
+            })
+            .unwrap();
+        relation
+            .try_edit(|draft| {
+                draft.return_members = (vec![
+                    SketchRelationReturnMember::from_index(600),
+                    SketchRelationReturnMember::from_index(100),
+                ])
+                .try_into()
+                .expect("uniform member resolution")
+            })
+            .unwrap();
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
@@ -915,7 +936,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     assert_eq!(native.sketch_relations.len(), 1);
     assert_eq!(native.sketch_relations[0].member_indices(), vec![100, 600]);
-    assert!(native.sketch_relations[0].auxiliary_references.is_empty());
+    assert!(native.sketch_relations[0].auxiliary_references().is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(
         native.sketch_relations[0]
@@ -1012,13 +1033,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
-        .members
-        .resolve(
-            |record_index| crate::records::SketchRelationOperand::Point {
-                record_index,
-                persistent_id: Some(u64::MAX),
-            },
-        );
+        .try_edit(|draft| {
+            draft.members.resolve(
+                |record_index| crate::records::SketchRelationOperand::Point {
+                    record_index,
+                    persistent_id: Some(u64::MAX),
+                },
+            );
+        })
+        .unwrap();
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {

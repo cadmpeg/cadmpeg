@@ -52,8 +52,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         crate::records::feature::DesignFeatureKind::CoilPrimitive,
         40,
     );
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_operation =
             Some(crate::records::RecordedValue {
@@ -61,8 +61,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 offset: None,
             });
     }
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -70,8 +70,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 offset: None,
             });
     }
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_section =
             Some(crate::records::RecordedValue {
@@ -81,8 +81,9 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     }
     {
         let value = Some(DesignCoilSectionPlacement::Inside);
-        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) =
+            scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .coil_section_placement = value.map(|value| crate::records::RecordedValue {
@@ -93,8 +94,9 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     }
     {
         let value = Some(false);
-        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) =
+            scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).coil_clockwise =
                 value.map(|value| crate::records::RecordedValue {
@@ -103,8 +105,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 });
         }
     }
-    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).coil_transform = Some(DesignCoilTransform {
             transform: [

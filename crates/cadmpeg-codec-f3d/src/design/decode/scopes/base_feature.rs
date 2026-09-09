@@ -70,31 +70,31 @@ fn exact_base_feature_scope_tail(
     start: usize,
     layout: BaseFeatureScopeTailLayout,
 ) -> Option<()> {
-    if scope.reference_members.len() != 1
-        || scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset)
-        || scope.frame_length != u64::try_from(layout.frame_length).ok()?
-        || scope.reference_count_offset
-            != scope.byte_offset + u64::try_from(layout.reference_count).ok()?
-        || !scope.reference_members.offsets().copied().eq([
-            scope.byte_offset + u64::try_from(layout.generic_scope_reference_record).ok()?
+    if scope.reference_members().len() != 1
+        || scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || scope.frame_length() != u64::try_from(layout.frame_length).ok()?
+        || scope.reference_count_offset()
+            != scope.byte_offset() + u64::try_from(layout.reference_count).ok()?
+        || !scope.reference_members().offsets().copied().eq([
+            scope.byte_offset() + u64::try_from(layout.generic_scope_reference_record).ok()?
         ])
-        || scope.kind_offset != scope.byte_offset + u64::try_from(layout.kind).ok()?
-        || scope.feature_ordinal_offset
-            != scope.byte_offset + u64::try_from(layout.feature_ordinal).ok()?
-        || scope.previous_history_state_id_offset
-            != Some(scope.byte_offset + u64::try_from(layout.previous_history_state_id).ok()?)
+        || scope.kind_offset() != scope.byte_offset() + u64::try_from(layout.kind).ok()?
+        || scope.feature_ordinal_offset()
+            != scope.byte_offset() + u64::try_from(layout.feature_ordinal).ok()?
+        || scope.previous_history_state_id_offset()
+            != Some(scope.byte_offset() + u64::try_from(layout.previous_history_state_id).ok()?)
         || View::u32_le_at(bytes, start + layout.reference_count)?
             != class_377::REFERENCE_COUNT_VALUE
         || bytes.get(start + layout.generic_scope_reference_marker)
             != Some(&class_377::GENERIC_SCOPE_REFERENCE_MARKER_VALUE)
         || marked_record_reference(bytes, start + layout.generic_scope_reference_marker)
-            != Some(*scope.reference_members.values().next()?)
+            != Some(*scope.reference_members().values().next()?)
         || bytes
             .get(start + layout.generic_scope_reference_field..start + layout.history_state_id)?
             != [0; 6]
         || View::u32_le_at(bytes, start + layout.history_state_id)?
             != scope
-                .history_state_id
+                .history_state_id()
                 .and_then(|id| u32::try_from(id).ok())?
         || View::u32_le_at(bytes, start + layout.kind_length)? != class_377::KIND_LENGTH_VALUE
     {
@@ -113,7 +113,7 @@ fn exact_base_feature_scope_tail(
         return None;
     }
     let previous_state = View::u32_le_at(bytes, start + layout.previous_history_state_id)?;
-    let previous_matches = match scope.previous_history_state_id {
+    let previous_matches = match scope.previous_history_state_id() {
         Some(id) => u32::try_from(id).ok() == Some(previous_state),
         None => previous_state == u32::MAX,
     };
@@ -127,7 +127,7 @@ fn exact_base_feature_legacy_body_based_on_faces(
     if scope.class_tag.as_str() != "452" || scope.paired_class_tag.as_str() != "262" {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     let body_count = View::u32_le_at(bytes, start + class_452_compact::BODY_COUNT)?;
     match body_count {
         1 => exact_base_feature_legacy_compact(bytes, scope, start),
@@ -141,7 +141,7 @@ fn exact_base_feature_legacy_compact(
     scope: &DesignParameterScope,
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
-    if scope.frame_length != u64::try_from(class_452_compact::LEN).ok()? {
+    if scope.frame_length() != u64::try_from(class_452_compact::LEN).ok()? {
         return None;
     }
     if bytes
@@ -221,7 +221,7 @@ fn exact_base_feature_legacy_compact(
                 ..start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
         )? != [0; 10]
         || !scope
-            .reference_members
+            .reference_members()
             .values()
             .copied()
             .eq([u32::try_from(scope_reference).ok()?])
@@ -265,34 +265,34 @@ fn exact_base_feature_legacy_compact(
         form: DesignBaseFeatureBodyReferenceForm::CompactOneBody {
             mode: Located {
                 value: mode,
-                offset: scope.byte_offset + u64::try_from(class_452_compact::MODE).ok()?,
+                offset: scope.byte_offset() + u64::try_from(class_452_compact::MODE).ok()?,
             },
             body: DesignLegacyBaseFeatureBody {
                 entity: DesignBaseFeatureEntry {
                     value: u32::try_from(body_entity_suffix).ok()?,
-                    offset: scope.byte_offset
+                    offset: scope.byte_offset()
                         + u64::try_from(class_452_compact::BODY_ENTITY_SUFFIX).ok()?,
                     field: body_entity_field,
                 },
                 parameter_body: Located {
                     value: parameter_body_record,
-                    offset: scope.byte_offset
+                    offset: scope.byte_offset()
                         + u64::try_from(class_452_compact::PARAMETER_BODY_RECORD).ok()?,
                 },
                 auxiliary: Located {
                     value: auxiliary_record,
-                    offset: scope.byte_offset
+                    offset: scope.byte_offset()
                         + u64::try_from(class_452_compact::AUXILIARY_RECORD).ok()?,
                 },
             },
         },
         scope_reference,
-        scope_reference_offset: scope.byte_offset
+        scope_reference_offset: scope.byte_offset()
             + u64::try_from(class_452_compact::SCOPE_REFERENCE).ok()?,
         envelope_guid,
-        envelope_guid_offset: scope.byte_offset
+        envelope_guid_offset: scope.byte_offset()
             + u64::try_from(class_452_compact::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces_offset: scope.byte_offset
+        tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_452_compact::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })
 }
@@ -302,7 +302,7 @@ fn exact_base_feature_legacy_expanded(
     scope: &DesignParameterScope,
     start: usize,
 ) -> Option<DesignBaseFeatureConstruction> {
-    if scope.frame_length != u64::try_from(class_452_expanded::LEN).ok()? {
+    if scope.frame_length() != u64::try_from(class_452_expanded::LEN).ok()? {
         return None;
     }
     if bytes.get(
@@ -377,7 +377,7 @@ fn exact_base_feature_legacy_expanded(
         )? != [0; 6]
         || bytes.get(start + class_452_expanded::PARAMETER_BODY_SEPARATOR)
             != Some(&class_452_expanded::PARAMETER_BODY_SEPARATOR_VALUE)
-        || scope_reference != scope.reference_members.values().next().copied()?
+        || scope_reference != scope.reference_members().values().next().copied()?
         || bytes.get(
             start + class_452_expanded::SCOPE_REFERENCE_FIELD
                 ..start + class_452_expanded::AUXILIARY_BODY_COUNT,
@@ -438,48 +438,48 @@ fn exact_base_feature_legacy_expanded(
                 DesignLegacyBaseFeatureBody {
                     entity: DesignBaseFeatureEntry {
                         value: u32::try_from(body_entity_suffixes[0]).ok()?,
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::BODY_ENTITY_ONE_SUFFIX).ok()?,
                         field: body_entity_fields[0],
                     },
                     parameter_body: Located {
                         value: u64::from(parameter_body_records[0]),
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::PARAMETER_BODY_ONE_RECORD).ok()?,
                     },
                     auxiliary: Located {
                         value: u64::from(auxiliary_records[0]),
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::AUXILIARY_BODY_ONE_RECORD).ok()?,
                     },
                 },
                 DesignLegacyBaseFeatureBody {
                     entity: DesignBaseFeatureEntry {
                         value: u32::try_from(body_entity_suffixes[1]).ok()?,
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::BODY_ENTITY_TWO_SUFFIX).ok()?,
                         field: body_entity_fields[1],
                     },
                     parameter_body: Located {
                         value: u64::from(parameter_body_records[1]),
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::PARAMETER_BODY_TWO_RECORD).ok()?,
                     },
                     auxiliary: Located {
                         value: u64::from(auxiliary_records[1]),
-                        offset: scope.byte_offset
+                        offset: scope.byte_offset()
                             + u64::try_from(class_452_expanded::AUXILIARY_BODY_TWO_RECORD).ok()?,
                     },
                 },
             ],
         },
         scope_reference: u64::from(scope_reference),
-        scope_reference_offset: scope.byte_offset
+        scope_reference_offset: scope.byte_offset()
             + u64::try_from(class_452_expanded::SCOPE_REFERENCE).ok()?,
         envelope_guid,
-        envelope_guid_offset: scope.byte_offset
+        envelope_guid_offset: scope.byte_offset()
             + u64::try_from(class_452_expanded::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces_offset: scope.byte_offset
+        tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_452_expanded::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })
 }
@@ -491,27 +491,27 @@ fn exact_base_feature_direct_body_based_on_faces(
     if !matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
         ("365", "262") | ("377", "259")
-    ) || scope.frame_length != u64::try_from(class_377::LEN).ok()?
-        || scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset)
-        || scope.reference_members.len() != 1
-        || scope.reference_count_offset
-            != scope.byte_offset + u64::try_from(class_377::REFERENCE_COUNT).ok()?
+    ) || scope.frame_length() != u64::try_from(class_377::LEN).ok()?
+        || scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || scope.reference_members().len() != 1
+        || scope.reference_count_offset()
+            != scope.byte_offset() + u64::try_from(class_377::REFERENCE_COUNT).ok()?
         || !scope
-            .reference_members
+            .reference_members()
             .offsets()
             .copied()
-            .eq([scope.byte_offset
+            .eq([scope.byte_offset()
                 + u64::try_from(class_377::GENERIC_SCOPE_REFERENCE_RECORD).ok()?])
-        || scope.kind_offset
-            != scope.byte_offset + u64::try_from(class_377::KIND_LENGTH + 4).ok()?
-        || scope.feature_ordinal_offset
-            != scope.byte_offset + u64::try_from(class_377::FEATURE_ORDINAL).ok()?
-        || scope.previous_history_state_id_offset
-            != Some(scope.byte_offset + u64::try_from(class_377::PREVIOUS_HISTORY_STATE_ID).ok()?)
+        || scope.kind_offset()
+            != scope.byte_offset() + u64::try_from(class_377::KIND_LENGTH + 4).ok()?
+        || scope.feature_ordinal_offset()
+            != scope.byte_offset() + u64::try_from(class_377::FEATURE_ORDINAL).ok()?
+        || scope.previous_history_state_id_offset()
+            != Some(scope.byte_offset() + u64::try_from(class_377::PREVIOUS_HISTORY_STATE_ID).ok()?)
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
     if bytes.get(start + class_377::ZERO_RUN_8..start + class_377::BODY_REFERENCE_COUNT_MARKER)?
         != [0; 8]
         || bytes.get(start + class_377::BODY_REFERENCE_COUNT_MARKER)
@@ -575,7 +575,7 @@ fn exact_base_feature_direct_body_based_on_faces(
                 ..start + class_377::SCOPE_REFERENCE_MEMBER_MARKER,
         )? != [0; 7]
         || marked_record_reference(bytes, start + class_377::SCOPE_REFERENCE_MEMBER_MARKER)?
-            != *scope.reference_members.values().next()?
+            != *scope.reference_members().values().next()?
         || bytes.get(
             start + class_377::SCOPE_REFERENCE_MEMBER_FIELD
                 ..start + class_377::AUXILIARY_GROUP_MARKER,
@@ -609,7 +609,7 @@ fn exact_base_feature_direct_body_based_on_faces(
     )?;
     let previous_history_state_id =
         View::u32_le_at(bytes, start + class_377::PREVIOUS_HISTORY_STATE_ID)?;
-    let previous_history_state_matches = match scope.previous_history_state_id {
+    let previous_history_state_matches = match scope.previous_history_state_id() {
         Some(id) => u32::try_from(id).ok() == Some(previous_history_state_id),
         None => previous_history_state_id == u32::MAX,
     };
@@ -619,10 +619,10 @@ fn exact_base_feature_direct_body_based_on_faces(
         || View::u32_le_at(bytes, start + class_377::REFERENCE_COUNT)?
             != class_377::REFERENCE_COUNT_VALUE
         || marked_record_reference(bytes, start + class_377::GENERIC_SCOPE_REFERENCE_MARKER)?
-            != *scope.reference_members.values().next()?
+            != *scope.reference_members().values().next()?
         || View::u32_le_at(bytes, start + class_377::HISTORY_STATE_ID)?
             != scope
-                .history_state_id
+                .history_state_id()
                 .and_then(|id| u32::try_from(id).ok())?
         || !previous_history_state_matches
         || View::u32_le_at(bytes, start + class_377::KIND_LENGTH)? != class_377::KIND_LENGTH_VALUE
@@ -645,17 +645,17 @@ fn exact_base_feature_direct_body_based_on_faces(
     Some(DesignBaseFeatureConstruction::BodyBasedOnFaces {
         body: crate::records::Located {
             value: body_entity_suffix,
-            offset: scope.byte_offset + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
+            offset: scope.byte_offset() + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
         },
         parameter_body_record,
-        parameter_body_record_offset: scope.byte_offset
+        parameter_body_record_offset: scope.byte_offset()
             + u64::try_from(class_377::PARAMETER_BODY_RECORD).ok()?,
         auxiliary_record,
-        auxiliary_record_offset: scope.byte_offset
+        auxiliary_record_offset: scope.byte_offset()
             + u64::try_from(class_377::AUXILIARY_RECORD).ok()?,
         envelope_guid,
-        envelope_guid_offset: scope.byte_offset + u64::try_from(class_377::ENVELOPE_GUID).ok()?,
-        tag_body_based_on_faces_offset: scope.byte_offset
+        envelope_guid_offset: scope.byte_offset() + u64::try_from(class_377::ENVELOPE_GUID).ok()?,
+        tag_body_based_on_faces_offset: scope.byte_offset()
             + u64::try_from(class_377::TAG_BODY_BASED_ON_FACES_VALUE).ok()?,
     })
 }

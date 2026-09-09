@@ -96,33 +96,38 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         history("BREP.a.smbh", 1, AsmHistoricalEntityKind::Edge),
         history("BREP.b.smbh", 2, AsmHistoricalEntityKind::Loop),
     ];
-    let mut members = vec![crate::records::topology::DesignExtrudeSelectionMember {
-        id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
-        group_record_index: 1,
-        group_member_ordinal: 0,
-        record_index: 2,
-        byte_offset: 400,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        local_id: 42,
-        local_id_offset: 421,
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "11111111-2222-4333-8444-555555555555".to_owned(),
+    let mut members = vec![
+        crate::records::topology::DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::DesignExtrudeSelectionMemberDraft {
+                id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
+                group_record_index: 1,
+                group_member_ordinal: 0,
+                record_index: 2,
+                byte_offset: 400,
+                class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+                local_id: 42,
+                local_id_offset: 421,
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "11111111-2222-4333-8444-555555555555".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 433,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 505,
+                tail_slot_present: false,
+                tail_slot_offset: 581,
+                resolved_geometry: None,
+                operand_identity_ids: Vec::new(),
+                historical: None,
+                next_record_index: 3,
+                next_byte_offset: 590,
+            },
         )
         .unwrap(),
-        asset_id_offset: 429,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 505,
-        tail_slot_present: false,
-        tail_slot_offset: 581,
-        resolved_geometry: None,
-        operand_identity_ids: Vec::new(),
-        historical: None,
-        next_record_index: 3,
-        next_byte_offset: 590,
-    }];
+    ];
 
     bind_extrude_selection_history(&mut members, &naming_spaces, &body_bindings, &histories);
 
@@ -303,24 +308,27 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = crate::records::feature::DesignVertexRecipe {
-        record_index: 1,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-        paired_byte_offset: 11,
-        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        recipe_record_index: 4,
-        recipe_record_byte_offset: 44,
-        recipe_id: "recipe".into(),
-        recipe_prefix_offset: 55,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: vec![reference("rim", &[10, 11]), reference("end", &[12])],
-        recipe_program_offset: 66,
-        recipe_program: vec![0, -1],
-        resolution: None,
-        next_record_index: 6,
-        next_byte_offset: 77,
-    };
+    let recipe = crate::records::feature::DesignVertexRecipe::try_new(
+        crate::records::feature::DesignVertexRecipeDraft {
+            record_index: 1,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            paired_byte_offset: 11,
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            recipe_record_index: 4,
+            recipe_record_byte_offset: 44,
+            recipe_id: "recipe".into(),
+            recipe_prefix_offset: 55,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference("rim", &[10, 11]), reference("end", &[12])],
+            recipe_program_offset: 66,
+            recipe_program: vec![0, -1],
+            resolution: None,
+            next_record_index: 6,
+            next_byte_offset: 77,
+        },
+    )
+    .unwrap();
 
     assert_eq!(recipe_reference_common_vertex(&recipe, &topology), Some(3));
 }

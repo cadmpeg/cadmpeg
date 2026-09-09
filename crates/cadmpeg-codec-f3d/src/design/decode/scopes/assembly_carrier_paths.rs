@@ -119,7 +119,7 @@ fn exact_class_363_operand_path(
             )?,
         )?;
         if !scope
-            .reference_members
+            .reference_members()
             .values()
             .any(|value| value == &owner_record_index)
         {
@@ -335,7 +335,7 @@ fn exact_class_363_node_frame(
         class_363_leading::LEN,
     )?;
     if !scope
-        .reference_members
+        .reference_members()
         .values()
         .any(|value| value == &leading_record_index)
     {

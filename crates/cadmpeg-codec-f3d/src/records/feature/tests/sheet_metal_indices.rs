@@ -16,8 +16,20 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     });
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
-    operation.edge_group_record_index = 20;
-    operation.aggregate_group_record_index = 30;
+    for (group, operand) in [
+        ("edge_group_record_index", "edge_operand_record_index"),
+        (
+            "aggregate_group_record_index",
+            "aggregate_operand_record_index",
+        ),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[group] = serde_json::json!(u32::MAX);
+        invalid[operand] = serde_json::json!(u32::MAX);
+        assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
+    }
+    operation.edge_group_record_index = 20_u32.try_into().unwrap();
+    operation.aggregate_group_record_index = 30_u32.try_into().unwrap();
     assert_eq!(operation.edge_operand_record_index(), 23);
     assert_eq!(operation.aggregate_operand_record_index(), 33);
     let changed = serde_json::to_value(operation).unwrap();
@@ -35,13 +47,23 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
 
 #[test]
 fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operands() {
+    assert!(
+        DesignEdgeFlangeEdge::from_columns(vec![1], vec![u32::MAX], &[u32::MAX], vec![3]).is_err()
+    );
+    assert!(super::super::DesignRecipeGroupIndex::try_from(u32::MAX).is_err());
+    assert_eq!(
+        super::super::DesignRecipeGroupIndex::try_from(u32::MAX - 3)
+            .unwrap()
+            .operand(),
+        u32::MAX
+    );
     let mut edge = DesignEdgeFlangeEdge {
         wrapper_record_index: 10,
-        group_record_index: 20,
+        group_record_index: 20_u32.try_into().unwrap(),
         aggregate_operand_record_index: 33,
     };
     assert_eq!(edge.operand_record_index(), 23);
-    edge.group_record_index = 25;
+    edge.group_record_index = 25_u32.try_into().unwrap();
     assert_eq!(edge.operand_record_index(), 28);
     assert!(DesignEdgeFlangeSelection::try_new(
         DesignEdgeFlangeShape::FullEdge {
@@ -66,7 +88,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
                 edge,
                 DesignEdgeFlangeEdge {
                     wrapper_record_index: 11,
-                    group_record_index: 26,
+                    group_record_index: 26_u32.try_into().unwrap(),
                     aggregate_operand_record_index: 35
                 }
             ],

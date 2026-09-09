@@ -99,26 +99,22 @@ pub(crate) fn exact_component_occurrence(
             let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
             crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
-                transform: crate::records::Located {
-                    value: transform,
-                    offset: u64::try_from(start.checked_add(209)?).ok()?,
-                },
+                transform,
             }
         }
         _ => return None,
     };
-    Some(DesignComponentOccurrence {
+    DesignComponentOccurrence::try_new(crate::records::feature::DesignComponentOccurrenceDraft {
         id: format!("{stream}:design-component-occurrence#{start}"),
         class_tag: class_tag.try_into().ok()?,
         record_index,
         byte_offset: u64::try_from(start).ok()?,
         component_record_index,
         component_guid,
-        component_guid_offset: u64::try_from(start + 48).ok()?,
         occurrence_guid,
-        occurrence_guid_offset: u64::try_from(start + 124).ok()?,
         placement,
     })
+    .ok()
 }
 
 #[cfg(test)]

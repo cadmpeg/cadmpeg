@@ -75,21 +75,31 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
-    scope.byte_offset = 100;
-    scope.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
-    scope.frame_length = 261;
-    scope.kind_offset = 252;
-    scope.reference_count_offset = 229;
-    scope.reference_members =
-        crate::records::ReferenceRun::from_columns(vec![167], vec![234], "reference_members")
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 100;
+            draft.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
+            draft.frame_length = 261;
+            draft.kind_offset = 252;
+            draft.reference_count_offset = 229;
+            draft.reference_members = crate::records::ReferenceRun::from_columns(
+                vec![167],
+                vec![234],
+                "reference_members",
+            )
             .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
-    scope.paired_byte_offset = 361;
-    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    scope.feature_ordinal_offset = 284;
+            draft.paired_class_tag =
+                crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+            draft.paired_byte_offset = 361;
+            draft.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
+            draft.feature_ordinal_offset = 284;
 
-    scope.previous_history_state_id_offset = Some(315);
-    if let crate::records::feature::DesignScopePayload::ComponentInsert(slot) = &mut scope.payload {
+            draft.previous_history_state_id_offset = Some(315);
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::ComponentInsert(slot) =
+        scope.payload_mut()
+    {
         *slot = Some(DesignComponentInsertConstruction {
             relation_record_index: 167,
             carrier_record_index: 166,
@@ -148,36 +158,40 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
     let mut scope = DesignParameterScope::empty(&scope_id, DesignFeatureKind::Extrude, 3970);
     scope.class_tag = "397".to_owned().try_into().unwrap();
     scope.paired_class_tag = "262".to_owned().try_into().unwrap();
-    scope.frame_length = 473;
-    scope.paired_byte_offset = 473;
-    scope.reference_count_offset = 282;
-    scope.reference_members = ReferenceRun::from_columns(
-        vec![11, 22, 33, 44, 55, 66, 77, 88],
-        vec![287, 298, 309, 320, 331, 342, 353, 364],
-        "reference_members",
-    )
-    .unwrap();
-    scope.kind_offset = 382;
-    scope.feature_ordinal_offset = 395;
-    scope.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
-        extrude_prologue: Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
-            operation: DesignExtrudeOperation::Cut,
-            operation_offset: 27,
-            direction_face_extend_values: [3, 2],
-            side_extent_discriminators: [1, 1],
-            side_extent_discriminator_offsets: [126, 139],
-            extent: Some(DesignExtrudeExtent::SymmetricDistance),
-            direction_face_extend_offsets: [31, 35],
-            direction_reversed: false,
-            direction_reversed_offset: 39,
-            solid_operation: true,
-            solid_operation_offset: 40,
-            start: DesignExtrudeStart::OffsetProfilePlane,
-            start_offset: 41,
-        }),
-        ..DesignExtrudeScope::default()
-    }));
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 473;
+            draft.paired_byte_offset = 473;
+            draft.reference_count_offset = 282;
+            draft.reference_members = ReferenceRun::from_columns(
+                vec![11, 22, 33, 44, 55, 66, 77, 88],
+                vec![287, 298, 309, 320, 331, 342, 353, 364],
+                "reference_members",
+            )
+            .unwrap();
+            draft.kind_offset = 382;
+            draft.feature_ordinal_offset = 395;
+            draft.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+                extrude_prologue: Some(DesignExtrudePrologue::LegacyShifted {
+                    operation_prefix_marker_offset: None,
+                    operation: DesignExtrudeOperation::Cut,
+                    operation_offset: 27,
+                    direction_face_extend_values: [3, 2],
+                    side_extent_discriminators: [1, 1],
+                    side_extent_discriminator_offsets: [126, 139],
+                    extent: Some(DesignExtrudeExtent::SymmetricDistance),
+                    direction_face_extend_offsets: [31, 35],
+                    direction_reversed: false,
+                    direction_reversed_offset: 39,
+                    solid_operation: true,
+                    solid_operation_offset: 40,
+                    start: DesignExtrudeStart::OffsetProfilePlane,
+                    start_offset: 41,
+                }),
+                ..DesignExtrudeScope::default()
+            }));
+        })
+        .unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -202,19 +216,6 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
     let mutations: &[fn(&mut DesignParameterScope)] = &[
         |scope| scope.class_tag = "338".to_owned().try_into().unwrap(),
         |scope| scope.paired_class_tag = "261".to_owned().try_into().unwrap(),
-        |scope| {
-            scope.frame_length += 1;
-            scope.paired_byte_offset += 1;
-        },
-        |scope| scope.reference_count_offset += 1,
-        |scope| {
-            scope.reference_members = ReferenceRun::from_columns(
-                vec![11, 22, 33, 44, 55, 66, 77],
-                vec![287, 298, 309, 320, 331, 342, 353],
-                "reference_members",
-            )
-            .unwrap();
-        },
         |scope| {
             if let Some(DesignExtrudePrologue::LegacyShifted {
                 side_extent_discriminators,
@@ -397,17 +398,20 @@ fn validation_accepts_carrier_local_component_references() {
     let occurrence = |record_index: u32,
                       byte_offset: u64,
                       component_record_index: u64,
-                      occurrence_guid: &str| DesignComponentOccurrence {
-        id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index,
-        byte_offset,
-        component_record_index,
-        component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-        component_guid_offset: byte_offset + 48,
-        occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
-        occurrence_guid_offset: byte_offset + 124,
-        placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+                      occurrence_guid: &str| {
+        DesignComponentOccurrence::try_new(
+            crate::records::feature::DesignComponentOccurrenceDraft {
+                id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
+                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                record_index,
+                byte_offset,
+                component_record_index,
+                component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+                occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
+                placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+            },
+        )
+        .unwrap()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {
@@ -458,12 +462,20 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             },
             scope_record_index,
         );
-        scope.reference_members = crate::records::ReferenceRun::unlocated(if hole_scope {
-            vec![1, 2, 3, 4, 5, 6, operand_record_index]
-        } else {
-            vec![1, 2, 3, 4, 5, operand_record_index]
-        });
-        if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = crate::records::ReferenceRun::unlocated(if hole_scope {
+                    vec![1, 2, 3, 4, 5, 6, operand_record_index]
+                } else {
+                    vec![1, 2, 3, 4, 5, operand_record_index]
+                });
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
             *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
@@ -513,50 +525,56 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             recipe_index: ordinal,
             record_index: i32::try_from(operand_record_index + 3).unwrap(),
         });
-        operands.push(DesignBodyRecipeOperand {
-            id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
-            scope_record_index,
-            owner: DesignOperandOwner::ScopeReference {
-                scope_reference_ordinal: if hole_scope { 6 } else { 5 },
-            },
-            record_index: operand_record_index,
-            byte_offset,
-            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "11111111-1111-4111-8111-111111111111".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
-                "22222222-2222-4222-8222-222222222222".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: byte_offset + if empty_legacy_tool { 124 } else { 136 },
-            selector_tail: None,
+        operands.push(
+            DesignBodyRecipeOperand::try_new(
+                crate::records::topology::DesignBodyRecipeOperandDraft {
+                    id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
+                    scope_record_index,
+                    owner: DesignOperandOwner::ScopeReference {
+                        scope_reference_ordinal: if hole_scope { 6 } else { 5 },
+                    },
+                    record_index: operand_record_index,
+                    byte_offset,
+                    class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                        "11111111-1111-4111-8111-111111111111".to_owned(),
+                    )
+                    .unwrap(),
+                    asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
+                    context_id: crate::records::DesignRelaxedGuidText::try_from(
+                        "22222222-2222-4222-8222-222222222222".to_owned(),
+                    )
+                    .unwrap(),
+                    context_id_offset: byte_offset + if empty_legacy_tool { 124 } else { 136 },
+                    selector_tail: None,
 
-            references: if empty_legacy_tool {
-                Vec::new()
-            } else {
-                vec![DesignBodyRecipeReference {
-                    design_reference: u64::from(300 + ordinal),
-                    design_reference_offset: byte_offset + 25,
-                    form: 3,
-                    form_offset: byte_offset + 33,
-                    candidate_faces: Vec::new(),
-                    preceding_candidate_faces: Vec::new(),
-                    preceding_body_slots: Vec::new(),
-                }]
-            },
-            nested_record_index: u64::from(operand_record_index + 3),
-            nested_record_index_offset: byte_offset + if empty_legacy_tool { 26 } else { 38 },
-            recipe_id,
-            resolved_face_slot: None,
-            resolved_body_state_id: None,
-            resolved_body_slot: None,
-            resolved_body_face_slots: Vec::new(),
-            next_record_index: operand_record_index + 4,
-            next_byte_offset: byte_offset + 300,
-        });
+                    references: if empty_legacy_tool {
+                        Vec::new()
+                    } else {
+                        vec![DesignBodyRecipeReference {
+                            design_reference: u64::from(300 + ordinal),
+                            design_reference_offset: byte_offset + 25,
+                            form: 3,
+                            form_offset: byte_offset + 33,
+                            candidate_faces: Vec::new(),
+                            preceding_candidate_faces: Vec::new(),
+                            preceding_body_slots: Vec::new(),
+                        }]
+                    },
+                    nested_record_index: u64::from(operand_record_index + 3),
+                    nested_record_index_offset: byte_offset
+                        + if empty_legacy_tool { 26 } else { 38 },
+                    recipe_id,
+                    resolved_face_slot: None,
+                    resolved_body_state_id: None,
+                    resolved_body_slot: None,
+                    resolved_body_face_slots: Vec::new(),
+                    next_record_index: operand_record_index + 4,
+                    next_byte_offset: byte_offset + 300,
+                },
+            )
+            .unwrap(),
+        );
     }
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -591,7 +609,16 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         crate::records::feature::DesignFeatureKind::Hole,
         10,
     );
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let group = |record_index: u32,
                  scope_reference_ordinal: u32,
                  member: u32,
@@ -687,8 +714,13 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameter_scopes[0].payload =
-            crate::records::feature::DesignFeatureKind::SurfaceTrim.into();
+        native.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload = crate::records::feature::DesignFeatureKind::SurfaceTrim
+                    .try_into()
+                    .unwrap();
+            })
+            .unwrap();
         native.design_construction_operand_groups[1].operand_role =
             crate::records::topology::DesignConstructionOperandRole::Other(
                 DesignOperandRole::ROLE_0X21,
@@ -737,9 +769,23 @@ fn validation_checks_pipe_path_group_roles() {
                 value_offsets: [0; 4],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope
+            .try_edit(|draft| {
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+            })
+            .unwrap();
     }
-    scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let path_group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:design-construction-operand-group#20"),
@@ -1202,68 +1248,77 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     use crate::records::topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let profile = DesignSketchProfileOperand {
-        scope_reference_ordinal: 0,
-        record_index: 20,
-        byte_offset: 200,
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 230,
-        entity_id: crate::records::DesignEntityId::try_from("0_10".to_owned())
-            .expect("valid entity identity"),
-        entity_reference_offset: 250,
-        region_selection: None,
-        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    };
-    let scope = DesignParameterScope {
-        id: "f3d:test:scope#10".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 10,
-        frame_length: 200,
-        kind_offset: 210,
-        payload: DesignScopePayload::Extrude(Some(crate::records::feature::DesignExtrudeScope {
-            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-                reference: None,
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-                direction_face_extend_values: [1, 2],
-                side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [177, 190],
-                first_side_target_ordinal: None,
-                extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [132, 136],
-                direction_reversed: false,
-                direction_reversed_offset: 140,
-                solid_operation: true,
-                solid_operation_offset: 141,
-                start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 142,
-            }),
-            extrude_profile: Some(profile),
-            ..crate::records::feature::DesignExtrudeScope::default()
-        })),
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 220,
-        history_state_id: None,
+    let profile = DesignSketchProfileOperand::try_new(
+        crate::records::topology::DesignSketchProfileOperandDraft {
+            scope_reference_ordinal: 0,
+            record_index: 20,
+            byte_offset: 200,
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 230,
+            entity_id: crate::records::DesignEntityId::try_from("0_10".to_owned())
+                .expect("valid entity identity"),
+            entity_reference_offset: 250,
+            region_selection: None,
+            paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        },
+    )
+    .unwrap();
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:test:scope#10".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 10,
+            frame_length: 200,
+            kind_offset: 210,
+            payload: DesignScopePayload::Extrude(Some(
+                crate::records::feature::DesignExtrudeScope {
+                    extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                        reference: None,
+                        operation: DesignExtrudeOperation::NewBody,
+                        operation_offset: 128,
+                        direction_face_extend_values: [1, 2],
+                        side_extent_discriminators: [1, 0],
+                        side_extent_discriminator_offsets: [177, 190],
+                        first_side_target_ordinal: None,
+                        extent: DesignExtrudeExtent::OneSidedDistance,
+                        direction_face_extend_offsets: [132, 136],
+                        direction_reversed: false,
+                        direction_reversed_offset: 140,
+                        solid_operation: true,
+                        solid_operation_offset: 141,
+                        start: DesignExtrudeStart::ProfilePlane,
+                        start_offset: 142,
+                    }),
+                    extrude_profile: Some(profile),
+                    ..crate::records::feature::DesignExtrudeScope::default()
+                },
+            )),
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 220,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: Some(228),
-        reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![20, 30],
-            vec![184, 195],
-            "reference_members",
-        )
-        .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    };
+            previous_history_state_id: None,
+            previous_history_state_id_offset: Some(228),
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![20, 30],
+                vec![184, 195],
+                "reference_members",
+            )
+            .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
             id: "f3d:test:operand-group#30".into(),
@@ -1406,37 +1461,46 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         },
     )
     .unwrap();
-    let identity = DesignConstructionOperandIdentity {
-        id: format!("{stream}:operand-identity#1100"),
-        group_record_index: 100,
-        wrappers: vec![crate::records::topology::DesignIdentityWrapper {
-            record_index: 101,
-            byte_offset: 1_100,
-            class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
-        }],
-        following_record_index: 102,
-        following_byte_offset: 1_124,
-        following_class_tag: crate::records::DesignClassTag::try_from("395".to_owned()).unwrap(),
-        tracking_path: None,
-        persistent_identity: Some(DesignConstructionPersistentIdentity {
-            local_id: 167,
-            local_id_offset: 1_145,
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 1_157,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
-                "9dea94a1-729a-4032-930b-d4ba4eaadb0c".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 1_233,
-            tail_slot_present: false,
-            tail_slot_offset: 1_309,
-            next_record_index: 103,
-            next_byte_offset: 1_314,
-        }),
-    };
+    let identity = DesignConstructionOperandIdentity::try_new(
+        crate::records::topology::DesignConstructionOperandIdentityDraft {
+            id: format!("{stream}:operand-identity#1100"),
+            group_record_index: 100,
+            wrappers: vec![crate::records::topology::DesignIdentityWrapper {
+                record_index: 101,
+                byte_offset: 1_100,
+                class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
+            }],
+            following_record_index: 102,
+            following_byte_offset: 1_124,
+            following_class_tag: crate::records::DesignClassTag::try_from("395".to_owned())
+                .unwrap(),
+            tracking_path: None,
+            persistent_identity: Some(
+                DesignConstructionPersistentIdentity::try_new(
+                    crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                        local_id: 167,
+                        local_id_offset: 1_145,
+                        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                            "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".to_owned(),
+                        )
+                        .unwrap(),
+                        asset_id_offset: 1_157,
+                        context_id: crate::records::DesignRelaxedGuidText::try_from(
+                            "9dea94a1-729a-4032-930b-d4ba4eaadb0c".to_owned(),
+                        )
+                        .unwrap(),
+                        context_id_offset: 1_233,
+                        tail_slot_present: false,
+                        tail_slot_offset: 1_309,
+                        next_record_index: 103,
+                        next_byte_offset: 1_314,
+                    },
+                )
+                .unwrap(),
+            ),
+        },
+    )
+    .unwrap();
     let wrapper = DesignRecordHeader {
         id: format!("{stream}:record-header#1100"),
         record_index: 101,
@@ -1531,41 +1595,44 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
         record_index: 200,
     };
-    let operand = DesignEntitySelectionOperand {
-        id: operand_id.clone(),
-        scope_record_index: 10,
-        group_record_index: 100,
-        group_member_ordinal: 0,
-        record_index: 200,
-        byte_offset: 1_000,
-        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "11111111-2222-4333-8444-555555555555".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 1_034,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 1_100,
-        identity_record_index: 203,
-        identity_record_offset: 2_000,
-        primary_identity: 949,
-        primary_identity_offset: 2_033,
-        secondary: Some(crate::records::DesignSecondaryIdentity {
-            identity: crate::records::Located {
-                value: 249,
-                offset: 2_041,
-            },
-            curve_identity: None,
-        }),
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
-        next_record_index: 204,
-        next_byte_offset: 2_049,
-    };
+    let operand = DesignEntitySelectionOperand::try_new(
+        crate::records::topology::DesignEntitySelectionOperandDraft {
+            id: operand_id.clone(),
+            scope_record_index: 10,
+            group_record_index: 100,
+            group_member_ordinal: 0,
+            record_index: 200,
+            byte_offset: 1_000,
+            class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "11111111-2222-4333-8444-555555555555".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 1_034,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 1_100,
+            identity_record_index: 203,
+            identity_record_offset: 2_000,
+            primary_identity: 949,
+            primary_identity_offset: 2033,
+            secondary: Some(crate::records::DesignSecondaryIdentity {
+                identity: crate::records::Located {
+                    value: 249,
+                    offset: 2041,
+                },
+                curve_identity: None,
+            }),
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 204,
+            next_byte_offset: 2049,
+        },
+    )
+    .unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -1580,11 +1647,6 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                 == "Fusion Design entity-selection operand has an invalid nested frame"
     };
     assert!(!crate::validate::validate_native(&ir)
-        .iter()
-        .any(invalid_entity_selection));
-
-    f3d_native_mut(&mut ir).design_entity_selection_operands[0].next_byte_offset = 2_048;
-    assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_entity_selection));
 }

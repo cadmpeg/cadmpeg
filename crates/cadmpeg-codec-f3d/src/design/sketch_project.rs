@@ -99,23 +99,23 @@ fn text_frame_curve_records(
             if relation.unknown_constraint_bits() != 0
                 || relation.constraint_kinds().len() != 1
                 || relation
-                    .members
+                    .members()
                     .first()
                     .map(|member| member.reference.record_index())
                     != Some(*text_reference)
                 || !relation
-                    .auxiliary_references
+                    .auxiliary_references()
                     .values()
                     .copied()
                     .eq([*text_reference])
-                || relation.members.len() < 2
+                || relation.members().len() < 2
                 || relation.return_member_indices() != relation.member_indices()[1..]
                 || text_owners.get(&(scope.clone(), *text_reference))
                     != Some(&relation.owner_reference)
             {
                 return None;
             }
-            if !relation.return_members.iter().all(|member| {
+            if !relation.return_members().iter().all(|member| {
                 curve_owners.get(&(scope.clone(), member.reference.record_index()))
                     == Some(&relation.owner_reference)
             }) {
@@ -766,7 +766,7 @@ pub fn project_spatial_sketch_constraints(
             // run interleaves per-member relation ordinals and has no role
             // order, so it cannot define a neutral spatial constraint.
             let semantic_entities = relation
-                .return_members
+                .return_members()
                 .iter()
                 .map(|member| {
                     projected

@@ -21,8 +21,13 @@ fn move_body_selection_uses_unique_owning_history() {
         crate::records::feature::DesignFeatureKind::Move,
         10,
     );
-    scope.history_state_id = Some(42);
-    scope.previous_history_state_id = Some(41);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = Some(41);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {

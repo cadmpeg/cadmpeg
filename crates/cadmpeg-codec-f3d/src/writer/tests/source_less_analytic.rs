@@ -92,7 +92,6 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         let mut order = configuration.variant_order().to_vec();
         order.push("Narrow".into());
         *configuration = crate::records::DesignConfiguration::try_new(
-            configuration.id().clone(),
             configuration.entry_name().clone(),
             configuration.kind(),
             order,

@@ -14,13 +14,7 @@ impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionLocusPairs {
     type Error = String;
 
     fn try_from(pairs: Vec<DesignDimensionLocusPair>) -> Result<Self, Self::Error> {
-        if pairs.iter().any(|pair| {
-            pair.opaque_index.is_none()
-                || pair
-                    .loci
-                    .iter()
-                    .any(|locus| locus.geometry_record_index.is_none())
-        }) {
+        if pairs.iter().any(|pair| pair.opaque_index().is_none()) {
             return Err(
                 "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index"
                     .into(),
@@ -65,11 +59,7 @@ impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionNullLocusPairs {
     type Error = String;
 
     fn try_from(pairs: Vec<DesignDimensionLocusPair>) -> Result<Self, Self::Error> {
-        if pairs.iter().any(|pair| {
-            pair.opaque_index.is_some()
-                || pair.loci[0].geometry_record_index.is_some()
-                || pair.loci[1].geometry_record_index.is_none()
-        }) {
+        if pairs.iter().any(|pair| pair.opaque_index().is_some()) {
             return Err("design_dimension_null_locus_pairs requires a null first locus, a nonnull second locus, and no opaque_index".into());
         }
         Ok(Self(pairs))

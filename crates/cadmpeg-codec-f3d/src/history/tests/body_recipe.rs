@@ -45,49 +45,52 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             FaceId::mint("test:model:face#2").expect("identity grammar"),
         ),
     ];
-    let operand = crate::records::topology::DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
-        scope_record_index: 10,
-        owner: crate::records::topology::DesignOperandOwner::ScopeReference {
-            scope_reference_ordinal: 0,
-        },
-        record_index: 1,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
+            scope_record_index: 10,
+            owner: crate::records::topology::DesignOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 1,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![crate::records::topology::DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![
-                FaceId::mint("test:model:face#1").expect("identity grammar"),
-                FaceId::mint("test:model:face#2").expect("identity grammar"),
-            ],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 2,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#3".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 4,
-        next_byte_offset: 0,
-    };
+            references: vec![crate::records::topology::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: vec![
+                    FaceId::mint("test:model:face#1").expect("identity grammar"),
+                    FaceId::mint("test:model:face#2").expect("identity grammar"),
+                ],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 4,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#3".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 5,
+            next_byte_offset: 256,
+        },
+    )
+    .unwrap();
 
     assert_eq!(
         unique_external_body_candidate(&operand, None, &bodies, &regions, &shells),

@@ -23,15 +23,15 @@ pub(crate) struct Wire {
 
 impl From<&DesignDimensionLocusPair> for Wire {
     fn from(pair: &DesignDimensionLocusPair) -> Self {
-        let [first, second] = &pair.loci;
+        let [first, second] = pair.loci();
         Self {
             id: pair.id.clone(),
             companion_record_index: pair.companion_record_index,
             governing_companion_record_index: pair.governing_companion_record_index,
-            byte_offset: pair.byte_offset,
+            byte_offset: pair.byte_offset(),
             class_tag: pair.class_tag.as_str().to_owned(),
             record_index: pair.record_index,
-            frame_length: pair.frame_length,
+            frame_length: pair.frame_length(),
             null_reference_offset: first.geometry_reference_offset,
             null_role: first.role,
             null_role_offset: first.role_offset,
@@ -42,7 +42,7 @@ impl From<&DesignDimensionLocusPair> for Wire {
             geometry_role: second.role,
             geometry_role_offset: second.role_offset,
             paired_class_tag: pair.paired_class_tag.as_str().to_owned(),
-            paired_byte_offset: pair.paired_byte_offset,
+            paired_byte_offset: pair.paired_byte_offset(),
         }
     }
 }

@@ -36,26 +36,26 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     lanes: &[&DesignParameterOwner],
 ) -> Option<LegacyAsBuilt421Alignment> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let references = scope.reference_members.located_rows()?;
+    let references = scope.reference_members().located_rows()?;
     if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || references.len() != 11
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset).ok()?;
-    if usize::try_from(scope.paired_byte_offset).ok()? != start.checked_add(as_built_421::LEN)?
-        || scope.reference_count_offset
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if usize::try_from(scope.paired_byte_offset()).ok()? != start.checked_add(as_built_421::LEN)?
+        || scope.reference_count_offset()
             != u64::try_from(start.checked_add(as_built_421::REFERENCE_COUNT)?).ok()?
         || View::u32_le_at(bytes, start.checked_add(as_built_421::REFERENCE_COUNT)?)?
             != as_built_421::REFERENCE_COUNT_VALUE
         || View::u32_le_at(bytes, start.checked_add(as_built_421::KIND_LENGTH)?)?
             != as_built_421::KIND_LENGTH_VALUE
-        || scope.feature_ordinal_offset
+        || scope.feature_ordinal_offset()
             != u64::try_from(start.checked_add(as_built_421::FEATURE_ORDINAL)?).ok()?
     {
         return None;
@@ -97,13 +97,13 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     let source_limit_owner_record_indices =
         [limit_first.record_index(), limit_second.record_index()];
     if !scope
-        .reference_members
+        .reference_members()
         .values()
         .skip(4)
         .take(4)
         .eq(alignment_owner_record_indices.iter())
         || !scope
-            .reference_members
+            .reference_members()
             .values()
             .skip(9)
             .take(2)
@@ -156,11 +156,11 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     scope: &DesignParameterScope,
 ) -> Option<DesignAssemblySolvedFrame> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let references = scope.reference_members.located_rows()?;
+    let references = scope.reference_members().located_rows()?;
     let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
         return None;
     };
@@ -241,11 +241,11 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     solved_frame: &DesignAssemblySolvedFrame,
 ) -> Option<DesignAssemblyLegacyOperands> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length,
+        scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
-    let references = scope.reference_members.located_rows()?;
+    let references = scope.reference_members().located_rows()?;
     let [point_reference, first_selection_reference, hole_reference, second_selection_reference, _, _, _, _, frame_reference, _, _] =
         references
     else {
@@ -262,7 +262,11 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let mut hole_scope = scope.clone();
-    hole_scope.payload = crate::records::feature::DesignFeatureKind::Hole.into();
+    hole_scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::DesignScopePayload::Hole(None);
+        })
+        .ok()?;
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
     if hole.point_record_index != hole_record_index
         || !hole
@@ -333,7 +337,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
-        .map(|input| input.record_index)
+        .map(crate::records::feature::DesignWorkPointInput::record_index)
         .collect()
 }
 
@@ -355,9 +359,9 @@ fn exact_legacy_as_built_face_selection(
     expected_class_tag: &str,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignAssemblyLegacySelection> {
-    let scope_start = usize::try_from(scope.byte_offset).ok()?;
+    let scope_start = usize::try_from(scope.byte_offset()).ok()?;
     let next_byte_offset = scope
-        .reference_members
+        .reference_members()
         .values()
         .nth(
             usize::try_from(scope_reference_ordinal)
@@ -398,6 +402,7 @@ fn exact_legacy_as_built_face_selection(
                 recipes,
             )?;
             let prefix = parse_entity_selection_prefix(bytes, byte_offset, record_index)?;
+            let next_byte_offset = operand.next_byte_offset();
             Some(DesignAssemblyLegacySelection {
                 record_index,
                 byte_offset: u64::try_from(byte_offset).ok()?,
@@ -406,12 +411,12 @@ fn exact_legacy_as_built_face_selection(
                 asset_id_offset: prefix.asset_id_offset,
                 context_id: prefix.context_id.try_into().ok()?,
                 context_id_offset: prefix.context_id_offset,
-                recipe_record_index: operand.recipe_record_index,
-                recipe_record_byte_offset: operand.recipe_record_byte_offset,
+                recipe_record_index: operand.recipe_record_index(),
+                recipe_record_byte_offset: operand.recipe_record_byte_offset(),
                 recipe_id: operand.recipe_id,
                 recipe_kind: operand.recipe_kind,
                 recipe_references: operand.recipe_references,
-                next_byte_offset: operand.next_byte_offset,
+                next_byte_offset,
             })
         })
         .collect::<Vec<_>>();

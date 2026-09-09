@@ -187,6 +187,6 @@ fn work_point_input_count_frames_the_rule_inputs() {
 fn work_point_input_indices(rule: &crate::records::feature::DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
-        .map(|input| input.record_index)
+        .map(crate::records::feature::DesignWorkPointInput::record_index)
         .collect()
 }

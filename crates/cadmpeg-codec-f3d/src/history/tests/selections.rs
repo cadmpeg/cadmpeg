@@ -186,7 +186,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         crate::records::feature::DesignFeatureKind::Hole,
         42,
     );
-    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
 
@@ -234,16 +234,16 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "record_index": 1,
             "frame_length": 200,
             "kind": "Fillet",
-            "kind_offset": 0,
+            "kind_offset": 32,
             "feature_ordinal": 1,
-            "feature_ordinal_offset": 0,
+            "feature_ordinal_offset": 128,
             "history_state_id": 8,
-            "history_state_id_offset": 0,
+            "history_state_id_offset": 24,
             "previous_history_state_id": 7,
-            "previous_history_state_id_offset": 0,
-            "reference_count_offset": 0,
-            "reference_members": [],
-            "reference_member_offsets": [],
+            "previous_history_state_id_offset": 158,
+            "reference_count_offset": 9,
+            "reference_members": [2],
+            "reference_member_offsets": [14],
             "paired_class_tag": "261",
             "paired_byte_offset": 200
         }))
@@ -261,9 +261,9 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "local_id": record_index,
             "local_id_offset": 23,
             "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-            "asset_id_offset": 0,
+            "asset_id_offset": 41,
             "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
-            "context_id_offset": 0
+            "context_id_offset": 117
         }))
         .expect("edge identity")
     };
@@ -483,58 +483,61 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         recipe(103, "family", 1),
         recipe(104, "family", 2),
     ];
-    let operand =
-        |record_index, recipe: &ConstructionRecipe, body: Option<i64>, candidates: &[i64]| {
-            DesignBodyRecipeOperand {
-                id: format!("{stream}:design-body-recipe-operand#{record_index}"),
-                scope_record_index: 10,
-                owner: DesignOperandOwner::ScopeReference {
-                    scope_reference_ordinal: record_index,
-                },
-                record_index,
-                byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("389".to_owned()).unwrap(),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-                )
-                .unwrap(),
-                asset_id_offset: 0,
-                context_id: crate::records::DesignRelaxedGuidText::try_from(
-                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-                )
-                .unwrap(),
-                context_id_offset: 0,
-                selector_tail: None,
+    let operand = |record_index,
+                   recipe: &ConstructionRecipe,
+                   body: Option<i64>,
+                   candidates: &[i64]| {
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: format!("{stream}:design-body-recipe-operand#{record_index}"),
+            scope_record_index: 10,
+            owner: DesignOperandOwner::ScopeReference {
+                scope_reference_ordinal: record_index,
+            },
+            record_index,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("389".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-                references: vec![DesignBodyRecipeReference {
-                    design_reference: if recipe
-                        .design
-                        .as_ref()
-                        .map(|design| design.id.value.as_str())
-                        == Some("family")
-                    {
-                        413
-                    } else {
-                        409
-                    },
-                    design_reference_offset: 0,
-                    form: 3,
-                    form_offset: 0,
-                    candidate_faces: Vec::new(),
-                    preceding_candidate_faces: Vec::new(),
-                    preceding_body_slots: candidates.to_vec(),
-                }],
-                nested_record_index: 0,
-                nested_record_index_offset: 0,
-                recipe_id: recipe.id.clone(),
-                resolved_face_slot: None,
-                resolved_body_state_id: body.map(|_| 317),
-                resolved_body_slot: body,
-                resolved_body_face_slots: Vec::new(),
-                next_record_index: 0,
-                next_byte_offset: 0,
-            }
-        };
+            references: vec![DesignBodyRecipeReference {
+                design_reference: if recipe
+                    .design
+                    .as_ref()
+                    .map(|design| design.id.value.as_str())
+                    == Some("family")
+                {
+                    413
+                } else {
+                    409
+                },
+                design_reference_offset: 25,
+                form: 3,
+                form_offset: 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: candidates.to_vec(),
+            }],
+            nested_record_index: u64::from(record_index + 3),
+            nested_record_index_offset: 38,
+            recipe_id: recipe.id.clone(),
+            resolved_face_slot: None,
+            resolved_body_state_id: body.map(|_| 317),
+            resolved_body_slot: body,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: record_index + 4,
+            next_byte_offset: 256,
+        })
+        .unwrap()
+    };
     let family = [6, 7, 8];
     let mut operands = vec![
         operand(1, &recipes[0], Some(5), &[]),
@@ -548,7 +551,11 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         Some(vec![5, 6, 7, 8])
     );
 
-    operands[1].references[0].preceding_body_slots = vec![6, 7, 9];
+    *operands[1]
+        .reference_bindings_mut()
+        .next()
+        .unwrap()
+        .preceding_body_slots = vec![6, 7, 9];
     assert!(combine_recipe_family_tool_slots(
         stream,
         10,
@@ -560,7 +567,12 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     )
     .is_none());
 
-    operands[1].references[0].preceding_body_slots.clear();
+    operands[1]
+        .reference_bindings_mut()
+        .next()
+        .unwrap()
+        .preceding_body_slots
+        .clear();
     let mut duplicate_selector = recipes.clone();
     duplicate_selector[1].design.as_mut().unwrap().selector =
         duplicate_selector[2].design.as_ref().unwrap().selector;
@@ -625,7 +637,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::feature::DesignFeatureKind::Combine,
         10,
     );
-    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
         *slot = Some(crate::records::feature::DesignCombineOperation {
             form: crate::records::feature::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
@@ -1301,12 +1313,12 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
         "record_index": 2,
         "byte_offset": 0,
         "class_tag": "277",
-        "paired_byte_offset": 0,
+        "paired_byte_offset": 16,
         "paired_class_tag": "259",
         "recipe_record_index": 5,
-        "recipe_record_byte_offset": 0,
+        "recipe_record_byte_offset": 32,
         "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#5",
-        "recipe_prefix_offset": 0,
+        "recipe_prefix_offset": 43,
         "recipe_prefix_bytes": "",
         "recipe_references": [],
         "recipe_kind": "bounded_face",
@@ -1315,7 +1327,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
         "recipe_node_offsets": [],
         "recipe_nodes": [],
         "next_record_index": 6,
-        "next_byte_offset": 0
+        "next_byte_offset": 160
     }))
     .expect("grouped face operand");
     operand.recipe_prefix_bytes = prefix;
@@ -1413,12 +1425,12 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             "record_index": record_index,
             "byte_offset": 0,
             "class_tag": "297",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "259",
             "recipe_record_index": record_index + 3,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": format!("f3d:Design/BulkStream.dat:construction-recipe#{}", record_index + 3),
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "bounded_face",
@@ -1427,7 +1439,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             "recipe_node_offsets": [],
             "recipe_nodes": [],
             "next_record_index": record_index + 4,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("profile face operand");
         operand.recipe_prefix_bytes = paired_prefix();
@@ -1444,18 +1456,29 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         crate::records::feature::DesignFeatureKind::Extrude,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    scope.reference_members = {
-        let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
-        let reference_offsets = vec![0; reference_values.len()];
-        crate::records::ReferenceRun::from_columns(
-            reference_values,
-            reference_offsets,
-            "reference_members",
-        )
-        .unwrap()
-    };
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.reference_members = {
+                let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
+                let reference_offsets = (0..reference_values.len())
+                    .map(|ordinal| 14 + 11 * ordinal as u64)
+                    .collect();
+                crate::records::ReferenceRun::from_columns(
+                    reference_values,
+                    reference_offsets,
+                    "reference_members",
+                )
+                .unwrap()
+            };
+            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let groups = vec![
         group(100, 0, vec![110, 120]),
         group(110, 1, vec![111]),
@@ -1660,10 +1683,15 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         crate::records::feature::DesignFeatureKind::Mirror,
         42,
     );
-    scope.history_state_id = Some(2);
-    scope.previous_history_state_id = Some(1);
-    if let crate::records::feature::DesignScopePayload::Mirror(slot)
-    | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) = scope.payload_mut()
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({
@@ -1694,9 +1722,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
             "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
             "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
-            "identity_record_index": 41, "identity_record_offset": 0,
-            "primary_identity": 10, "primary_identity_offset": 0,
-            "next_record_index": 42, "next_byte_offset": 0
+            "identity_record_index": 43, "identity_record_offset": 0,
+            "primary_identity": 10, "primary_identity_offset": 21,
+            "next_record_index": 42, "next_byte_offset": 29
         }))
         .expect("mirror plane selection");
     let state = |state_id, topology, transition| crate::history_records::AsmDeltaState {
