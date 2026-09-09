@@ -2538,10 +2538,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("FAST_LOAD_COMPONENT_OCCURRENCE"),
-            note: |m, r, tag, a| note_container(&m.structure.occurrences, r, tag, a),
+            note: |m, r, tag, a| note_container(m.structure.occurrences.as_slice(), r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.structure.occurrences, r, ns),
-        len: |m| m.structure.occurrences.len(),
+        emit: |m, r, ns| {
+            if !m.structure.occurrences.as_slice().is_empty() {
+                ns.set_arena_from(r.arena, m.structure.occurrences.wire_records())?;
+            }
+            Ok(())
+        },
+        len: |m| m.structure.occurrences.as_slice().len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

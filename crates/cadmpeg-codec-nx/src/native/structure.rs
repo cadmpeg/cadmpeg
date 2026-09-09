@@ -10,7 +10,9 @@ use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::object_uuid::ObjectUuidValue;
 
+pub(crate) mod occurrences;
 mod uuid_group_members;
+use occurrences::FastLoadOccurrences;
 use uuid_group_members::UuidGroupMembers;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
@@ -133,18 +135,12 @@ impl RosterIndex {
 }
 
 /// One ordered component use referencing a reusable fast-load prototype.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FastLoadComponentOccurrenceWire",
-    into = "FastLoadComponentOccurrenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FastLoadComponentOccurrence {
     /// Globally unique occurrence identity.
     pub id: String,
     /// Zero-based position in the serialized occurrence table.
     pub ordinal: u32,
-    /// Byte discriminator for the serialized occurrence lane form.
-    pub occurrence_lane_form: OccurrenceLaneForm,
     /// Exact marker byte in the serialized occurrence marker lane.
     pub marker: OccurrenceMarker,
     /// Absolute file offset of the occurrence marker.
@@ -164,7 +160,7 @@ pub struct FastLoadComponentOccurrence {
 }
 
 #[derive(Serialize, Deserialize)]
-struct FastLoadComponentOccurrenceWire {
+pub(crate) struct FastLoadComponentOccurrenceWire {
     id: String,
     ordinal: u32,
     occurrence_lane_form: OccurrenceLaneForm,
@@ -186,7 +182,6 @@ impl TryFrom<FastLoadComponentOccurrenceWire> for FastLoadComponentOccurrence {
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
-            occurrence_lane_form: wire.occurrence_lane_form,
             marker: wire.marker,
             marker_source_offset: wire.marker_source_offset,
             prototype: wire.prototype,
@@ -198,19 +193,21 @@ impl TryFrom<FastLoadComponentOccurrenceWire> for FastLoadComponentOccurrence {
         })
     }
 }
-impl From<FastLoadComponentOccurrence> for FastLoadComponentOccurrenceWire {
-    fn from(value: FastLoadComponentOccurrence) -> Self {
+impl From<(&FastLoadComponentOccurrence, OccurrenceLaneForm)> for FastLoadComponentOccurrenceWire {
+    fn from(
+        (value, occurrence_lane_form): (&FastLoadComponentOccurrence, OccurrenceLaneForm),
+    ) -> Self {
         Self {
-            id: value.id,
+            id: value.id.clone(),
             ordinal: value.ordinal,
-            occurrence_lane_form: value.occurrence_lane_form,
+            occurrence_lane_form,
             marker: value.marker,
             marker_source_offset: value.marker_source_offset,
-            prototype: value.prototype,
+            prototype: value.prototype.clone(),
             prototype_index: value.prototype_index,
-            component_uuid: value.component_uuid,
+            component_uuid: value.component_uuid.clone(),
             uuid_source_offset: value.uuid_source_offset,
-            source_entry: value.source_entry,
+            source_entry: value.source_entry.clone(),
             source_offset: value.source_offset,
         }
     }
@@ -322,34 +319,34 @@ pub fn fast_load_component_roster(
 ) -> (
     Vec<FastLoadComponentPrototype>,
     Vec<FastLoadComponentUuid>,
-    Vec<FastLoadComponentOccurrence>,
+    FastLoadOccurrences,
 ) {
     let mut entries = container
         .entries
         .iter()
         .filter(|entry| entry.name == ENTRY_NAME && entry.file_span().is_some());
     let Some(entry) = entries.next() else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     if entries.next().is_some() {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     }
     let Some((entry_offset, entry_size)) = entry.file_span() else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
         (usize::try_from(entry_offset), usize::try_from(entry_size))
     else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     let Some(end) = entry_offset_usize.checked_add(entry_size) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     let Some(bytes) = container.data.get(entry_offset_usize..end) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     let Some(payload) = framed_payload(bytes) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
 
     // Every admitted roster has one of two structural anchors before the
@@ -377,7 +374,7 @@ pub fn fast_load_component_roster(
         .filter_map(|start| parse_candidate(payload, start))
         .collect::<Vec<_>>();
     let Some(candidate) = select_roster_candidate(candidates) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
 
     let prototypes: Vec<_> = candidate
@@ -408,33 +405,31 @@ pub fn fast_load_component_roster(
         .occurrences
         .into_iter()
         .enumerate()
-        .map(|(ordinal, occurrence)| {
-            FastLoadComponentOccurrence::try_from(FastLoadComponentOccurrenceWire {
-                id: format!("nx:fast-load:occurrence#{ordinal}"),
-                ordinal: ordinal as u32,
-                occurrence_lane_form: candidate.occurrence_lane_form,
-                marker: occurrence.marker,
-                marker_source_offset: entry_offset
-                    + envelope::LEN as u64
-                    + candidate.occurrence_markers_offset as u64
-                    + ordinal as u64,
-                prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
-                prototype_index: occurrence.prototype_index,
-                component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
-                uuid_source_offset: entry_offset
-                    + envelope::LEN as u64
-                    + candidate.uuid_indices_offset as u64
-                    + ordinal as u64,
-                source_entry: entry.name.clone(),
-                source_offset: entry_offset
-                    + envelope::LEN as u64
-                    + candidate.occurrences_offset as u64
-                    + ordinal as u64,
-            })
+        .map(|(ordinal, occurrence)| FastLoadComponentOccurrenceWire {
+            id: format!("nx:fast-load:occurrence#{ordinal}"),
+            ordinal: ordinal as u32,
+            occurrence_lane_form: candidate.occurrence_lane_form,
+            marker: occurrence.marker,
+            marker_source_offset: entry_offset
+                + envelope::LEN as u64
+                + candidate.occurrence_markers_offset as u64
+                + ordinal as u64,
+            prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
+            prototype_index: occurrence.prototype_index,
+            component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
+            uuid_source_offset: entry_offset
+                + envelope::LEN as u64
+                + candidate.uuid_indices_offset as u64
+                + ordinal as u64,
+            source_entry: entry.name.clone(),
+            source_offset: entry_offset
+                + envelope::LEN as u64
+                + candidate.occurrences_offset as u64
+                + ordinal as u64,
         })
-        .collect::<Result<Vec<_>, _>>();
-    let Ok(occurrences) = occurrences else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        .collect::<Vec<_>>();
+    let Ok(occurrences) = FastLoadOccurrences::try_from(occurrences) else {
+        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
     };
     (prototypes, uuids, occurrences)
 }
@@ -712,8 +707,17 @@ mod tests {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
         assert_eq!(uuids.len(), 1);
-        assert_eq!(u8::from(occurrences[0].occurrence_lane_form), 0);
-        assert_eq!(u8::from(occurrences[0].marker), b'9');
+        assert_eq!(
+            u8::from(
+                occurrences
+                    .wire_records()
+                    .next()
+                    .unwrap()
+                    .occurrence_lane_form
+            ),
+            0
+        );
+        assert_eq!(u8::from(occurrences.as_slice()[0].marker), b'9');
         assert_eq!(
             prototypes
                 .iter()
@@ -723,12 +727,16 @@ mod tests {
         );
         assert_eq!(
             occurrences
+                .as_slice()
                 .iter()
                 .map(|o| u8::from(o.prototype_index))
                 .collect::<Vec<_>>(),
             [1, 2, 2, 3]
         );
-        assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+        assert_eq!(
+            occurrences.as_slice()[1].prototype,
+            occurrences.as_slice()[2].prototype
+        );
     }
 
     #[test]
@@ -744,9 +752,9 @@ mod tests {
             ["pin", "head"]
         );
         assert_eq!(uuids.len(), 1);
-        assert_eq!(occurrences.len(), 2);
-        assert_eq!(u8::from(occurrences[0].prototype_index), 1);
-        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
+        assert_eq!(occurrences.as_slice().len(), 2);
+        assert_eq!(u8::from(occurrences.as_slice()[0].prototype_index), 1);
+        assert_eq!(u8::from(occurrences.as_slice()[1].prototype_index), 2);
     }
 
     #[test]
@@ -768,8 +776,8 @@ mod tests {
             ["gear", "rod"]
         );
         assert_eq!(uuids.len(), 1);
-        assert_eq!(occurrences.len(), 2);
-        assert_eq!(u8::from(occurrences[1].prototype_index), 2);
+        assert_eq!(occurrences.as_slice().len(), 2);
+        assert_eq!(u8::from(occurrences.as_slice()[1].prototype_index), 2);
     }
 
     #[test]
@@ -783,21 +791,22 @@ mod tests {
         let (_, _, occurrences) = fast_load_component_roster(&container);
         assert_eq!(
             occurrences
-                .iter()
+                .wire_records()
                 .map(|occurrence| u8::from(occurrence.occurrence_lane_form))
                 .collect::<Vec<_>>(),
             [1, 1, 1]
         );
         assert_eq!(
             occurrences
+                .as_slice()
                 .iter()
                 .map(|occurrence| u8::from(occurrence.marker))
                 .collect::<Vec<_>>(),
             [b'9', b'1', b'9']
         );
         assert_eq!(
-            occurrences[1].marker_source_offset,
-            occurrences[0].marker_source_offset + 1
+            occurrences.as_slice()[1].marker_source_offset,
+            occurrences.as_slice()[0].marker_source_offset + 1
         );
     }
 
@@ -806,7 +815,7 @@ mod tests {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -815,7 +824,7 @@ mod tests {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -834,7 +843,7 @@ mod tests {
                 source_offset: 200 + ordinal,
             })
             .collect::<Vec<_>>();
-        let groups = fast_load_component_object_groups(&uuids, &occurrences, &values);
+        let groups = fast_load_component_object_groups(&uuids, occurrences.as_slice(), &values);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members.occurrences().count(), 3);
         assert_eq!(groups[0].members.object_uuid_values().count(), 3);
@@ -843,7 +852,10 @@ mod tests {
             "nx:test:object-uuid#1"
         );
 
-        assert!(fast_load_component_object_groups(&uuids, &occurrences, &values[..2]).is_empty());
+        assert!(
+            fast_load_component_object_groups(&uuids, occurrences.as_slice(), &values[..2])
+                .is_empty()
+        );
     }
 
     #[test]
@@ -851,7 +863,7 @@ mod tests {
         let container = container(payload(&["plate"], &[1, 2]));
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -861,7 +873,7 @@ mod tests {
         container.data.to_mut()[11] += 1;
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -876,7 +888,7 @@ mod tests {
         bytes[offset + 1] = 2;
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -891,7 +903,7 @@ mod tests {
         bytes[terminator] = b'X';
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -902,7 +914,7 @@ mod tests {
         let container = container(first);
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
 
@@ -932,7 +944,8 @@ mod tests {
     #[test]
     fn occurrence_wire_preserves_closed_source_bytes() {
         let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"nx:fast-load:prototype#253","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
-        let occurrence: FastLoadComponentOccurrence = serde_json::from_str(json).unwrap();
+        let occurrences: FastLoadOccurrences = serde_json::from_str(&format!("[{json}]")).unwrap();
+        let occurrence = occurrences.wire_records().next().unwrap();
         assert_eq!(serde_json::to_string(&occurrence).unwrap(), json);
         for (field, invalid) in [
             ("occurrence_lane_form", 2),
@@ -944,13 +957,15 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid.into();
-            assert!(serde_json::from_value::<FastLoadComponentOccurrence>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                serde_json::from_value::<FastLoadOccurrences>(serde_json::json!([wire]))
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
         let invalid = json.replace("nx:fast-load:prototype#253", "nx:fast-load:prototype#252");
-        assert!(serde_json::from_str::<FastLoadComponentOccurrence>(&invalid).is_err());
+        assert!(serde_json::from_str::<FastLoadOccurrences>(&format!("[{invalid}]")).is_err());
     }
 
     #[test]
