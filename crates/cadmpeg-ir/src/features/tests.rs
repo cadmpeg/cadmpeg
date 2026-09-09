@@ -260,7 +260,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .get_mut(&first_feature)
         .expect("dependency state")
         .evaluation = ConfigurationEvaluation::Active {
-        outputs: Default::default(),
+        outputs: DistinctMembers::default(),
     };
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
@@ -285,7 +285,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: crate::features::ConfigurationBodies::Resolved(Default::default()),
+        bodies: crate::features::ConfigurationBodies::Resolved(DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -1820,7 +1820,7 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
     use crate::features::ConfigurationEvaluation;
 
     let active = ConfigurationEvaluation::Active {
-        outputs: Default::default(),
+        outputs: DistinctMembers::default(),
     };
     assert_eq!(
         serde_json::to_value(&active).unwrap(),

@@ -12,7 +12,7 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
     for evaluation in [
         ConfigurationEvaluation::Suppressed,
         ConfigurationEvaluation::Active {
-            outputs: Default::default(),
+            outputs: DistinctMembers::default(),
         },
         ConfigurationEvaluation::Active {
             outputs: vec![body.clone()].try_into().unwrap(),
@@ -25,7 +25,7 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
         );
     }
     let empty = ConfigurationEvaluation::Active {
-        outputs: Default::default(),
+        outputs: DistinctMembers::default(),
     };
     assert_eq!(
         serde_json::to_value(empty).unwrap(),
@@ -43,7 +43,7 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
     let earlier = FeatureId::mint("test:feature#earlier").unwrap();
     let state = ConfigurationFeatureState {
         evaluation: ConfigurationEvaluation::Active {
-            outputs: Default::default(),
+            outputs: DistinctMembers::default(),
         },
         dependencies: vec![earlier.clone()].try_into().unwrap(),
         definition: FeatureDefinition::DatumPoint {
