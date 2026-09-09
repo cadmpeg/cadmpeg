@@ -1682,6 +1682,20 @@ fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_ind
         ("", 40, false),
         (r#","opaque_index":4"#, 40, false),
     ] {
+        let loci = if first == 0 {
+            loci.replace(
+                "\"first_geometry_reference_offset\":50",
+                "\"first_geometry_reference_offset\":35",
+            )
+            .replace("\"first_role_offset\":60", "\"first_role_offset\":45")
+            .replace(
+                "\"second_geometry_reference_offset\":65",
+                "\"second_geometry_reference_offset\":50",
+            )
+            .replace("\"second_role_offset\":75", "\"second_role_offset\":60")
+        } else {
+            loci.to_owned()
+        };
         let wire = format!(r#"{{{shared}{opaque},"first_geometry_record_index":{first},{loci}"#);
         let parsed = serde_json::from_str::<crate::records::DesignDimensionLocusPair>(&wire);
         if valid {
@@ -1985,3 +1999,5 @@ mod native_ids;
 mod annotation_frames;
 
 mod persistent_text;
+
+mod locus_frames;

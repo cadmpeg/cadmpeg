@@ -643,7 +643,10 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&pair.id)?;
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()];
+            let indices = [
+                pair.loci()[0].geometry_index(),
+                pair.loci()[1].geometry_index(),
+            ];
             exact_definition(scope, parameter, &indices, parameter_id)
                 .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
         })
@@ -703,7 +706,10 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&pair.id)?;
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()];
+            let indices = [
+                pair.loci()[0].geometry_index(),
+                pair.loci()[1].geometry_index(),
+            ];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
@@ -714,8 +720,8 @@ fn project_all_dimension_constraints(
                     symmetric_parallel_line_dimension_definition(
                         first,
                         second,
-                        pair.loci[0].role,
-                        pair.loci[1].role,
+                        pair.loci()[0].role,
+                        pair.loci()[1].role,
                         parameter,
                         parameter_id.clone(),
                         linear_tolerance,
@@ -727,8 +733,8 @@ fn project_all_dimension_constraints(
                         parameter.source_kind(),
                         None,
                         &[
-                            ("first_locus", Some(pair.loci[0].role), indices[0]),
-                            ("second_locus", Some(pair.loci[1].role), indices[1]),
+                            ("first_locus", Some(pair.loci()[0].role), indices[0]),
+                            ("second_locus", Some(pair.loci()[1].role), indices[1]),
                         ],
                         parameter_id,
                     )
@@ -890,11 +896,11 @@ fn project_all_dimension_constraints(
             }
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
-            let indices = [pair.loci[1].geometry_index()];
+            let indices = [pair.loci()[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if design_dimension_unit(parameter) {
-                if let Some(entity) = projected.get(&(scope, pair.loci[1].geometry_index())) {
+                if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     if let Some(definition) = null_locus_dimension_definition(
                         pair,
                         entity,
@@ -926,7 +932,7 @@ fn project_all_dimension_constraints(
                     native_kind: crate::design::literals::nonempty("null_locus"),
                     field: Some(NativeOperandField {
                         name: crate::design::literals::nonempty("locus"),
-                        role: Some(pair.loci[0].role),
+                        role: Some(pair.loci()[0].role),
                     }),
                     object_index: 0,
                     native_ref: None,
@@ -934,8 +940,8 @@ fn project_all_dimension_constraints(
                 native_operand(
                     scope,
                     "locus",
-                    Some(pair.loci[1].role),
-                    pair.loci[1].geometry_index(),
+                    Some(pair.loci()[1].role),
+                    pair.loci()[1].geometry_index(),
                 ),
             ];
             Some(SketchConstraint {
@@ -3380,8 +3386,8 @@ pub(crate) fn null_locus_dimension_definition(
         return Some(definition);
     }
     if source_kind != "Angular Dimension-2"
-        || pair.loci[0].role != 14
-        || pair.loci[1].role != 3
+        || pair.loci()[0].role != 14
+        || pair.loci()[1].role != 3
         || !matches!(entity.geometry, SketchGeometry::Line { .. })
     {
         return None;
@@ -3749,13 +3755,13 @@ pub fn remove_dimension_frame_relations(
     let dimension_frames =
         pairs
             .iter()
-            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset)))
+            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset())))
             .chain(groups.iter().filter_map(|group| {
                 Some((native_stream(&group.id)?.to_owned(), group.byte_offset))
             }))
             .chain(
                 null_pairs.iter().filter_map(|pair| {
-                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset))
+                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset()))
                 }),
             )
             .collect::<HashSet<_>>();
@@ -3811,8 +3817,8 @@ pub fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci[0].geometry_index(), owner)?;
-        insert_dimension_binding(&mut bindings, scope, pair.loci[1].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[0].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for group in groups {
         let Some(scope) = native_stream(&group.id) else {
@@ -3852,7 +3858,7 @@ pub fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci[1].geometry_index(), owner)?;
+        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for point in points {
         let Some(scope) = native_stream(&point.id) else {

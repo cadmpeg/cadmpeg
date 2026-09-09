@@ -781,7 +781,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         payload_byte_length: 0,
         owned_recipe_ids: Vec::new(),
     };
-    let pair = DesignDimensionLocusPair {
+    let pair = DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: format!("{stream}:design-dimension-locus-pair#30"),
         companion_record_index: 99,
         governing_companion_record_index: 22,
@@ -809,7 +809,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         ],
         paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 130,
-    };
+    })
+    .unwrap();
     let group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#140"),
         companion_record_index: 99,
@@ -1100,8 +1101,9 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     let mut zero_parameter = parameter;
     zero_parameter.try_set_evaluated_value(0.0).unwrap();
-    let mut duplicate_pair = pair.clone();
+    let mut duplicate_pair = pair.clone().into_draft();
     duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
+    let duplicate_pair = DesignDimensionLocusPair::try_new(duplicate_pair).unwrap();
     let duplicate = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),

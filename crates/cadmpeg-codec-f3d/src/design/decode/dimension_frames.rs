@@ -675,10 +675,10 @@ pub fn decode_dimension_locus_pairs(
         else {
             continue;
         };
-        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset);
+        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset());
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset,
+            pair.paired_byte_offset(),
             owners,
             parameters.values().copied(),
         ) else {
@@ -732,7 +732,7 @@ pub(crate) fn find_dimension_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -790,7 +790,7 @@ pub(crate) fn parse_dimension_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    Some(DesignDimensionLocusPair {
+    DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
@@ -819,6 +819,7 @@ pub(crate) fn parse_dimension_locus_pair(
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
+    .ok()
 }
 
 /// Decode dimension frames whose ordered operand run contains a null record
@@ -928,10 +929,10 @@ pub fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset);
+        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset());
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset,
+            pair.paired_byte_offset(),
             owners,
             parameters.values().copied(),
         ) else {
@@ -953,7 +954,7 @@ pub(crate) fn find_dimension_null_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -966,8 +967,8 @@ pub(crate) fn find_dimension_null_locus_pair(
         }
         position = at.saturating_add(1);
     }
-    candidates.sort_by_key(|pair| pair.byte_offset);
-    candidates.dedup_by_key(|pair| pair.byte_offset);
+    candidates.sort_by_key(|pair| pair.byte_offset());
+    candidates.dedup_by_key(|pair| pair.byte_offset());
     let [pair] = candidates.as_slice() else {
         return None;
     };
@@ -1008,7 +1009,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         }
         position = at.checked_add(1)?;
     };
-    Some(DesignDimensionLocusPair {
+    DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
@@ -1034,6 +1035,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
+    .ok()
 }
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
