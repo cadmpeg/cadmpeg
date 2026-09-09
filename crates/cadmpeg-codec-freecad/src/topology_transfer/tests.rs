@@ -127,7 +127,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         surfaces: &[],
         polygons3d: &[],
         polygons_on_triangulations: &[],
-        tshapes: &tshapes,
+        tshapes: &crate::brep::TextTShapes::from(tshapes.to_vec()),
         triangulations: &[],
         roots: &roots,
     };
@@ -184,7 +184,7 @@ fn source_indices_follow_depth_first_topology_order() {
         surfaces: &[],
         polygons3d: &[],
         polygons_on_triangulations: &[],
-        tshapes: &tshapes,
+        tshapes: &crate::brep::TextTShapes::from(tshapes),
         triangulations: &[],
         roots: &roots,
     };
@@ -235,7 +235,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         surfaces: &[],
         polygons3d: &[],
         polygons_on_triangulations: &[],
-        tshapes: &tshapes,
+        tshapes: &crate::brep::TextTShapes::from(tshapes),
         triangulations: &[],
         roots: &roots,
     };
@@ -394,7 +394,7 @@ fn edge_representation_selection_follows_family_rules() {
         surfaces: &[],
         polygons3d: &[],
         polygons_on_triangulations: &[],
-        tshapes: &[],
+        tshapes: &crate::brep::TextTShapes::default(),
         triangulations: &[],
         roots: &[],
     };
