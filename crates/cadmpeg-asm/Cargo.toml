@@ -10,6 +10,7 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [features]
+test-support = []
 # `schema` builds the `JsonSchema` derives. It is off by default: the
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`.
 schema = ["dep:schemars", "cadmpeg-ir/schema"]
