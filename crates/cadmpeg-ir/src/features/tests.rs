@@ -1848,7 +1848,7 @@ fn body_selection_admission_rejects_invalid_members() {
         assert!(NativeSelections::try_from(names).is_err());
     }
     assert!(BodySelection::local(vec!["body".into()], " ".into()).is_err());
-    let state = FeatureInputTopologyId::mint("test:input#1").unwrap();
+    let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
     assert!(BodySelection::historical(state, vec![], "native".into()).is_err());
     assert!(GeneratedBodyRef::new(
         super::FeatureId::mint("test:feature#1").unwrap(),
