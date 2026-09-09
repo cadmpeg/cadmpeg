@@ -265,7 +265,7 @@ fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
         let mut wire = serde_json::to_value(triangle_cage()).unwrap();
         wire["vertices"][0]["secondary_grips"] =
             serde_json::json!({ "direction": "north", "wedges": wedges });
-        rejects_cage_wire(wire);
+        assert!(serde_json::from_value::<super::SubdCage>(wire).is_err());
     }
 }
 
