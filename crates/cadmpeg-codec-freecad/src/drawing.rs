@@ -127,13 +127,7 @@ pub(crate) fn transfer_neutral(
         let y = parameter("Y")?;
         let position = match (x, y) {
             (None, None) => None,
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some([x, y]),
-            (Some(_), Some(_)) => {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite position",
-                    record.id
-                )))
-            }
+            (Some(x), Some(y)) => Some([x, y]),
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "drawing {} position requires both X and Y",
