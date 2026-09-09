@@ -152,11 +152,9 @@ enum Command {
             num_args = 0..=1,
             require_equals = true,
             default_missing_value = "any",
-            default_value_t = LossPolicy::Allow,
-            hide_default_value = true,
             value_name = "SCOPE"
         )]
-        reject_lossy: LossPolicy,
+        reject_lossy: Option<LossPolicy>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -393,7 +391,7 @@ fn main() -> ExitCode {
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
-                losses: reject_lossy,
+                losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
                 allow_empty,
                 destination: destinations.destination,

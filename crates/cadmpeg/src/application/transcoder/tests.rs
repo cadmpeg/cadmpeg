@@ -362,3 +362,28 @@ fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
     assert!(message.contains("ap242e3"), "{message}");
     assert!(message.contains("iges:5.3-fixed-ascii"), "{message}");
 }
+
+#[test]
+fn loss_policy_cli_preserves_omission_and_rejects_allow_spelling() {
+    use clap::Parser;
+    for (flag, expected) in [
+        (None, LossPolicy::Allow),
+        (Some("--reject-lossy"), LossPolicy::RejectAny),
+        (Some("--reject-lossy=decode"), LossPolicy::RejectDecode),
+        (Some("--reject-lossy=export"), LossPolicy::RejectExport),
+        (Some("--reject-lossy=any"), LossPolicy::RejectAny),
+    ] {
+        let mut args = vec!["cadmpeg", "convert", "input.step"];
+        args.extend(flag);
+        let crate::Command::Convert { reject_lossy, .. } =
+            crate::Cli::try_parse_from(args).unwrap().command
+        else {
+            panic!("expected convert command");
+        };
+        assert_eq!(reject_lossy.unwrap_or_default(), expected);
+    }
+    let error =
+        crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", "--reject-lossy=allow"])
+            .unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+}
