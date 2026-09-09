@@ -7,14 +7,13 @@ use std::io::{Seek, SeekFrom, Write};
 mod model;
 pub(crate) mod target;
 use model::{
-    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritablePcurve,
-    WritableVertex,
+    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
+    WritablePcurve, WritableVertex,
 };
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -257,33 +256,6 @@ struct BrepScope {
 struct BrepPayload {
     body: Vec<u8>,
     direct: Vec<u8>,
-}
-
-enum WritableObjectCurve<'a> {
-    Circle {
-        center: cadmpeg_ir::math::Point3,
-        axis: cadmpeg_ir::math::Vector3,
-        ref_direction: cadmpeg_ir::math::Vector3,
-        radius: f64,
-    },
-    Nurbs(&'a cadmpeg_ir::geometry::NurbsCurve),
-}
-
-impl WritableObjectCurve<'_> {
-    fn payload(&self) -> ([u8; 16], Vec<u8>) {
-        match self {
-            Self::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => (
-                ARC_CLASS,
-                circle_payload(*center, *axis, *ref_direction, *radius),
-            ),
-            Self::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
-        }
-    }
 }
 
 struct WritePlan<'a> {
@@ -659,40 +631,14 @@ fn prepare_write(
     for scope in &breps {
         topology_points.extend(scope.points.iter().cloned());
     }
-    let mut curves = Vec::new();
-    for curve in &model.curves {
-        if topology_curves.contains(curve.id.as_str()) {
-            continue;
-        }
-        if curve.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "curve {} source-object state is not writable",
-                curve.id.as_str()
-            )));
-        }
-        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
-            if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                curves.push((curve.id.as_str(), WritableObjectCurve::Nurbs(nurbs)));
-                continue;
-            }
-            return Err(CodecError::NotImplemented(format!(
-                "Rhino writer cannot represent curve {} as a native object",
-                curve.id.as_str()
-            )));
-        };
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
-        check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
-        curves.push((
-            curve.id.as_str(),
-            WritableObjectCurve::Circle {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: *radius,
-            },
-        ));
-    }
+    let curves = model
+        .curves
+        .iter()
+        .filter(|curve| !topology_curves.contains(curve.id.as_str()))
+        .map(|curve| {
+            WritableObjectCurve::try_new(curve).map(|geometry| (curve.id.as_str(), geometry))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let surfaces = model
         .surfaces
         .iter()
