@@ -210,9 +210,8 @@ pub enum FaceContainment {
 }
 
 /// Native sidedness fields stored on one ASM face record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "FaceSidednessWire", into = "FaceSidednessWire")]
 pub struct FaceSidedness {
     /// Source namespace of the native record.
     pub source_namespace: identity::NativeRecordNamespace,
@@ -226,6 +225,19 @@ pub struct FaceSidedness {
     pub carrier_flipped: bool,
     /// Conditional containment direction; absence denotes a single-sided face.
     pub containment: Option<FaceContainment>,
+}
+
+impl Serialize for FaceSidedness {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FaceSidednessWire::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FaceSidedness {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        FaceSidednessWire::deserialize(deserializer)
+            .and_then(|w| FaceSidedness::try_from(w).map_err(serde::de::Error::custom))
+    }
 }
 
 impl FaceSidedness {
