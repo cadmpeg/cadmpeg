@@ -974,28 +974,19 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let (expected_class, output_slot) = match feature.evaluation.definition() {
-            cadmpeg_ir::features::FeatureDefinition::Extrude { .. } => {
-                ("3111a90cd0118b83000819b00524dc09", 26)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Fillet { .. } => {
-                ("dc15f7f1d1114205000830b00524dc09", 15)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Chamfer { .. } => {
-                ("3f7100f9d2118b6f6000f0a89dccefb0", 11)
-            }
-            cadmpeg_ir::features::FeatureDefinition::Hole { .. } => {
-                ("1a7d751fd2119c54a00020803603c8c9", 24)
-            }
-            _ => ("", usize::MAX),
+        let Some(family) =
+            crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
+        else {
+            continue;
         };
-        if expected_class.is_empty()
-            || labels
-                .get(&(
-                    raw_feature.identity.segment_token.as_str(),
-                    raw_feature.identity.record_ordinal,
-                ))
-                .is_none_or(|label| label.class_id() != expected_class)
+        let expected_class = family.class_id();
+        let output_slot = family.output_slot();
+        if labels
+            .get(&(
+                raw_feature.identity.segment_token.as_str(),
+                raw_feature.identity.record_ordinal,
+            ))
+            .is_none_or(|label| label.class_id() != expected_class)
         {
             findings.push(finding(
                 Check::NativeLinks,

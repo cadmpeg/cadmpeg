@@ -28,7 +28,7 @@ pub(crate) enum UfrxRecord {
         embedded_references: Vec<EmbeddedReferenceRecord>,
         occurrences: Vec<UfrxOccurrenceRecord>,
         tail_len: u64,
-        tail_sha256: String,
+        tail_sha256: Sha256Hex,
     },
     Unsupported {
         id: String,
@@ -36,7 +36,7 @@ pub(crate) enum UfrxRecord {
         schema: u16,
         section_versions: Vec<u16>,
         tail_len: u64,
-        tail_sha256: String,
+        tail_sha256: Sha256Hex,
         detail: String,
     },
     Malformed {
@@ -268,7 +268,7 @@ impl From<&UfrxRecord> for UfrxRecordWire {
                 embedded_reference_count: embedded_references.len() as u64,
                 occurrence_count: occurrences.len() as u64,
                 tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256.clone()),
+                tail_sha256: Some(tail_sha256.clone().into()),
                 detail: None,
             },
             UfrxRecord::Unsupported {
@@ -293,7 +293,7 @@ impl From<&UfrxRecord> for UfrxRecordWire {
                 embedded_reference_count: 0,
                 occurrence_count: 0,
                 tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256.clone()),
+                tail_sha256: Some(tail_sha256.clone().into()),
                 detail: Some(detail.clone()),
             },
             UfrxRecord::Malformed {
@@ -395,9 +395,11 @@ impl UfrxRecordWire {
                 embedded_references,
                 occurrences,
                 tail_len: wire.tail_len,
-                tail_sha256: wire
-                    .tail_sha256
-                    .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                tail_sha256: Sha256Hex::try_from(
+                    wire.tail_sha256
+                        .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                )
+                .map_err(|detail| format!("tail_sha256: {detail}"))?,
             }),
             UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
                 id: wire.id,
@@ -409,9 +411,11 @@ impl UfrxRecordWire {
                     .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
                 section_versions: wire.section_versions,
                 tail_len: wire.tail_len,
-                tail_sha256: wire
-                    .tail_sha256
-                    .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
+                tail_sha256: Sha256Hex::try_from(
+                    wire.tail_sha256
+                        .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
+                )
+                .map_err(|detail| format!("tail_sha256: {detail}"))?,
                 detail: wire
                     .detail
                     .ok_or_else(|| "unsupported UFRxDoc requires detail".to_owned())?,
@@ -460,7 +464,8 @@ pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) display_name: String,
     pub(crate) state_groups: Vec<[u16; 3]>,
     pub(crate) state: [u16; 2],
-    pub(crate) document_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) document_id: Option<String>,
     pub(crate) database_id: String,
     pub(crate) reference_id: u32,
     pub(crate) occurrence_count: u32,
@@ -471,23 +476,18 @@ pub(crate) struct ExternalReferenceRecordWire {
 impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
     type Error = String;
     fn try_from(wire: ExternalReferenceRecordWire) -> Result<Self, Self::Error> {
+        let document_id = wire
+            .document_id
+            .filter(|value| !value.chars().all(|character| character == '0'))
+            .and_then(NonEmptyString::new);
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
             identity: match NonEmptyString::new(wire.path) {
-                Some(path) => ExternalReferenceIdentity::Path {
-                    path,
-                    document_id: wire.document_id,
-                },
-                None => {
-                    if wire.document_id.chars().all(|character| character == '0') {
-                        return Err("path or a nonzero document_id is required".into());
-                    }
-                    ExternalReferenceIdentity::DocumentId(
-                        NonEmptyString::new(wire.document_id)
-                            .ok_or("document_id must not be empty")?,
-                    )
-                }
+                Some(path) => ExternalReferenceIdentity::Path { path, document_id },
+                None => ExternalReferenceIdentity::DocumentId(
+                    document_id.ok_or("path or a nonzero document_id is required")?,
+                ),
             },
             library_id: wire.library_id,
             library_name: wire.library_name,
@@ -506,11 +506,12 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
 impl From<ExternalReferenceRecord> for ExternalReferenceRecordWire {
     fn from(value: ExternalReferenceRecord) -> Self {
         let (path, document_id) = match value.identity {
-            ExternalReferenceIdentity::Path { path, document_id } => {
-                (path.as_str().to_owned(), document_id)
-            }
+            ExternalReferenceIdentity::Path { path, document_id } => (
+                path.as_str().to_owned(),
+                document_id.map(|value| value.as_str().to_owned()),
+            ),
             ExternalReferenceIdentity::DocumentId(document_id) => {
-                (String::new(), document_id.as_str().to_owned())
+                (String::new(), Some(document_id.as_str().to_owned()))
             }
         };
         Self {
@@ -536,7 +537,7 @@ impl From<ExternalReferenceRecord> for ExternalReferenceRecordWire {
 enum ExternalReferenceIdentity {
     Path {
         path: NonEmptyString,
-        document_id: String,
+        document_id: Option<NonEmptyString>,
     },
     DocumentId(NonEmptyString),
 }
@@ -805,6 +806,11 @@ mod tests {
             wire["document_id"] = serde_json::json!(document_id);
             let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
             if accepted {
+                if document_id.chars().all(|character| character == '0') {
+                    wire.as_object_mut()
+                        .expect("external-reference object fixture")
+                        .remove("document_id");
+                }
                 assert_eq!(
                     serde_json::to_value(record.expect("valid native record fixture"))
                         .expect("valid native record fixture"),
@@ -963,7 +969,7 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: "0".repeat(64),
+            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
         };
         let mut namespace = NativeNamespace::default();
         record.install(&mut namespace).expect("valid test fixture");
@@ -1009,7 +1015,7 @@ mod tests {
                 schema: 1,
                 section_versions: vec![1],
                 tail_len: 0,
-                tail_sha256: "0".repeat(64),
+                tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
                 detail: "schema".into(),
             },
         ] {

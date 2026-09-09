@@ -119,11 +119,32 @@ pub(crate) struct RenderingStyleExtension {
     pub(crate) guid: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum UnresolvedCause {
+    GraphicsFace,
+    FaceKey,
+    StyleCollection,
+    ColorStyle,
+    Color,
+}
+
+impl UnresolvedCause {
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::GraphicsFace => "graphics face key is ambiguous",
+            Self::FaceKey => "model face key is ambiguous",
+            Self::StyleCollection => "style collection is missing or ambiguous",
+            Self::ColorStyle => "primary color style is missing or ambiguous",
+            Self::Color => "primary color is invalid",
+        }
+    }
+}
+
 pub(crate) struct PresentationProjection {
     pub(crate) appearances: Vec<Appearance>,
     pub(crate) bindings: Vec<AppearanceBinding>,
     pub(crate) unresolved_defaults: usize,
-    pub(crate) unresolved_face_overrides: usize,
+    pub(crate) unresolved_face_overrides: BTreeMap<UnresolvedCause, usize>,
 }
 
 pub(crate) fn project_bindings(
@@ -147,7 +168,7 @@ fn project_default_bindings(
             appearances: Vec::new(),
             bindings: Vec::new(),
             unresolved_defaults: usize::from(!inventory.default_styles.is_empty()),
-            unresolved_face_overrides: 0,
+            unresolved_face_overrides: BTreeMap::new(),
         };
     }
     let mut selected = Vec::new();
@@ -186,7 +207,7 @@ fn project_default_bindings(
             appearances: Vec::new(),
             bindings: Vec::new(),
             unresolved_defaults: usize::from(!inventory.default_styles.is_empty()),
-            unresolved_face_overrides: 0,
+            unresolved_face_overrides: BTreeMap::new(),
         };
     }
     let style = selected[0];
@@ -200,7 +221,7 @@ fn project_default_bindings(
             appearances: Vec::new(),
             bindings: Vec::new(),
             unresolved_defaults: 1,
-            unresolved_face_overrides: 0,
+            unresolved_face_overrides: BTreeMap::new(),
         };
     };
     let library_id = style
@@ -228,7 +249,7 @@ fn project_default_bindings(
             appearances: Vec::new(),
             bindings: Vec::new(),
             unresolved_defaults: 1,
-            unresolved_face_overrides: 0,
+            unresolved_face_overrides: BTreeMap::new(),
         };
     }
     let appearance = &matches[0].id;
@@ -256,7 +277,7 @@ fn project_default_bindings(
         appearances: Vec::new(),
         bindings,
         unresolved_defaults: 0,
-        unresolved_face_overrides: 0,
+        unresolved_face_overrides: BTreeMap::new(),
     }
 }
 
@@ -282,22 +303,25 @@ fn project_face_bindings(
             continue;
         }
         if matching_faces.len() != 1 {
-            projection.unresolved_face_overrides +=
-                usize::from(matching_faces.iter().any(|face| face.styles.index != 0));
+            if matching_faces.iter().any(|face| face.styles.index != 0) {
+                *projection
+                    .unresolved_face_overrides
+                    .entry(UnresolvedCause::GraphicsFace)
+                    .or_default() += 1;
+            }
             continue;
         }
         let graphics_face = matching_faces[0];
-        if graphics_face.styles.index == 0 {
-            continue;
-        }
-        if key_counts.get(key) != Some(&1) {
-            projection.unresolved_face_overrides += 1;
-            continue;
-        }
         let Some(collection_ordinal) = graphics_face.styles.index.checked_sub(1) else {
-            projection.unresolved_face_overrides += 1;
             continue;
         };
+        if key_counts.get(key) != Some(&1) {
+            *projection
+                .unresolved_face_overrides
+                .entry(UnresolvedCause::FaceKey)
+                .or_default() += 1;
+            continue;
+        }
         let collections = inventory
             .graphics_style_collections
             .iter()
@@ -307,7 +331,10 @@ fn project_face_bindings(
             })
             .collect::<Vec<_>>();
         if collections.len() != 1 {
-            projection.unresolved_face_overrides += 1;
+            *projection
+                .unresolved_face_overrides
+                .entry(UnresolvedCause::StyleCollection)
+                .or_default() += 1;
             continue;
         }
         let collection = collections[0];
@@ -327,13 +354,19 @@ fn project_face_bindings(
             })
             .collect::<Vec<_>>();
         if color_styles.len() != 1 {
-            projection.unresolved_face_overrides += 1;
+            *projection
+                .unresolved_face_overrides
+                .entry(UnresolvedCause::ColorStyle)
+                .or_default() += 1;
             continue;
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1];
         let Some(color) = Color::new(r, g, b, a) else {
-            projection.unresolved_face_overrides += 1;
+            *projection
+                .unresolved_face_overrides
+                .entry(UnresolvedCause::Color)
+                .or_default() += 1;
             continue;
         };
         let appearance_id = appearance_ids
@@ -950,8 +983,11 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
-pub(crate) fn suffix_fields(source: View<'_>) -> (u64, String) {
-    (source.window().len() as u64, sha256_hex(source.window()))
+pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sha256Hex) {
+    (
+        source.window().len() as u64,
+        crate::native::digest::Sha256Hex::digest(source.window()),
+    )
 }
 
 #[cfg(test)]
@@ -1279,7 +1315,7 @@ mod tests {
 
         let projection = project_bindings(&inventory, &[], &[], &face_keys);
 
-        assert_eq!(projection.unresolved_face_overrides, 0);
+        assert!(projection.unresolved_face_overrides.is_empty());
         let [appearance] = projection.appearances.as_slice() else {
             panic!("one primary-color appearance must be projected");
         };
