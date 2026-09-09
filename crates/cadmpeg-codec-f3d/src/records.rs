@@ -3898,7 +3898,7 @@ impl DesignEntityHeader {
     }
 
     /// Mutable located sketch reference-list slot.
-    pub fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
+    pub(crate) fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
         match &mut self.registration.0 {
             DesignEntityRegistrationKind::Sketch { references, .. } => references.as_mut(),
             DesignEntityRegistrationKind::Other(_) => None,
@@ -5428,7 +5428,7 @@ impl DesignMeshFeature {
     pub fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
-    pub fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
+    pub(crate) fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
         &mut self.bodies
     }
     fn body_count_offsets(&self) -> [u64; 3] {
