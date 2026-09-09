@@ -106,6 +106,26 @@ impl NonEmptyString {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Wraps a rendering whose non-emptiness [`nonempty_literal`] proved at compile time.
+    #[doc(hidden)]
+    pub fn from_proven_literal(value: String) -> Self {
+        Self(value)
+    }
+}
+
+/// Builds a [`NonEmptyString`] from a format literal whose first character is literal text.
+#[macro_export]
+macro_rules! nonempty_literal {
+    ($template:literal $(, $argument:expr)* $(,)?) => {{
+        const {
+            assert!(
+                !$template.is_empty() && $template.as_bytes()[0] != b'{',
+                "a nonempty literal must start with literal text",
+            );
+        };
+        $crate::products::NonEmptyString::from_proven_literal(format!($template $(, $argument)*))
+    }};
 }
 
 impl PartialEq<str> for NonEmptyString {
