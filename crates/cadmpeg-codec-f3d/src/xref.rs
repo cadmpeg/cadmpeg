@@ -71,7 +71,7 @@ pub struct Docstruct {
     /// Document type: `assembly-design` or `part-design`.
     pub doc_type: String,
     /// Document subtype, e.g. `assembly-standard` or `part-sheetmetal`.
-    pub subtype: String,
+    pub subtype: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -254,8 +254,7 @@ pub fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
         subtype: docstruct
             .get("subtype")
             .and_then(|subtype| subtype.as_str())
-            .unwrap_or_default()
-            .to_string(),
+            .map(str::to_owned),
     })
 }
 
