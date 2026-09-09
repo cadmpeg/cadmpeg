@@ -22,7 +22,7 @@ use clap::builder::TypedValueParser;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
-use crate::application::artifact_store::FileDestination;
+use crate::application::artifact_store::{OptionalFileDestination, OutputDestinations};
 use crate::application::transcoder::{DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
@@ -138,15 +138,8 @@ enum Command {
         /// output extension when omitted.
         #[arg(short, long, visible_alias = "to", value_name = "FORMAT[:DIALECT]")]
         format: Option<String>,
-        /// Output file; omit to write to standard output.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Replace an existing output or command-report file.
-        #[arg(long)]
-        force: bool,
-        /// Write a JSON report to this file.
-        #[arg(long)]
-        report: Option<PathBuf>,
+        #[command(flatten)]
+        destinations: OutputDestinations,
         /// Write output even if the check finds errors. The check runs and prints findings. Skip the refusal.
         #[arg(long)]
         allow_errors: bool,
@@ -217,15 +210,8 @@ enum Command {
         file: inspect::FileArg,
         #[command(flatten)]
         _reject_json: crate::reject_json::RejectJson,
-        /// Output file; omit to write CADIR to standard output.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Replace an existing output file.
-        #[arg(long)]
-        force: bool,
-        /// Write a JSON report to this file.
-        #[arg(long)]
-        report: Option<PathBuf>,
+        #[command(flatten)]
+        destinations: OutputDestinations,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -248,6 +234,7 @@ enum Command {
     ///
     /// Accepts a native CAD file or CADIR JSON.
     #[command(
+        mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
         display_order = 4,
         after_help = "Examples:\n  cadmpeg check part.sldprt"
     )]
@@ -257,12 +244,8 @@ enum Command {
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a JSON report to this file.
-        #[arg(short = 'o', long, visible_alias = "output")]
-        report: Option<PathBuf>,
-        /// Replace an existing report file.
-        #[arg(long)]
-        force: bool,
+        #[command(flatten)]
+        report: OptionalFileDestination,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -273,6 +256,7 @@ enum Command {
     /// Compares decoded geometry and topology of two files.
     /// Accepts native CAD files or CADIR JSON.
     #[command(
+        mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")),
         display_order = 3,
         after_help = "Examples:\n  cadmpeg diff a.sldprt b.step\n  cadmpeg diff before.f3d after.f3d\n\n\
                       Exit status 1 means the models differ.\n\
@@ -298,12 +282,8 @@ enum Command {
         /// Write JSON to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a JSON report to this file.
-        #[arg(short = 'o', long, visible_alias = "output")]
-        report: Option<PathBuf>,
-        /// Replace an existing report file.
-        #[arg(long)]
-        force: bool,
+        #[command(flatten)]
+        report: OptionalFileDestination,
         #[command(flatten)]
         decode: DecodeArgs,
     },
@@ -340,31 +320,26 @@ fn main() -> ExitCode {
             args.file.path(),
             args.input_format,
             args.json,
-            FileDestination::optional(args.report, args.force).as_ref(),
+            args.report.0.as_ref(),
             args.limits.limits(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Dump {
             file,
             _reject_json: _,
-            output,
-            force,
-            report,
+            destinations,
             input_args,
             decode,
         } => commands::dump(
             &inputs,
             file.path(),
-            &match output {
-                Some(path) => DestinationPolicy::File(FileDestination {
-                    path,
-                    overwrite: force,
-                }),
+            &match destinations.output.0 {
+                Some(file) => DestinationPolicy::File(file),
                 None => DestinationPolicy::Stdout {
                     allow_binary: false,
                 },
             },
-            FileDestination::optional(report, force).as_ref(),
+            destinations.report.as_ref(),
             input_args.input_format,
             &decode,
         )
@@ -376,7 +351,6 @@ fn main() -> ExitCode {
             file,
             json,
             report,
-            force,
             input_args,
             decode,
         } => commands::check_cmd(
@@ -385,7 +359,7 @@ fn main() -> ExitCode {
             input_args.input_format,
             &decode,
             json,
-            FileDestination::optional(report, force).as_ref(),
+            report.0.as_ref(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
@@ -395,7 +369,6 @@ fn main() -> ExitCode {
             input_format_b,
             json,
             report,
-            force,
             decode,
         } => commands::diff(
             &inputs,
@@ -409,16 +382,14 @@ fn main() -> ExitCode {
             },
             &decode,
             json,
-            FileDestination::optional(report, force).as_ref(),
+            report.0.as_ref(),
         ),
         Command::Convert {
             file,
             _reject_json: _,
             binary_stdout,
             format,
-            output,
-            force,
-            report,
+            destinations,
             allow_errors,
             allow_empty,
             reject_lossy,
@@ -429,16 +400,13 @@ fn main() -> ExitCode {
                 losses: reject_lossy,
                 allow_errors,
                 allow_empty,
-                destination: match output {
-                    Some(path) => DestinationPolicy::File(FileDestination {
-                        path,
-                        overwrite: force,
-                    }),
+                destination: match destinations.output.0 {
+                    Some(file) => DestinationPolicy::File(file),
                     None => DestinationPolicy::Stdout {
                         allow_binary: binary_stdout,
                     },
                 },
-                report: FileDestination::optional(report, force),
+                report: destinations.report,
                 forced_input: input_args.input_format,
             };
             commands::convert(

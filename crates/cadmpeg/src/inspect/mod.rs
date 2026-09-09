@@ -22,6 +22,7 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use crate::application::artifact_store::OptionalFileDestination;
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
 use clap::builder::TypedValueParser;
@@ -42,18 +43,15 @@ pub enum InspectArgs {
 
 /// Arguments for a codec-aware container summary.
 #[derive(Debug, Args)]
+#[command(mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")))]
 pub struct SummaryArgs {
     #[command(flatten)]
     pub file: FileArg,
     /// Write JSON to standard output.
     #[arg(long)]
     pub json: bool,
-    /// Write a JSON report to this file.
-    #[arg(short = 'o', long, visible_alias = "output")]
-    pub report: Option<PathBuf>,
-    /// Replace an existing report file.
-    #[arg(long)]
-    pub force: bool,
+    #[command(flatten)]
+    pub report: OptionalFileDestination,
     /// Resource-limit profile applied during inspection.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
@@ -452,34 +450,11 @@ pub enum ExtractDestination {
     File(crate::application::artifact_store::FileDestination),
 }
 
-fn parse_destination(value: std::ffi::OsString) -> ExtractDestination {
-    if value == "-" {
-        ExtractDestination::Stdout
-    } else {
-        ExtractDestination::File(crate::application::artifact_store::FileDestination {
-            path: value.into(),
-            overwrite: false,
-        })
-    }
-}
-
 impl clap::Args for ExtractDestination {
     fn augment_args(command: clap::Command) -> clap::Command {
-        command
-            .arg(
-                clap::Arg::new("output")
-                    .short('o')
-                    .long("output")
-                    .help("Output file; omit it or pass - for standard output")
-                    .default_value("-")
-                    .value_parser(clap::builder::OsStringValueParser::new().map(parse_destination)),
-            )
-            .arg(
-                clap::Arg::new("force")
-                    .long("force")
-                    .help("Replace an existing output file")
-                    .action(clap::ArgAction::SetTrue),
-            )
+        OptionalFileDestination::augment_args(command).mut_arg("output", |arg| {
+            arg.help("Output file; omit it or pass - for standard output")
+        })
     }
 
     fn augment_args_for_update(command: clap::Command) -> clap::Command {
@@ -489,14 +464,12 @@ impl clap::Args for ExtractDestination {
 
 impl clap::FromArgMatches for ExtractDestination {
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        let mut destination = matches
-            .get_one::<Self>("output")
-            .cloned()
-            .unwrap_or(Self::Stdout);
-        if let Self::File(file) = &mut destination {
-            file.overwrite = matches.get_flag("force");
-        }
-        Ok(destination)
+        Ok(
+            match OptionalFileDestination::from_arg_matches(matches)?.0 {
+                Some(file) if file.path != Path::new("-") => Self::File(file),
+                Some(_) | None => Self::Stdout,
+            },
+        )
     }
 
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
