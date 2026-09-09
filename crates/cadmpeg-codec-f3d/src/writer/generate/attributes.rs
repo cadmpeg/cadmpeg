@@ -301,6 +301,7 @@ pub(crate) fn source_less_body_key(
         .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
 }
 
+#[derive(Clone, Copy)]
 enum ColorOwner {
     Body,
     Face,
