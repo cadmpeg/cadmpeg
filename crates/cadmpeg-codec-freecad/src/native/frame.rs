@@ -5,7 +5,7 @@ use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
 /// A finite right-handed orthonormal affine frame.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
 pub struct FiniteFrame(Transform);
 

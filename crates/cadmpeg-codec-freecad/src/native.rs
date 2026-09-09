@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn attachment_accepts_accumulated_rigid_tolerance() {
-        let mut rows = crate::product::identity();
+        let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
         rows[0][0] += 4.0e-10;
         let frame = super::FiniteFrame::try_from(rows).unwrap();
         let product = frame.transform().compose(frame.transform()).unwrap();
@@ -206,8 +206,8 @@ mod tests {
             "object".into(),
             vec![],
             None,
-            Some(rows),
-            Some(rows)
+            Some(frame),
+            Some(frame)
         )
         .is_ok());
     }
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut matrix = crate::product::identity();
+            let mut matrix = cadmpeg_ir::transform::Transform::identity().rows();
             matrix[0][3] = bad;
             for offset in [false, true] {
                 let wire = super::AttachmentRecordWire {
@@ -550,22 +550,16 @@ impl AttachmentRecord {
         object: String,
         supports: Vec<LinkTarget>,
         map_mode: Option<MapModeIndex>,
-        placement: Option<[[f64; 4]; 4]>,
-        offset: Option<[[f64; 4]; 4]>,
+        placement: Option<FiniteFrame>,
+        offset: Option<FiniteFrame>,
     ) -> Result<Self, String> {
         let record = Self {
             id,
             object,
             supports,
             map_mode,
-            placement: placement
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("placement: {error}"))?,
-            offset: offset
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("offset: {error}"))?,
+            placement,
+            offset,
         };
         if let (Some(placement), Some(offset)) = (record.placement, record.offset) {
             placement
@@ -626,8 +620,14 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
             wire.object,
             wire.supports,
             wire.map_mode,
-            wire.placement,
-            wire.offset,
+            wire.placement
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("placement: {error}"))?,
+            wire.offset
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("offset: {error}"))?,
         )?;
         if wire.effective_frame != record.effective_frame() {
             return Err(
@@ -1143,15 +1143,10 @@ pub struct LinkArray {
 impl LinkArray {
     pub(crate) fn try_new(
         count: Option<u64>,
-        transforms: Vec<[[f64; 4]; 4]>,
+        transforms: Vec<FiniteFrame>,
         scales: Vec<[f64; 3]>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
-        let transforms = transforms
-            .into_iter()
-            .map(FiniteFrame::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("element_transforms: {error}"))?;
         let scales = scales
             .into_iter()
             .map(FiniteVec3::try_from)
@@ -1495,7 +1490,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                 placement_property: wire.placement_property,
                 array: LinkArray::try_new(
                     wire.element_count,
-                    wire.element_transforms,
+                    wire.element_transforms
+                        .into_iter()
+                        .map(FiniteFrame::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("element_transforms: {error}"))?,
                     wire.element_scales,
                     wire.element_objects,
                 )?,
