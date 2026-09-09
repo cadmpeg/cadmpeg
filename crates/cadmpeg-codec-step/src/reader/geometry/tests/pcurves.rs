@@ -166,11 +166,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
             .procedural_curve_owner(&curve.id)
             .map(CurveId::as_str)
             == Some("step:data:curve#70")
-            && matches!(
-                curve.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
-                    if source.as_str() == "step:data:curve#16"
-            )
+            && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.source(),), (source,) if source.as_str() == "step:data:curve#16"), _ => false }
     }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss

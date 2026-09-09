@@ -412,21 +412,20 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: curve_id,
-                    parameter_interval: None,
-                    direction: Vector3::new(
-                        frame.direction[0],
-                        frame.direction[1],
-                        frame.direction[2],
-                    ),
-                    native_position: None,
-                    revision_form: None,
-                },
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                curve_id,
+                None,
+                Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
+                None,
                 None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         transferred += 1;
@@ -582,17 +581,20 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: curve_id,
-                    parameter_interval: Some([0.0, 1.0]),
-                    direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
-                    native_position: None,
-                    revision_form: None,
-                },
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                curve_id,
+                Some([0.0, 1.0]),
+                Vector3::new(sweep[0], sweep[1], sweep[2]),
+                None,
                 None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         transferred += 1;

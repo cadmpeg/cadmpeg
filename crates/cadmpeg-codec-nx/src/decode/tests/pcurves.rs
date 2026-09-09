@@ -1075,16 +1075,19 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
     ]);
     let procedural = ProceduralSurface::try_new(
         ProceduralSurfaceId::mint("test:model:entity#nx:test:offset").expect("identity grammar"),
-        ProceduralSurfaceDefinition::Offset {
-            support: support.clone(),
-            distance: 4.0,
-            u_sense: Some(0),
-            v_sense: Some(0),
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
+        ProceduralSurfaceDefinition::Offset(
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support.clone(),
+                4.0,
+                Some(0),
+                Some(0),
+                None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
+            )
+            .unwrap(),
+        ),
         Some(0.0),
         None,
     )
@@ -1634,16 +1637,19 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             construction,
-            ProceduralSurfaceDefinition::Offset {
-                support,
-                distance: 1.0,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    1.0,
+                    Some(0),
+                    Some(0),
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

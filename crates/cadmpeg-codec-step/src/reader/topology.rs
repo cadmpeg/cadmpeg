@@ -3928,20 +3928,24 @@ fn surface_selection_parameter_domains(
         })
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     match definition {
-        Some(ProceduralSurfaceDefinition::Subset {
-            parameter_ranges, ..
-        }) => [
-            subset_parameter_domain(parameter_ranges[0]),
-            subset_parameter_domain(parameter_ranges[1]),
-        ],
+        Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
+            let parameter_ranges = &definition_payload.parameter_ranges();
+            [
+                subset_parameter_domain(parameter_ranges[0]),
+                subset_parameter_domain(parameter_ranges[1]),
+            ]
+        }
         Some(ProceduralSurfaceDefinition::AxisRevolution { directrix, .. }) => [
             Some([0.0, std::f64::consts::TAU]),
             curve_selection_parameter_domain(index, directrix),
         ],
-        Some(
-            ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. },
-        ) => [curve_selection_parameter_domain(index, directrix), None],
+        Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
+            curve_selection_parameter_domain(index, payload.directrix()),
+            None,
+        ],
+        Some(ProceduralSurfaceDefinition::LinearSweep { directrix, .. }) => {
+            [curve_selection_parameter_domain(index, directrix), None]
+        }
         Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
             .surfaces(source.as_str())
             .map_or([None, None], |source_surface| {

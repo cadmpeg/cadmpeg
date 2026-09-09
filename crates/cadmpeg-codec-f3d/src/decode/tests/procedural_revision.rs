@@ -874,14 +874,14 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
 
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        directrix,
-        parameter_interval,
-        native_position,
-        revision_form: None,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
+        panic!("expected extrusion")
+    };
+    let direction = definition_payload.direction();
+    let directrix = definition_payload.directrix();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let native_position = &definition_payload.native_position();
+    let None = definition_payload.revision_form() else {
         panic!("expected extrusion")
     };
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
@@ -915,15 +915,12 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         .expect("versioned extrusion decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
-    let ProceduralSurfaceDefinition::Extrusion {
-        direction,
-        parameter_interval,
-        native_position,
-        ..
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
+    let direction = definition_payload.direction();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let native_position = &definition_payload.native_position();
     assert_eq!(*parameter_interval, Some([0.25, 0.75]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
@@ -967,18 +964,29 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion {
-                parameter_interval,
-                direction,
-                native_position,
-                ..
-            } = definition
-            else {
+            let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
                 panic!("expected extrusion")
             };
-            *parameter_interval = Some([-0.5, 1.25]);
-            *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
-            *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+            let mut parameter_interval_value = definition_payload.parameter_interval();
+            let parameter_interval = &mut parameter_interval_value;
+            let mut direction_value = *definition_payload.direction();
+            let direction = &mut direction_value;
+            let mut native_position_value = definition_payload.native_position();
+            let native_position = &mut native_position_value;
+            {
+                *parameter_interval = Some([-0.5, 1.25]);
+                *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+                *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    definition_payload.directrix().clone(),
+                    parameter_interval_value,
+                    direction_value,
+                    native_position_value,
+                    definition_payload.revision_form().clone(),
+                )
+                .unwrap();
         })
         .unwrap();
 
@@ -988,15 +996,14 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
-    let ProceduralSurfaceDefinition::Extrusion {
-        parameter_interval,
-        direction,
-        native_position,
-        ..
-    } = &round_trip.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+        &round_trip.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip extrusion")
     };
+    let parameter_interval = &definition_payload.parameter_interval();
+    let direction = definition_payload.direction();
+    let native_position = &definition_payload.native_position();
     assert_eq!(*parameter_interval, Some([-0.5, 1.25]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
     assert_eq!(
@@ -1160,11 +1167,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
         edited.model.procedural_surfaces[0].definition()
     else {
         panic!("expected extrusion")
     };
+    let directrix = definition_payload.directrix();
     let directrix_id = directrix.clone();
     let curve = edited
         .model
@@ -1233,7 +1241,7 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert!(matches!(
         result.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Extrusion { .. }
+        ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(!result
         .report()

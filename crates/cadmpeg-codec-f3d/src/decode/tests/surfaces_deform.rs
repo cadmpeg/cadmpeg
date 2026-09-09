@@ -1201,7 +1201,7 @@ fn generated_legacy_surface_names_select_modern_layouts() {
                         "scaled_compound_loft",
                         ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
                     )
-                    | ("extrusion", ProceduralSurfaceDefinition::Extrusion { .. })
+                    | ("extrusion", ProceduralSurfaceDefinition::Extrusion(_))
             ),
             "wrong definition for {expected}: {definition:?}"
         );

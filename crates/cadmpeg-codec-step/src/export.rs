@@ -2622,27 +2622,27 @@ impl<'a> Builder<'a> {
                         .emit("SURFACE_OF_REVOLUTION", &format!("'',{directrix},{axis}")),
                 )
             }
-            ProceduralSurfaceDefinition::ParallelOffset {
-                support,
-                distance,
-                self_intersect,
-            } => {
-                let support = self.emit_surface(support.as_str())?;
-                Some(self.emitter.emit(
-                    "OFFSET_SURFACE",
-                    &format!(
-                        "'',{support},{},{}",
-                        real(*distance),
-                        logical(*self_intersect)
-                    ),
-                ))
+            ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+                let support = definition_payload.support();
+                let distance = definition_payload.distance();
+                let self_intersect = definition_payload.self_intersect();
+                {
+                    let support = self.emit_surface(support.as_str())?;
+                    Some(self.emitter.emit(
+                        "OFFSET_SURFACE",
+                        &format!(
+                            "'',{support},{},{}",
+                            real(*distance),
+                            logical(*self_intersect)
+                        ),
+                    ))
+                }
             }
-            ProceduralSurfaceDefinition::Subset {
-                support,
-                parameter_ranges,
-                u_sense: Some(u_sense),
-                v_sense: Some(v_sense),
-            } => {
+            ProceduralSurfaceDefinition::Subset(payload) => {
+                let support = payload.support();
+                let parameter_ranges = payload.parameter_ranges();
+                let u_sense = payload.u_sense().as_ref()?;
+                let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
                 Some(self.emitter.emit(
                     "RECTANGULAR_TRIMMED_SURFACE",
@@ -2770,26 +2770,27 @@ impl<'a> Builder<'a> {
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
         match definition {
-            ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range: [start, end],
-                sense,
-            } => {
-                let source = self.emit_curve(source.as_str())?;
-                let (start, end) = if *sense {
-                    (*start, *end)
-                } else {
-                    (*end, *start)
-                };
-                Some(self.emitter.emit(
-                    "TRIMMED_CURVE",
-                    &format!(
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let [start, end] = definition_payload.parameter_range();
+                let sense = definition_payload.sense();
+                {
+                    let source = self.emit_curve(source.as_str())?;
+                    let (start, end) = if *sense {
+                        (*start, *end)
+                    } else {
+                        (*end, *start)
+                    };
+                    Some(self.emitter.emit(
+                        "TRIMMED_CURVE",
+                        &format!(
                         "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
                         real(start),
                         real(end),
                         if *sense { ".T." } else { ".F." }
                     ),
-                ))
+                    ))
+                }
             }
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
@@ -2799,26 +2800,27 @@ impl<'a> Builder<'a> {
                         .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
                 )
             }
-            ProceduralCurveDefinition::SpatialOffset {
-                source,
-                distance,
-                reference_direction,
-                self_intersect,
-            } => {
-                let source = self.emit_curve(source.as_str())?;
-                let direction = geometry::direction(&mut self.emitter, *reference_direction);
-                let self_intersect = match self_intersect {
-                    Some(true) => ".T.",
-                    Some(false) => ".F.",
-                    None => ".U.",
-                };
-                Some(self.emitter.emit(
-                    "OFFSET_CURVE_3D",
-                    &format!(
-                        "'',{source},{},{self_intersect},{direction}",
-                        real(*distance)
-                    ),
-                ))
+            ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
+                let source = definition_payload.source();
+                let distance = definition_payload.distance();
+                let reference_direction = definition_payload.reference_direction();
+                let self_intersect = definition_payload.self_intersect();
+                {
+                    let source = self.emit_curve(source.as_str())?;
+                    let direction = geometry::direction(&mut self.emitter, *reference_direction);
+                    let self_intersect = match self_intersect {
+                        Some(true) => ".T.",
+                        Some(false) => ".F.",
+                        None => ".U.",
+                    };
+                    Some(self.emitter.emit(
+                        "OFFSET_CURVE_3D",
+                        &format!(
+                            "'',{source},{},{self_intersect},{direction}",
+                            real(*distance)
+                        ),
+                    ))
+                }
             }
             _ => None,
         }

@@ -20,6 +20,11 @@ use schemars::JsonSchema;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::num::NonZeroI64;
 
+/// Checked procedural curve payloads.
+pub mod curve_payloads;
+/// Checked procedural surface payloads.
+pub mod surface_payloads;
+
 fn default_true() -> bool {
     true
 }
@@ -3882,29 +3887,9 @@ pub enum ProceduralSurfaceDefinition {
         components: Vec<CompoundComponent<SurfaceId>>,
     },
     /// Exact rectangular restriction of an embedded support surface.
-    SubSurface {
-        /// Embedded support surface whose parameterization is retained.
-        support: SurfaceId,
-        /// Ordered U and V parameter intervals.
-        parameter_ranges: [[f64; 2]; 2],
-    },
+    SubSurface(surface_payloads::SubSurfaceConstruction),
     /// Taper of a support surface around a reference curve.
-    Taper {
-        /// Base surface being tapered.
-        support: SurfaceId,
-        /// Reference curve on the support.
-        reference: CurveId,
-        /// UV curve on the support, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pcurve: Option<PcurveGeometry>,
-        /// Native taper parameter or draft magnitude.
-        parameter: f64,
-        /// Subtype-specific taper tail.
-        taper: TaperSurfaceKind,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Taper(surface_payloads::TaperSurfaceConstruction),
     /// Native loft defined by two section graphs and closure contracts.
     Loft {
         /// Two ordered loft sections.
@@ -3975,24 +3960,7 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<VertexBlendConstruction>,
     },
     /// Translation of a directrix along a direction.
-    Extrusion {
-        /// Curve swept along `direction` to form the surface.
-        directrix: CurveId,
-        /// Native source directrix parameter interval, when carried by the
-        /// source. The neutral surface-carrier interval is in
-        /// `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Length-bearing sweep direction, in document length units.
-        direction: Vector3,
-        /// Native model-space position following the sweep direction, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native_position: Option<Point3>,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The directrix parameter interval is `parameter_interval`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     /// Unbounded linear sweep of a directrix.
     LinearSweep {
         /// Curve swept along `direction`.
@@ -4001,32 +3969,7 @@ pub enum ProceduralSurfaceDefinition {
         direction: Vector3,
     },
     /// Revolution of a directrix about an axis.
-    Revolution {
-        /// Curve revolved about the axis to form the surface.
-        directrix: CurveId,
-        /// A point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit direction of the revolution axis.
-        axis_direction: Vector3,
-        /// Angular start and end parameters, in radians.
-        angular_interval: [f64; 2],
-        /// Surface-parameter interval that maps affinely to
-        /// `angular_interval`. Absence means the surface parameter is already
-        /// the revolution angle in radians.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angular_parameter_interval: Option<[f64; 2]>,
-        /// Native source directrix parameter start and end values, when
-        /// carried by the source representation. The neutral surface-carrier
-        /// interval is in `ProceduralSurface::record_bounds`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        /// Whether the source parameter directions are transposed.
-        transposed: bool,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The profile curve's optional endpoints are `reference_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
     /// Full revolution of a directrix about an axis.
     AxisRevolution {
         /// Curve revolved about the axis.
@@ -4076,42 +4019,9 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<DeformableSurfaceConstruction>,
     },
     /// Offset from a support surface.
-    Offset {
-        /// Surface this surface is offset from.
-        support: SurfaceId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Native U parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<i64>,
-        /// Native V parameter-direction sense enum, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<i64>,
-        /// Support continuation law outside its active NURBS rectangle.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support_extension: Option<OffsetSupportExtension>,
-        /// Legacy conditional extension flags or the revision-gated form.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
-        extension: OffsetExtension,
-    },
+    Offset(surface_payloads::OffsetSurfaceConstruction),
     /// Rectangular parameter sub-range of a support surface.
-    Subset {
-        /// Surface being restricted.
-        support: SurfaceId,
-        /// U and V parameter endpoints in the support parameterization.
-        ///
-        /// The endpoint order is significant for cyclic and reversed
-        /// trims. A producer that does not carry direction metadata may
-        /// leave the sense fields absent and use increasing endpoints.
-        parameter_ranges: [[f64; 2]; 2],
-        /// Whether the trimmed surface U direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<bool>,
-        /// Whether the trimmed surface V direction agrees with the support.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<bool>,
-    },
+    Subset(surface_payloads::SubsetSurfaceConstruction),
     /// Affine replica of a surface carrier, retaining the parent surface
     /// construction and its parameter domain.
     Replica {
@@ -4121,14 +4031,7 @@ pub enum ProceduralSurfaceDefinition {
         transform: Transform,
     },
     /// Parallel offset from a support surface.
-    ParallelOffset {
-        /// Surface being offset.
-        support: SurfaceId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
     /// Self-intersecting torus with an explicitly selected outer or inner sheet.
     DegenerateTorus {
         /// Whether the outer sheet is selected at the self-intersection.
@@ -4197,20 +4100,8 @@ enum ProceduralSurfaceDefinitionWire {
         #[serde(flatten, with = "compound_surface_components_wire")]
         components: Vec<CompoundComponent<SurfaceId>>,
     },
-    SubSurface {
-        support: SurfaceId,
-        parameter_ranges: [[f64; 2]; 2],
-    },
-    Taper {
-        support: SurfaceId,
-        reference: CurveId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pcurve: Option<PcurveGeometry>,
-        parameter: f64,
-        taper: TaperSurfaceKind,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    SubSurface(surface_payloads::SubSurfaceConstruction),
+    Taper(surface_payloads::TaperSurfaceConstruction),
     Loft {
         sections: [LoftSection; 2],
         parameters: SplineSurfaceParameters,
@@ -4251,33 +4142,12 @@ enum ProceduralSurfaceDefinitionWire {
     VertexBlend {
         construction: Box<VertexBlendConstruction>,
     },
-    Extrusion {
-        directrix: CurveId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        direction: Vector3,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native_position: Option<Point3>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     LinearSweep {
         directrix: CurveId,
         direction: Vector3,
     },
-    Revolution {
-        directrix: CurveId,
-        axis_origin: Point3,
-        axis_direction: Vector3,
-        angular_interval: [f64; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angular_parameter_interval: Option<[f64; 2]>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_interval: Option<[f64; 2]>,
-        transposed: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Revolution(surface_payloads::RevolutionSurfaceConstruction),
     AxisRevolution {
         directrix: CurveId,
         axis_origin: Point3,
@@ -4305,35 +4175,13 @@ enum ProceduralSurfaceDefinitionWire {
     Deformable {
         construction: Box<DeformableSurfaceConstruction>,
     },
-    Offset {
-        support: SurfaceId,
-        distance: f64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<i64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<i64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support_extension: Option<OffsetSupportExtension>,
-        #[serde(flatten)]
-        extension: OffsetExtension,
-    },
-    Subset {
-        support: SurfaceId,
-        parameter_ranges: [[f64; 2]; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        u_sense: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        v_sense: Option<bool>,
-    },
+    Offset(surface_payloads::OffsetSurfaceConstruction),
+    Subset(surface_payloads::SubsetSurfaceConstruction),
     Replica {
         source: SurfaceId,
         transform: Transform,
     },
-    ParallelOffset {
-        support: SurfaceId,
-        distance: f64,
-        self_intersect: Option<bool>,
-    },
+    ParallelOffset(surface_payloads::ParallelOffsetSurfaceConstruction),
     DegenerateTorus {
         select_outer: bool,
     },
@@ -4379,36 +4227,7 @@ const EPS_REVOLUTION_AXIS_UNIT: f64 = 1.0e-9;
 impl ProceduralSurfaceDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
         match self {
-            Self::Revolution {
-                angular_interval,
-                angular_parameter_interval,
-                parameter_interval,
-                ..
-            } => {
-                for (interval, message) in [
-                (
-                    Some(angular_interval),
-                    "revolution angular_interval must be finite and strictly increasing",
-                ),
-                (
-                    angular_parameter_interval.as_ref(),
-                    "revolution angular_parameter_interval must be finite and strictly increasing",
-                ),
-                (
-                    parameter_interval.as_ref(),
-                    "revolution parameter_interval must be finite and strictly increasing",
-                ),
-            ] {
-                if interval.is_some_and(|interval| {
-                    !interval[0].is_finite()
-                        || !interval[1].is_finite()
-                        || interval[0] >= interval[1]
-                }) {
-                    return Err(ProceduralGeometryError::Payload(message));
-                }
-            }
-                Ok(())
-            }
+            Self::Revolution(..) => Ok(()),
             Self::AxisRevolution {
                 axis_origin,
                 axis_direction,
@@ -4439,27 +4258,7 @@ impl ProceduralSurfaceDefinition {
                 }
                 Ok(())
             }
-            Self::Extrusion {
-                parameter_interval,
-                direction,
-                native_position,
-                ..
-            } => {
-                if parameter_interval
-                    .is_some_and(|range| !range.iter().all(|value| value.is_finite()))
-                    || ![direction.x, direction.y, direction.z]
-                        .into_iter()
-                        .all(f64::is_finite)
-                    || native_position.is_some_and(|point| {
-                        ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                    })
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "extrusion interval, direction, or native position is non-finite",
-                    ));
-                }
-                Ok(())
-            }
+            Self::Extrusion(..) => Ok(()),
             Self::LinearSweep { direction, .. } => {
                 if ![direction.x, direction.y, direction.z]
                     .into_iter()
@@ -4472,14 +4271,7 @@ impl ProceduralSurfaceDefinition {
                 }
                 Ok(())
             }
-            Self::ParallelOffset { distance, .. } => {
-                if !distance.is_finite() {
-                    return Err(ProceduralGeometryError::Payload(
-                        "non-finite parallel offset",
-                    ));
-                }
-                Ok(())
-            }
+            Self::ParallelOffset(..) => Ok(()),
             Self::Exact { spline } => {
                 let valid = match spline {
                     crate::geometry::ExactSpline::Legacy { ranges, .. } => {
@@ -4508,59 +4300,8 @@ impl ProceduralSurfaceDefinition {
                 }
                 Ok(())
             }
-            Self::SubSurface {
-                parameter_ranges, ..
-            } => {
-                if !parameter_ranges
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite())
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "sub-surface parameter interval is not finite",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Taper {
-                parameter, taper, ..
-            } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let tail_finite = match taper {
-                    crate::geometry::TaperSurfaceKind::Standard
-                    | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
-                    crate::geometry::TaperSurfaceKind::Edge { draft } => vector_finite(draft),
-                    crate::geometry::TaperSurfaceKind::Shadow {
-                        draft,
-                        sine,
-                        cosine,
-                    }
-                    | crate::geometry::TaperSurfaceKind::Swept {
-                        draft,
-                        sine,
-                        cosine,
-                    } => vector_finite(draft) && sine.is_finite() && cosine.is_finite(),
-                    crate::geometry::TaperSurfaceKind::Ruled {
-                        draft,
-                        sine,
-                        cosine,
-                        factor,
-                    } => {
-                        vector_finite(draft)
-                            && sine.is_finite()
-                            && cosine.is_finite()
-                            && factor.is_finite()
-                    }
-                };
-                if !parameter.is_finite() || !tail_finite {
-                    return Err(ProceduralGeometryError::Payload(
-                        "taper surface parameter or subtype tail is not finite",
-                    ));
-                }
-                Ok(())
-            }
+            Self::SubSurface(..) => Ok(()),
+            Self::Taper(..) => Ok(()),
             Self::Loft {
                 sections,
                 parameters,
@@ -5259,26 +5000,8 @@ impl ProceduralSurfaceDefinition {
                 Ok(())
             }
             Self::Blend { native: None, .. } => Ok(()),
-            Self::Offset { distance, .. } => {
-                if !distance.is_finite() {
-                    return Err(ProceduralGeometryError::Payload(
-                        "offset spline surface distance is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Subset {
-                parameter_ranges, ..
-            } => {
-                if !parameter_ranges.iter().all(|range| {
-                    range[0].is_finite() && range[1].is_finite() && range[0] != range[1]
-                }) {
-                    return Err(ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    ));
-                }
-                Ok(())
-            }
+            Self::Offset(..) => Ok(()),
+            Self::Subset(..) => Ok(()),
             Self::RevisionCompoundLoft { .. } => Ok(()),
             Self::RevisionG2Blend { .. } => Ok(()),
             Self::Helix { .. } => Ok(()),
@@ -5296,14 +5019,23 @@ impl ProceduralSurfaceDefinition {
             Self::Exact {
                 spline: ExactSpline::Revision { form, .. },
             } => Some(&form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&form.cache),
+            Self::Taper(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Extrusion(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Revolution(definition_payload) => {
+                let revision_form = definition_payload.revision_form();
+                revision_form.as_ref().map(|form| &form.cache)
+            }
+            Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
+            Self::Offset(payload) => match payload.extension() {
+                OffsetExtension::Revision(form) => Some(&form.cache),
+                OffsetExtension::Legacy(_) => None,
+            },
             Self::Loft { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
             Self::RevisionG2Blend { construction } => Some(&construction.cache),
@@ -5330,14 +5062,11 @@ impl ProceduralSurfaceDefinition {
             Self::Exact {
                 spline: ExactSpline::Revision { form, .. },
             } => Some(&mut form.cache),
-            Self::Taper { revision_form, .. }
-            | Self::Extrusion { revision_form, .. }
-            | Self::Revolution { revision_form, .. }
-            | Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
-            Self::Offset {
-                extension: OffsetExtension::Revision(form),
-                ..
-            } => Some(&mut form.cache),
+            Self::Taper(payload) => payload.revision_cache_mut(),
+            Self::Extrusion(payload) => payload.revision_cache_mut(),
+            Self::Revolution(payload) => payload.revision_cache_mut(),
+            Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
+            Self::Offset(payload) => payload.revision_cache_mut(),
             Self::Loft { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
             Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
             Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
@@ -12401,34 +12130,7 @@ pub enum ProceduralCurveDefinition {
         light_direction: Vector3,
     },
     /// Curve offset relative to a surface parameterization.
-    SurfaceOffset {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Native U interval on the base surface.
-        base_u_range: [f64; 2],
-        /// Native V interval on the base surface.
-        base_v_range: [f64; 2],
-        /// Embedded base curve.
-        base: CurveId,
-        /// Native interval on `base`.
-        base_range: [f64; 2],
-        /// Optional parameter endpoints following the embedded base curve in
-        /// the cache-first layout.
-        #[serde(default)]
-        base_endpoints: [Option<f64>; 2],
-        /// Cache-first shared-context fields; absent from the context-first
-        /// layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
-        /// Signed model-space offset distance.
-        distance: f64,
-        /// Native unscaled parameter shift.
-        shift: f64,
-        /// Native unscaled parameter scale.
-        scale: f64,
-    },
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     /// Blend spring guide between two support sides.
     Spring {
         /// Structurally selected context-first or cache-first representation.
@@ -12439,18 +12141,7 @@ pub enum ProceduralCurveDefinition {
         direction: i64,
     },
     /// Deformation of an embedded source curve.
-    Deformable {
-        /// Shared cache-first support context.
-        context: IntcurveSupportContext,
-        /// Cache-first serializer fields surrounding the solved curve cache.
-        cache_first: CacheFirstCurveForm,
-        /// Curve being deformed or its unresolved native reference.
-        source: DeformableCurveSource,
-        /// Optional native bounds following the source curve.
-        source_parameter_range: [Option<f64>; 2],
-        /// Discriminator-specific deformation payload.
-        data: DeformableCurveData,
-    },
+    Deformable(curve_payloads::DeformableCurveConstruction),
     /// Projection of a source curve onto a support surface.
     Projection {
         /// Shared surfaces, UV curves, interval, and discontinuity metadata.
@@ -12463,63 +12154,15 @@ pub enum ProceduralCurveDefinition {
         tail: ProjectionTail,
     },
     /// Offset from a source curve.
-    Offset {
-        /// Curve this curve is offset from.
-        source: CurveId,
-        /// Signed offset distance, in document length units.
-        distance: f64,
-        /// Exclusive plane-normal or explicit-direction carrier.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
-        side: OffsetSide,
-        /// Retained parameter range, with its distance law when variable.
-        #[serde(flatten, with = "curve_offset_range_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
-        range: Option<CurveOffsetRange>,
-    },
+    Offset(curve_payloads::OffsetCurveConstruction),
     /// Free-space 3D offset using a reference direction.
-    SpatialOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Signed offset distance.
-        distance: f64,
-        /// Reference direction controlling the offset frame.
-        reference_direction: Vector3,
-        /// Whether the source classifies the result as self-intersecting.
-        self_intersect: Option<bool>,
-    },
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
     /// Intersection of two surfaces after applying independent signed offsets.
-    TwoSidedOffset {
-        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Signed offset distance for each support side, in document length units.
-        offsets: [f64; 2],
-    },
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
     /// Free-space vector offset of a source curve over a parameter interval.
-    VectorOffset {
-        /// Curve being offset.
-        source: CurveId,
-        /// Native parameter interval on the source curve.
-        parameter_range: [f64; 2],
-        /// Model-space offset vector.
-        offset: Vector3,
-        /// Integer codes attached to the fixed `source` and `offset` roles.
-        #[serde(flatten, with = "vector_offset_roles_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
-        roles: VectorOffsetRoles,
-    },
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
     /// A parameter sub-range of a parent curve.
-    Subset {
-        /// Parent curve being restricted.
-        source: CurveId,
-        /// Native parameter interval retained from the parent.
-        parameter_range: [f64; 2],
-        /// Whether the subset follows increasing parent parameters.
-        #[serde(default = "default_true")]
-        sense: bool,
-    },
+    Subset(curve_payloads::SubsetCurveConstruction),
     /// Affine replica of a curve carrier, retaining the parent curve's
     /// parameter range and parameterization.
     Replica {
@@ -12588,71 +12231,24 @@ enum ProceduralCurveDefinitionWire {
         cast_surface: SurfaceId,
         light_direction: Vector3,
     },
-    SurfaceOffset {
-        context: IntcurveSupportContext,
-        discontinuity_flag: bool,
-        base_u_range: [f64; 2],
-        base_v_range: [f64; 2],
-        base: CurveId,
-        base_range: [f64; 2],
-        #[serde(default)]
-        base_endpoints: [Option<f64>; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
-        distance: f64,
-        shift: f64,
-        scale: f64,
-    },
+    SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     Spring {
         #[serde(flatten, with = "spring_layout_wire")]
         layout: SpringLayout,
         direction: i64,
     },
-    Deformable {
-        context: IntcurveSupportContext,
-        cache_first: CacheFirstCurveForm,
-        source: DeformableCurveSource,
-        source_parameter_range: [Option<f64>; 2],
-        data: DeformableCurveData,
-    },
+    Deformable(curve_payloads::DeformableCurveConstruction),
     Projection {
         context: IntcurveSupportContext,
         discontinuity_flag: bool,
         source: CurveId,
         tail: ProjectionTail,
     },
-    Offset {
-        source: CurveId,
-        distance: f64,
-        #[serde(flatten)]
-        side: OffsetSide,
-        #[serde(flatten, with = "curve_offset_range_wire")]
-        range: Option<CurveOffsetRange>,
-    },
-    SpatialOffset {
-        source: CurveId,
-        distance: f64,
-        reference_direction: Vector3,
-        self_intersect: Option<bool>,
-    },
-    TwoSidedOffset {
-        context: IntcurveSupportContext,
-        discontinuity_flag: bool,
-        offsets: [f64; 2],
-    },
-    VectorOffset {
-        source: CurveId,
-        parameter_range: [f64; 2],
-        offset: Vector3,
-        #[serde(flatten, with = "vector_offset_roles_wire")]
-        roles: VectorOffsetRoles,
-    },
-    Subset {
-        source: CurveId,
-        parameter_range: [f64; 2],
-        #[serde(default = "default_true")]
-        sense: bool,
-    },
+    Offset(curve_payloads::OffsetCurveConstruction),
+    SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
+    TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
+    VectorOffset(curve_payloads::VectorOffsetCurveConstruction),
+    Subset(curve_payloads::SubsetCurveConstruction),
     Replica {
         source: CurveId,
         transform: Transform,
@@ -12727,146 +12323,12 @@ mod vector_offset_roles_wire {
     }
 }
 
-const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
-const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
-
 impl ProceduralCurveDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
         match self {
-            Self::Offset {
-                distance,
-                side,
-                range,
-                ..
-            } => {
-                let side_valid = match side {
-                    crate::geometry::OffsetSide::PlaneNormal(normal) => {
-                        normal.x.is_finite()
-                            && normal.y.is_finite()
-                            && normal.z.is_finite()
-                            && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
-                    }
-                    crate::geometry::OffsetSide::Direction { direction, .. } => {
-                        direction.x.is_finite()
-                            && direction.y.is_finite()
-                            && direction.z.is_finite()
-                            && direction.norm() > 0.0
-                    }
-                };
-                let range_valid = range.as_ref().is_none_or(|range| {
-                    let parameter_range = match range {
-                        crate::geometry::CurveOffsetRange::Uniform { parameter_range }
-                        | crate::geometry::CurveOffsetRange::Variable {
-                            parameter_range, ..
-                        } => parameter_range,
-                    };
-                    parameter_range.iter().all(|value| value.is_finite())
-                        && parameter_range[0] < parameter_range[1]
-                });
-                let law_valid = match range {
-                    Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
-                        match distance_law {
-                            crate::geometry::CurveOffsetDistanceLaw::Linear {
-                                distances,
-                                control_range,
-                                ..
-                            } => {
-                                distances.iter().all(|value| value.is_finite())
-                                    && control_range.iter().all(|value| value.is_finite())
-                                    && control_range[0] < control_range[1]
-                            }
-                            crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                                function_parameter_offset,
-                                function_parameter_scale,
-                                ..
-                            } => {
-                                function_parameter_offset.is_finite()
-                                    && function_parameter_scale.is_finite()
-                                    && *function_parameter_scale != 0.0
-                            }
-                        }
-                    }
-                    None | Some(crate::geometry::CurveOffsetRange::Uniform { .. }) => true,
-                };
-                if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "curve offset distance, side, range, or law is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::SpatialOffset {
-                distance,
-                reference_direction,
-                ..
-            } => {
-                if !distance.is_finite()
-                    || ![
-                        reference_direction.x,
-                        reference_direction.y,
-                        reference_direction.z,
-                    ]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "invalid spatial curve offset",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Deformable {
-                source_parameter_range,
-                data,
-                ..
-            } => {
-                let finite_vector = |vector: &crate::math::Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let payload_finite = match data {
-                    crate::geometry::DeformableCurveData::VectorField {
-                        vectors,
-                        parameter_pairs,
-                    } => {
-                        vectors.iter().all(finite_vector)
-                            && parameter_pairs
-                                .iter()
-                                .flatten()
-                                .all(|value| value.is_finite())
-                    }
-                    crate::geometry::DeformableCurveData::Mode3 {
-                        leading_vectors,
-                        leading_parameter,
-                        trailing_point,
-                        trailing_vectors,
-                        frame_parameter,
-                        parameters,
-                        trailing_parameter,
-                        ..
-                    } => {
-                        leading_vectors.iter().all(finite_vector)
-                            && leading_parameter.is_finite()
-                            && [trailing_point.x, trailing_point.y, trailing_point.z]
-                                .into_iter()
-                                .all(f64::is_finite)
-                            && trailing_vectors.iter().all(finite_vector)
-                            && frame_parameter.is_finite()
-                            && parameters.iter().all(|value| value.is_finite())
-                            && trailing_parameter.is_finite()
-                    }
-                };
-                let range_valid = source_parameter_range
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite());
-                if !payload_finite || !range_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "deformable curve payload is not finite",
-                    ));
-                }
-                Ok(())
-            }
+            Self::Offset(..) => Ok(()),
+            Self::SpatialOffset(..) => Ok(()),
+            Self::Deformable(..) => Ok(()),
             Self::Spring { layout, .. } => {
                 let context = layout.support_context();
                 let inline_ranges_finite = match layout {
@@ -12899,28 +12361,7 @@ impl ProceduralCurveDefinition {
                 }
                 Ok(())
             }
-            Self::SurfaceOffset {
-                base_u_range,
-                base_v_range,
-                base_range,
-                distance,
-                shift,
-                scale,
-                ..
-            } => {
-                let ranges = [base_u_range, base_v_range, base_range];
-                if ranges.iter().any(|range| {
-                    !range.iter().all(|value| value.is_finite()) || range[0] > range[1]
-                }) || !distance.is_finite()
-                    || !shift.is_finite()
-                    || !scale.is_finite()
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "surface-offset fields are not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
+            Self::SurfaceOffset(..) => Ok(()),
             Self::Silhouette {
                 silhouette,
                 light_direction,
@@ -12975,44 +12416,9 @@ impl ProceduralCurveDefinition {
                 }
                 Ok(())
             }
-            Self::TwoSidedOffset { offsets, .. } => {
-                let finite = offsets.iter().all(|value| value.is_finite());
-                if !finite {
-                    return Err(ProceduralGeometryError::Payload(
-                        "two-sided offset fields are not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Subset {
-                parameter_range, ..
-            } => {
-                if !parameter_range.iter().all(|value| value.is_finite())
-                    || parameter_range[0] > parameter_range[1]
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "subset-curve range is not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
-            Self::VectorOffset {
-                parameter_range,
-                offset,
-                ..
-            } => {
-                if !parameter_range.iter().all(|value| value.is_finite())
-                    || parameter_range[0] > parameter_range[1]
-                    || !offset.x.is_finite()
-                    || !offset.y.is_finite()
-                    || !offset.z.is_finite()
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "vector-offset fields are not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
+            Self::TwoSidedOffset(..) => Ok(()),
+            Self::Subset(..) => Ok(()),
+            Self::VectorOffset(..) => Ok(()),
             Self::Exact => Ok(()),
             Self::Law { .. } => Ok(()),
             Self::Compound(..) => Ok(()),
@@ -13029,12 +12435,12 @@ impl ProceduralCurveDefinition {
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&form.cache),
+            Self::SurfaceOffset(payload) => payload.cache_first().as_ref().map(|form| &form.cache),
             Self::Spring { layout, .. } => layout.cache_first().map(|form| &form.cache),
-            Self::Deformable { cache_first, .. } => Some(&cache_first.cache),
+            Self::Deformable(definition_payload) => {
+                let cache_first = definition_payload.cache_first();
+                Some(&cache_first.cache)
+            }
             _ => None,
         }
     }
@@ -13044,12 +12450,9 @@ impl ProceduralCurveDefinition {
     ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache_mut(),
-            Self::SurfaceOffset {
-                cache_first: Some(form),
-                ..
-            } => Some(&mut form.cache),
+            Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
             Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
-            Self::Deformable { cache_first, .. } => Some(&mut cache_first.cache),
+            Self::Deformable(payload) => payload.revision_cache_mut(),
             _ => None,
         }
     }

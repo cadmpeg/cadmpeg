@@ -117,17 +117,15 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 .procedural_surfaces
                 .first()
                 .expect("offset surface");
-            let ProceduralSurfaceDefinition::Offset {
-                support,
-                distance,
-                u_sense,
-                v_sense,
-                extension,
-                ..
-            } = procedural.definition()
+            let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
             else {
                 panic!("offset definition");
             };
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
+            let u_sense = definition_payload.u_sense();
+            let v_sense = definition_payload.v_sense();
+            let extension = definition_payload.extension();
             assert_eq!(*distance, 2.5);
             assert_eq!(*u_sense, None);
             assert_eq!(*v_sense, None);

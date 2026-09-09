@@ -999,14 +999,12 @@ fn complete_support_uv_wave(
                 let linear_offset_surface = match &surface.geometry {
                     SurfaceGeometry::Procedural { construction, .. } => model_index
                         .procedural_surfaces(construction.as_str())
-                        .is_some_and(|procedural| {
-                            matches!(
-                                procedural.definition(),
-                                ProceduralSurfaceDefinition::Offset {
-                                    support_extension: Some(OffsetSupportExtension::Linear),
-                                    ..
-                                }
-                            )
+                        .is_some_and(|procedural| match procedural.definition() {
+                            ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+                                (matched_payload.support_extension(),),
+                                (Some(OffsetSupportExtension::Linear),)
+                            ),
+                            _ => false,
                         }),
                     _ => false,
                 };
@@ -1889,24 +1887,8 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
             return true;
         }
         let (
-            Some(ProceduralSurfaceDefinition::Offset {
-                support: first_support,
-                distance: first_distance,
-                u_sense: first_u_sense,
-                v_sense: first_v_sense,
-                support_extension: first_support_extension,
-                extension: first_extension,
-                ..
-            }),
-            Some(ProceduralSurfaceDefinition::Offset {
-                support: second_support,
-                distance: second_distance,
-                u_sense: second_u_sense,
-                v_sense: second_v_sense,
-                support_extension: second_support_extension,
-                extension: second_extension,
-                ..
-            }),
+            Some(ProceduralSurfaceDefinition::Offset(first_payload)),
+            Some(ProceduralSurfaceDefinition::Offset(second_payload)),
         ) = (
             index
                 .procedural_surface_for_carrier(first.as_str())
@@ -1918,6 +1900,18 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         else {
             return false;
         };
+        let first_support = first_payload.support();
+        let first_distance = first_payload.distance();
+        let first_u_sense = first_payload.u_sense();
+        let first_v_sense = first_payload.v_sense();
+        let first_support_extension = first_payload.support_extension();
+        let first_extension = first_payload.extension();
+        let second_support = second_payload.support();
+        let second_distance = second_payload.distance();
+        let second_u_sense = second_payload.u_sense();
+        let second_v_sense = second_payload.v_sense();
+        let second_support_extension = second_payload.support_extension();
+        let second_extension = second_payload.extension();
         first_distance.to_bits() == second_distance.to_bits()
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense

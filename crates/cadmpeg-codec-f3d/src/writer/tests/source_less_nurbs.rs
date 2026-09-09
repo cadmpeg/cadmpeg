@@ -893,8 +893,11 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
     let directrix_id = match expected.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } => {
-            directrix.clone()
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            {
+                directrix.clone()
+            }
         }
         _ => unreachable!(),
     };
@@ -930,14 +933,16 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        direction,
-        parameter_interval,
-        native_position,
-        revision_form: None,
-    } = actual.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
+        actual.definition()
     else {
+        panic!("expected extrusion definition")
+    };
+    let directrix = definition_payload.directrix();
+    let direction = definition_payload.direction();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let native_position = &definition_payload.native_position();
+    let None = definition_payload.revision_form() else {
         panic!("expected extrusion definition")
     };
     assert!(round_trip
@@ -988,11 +993,10 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
-    let ProceduralSurfaceDefinition::Extrusion {
-        revision_form: Some(form),
-        ..
-    } = expected.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = expected.definition() else {
+        panic!("expected a revision-gated extrusion")
+    };
+    let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a revision-gated extrusion")
     };
     assert_eq!(form.revision, 23100);
@@ -1021,14 +1025,23 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     // survives the same round trip.
     source_less.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion {
-                revision_form: Some(form),
-                ..
-            } = definition
-            else {
+            let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = definition else {
+                unreachable!("revision-gated extrusion")
+            };
+            let mut revision_form = definition_payload_0.revision_form().clone();
+            let Some(form) = &mut revision_form else {
                 unreachable!("revision-gated extrusion")
             };
             form.flags = vec![false];
+            *definition_payload_0 =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    definition_payload_0.directrix().clone(),
+                    definition_payload_0.parameter_interval(),
+                    *definition_payload_0.direction(),
+                    definition_payload_0.native_position(),
+                    revision_form,
+                )
+                .unwrap();
         })
         .unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
@@ -1074,11 +1087,10 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
         .expect("parameterized extrusion round trip");
     let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.cache_fit_tolerance(), None);
-    let ProceduralSurfaceDefinition::Extrusion {
-        revision_form: Some(form),
-        ..
-    } = actual.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = actual.definition() else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a parameterized revision-gated extrusion")
     };
     assert_eq!(form.cache.selector(), 2);
@@ -1103,14 +1115,14 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
     let procedural = &decoded.ir().model.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        direction,
-        parameter_interval,
-        native_position,
-        revision_form: None,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
+        panic!("expected extrusion definition")
+    };
+    let directrix = definition_payload.directrix();
+    let direction = definition_payload.direction();
+    let parameter_interval = &definition_payload.parameter_interval();
+    let native_position = &definition_payload.native_position();
+    let None = definition_payload.revision_form() else {
         panic!("expected extrusion definition")
     };
     assert_eq!(*parameter_interval, Some([0.25, 0.75]));
@@ -1228,18 +1240,19 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let directrix = source_less.model.procedural_surfaces[0]
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion {
-                directrix,
-                parameter_interval,
-                direction,
-                ..
-            } = definition
-            else {
+            let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
                 panic!("expected extrusion definition")
             };
-            *parameter_interval = Some([0.0, std::f64::consts::TAU]);
-            *direction = Vector3::new(0.0, 0.0, -20.0);
-            directrix.clone()
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    definition_payload.directrix().clone(),
+                    Some([0.0, std::f64::consts::TAU]),
+                    Vector3::new(0.0, 0.0, -20.0),
+                    definition_payload.native_position(),
+                    definition_payload.revision_form().clone(),
+                )
+                .unwrap();
+            definition_payload.directrix().clone()
         })
         .unwrap();
     source_less

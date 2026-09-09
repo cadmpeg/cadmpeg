@@ -657,14 +657,11 @@ let ref_direction = torus_surface.ref_direction();
                     })
     }));
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
-    assert!(matches!(
-        revolution.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            angular_interval,
-            parameter_interval: Some([-4.0, 9.0]),
-            ..
-        } if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
-    ));
+    assert!(match revolution.definition() {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
+            matches!((matched_payload.angular_interval(), &matched_payload.parameter_interval(),), (angular_interval, Some([-4.0, 9.0]),) if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),
+        _ => false,
+    });
     assert_eq!(
         decoded
             .report()

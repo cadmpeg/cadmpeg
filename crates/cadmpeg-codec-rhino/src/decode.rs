@@ -2919,17 +2919,20 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            let ir_definition = definition.into_definition(|_, path, child| {
-                commit_curve_tree(
-                    candidate,
-                    candidate_annotations,
-                    child,
-                    key,
-                    &association,
-                    Some(unknown.clone()),
-                    path,
-                )
-            })?;
+            let ir_definition = definition.into_definition(
+                |_, path, child| {
+                    commit_curve_tree(
+                        candidate,
+                        candidate_annotations,
+                        child,
+                        key,
+                        &association,
+                        Some(unknown.clone()),
+                        path,
+                    )
+                },
+                |error| error.to_string(),
+            )?;
             let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
                 .try_into()
                 .expect("valid identity");
@@ -3030,17 +3033,20 @@ impl<'a> DecodeContext<'a> {
                 });
                 let _attached = candidate.model.add_procedural_surface(
                     surface_id.clone(),
-                    ProceduralSurface::new(
-                        procedure_id.clone(),
-                        ProceduralSurfaceDefinition::Extrusion {
-                            directrix: boundary.directrix.clone(),
-                            parameter_interval: None,
-                            direction: extrusion.direction,
-                            native_position: None,
-                            revision_form: None,
-                        },
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        boundary.directrix.clone(),
+                        None,
+                        extrusion.direction,
+                        None,
                         None,
                     )
+                    .and_then(|admitted_payload| {
+                        ProceduralSurface::new(
+                            procedure_id.clone(),
+                            ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                            None,
+                        )
+                    })
                     .map_err(|error| error.to_string())?,
                 );
                 annotate_derived(candidate_annotations, &surface_id.to_string());
@@ -4684,16 +4690,19 @@ fn stage_brep_procedural_surface(
     definition: crate::surfaces::DecodedProceduralSurface,
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
-    let definition = definition.into_definition(|child_index, _, child| {
-        stage_curve_tree(
-            staged,
-            child,
-            context.key,
-            &format!("surface-{index}.child-{child_index}"),
-            context.association,
-            context.unknown,
-        )
-    })?;
+    let definition = definition.into_definition(
+        |child_index, _, child| {
+            stage_curve_tree(
+                staged,
+                child,
+                context.key,
+                &format!("surface-{index}.child-{child_index}"),
+                context.association,
+                context.unknown,
+            )
+        },
+        |error| crate::curves::error(0, &error.to_string()),
+    )?;
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key)
             .try_into()

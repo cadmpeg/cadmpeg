@@ -755,20 +755,19 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("cache-first surface-offset decode");
-    let ProceduralCurveDefinition::SurfaceOffset {
-        cache_first,
-        base_u_range,
-        base_v_range,
-        base_endpoints,
-        base_range,
-        distance,
-        shift,
-        scale,
-        ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-offset construction")
     };
+    let cache_first = definition_payload.cache_first();
+    let base_u_range = definition_payload.base_u_range();
+    let base_v_range = definition_payload.base_v_range();
+    let base_endpoints = definition_payload.base_endpoints();
+    let base_range = definition_payload.base_range();
+    let distance = definition_payload.distance();
+    let shift = definition_payload.shift();
+    let scale = definition_payload.scale();
     let form = cache_first
         .as_ref()
         .expect("cache-first surface-offset form");
@@ -793,24 +792,36 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first surface-offset round trip");
-    let mut expected = source_less.model.procedural_curves[0].definition().clone();
+    let expected = source_less.model.procedural_curves[0].definition().clone();
     let mut actual = round_trip.ir().model.procedural_curves[0]
         .definition()
         .clone();
     let (
-        ProceduralCurveDefinition::SurfaceOffset {
-            base: expected_base,
-            ..
-        },
-        ProceduralCurveDefinition::SurfaceOffset {
-            base: actual_base, ..
-        },
-    ) = (&mut expected, &mut actual)
+        ProceduralCurveDefinition::SurfaceOffset(expected_payload),
+        ProceduralCurveDefinition::SurfaceOffset(actual_payload),
+    ) = (&expected, &mut actual)
     else {
         panic!("expected surface-offset round trip")
     };
-    let round_trip_base = actual_base.clone();
-    *actual_base = expected_base.clone();
+    let round_trip_base = actual_payload.base().clone();
+    *actual_payload =
+        cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+            actual_payload.context().clone(),
+            *actual_payload.discontinuity_flag(),
+            [
+                *actual_payload.base_u_range(),
+                *actual_payload.base_v_range(),
+            ],
+            (
+                expected_payload.base().clone(),
+                *actual_payload.base_range(),
+                *actual_payload.base_endpoints(),
+            ),
+            actual_payload.cache_first().clone(),
+            *actual_payload.distance(),
+            [*actual_payload.shift(), *actual_payload.scale()],
+        )
+        .unwrap();
     assert_eq!(actual, expected);
     assert!(round_trip
         .ir()
@@ -848,15 +859,14 @@ fn generated_revision_offset_surface_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("revision offset decode");
-    let ProceduralSurfaceDefinition::Offset {
-        u_sense,
-        v_sense,
-        extension,
-        ..
-    } = &result.ir().model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Offset(definition_payload) =
+        &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected offset surface construction")
     };
+    let u_sense = definition_payload.u_sense();
+    let v_sense = definition_payload.v_sense();
+    let extension = definition_payload.extension();
     assert_eq!((*u_sense, *v_sense), (None, None));
     let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
         panic!("expected revision offset extension")
@@ -893,11 +903,12 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { extension, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
         procedural.definition()
     else {
         panic!("expected offset surface construction")
     };
+    let extension = definition_payload.extension();
     let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
         panic!("expected revision form")
     };
@@ -971,9 +982,11 @@ fn generated_revision_orthogonal_taper_decodes_sense_true() {
         .first()
         .expect("ortho construction")
         .definition();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper { taper, .. } = definition else {
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper(definition_payload) = definition
+    else {
         panic!("expected taper definition, got {definition:?}");
     };
+    let taper = definition_payload.taper();
     assert_eq!(
         *taper,
         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }

@@ -68,13 +68,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -244,13 +238,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
-                && matches!(
-                    curve.definition(),
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                        parameter_range,
-                        ..
-                    } if *parameter_range == expected
-                )
+                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
@@ -410,15 +398,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && matches!(
-                    surface.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
-                        support,
-                        parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
-                        u_sense: Some(true),
-                        v_sense: Some(true),
-                    } if support.as_str() == "step:data:surface#8"
-                )
+                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss

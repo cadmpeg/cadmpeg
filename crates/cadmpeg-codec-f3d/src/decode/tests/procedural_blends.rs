@@ -428,12 +428,14 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     // the directrix scope is not this record's cache and its trailing scalar is
     // not this record's fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let ProceduralSurfaceDefinition::Extrusion {
-        parameter_interval: Some([0.25, 0.75]),
-        revision_form: Some(form),
-        ..
-    } = procedural.definition()
+    let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = procedural.definition()
     else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    let Some([0.25, 0.75]) = &definition_payload_0.parameter_interval() else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a parameterized revision-gated extrusion")
     };
     assert_eq!(form.cache.selector(), 2);

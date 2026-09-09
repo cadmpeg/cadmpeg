@@ -1022,36 +1022,42 @@ pub(crate) fn emit_standard_extrusion_definition(
             );
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                ProceduralCurve::new(
-                    procedure_id,
-                    ProceduralCurveDefinition::Offset {
-                        source: source_id,
-                        distance,
-                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
-                            direction,
-                            support: Some(standard_extrusion_support_id(
-                                annotations,
-                                surfaces,
-                                procedural_supports,
-                                &support,
-                            )?),
-                        },
-                        range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                            parameter_range: source_parameter_range,
-                        }),
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                    source_id,
+                    distance,
+                    cadmpeg_ir::geometry::OffsetSide::Direction {
+                        direction,
+                        support: Some(standard_extrusion_support_id(
+                            annotations,
+                            surfaces,
+                            procedural_supports,
+                            &support,
+                        )?),
                     },
+                    Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                        parameter_range: source_parameter_range,
+                    }),
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralCurve::new(
+                        procedure_id,
+                        ProceduralCurveDefinition::Offset(admitted_payload),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
     }
-    let definition = ProceduralSurfaceDefinition::Extrusion {
-        directrix: directrix_id,
-        parameter_interval: Some(extrusion.directrix_parameter_range),
-        direction: extrusion.direction,
-        native_position: None,
-        revision_form: None,
-    };
+    let definition = ProceduralSurfaceDefinition::Extrusion(
+        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+            directrix_id,
+            Some(extrusion.directrix_parameter_range),
+            extrusion.direction,
+            None,
+            None,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    );
     extrusion_definitions.insert(surface_object_id, definition.clone());
     Ok(definition)
 }
@@ -1937,16 +1943,19 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_30",
                     carrier_object_id,
-                    ProceduralSurfaceDefinition::Offset {
-                        support: support_id,
-                        distance,
-                        u_sense: None,
-                        v_sense: None,
-                        support_extension: None,
-                        extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                        ),
-                    },
+                    ProceduralSurfaceDefinition::Offset(
+                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                            support_id,
+                            distance,
+                            None,
+                            None,
+                            None,
+                            cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                            ),
+                        )
+                        .ok()?,
+                    ),
                     Exactness::Derived,
                 )
             }
@@ -1989,16 +1998,7 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_2d",
                     tag,
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: directrix_id,
-                        axis_origin: revolution.axis_origin,
-                        axis_direction: revolution.axis_direction,
-                        angular_interval: revolution.angular_interval,
-                        angular_parameter_interval: Some(revolution.angular_parameter_interval),
-                        parameter_interval: Some(revolution.parameter_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
+                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, None).ok()?),
                     Exactness::Derived,
                 )
             }

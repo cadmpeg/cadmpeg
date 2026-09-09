@@ -163,10 +163,13 @@ fn emit_carrier_surface(
                     geometry: support,
                     source_object: None,
                 });
-                ProceduralSurfaceDefinition::SubSurface {
-                    support: support_id,
-                    parameter_ranges,
-                }
+                ProceduralSurfaceDefinition::SubSurface(
+                    cadmpeg_ir::geometry::surface_payloads::SubSurfaceConstruction::try_new(
+                        support_id,
+                        parameter_ranges,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::Taper {
                 support,
@@ -193,14 +196,17 @@ fn emit_carrier_surface(
                     source_object: None,
                 });
                 let pcurve = pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs });
-                ProceduralSurfaceDefinition::Taper {
-                    support: support_id,
-                    reference: reference_id,
-                    pcurve,
-                    parameter,
-                    taper,
-                    revision_form,
-                }
+                ProceduralSurfaceDefinition::Taper(
+                    cadmpeg_ir::geometry::surface_payloads::TaperSurfaceConstruction::try_new(
+                        support_id,
+                        reference_id,
+                        pcurve,
+                        parameter,
+                        taper,
+                        revision_form,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::Loft(embedded) => {
                 emit_loft_surface(out, i, embedded, format)
@@ -293,16 +299,18 @@ fn emit_carrier_surface(
                     geometry: directrix,
                     source_object: None,
                 });
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin,
-                    axis_direction,
-                    angular_interval,
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(parameter_interval),
-                    transposed: false,
-                    revision_form,
-                }
+                ProceduralSurfaceDefinition::Revolution(
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        directrix_id,
+                        (axis_origin, axis_direction),
+                        angular_interval,
+                        None,
+                        Some(parameter_interval),
+                        false,
+                        revision_form,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::Offset {
                 support,
@@ -333,14 +341,12 @@ fn emit_carrier_surface(
                         cadmpeg_ir::geometry::OffsetExtension::Revision(*form),
                     ),
                 };
-                ProceduralSurfaceDefinition::Offset {
-                    support: support_id,
-                    distance,
-                    u_sense,
-                    v_sense,
-                    support_extension: None,
-                    extension,
-                }
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        support_id, distance, u_sense, v_sense, None, extension,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix,
@@ -357,13 +363,16 @@ fn emit_carrier_surface(
                     geometry: CurveGeometry::Nurbs(directrix),
                     source_object: None,
                 });
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: directrix_id,
-                    parameter_interval: Some(parameter_interval),
-                    direction,
-                    native_position: Some(native_position),
-                    revision_form,
-                }
+                ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        directrix_id,
+                        Some(parameter_interval),
+                        direction,
+                        Some(native_position),
+                        revision_form,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
                 emit_variable_blend_surface(out, i, construction, format)
@@ -2613,12 +2622,7 @@ fn emit_carrier_curve(
                             geometry: CurveGeometry::Nurbs(source),
                             source_object: None,
                         });
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
-                            source: source_id,
-                            parameter_range,
-                            offset,
-                            roles,
-                        }
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(source_id, parameter_range, offset, roles).ok()?)
                     }
                     ProceduralCurveConstruction::Subset((source, parameter_range)) => {
                         let source_id =
@@ -2629,11 +2633,14 @@ fn emit_carrier_curve(
                             geometry: CurveGeometry::Nurbs(source),
                             source_object: None,
                         });
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                            source: source_id,
-                            parameter_range,
-                            sense: true,
-                        }
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(
+                            cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                                source_id,
+                                parameter_range,
+                                true,
+                            )
+                            .ok()?,
+                        )
                     }
                     ProceduralCurveConstruction::TwoSidedOffset(embedded) => {
                         let mut next_side = 0;
@@ -2659,8 +2666,7 @@ fn emit_carrier_curve(
                                 })
                             })
                         });
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
-                            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                                 std::array::from_fn(|side| {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
@@ -2670,10 +2676,7 @@ fn emit_carrier_curve(
                                 embedded.parameter_range,
                                 embedded.discontinuities,
                             )
-                            .ok()?,
-                            discontinuity_flag: embedded.discontinuity_flag,
-                            offsets: embedded.offsets,
-                        }
+                            .ok()?, embedded.discontinuity_flag, embedded.offsets).ok()?)
                     }
                     ProceduralCurveConstruction::Intersection(embedded, discontinuity_flag) => {
                         let mut next_side = 0;
@@ -2856,8 +2859,7 @@ fn emit_carrier_curve(
                                 trailing_value,
                             },
                         };
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-                            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(cadmpeg_ir::geometry::curve_payloads::DeformableCurveConstruction::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                                 std::array::from_fn(|side| {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: support_ids[side].clone(),
@@ -2867,12 +2869,7 @@ fn emit_carrier_curve(
                                 context.parameter_range,
                                 context.discontinuities,
                             )
-                            .ok()?,
-                            cache_first: form,
-                            source,
-                            source_parameter_range: embedded.source_parameter_range,
-                            data,
-                        }
+                            .ok()?, form, source, embedded.source_parameter_range, data).ok()?)
                     }
                     ProceduralCurveConstruction::Projection(embedded) => {
                         emit_projection_curve(out, i, embedded, format).ok()?
@@ -3143,27 +3140,26 @@ fn emit_surface_offset_curve(
         source_object: None,
     });
     Some(
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
-            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                    surface: support_ids[side].clone(),
-                    pcurve: pcurves[side].clone(),
-                }),
-                context.parameter_range,
-                context.discontinuities,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+            cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: support_ids[side].clone(),
+                        pcurve: pcurves[side].clone(),
+                    }),
+                    context.parameter_range,
+                    context.discontinuities,
+                )
+                .ok()?,
+                discontinuity_flag,
+                [embedded.base_u_range, embedded.base_v_range],
+                (base, embedded.base_range, base_endpoints),
+                cache_first,
+                embedded.distance,
+                [embedded.shift, embedded.scale],
             )
             .ok()?,
-            discontinuity_flag,
-            base_u_range: embedded.base_u_range,
-            base_v_range: embedded.base_v_range,
-            base,
-            base_range: embedded.base_range,
-            base_endpoints,
-            cache_first,
-            distance: embedded.distance,
-            shift: embedded.shift,
-            scale: embedded.scale,
-        },
+        ),
     )
 }
 

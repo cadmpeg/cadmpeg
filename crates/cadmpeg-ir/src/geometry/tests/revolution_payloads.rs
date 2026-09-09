@@ -11,24 +11,28 @@ fn curve() -> CurveId {
     CurveId::mint("synthetic:test:curve#directrix").unwrap()
 }
 
-fn revolution(intervals: [[f64; 2]; 3]) -> ProceduralSurfaceDefinition {
-    ProceduralSurfaceDefinition::Revolution {
-        directrix: curve(),
-        axis_origin: Point3::new(0.0, 0.0, 0.0),
-        axis_direction: Vector3::new(0.0, 0.0, 1.0),
-        angular_interval: intervals[0],
-        angular_parameter_interval: Some(intervals[1]),
-        parameter_interval: Some(intervals[2]),
-        transposed: false,
-        revision_form: None,
-    }
+fn revolution(
+    intervals: [[f64; 2]; 3],
+) -> Result<ProceduralSurfaceDefinition, crate::geometry::ProceduralGeometryError> {
+    Ok(ProceduralSurfaceDefinition::Revolution(
+        crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            curve(),
+            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            intervals[0],
+            Some(intervals[1]),
+            Some(intervals[2]),
+            false,
+            None,
+        )?,
+    ))
 }
 
 fn reject_on_all_routes(invalid: ProceduralSurfaceDefinition) {
     assert!(ProceduralSurface::new(id(), invalid.clone(), None).is_err());
     assert!(ProceduralSurface::try_new(id(), invalid.clone(), Some(0.5), None).is_err());
     let mut surface =
-        ProceduralSurface::try_new(id(), revolution([[0.0, 1.0]; 3]), Some(0.5), None).unwrap();
+        ProceduralSurface::try_new(id(), revolution([[0.0, 1.0]; 3]).unwrap(), Some(0.5), None)
+            .unwrap();
     let before = surface.clone();
     assert!(surface.replace_definition(invalid.clone()).is_err());
     assert_eq!(surface, before);
@@ -60,19 +64,28 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
         ] {
             let mut intervals = [[0.0, 1.0]; 3];
             intervals[slot] = range;
-            reject_on_all_routes(revolution(intervals));
+            assert!(revolution(intervals).is_err());
+            let mut wire = serde_json::to_value(revolution([[0.0, 1.0]; 3]).unwrap()).unwrap();
+            wire[[
+                "angular_interval",
+                "angular_parameter_interval",
+                "parameter_interval",
+            ][slot]] = serde_json::json!(range);
+            assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
         }
     }
-    let mut definition = revolution([[-1.0, 0.0]; 3]);
-    if let ProceduralSurfaceDefinition::Revolution {
-        angular_parameter_interval,
-        parameter_interval,
-        ..
-    } = &mut definition
-    {
-        *angular_parameter_interval = None;
-        *parameter_interval = None;
-    }
+    let definition = ProceduralSurfaceDefinition::Revolution(
+        crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            curve(),
+            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            [-1.0, 0.0],
+            None,
+            None,
+            false,
+            None,
+        )
+        .unwrap(),
+    );
     let surface = ProceduralSurface::new(id(), definition, None).unwrap();
     let wire = serde_json::to_value(&surface).unwrap();
     assert_eq!(

@@ -303,10 +303,12 @@ impl Brep {
                             .expect("qualified identity");
                     }
                 }
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    *support = qualify(support.as_str())
-                        .try_into()
-                        .expect("qualified identity");
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    definition_payload.set_support(
+                        qualify(definition_payload.support().as_str())
+                            .try_into()
+                            .expect("qualified identity"),
+                    );
                 }
                 _ => {}
             })?;
@@ -612,20 +614,23 @@ fn emit_offset_surface(
     annotations
         .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
-    let geometry = match ProceduralSurface::new(
-        construction.clone(),
-        ProceduralSurfaceDefinition::Offset {
-            support,
-            distance: offset.distance,
-            u_sense: None,
-            v_sense: None,
-            support_extension: None,
-            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-            ),
-        },
+    let geometry = match cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+        support,
+        offset.distance,
         None,
-    ) {
+        None,
+        None,
+        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+        ),
+    )
+    .and_then(|admitted_payload| {
+        ProceduralSurface::new(
+            construction.clone(),
+            ProceduralSurfaceDefinition::Offset(admitted_payload),
+            None,
+        )
+    }) {
         Ok(procedural) => {
             out.procedural_surfaces.push(procedural);
             SurfaceGeometry::Procedural {

@@ -695,12 +695,13 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                     decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
-            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
-            } = construction.definition()
+            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+                construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
             assert!((*distance - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
                 surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
@@ -733,17 +734,16 @@ fn decode_standard_transfers_exact_offset_construction() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-        support,
-        distance,
-        u_sense,
-        v_sense,
-        extension,
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+        procedural.definition()
     else {
         panic!("offset construction");
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
+    let u_sense = definition_payload.u_sense();
+    let v_sense = definition_payload.v_sense();
+    let extension = definition_payload.extension();
     assert!(decoded
         .ir()
         .model
@@ -793,11 +793,12 @@ fn decode_standard_transfers_construction_use_offset() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
         procedural.definition()
     else {
         panic!("offset construction");
     };
+    let distance = definition_payload.distance();
     assert_eq!(*distance, -2.0);
     let Some(bounds) = procedural.record_bounds else {
         panic!("offset parameter bounds");
