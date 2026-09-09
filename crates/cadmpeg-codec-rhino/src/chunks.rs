@@ -795,8 +795,8 @@ pub(crate) fn anonymous_version(
     Ok((reader.i32()?, reader.i32()?))
 }
 
-/// Parses and validates EOF semantics for a complete input buffer.
-pub(crate) fn parse_eof(
+/// Validates EOF framing for a complete input buffer.
+pub(crate) fn validate_eof(
     bytes: &[u8],
     offset: usize,
     archive: ArchiveVersion,
