@@ -23,10 +23,10 @@ fn detect(bytes: &[u8]) -> ContainerKind {
     }
 }
 
-fn allocation_label(allocation: CompoundAllocation) -> &'static str {
+fn allocation_label(allocation: Option<CompoundAllocation>) -> &'static str {
     match allocation {
-        CompoundAllocation::Regular => "fat",
-        CompoundAllocation::Mini => "mini-fat",
+        Some(CompoundAllocation::Regular) => "fat",
+        Some(CompoundAllocation::Mini) | None => "mini-fat",
     }
 }
 
