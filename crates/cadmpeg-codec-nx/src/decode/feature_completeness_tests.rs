@@ -271,17 +271,6 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         &[],
     ));
 
-    assert!(extrude_extent_is_incomplete(
-        &ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::ThroughAll,
-                draft: Some(
-                    cadmpeg_ir::features::SlopeAngle::new(std::f64::consts::FRAC_PI_2,).unwrap()
-                ),
-            },
-        },
-        &[],
-    ));
     assert!(termination_is_incomplete(&LinearTermination::ToFace {
         face: FaceSelection::Native("nx:face-selection#0".to_string()),
         offset: None,
@@ -826,7 +815,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         definition(
             ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::new(
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
                 )
                 .unwrap(),
                 source: None,
@@ -955,17 +944,6 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
     incomplete = complete.clone();
     incomplete.set_extent(None);
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.set_extent(Some(RevolveExtent::OneSided {
-        termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::features::PositiveAngle::new(0.0).unwrap(),
-        },
-    }));
     assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,

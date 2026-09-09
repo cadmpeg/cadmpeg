@@ -103,9 +103,6 @@ pub(crate) fn extrude_extent_is_incomplete(
     let side_is_incomplete = |side: &cadmpeg_ir::features::ExtrudeSide| {
         termination_is_incomplete(&side.termination)
             || termination_dependency_is_incomplete(&side.termination, dependencies)
-            || side.draft.is_some_and(|angle| {
-                !angle.get().is_finite() || angle.get().abs() >= std::f64::consts::FRAC_PI_2
-            })
     };
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -229,7 +226,7 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
         },
         AngularTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         AngularTermination::ToShape { target } => face_selection_is_incomplete(target),
-        AngularTermination::Angle { angle } => !angle.get().is_finite() || angle.get() <= 0.0,
+        AngularTermination::Angle { .. } => false,
         AngularTermination::ThroughAll
         | AngularTermination::ThroughNext
         | AngularTermination::ToFirst
