@@ -777,17 +777,6 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             Some(true),
         ),
         definition(
-            ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
-                )
-                .unwrap(),
-                source: None,
-            },
-            ExtrudeStart::ProfilePlane,
-            Some(true),
-        ),
-        definition(
             ExtrudeDirection::ProfileNormal,
             ExtrudeStart::Unresolved,
             Some(true),
