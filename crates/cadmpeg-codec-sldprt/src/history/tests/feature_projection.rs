@@ -1229,9 +1229,9 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     let FeatureDefinition::Hole { shape, extent, .. } = projected[0].evaluation.definition() else {
         panic!("expected a hole definition");
     };
-    let diameter = &shape.diameter();
+    let diameter = shape.diameter();
     assert_eq!(
-        *diameter,
+        diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap())
     );
     assert_eq!(
@@ -1249,8 +1249,8 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     let FeatureDefinition::Hole { shape, extent, .. } = ambiguous[0].evaluation.definition() else {
         panic!("expected a hole definition");
     };
-    let diameter = &shape.diameter();
-    assert_eq!(*diameter, None);
+    let diameter = shape.diameter();
+    assert_eq!(diameter, None);
     assert_eq!(*extent, None);
 }
 

@@ -1848,7 +1848,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         .any(|(geometry, _)| matches!(geometry, CurveGeometry::Circle(circle_curve)
                 if {
                     let center = circle_curve.center();
-let radius = circle_curve.radius();
+                    let radius = circle_curve.radius();
                     (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
                 })));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());

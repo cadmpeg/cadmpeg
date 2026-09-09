@@ -940,8 +940,8 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     };
     let directrix = definition_payload.directrix();
     let direction = definition_payload.direction();
-    let parameter_interval = &definition_payload.parameter_interval();
-    let native_position = &definition_payload.native_position();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
     let None = definition_payload.revision_form() else {
         panic!("expected extrusion definition")
     };
@@ -968,9 +968,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
                 ]
     ));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(
-        *native_position,
+        native_position,
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1120,15 +1120,15 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     };
     let directrix = definition_payload.directrix();
     let direction = definition_payload.direction();
-    let parameter_interval = &definition_payload.parameter_interval();
-    let native_position = &definition_payload.native_position();
+    let parameter_interval = definition_payload.parameter_interval();
+    let native_position = definition_payload.native_position();
     let None = definition_payload.revision_form() else {
         panic!("expected extrusion definition")
     };
-    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        *native_position,
+        native_position,
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded

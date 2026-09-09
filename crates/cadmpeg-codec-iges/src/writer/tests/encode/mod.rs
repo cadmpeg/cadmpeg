@@ -132,7 +132,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line(line_curve)
                 if {
                     let origin = line_curve.origin();
-let direction = line_curve.direction();
+                    let direction = line_curve.direction();
                     same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
                 })
     }));

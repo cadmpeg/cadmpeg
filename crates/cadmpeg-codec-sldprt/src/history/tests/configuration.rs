@@ -1002,7 +1002,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         panic!("hole definition changed variant");
     };
     let construction = shape.construction();
-    let diameter = &shape.diameter();
+    let diameter = shape.diameter();
     assert_eq!(placements, Some(vec![placement]));
     assert!(matches!(
         construction,
@@ -1015,7 +1015,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         } if actual_diameter.get() == 8.0 && actual_depth.get() == 4.0
     ));
     assert_eq!(
-        *diameter,
+        diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap())
     );
     assert_eq!(

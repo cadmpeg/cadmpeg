@@ -3278,12 +3278,12 @@ fn procedural_pcurve_source_map(
     let (directrix, fallback_interval) = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
         _ => return Ok(None),
@@ -3306,7 +3306,7 @@ fn procedural_pcurve_source_map(
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             {
                 let source_interval = if line_directrix(ir, directrix) {
                     parameter_interval.unwrap_or([0.0, 1.0])
@@ -3324,8 +3324,8 @@ fn procedural_pcurve_source_map(
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-            let parameter_interval = &definition_payload.parameter_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             {
                 let source_interval = if line_directrix(ir, directrix) {
@@ -3340,7 +3340,7 @@ fn procedural_pcurve_source_map(
                         )
                     })?;
                 if let Some(parameter_interval) = angular_parameter_interval {
-                    v_map = affine_parameter_map(*angular_interval, *parameter_interval)
+                    v_map = affine_parameter_map(*angular_interval, parameter_interval)
                         .ok_or_else(|| {
                             CodecError::Malformed(
                                 "IGES procedural surface angular domains are invalid".into(),
@@ -4492,9 +4492,9 @@ fn extrusion_surface_entities(
         ));
     };
     let directrix = definition_payload.directrix();
-    let parameter_interval = &definition_payload.parameter_interval();
+    let parameter_interval = definition_payload.parameter_interval();
     let direction = definition_payload.direction();
-    let native_position = &definition_payload.native_position();
+    let native_position = definition_payload.native_position();
     let revision_form = definition_payload.revision_form();
     if revision_form.is_some() {
         return Err(CodecError::NotImplemented(
@@ -4642,8 +4642,8 @@ fn revolution_surface_entities(
     let axis_origin = definition_payload.axis_origin();
     let axis_direction = definition_payload.axis_direction();
     let angular_interval = definition_payload.angular_interval();
-    let angular_parameter_interval = &definition_payload.angular_parameter_interval();
-    let parameter_interval = &definition_payload.parameter_interval();
+    let angular_parameter_interval = definition_payload.angular_parameter_interval();
+    let parameter_interval = definition_payload.parameter_interval();
     let transposed = definition_payload.transposed();
     let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {

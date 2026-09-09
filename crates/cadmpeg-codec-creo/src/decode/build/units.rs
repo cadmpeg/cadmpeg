@@ -2198,14 +2198,14 @@ mod tests {
             panic!("test surface construction changed family");
         };
         let direction = definition_payload.direction();
-        let native_position = &definition_payload.native_position();
-        let parameter_interval = &definition_payload.parameter_interval();
+        let native_position = definition_payload.native_position();
+        let parameter_interval = definition_payload.parameter_interval();
         assert_vector3(*direction, [25.4, 50.8, 76.2]);
         assert_point3(
             *native_position.as_ref().expect("test native position"),
             [101.6, 127.0, 152.4],
         );
-        assert_eq!(*parameter_interval, Some([1.0, 2.0]));
+        assert_eq!(parameter_interval, Some([1.0, 2.0]));
         assert_close(
             surface
                 .cache_fit_tolerance()

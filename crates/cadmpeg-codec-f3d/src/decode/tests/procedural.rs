@@ -728,8 +728,8 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
             panic!("expected sub-surface")
         };
         let support = definition_payload.support();
-        let parameter_ranges = &definition_payload.parameter_ranges();
-        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        let parameter_ranges = definition_payload.parameter_ranges();
+        assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
         assert!(matches!(decoded
         .ir()
         .model

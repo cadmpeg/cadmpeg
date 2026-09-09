@@ -775,9 +775,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { shape, extent, .. } = hole.evaluation.definition() else {
         unreachable!();
     };
-    let diameter = &shape.diameter();
+    let diameter = shape.diameter();
     assert_eq!(
-        *diameter,
+        diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())
     );
     assert_eq!(

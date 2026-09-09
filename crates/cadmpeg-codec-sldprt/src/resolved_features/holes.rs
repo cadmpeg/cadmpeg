@@ -2750,7 +2750,7 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
     };
     let left_construction = shape.construction();
     let left_exit_kind = shape.exit_kind();
-    let left_diameter = &shape.diameter();
+    let left_diameter = shape.diameter();
     let FeatureDefinition::Hole {
         shape,
 
@@ -2765,7 +2765,7 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
     };
     let right_construction = shape.construction();
     let right_exit_kind = shape.exit_kind();
-    let right_diameter = &shape.diameter();
+    let right_diameter = shape.diameter();
     left_construction == right_construction
         && left_exit_kind == right_exit_kind
         && left_diameter == right_diameter
