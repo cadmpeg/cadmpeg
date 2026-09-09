@@ -71,7 +71,7 @@ pub fn surface_of_revolution_parallel_pcurve(
         _ => return None,
     };
     let (origin, axis, ref_direction, radial) = match surface {
-        SurfaceGeometry::Cylinder(cylinder) if *&cylinder.radius() > 0.0 => {
+        SurfaceGeometry::Cylinder(cylinder) if cylinder.radius() > 0.0 => {
             let origin = cylinder.origin();
             let axis = cylinder.axis();
             let ref_direction = cylinder.ref_direction();
@@ -102,7 +102,7 @@ pub fn surface_of_revolution_parallel_pcurve(
                 },
             )
         }
-        SurfaceGeometry::Sphere(sphere) if *&sphere.radius() > 0.0 => {
+        SurfaceGeometry::Sphere(sphere) if sphere.radius() > 0.0 => {
             let center = sphere.center();
             let axis = sphere.axis();
             let ref_direction = sphere.ref_direction();
@@ -115,7 +115,7 @@ pub fn surface_of_revolution_parallel_pcurve(
             )
         }
         SurfaceGeometry::Torus(torus)
-            if *&torus.major_radius() > 0.0 && *&torus.minor_radius() > 0.0 =>
+            if torus.major_radius() > 0.0 && torus.minor_radius() > 0.0 =>
         {
             let center = torus.center();
             let axis = torus.axis();

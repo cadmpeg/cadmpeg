@@ -1639,7 +1639,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         matches!(crate::families::b2::records::b2_cylinders(&large)[0]
         .surface_geometry()
         .unwrap(), SurfaceGeometry::Cylinder(cylinder_surface)
-            if { *&cylinder_surface.radius() == 2_000_000.0 })
+            if { cylinder_surface.radius() == 2_000_000.0 })
     );
 
     let tiny = 1e-200_f64;

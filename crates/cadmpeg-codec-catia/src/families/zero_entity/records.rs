@@ -1492,7 +1492,7 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cone(cone_surface)
-            if { (*&cone_surface.ratio() == 1.0) && (constant_coordinate(0).is_some()) } =>
+            if { (cone_surface.ratio() == 1.0) && (constant_coordinate(0).is_some()) } =>
         {
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
@@ -1520,7 +1520,7 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Cone(cone_surface)
-            if { (*&cone_surface.ratio() == 1.0) && (constant_coordinate(1).is_some()) } =>
+            if { (cone_surface.ratio() == 1.0) && (constant_coordinate(1).is_some()) } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
@@ -1647,7 +1647,7 @@ fn zero_entity_model_curve_construction(
     else {
         return None;
     };
-    if !(*&cone_surface.ratio() == 1.0) {
+    if !(cone_surface.ratio() == 1.0) {
         return None;
     }
     let origin = cone_surface.origin();
@@ -2693,7 +2693,7 @@ mod tests {
         cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cylinder(&cylinder), Some(SurfaceGeometry::Cylinder(cylinder_surface))
-                if { *&cylinder_surface.radius() == 2_000_000.0 })
+                if { cylinder_surface.radius() == 2_000_000.0 })
         );
 
         let mut cone = vec![0_u8; 120];
@@ -2703,7 +2703,7 @@ mod tests {
         cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cone(&cone), Some(SurfaceGeometry::Cone(cone_surface))
-                if { *&cone_surface.radius() == 2_000_000.0 })
+                if { cone_surface.radius() == 2_000_000.0 })
         );
 
         let mut torus = vec![0_u8; 120];
@@ -2714,8 +2714,8 @@ mod tests {
         assert!(
             matches!(zero_entity_torus(&torus), Some(SurfaceGeometry::Torus(torus_surface))
             if {
-                (*&torus_surface.major_radius() == 2_000_000.0)
-                    && (*&torus_surface.minor_radius() == 1_500_000.0)
+                (torus_surface.major_radius() == 2_000_000.0)
+                    && (torus_surface.minor_radius() == 1_500_000.0)
             })
         );
     }

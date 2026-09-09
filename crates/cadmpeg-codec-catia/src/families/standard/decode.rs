@@ -577,7 +577,7 @@ mod consolidated_revolution_binding_tests {
             .iter()
             .all(|surface| surface.geometry == geometry));
         assert!(
-            matches!(ir.model.curves[0].geometry.solved_cache(), Some(CurveGeometry::Circle(circle_curve)) if { *&circle_curve.radius() == 3.0 })
+            matches!(ir.model.curves[0].geometry.solved_cache(), Some(CurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 3.0 })
         );
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 0.5]));
     }
@@ -827,7 +827,7 @@ mod consolidated_analytic_refinement_tests {
             })
         );
         assert!(
-            matches!(surfaces[1], Some(SurfaceGeometry::Cone(cone_surface)) if { *&cone_surface.half_angle() == 0.25 })
+            matches!(surfaces[1], Some(SurfaceGeometry::Cone(cone_surface)) if { cone_surface.half_angle() == 0.25 })
         );
     }
 }

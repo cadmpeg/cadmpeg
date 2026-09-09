@@ -6108,7 +6108,7 @@ pub(crate) mod tests {
             if {
                 let basis = trimmed_pcurve.basis();
                 matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
-                        if { *&circle_pcurve.radius() == 3.0 })
+                        if { circle_pcurve.radius() == 3.0 })
             })
         );
     }

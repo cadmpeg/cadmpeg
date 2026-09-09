@@ -1436,13 +1436,13 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         if {
             let axis = cone_surface.axis();
     let half_angle = &cone_surface.half_angle();
-            (*&cone_surface.radius() == 10.0)
-                && (*&cone_surface.ratio() == 0.4)
+            (cone_surface.radius() == 10.0)
+                && (cone_surface.ratio() == 0.4)
                 && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
                     && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
         }));
     assert!(
-        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { *&torus_surface.minor_radius() == -7.5 })
+        matches!(supports[1], SurfaceGeometry::Torus(torus_surface) if { torus_surface.minor_radius() == -7.5 })
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1796,7 +1796,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *&sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { sphere_surface.radius() == -12.5 })
     );
 
     let mut edited = result.ir().clone();
@@ -1857,7 +1857,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { *&sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Sphere(sphere_surface) if { sphere_surface.radius() == -12.5 })
     );
 }
 

@@ -246,7 +246,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         chart_origin: 0.0,
     };
     assert!(
-        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Circle(circle_curve)) if { *&circle_curve.radius() == 2.0 })
+        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })
     );
     let meridian = B5Pcurve {
         control_points: vec![[1.0, -2.0], [1.0, 4.0]],

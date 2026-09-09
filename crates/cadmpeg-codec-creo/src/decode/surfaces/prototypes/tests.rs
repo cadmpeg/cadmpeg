@@ -57,8 +57,8 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
         let half_angle = &cone_surface.half_angle();
-                    (*&cone_surface.radius() == 0.0)
-                        && (*&cone_surface.ratio() == 1.0)
+                    (cone_surface.radius() == 0.0)
+                        && (cone_surface.ratio() == 1.0)
                         && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
                             && origin.y.abs() < EPS_CONE_FRAME
                             && origin.z.abs() < EPS_CONE_FRAME

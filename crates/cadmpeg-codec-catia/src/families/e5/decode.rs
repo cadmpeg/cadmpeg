@@ -3853,7 +3853,7 @@ mod route_tests {
         )
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Circle(circle_curve) if { *&circle_curve.radius() == 2.0 })
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { circle_curve.radius() == 2.0 })
         );
     }
 
@@ -3897,7 +3897,7 @@ mod route_tests {
         )
         .expect("cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Circle(circle_curve) if { *&circle_curve.radius() == 2.0 })
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { circle_curve.radius() == 2.0 })
         );
 
         let plane = SurfaceGeometry::Plane(
