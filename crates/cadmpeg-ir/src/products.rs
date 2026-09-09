@@ -97,6 +97,11 @@ impl NonEmptyString {
         (!value.is_empty()).then_some(Self(value))
     }
 
+    /// Constructs a non-empty string from a leading character and a suffix.
+    pub fn prefixed(prefix: char, suffix: impl std::fmt::Display) -> Self {
+        Self(format!("{prefix}{suffix}"))
+    }
+
     /// Returns the source string.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -628,6 +633,16 @@ mod tests {
     mod joints;
     mod occurrences;
     use super::*;
+
+    #[test]
+    fn prefixes_preserve_nonempty_strings_and_wire_values() {
+        for (prefix, suffix, expected) in [('#', "42", "#42"), ('λ', "", "λ"), ('\0', "", "\0")] {
+            let value = NonEmptyString::prefixed(prefix, suffix);
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
+        }
+        assert_eq!(NonEmptyString::prefixed('#', 42).as_str(), "#42");
+    }
 
     #[test]
     fn external_document_wire_preserves_legacy_fields_and_rejects_split_states() {

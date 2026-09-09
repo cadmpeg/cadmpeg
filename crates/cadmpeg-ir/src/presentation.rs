@@ -418,8 +418,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::new("#42")
-                    .expect("nonempty source identity"),
+                source_id: crate::products::NonEmptyString::prefixed('#', 42),
             }],
         });
 
@@ -435,8 +434,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::new("#42")
-                    .expect("nonempty source identity"),
+                source_id: crate::products::NonEmptyString::prefixed('#', 42),
             }],
         });
 
