@@ -2768,7 +2768,7 @@ impl<'a> DecodeContext<'a> {
                     ) {
                         Ok(shell) => shell,
                         Err(error) => {
-                            self.scan_warning(source_order, &error.to_string());
+                            self.scan_warning(source_order, error);
                             return false;
                         }
                     },
