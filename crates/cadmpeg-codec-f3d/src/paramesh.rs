@@ -157,6 +157,27 @@ pub(crate) enum FloatWidth {
     Quad,
 }
 
+/// A terminal-delta byte stream and its decoded values.
+pub(crate) struct TriangleDeltaStream {
+    values: Vec<u8>,
+    decoded: Vec<u32>,
+}
+
+impl TriangleDeltaStream {
+    fn new(values: Vec<u8>) -> Result<Self, CodecError> {
+        let decoded = decode_terminal_delta_values(&values)?;
+        Ok(Self { values, decoded })
+    }
+
+    fn values(&self) -> &[u8] {
+        &self.values
+    }
+
+    fn decoded(&self) -> &[u32] {
+        &self.decoded
+    }
+}
+
 /// Encoded elements and their code-specific decoded data.
 pub(crate) enum MeshElements {
     /// Floating-point elements.
@@ -164,7 +185,7 @@ pub(crate) enum MeshElements {
     /// Packed directions.
     PackedDirection { values: Vec<u8> },
     /// Delta-coded triangle values.
-    TriangleDelta { values: Vec<u8>, decoded: Vec<u32> },
+    TriangleDelta(TriangleDeltaStream),
     /// Elements with an unresolved layout.
     Opaque { code: u32, values: Vec<u8> },
 }
@@ -181,7 +202,7 @@ impl MeshElements {
                 ..
             } => Some(16),
             Self::PackedDirection { .. } => Some(PACKED_DIRECTION_BYTES),
-            Self::TriangleDelta { .. } => Some(4),
+            Self::TriangleDelta(_) => Some(4),
             Self::Opaque { .. } => None,
         }
     }
@@ -197,7 +218,7 @@ impl MeshElements {
                 ..
             } => ELEMENT_QUAD as u32,
             Self::PackedDirection { .. } => ELEMENT_PACKED_DIRECTION as u32,
-            Self::TriangleDelta { .. } => ELEMENT_TRIANGLE_DELTA as u32,
+            Self::TriangleDelta(_) => ELEMENT_TRIANGLE_DELTA as u32,
             Self::Opaque { code, .. } => *code,
         }
     }
@@ -206,8 +227,8 @@ impl MeshElements {
         match self {
             Self::Float { values, .. }
             | Self::PackedDirection { values }
-            | Self::TriangleDelta { values, .. }
             | Self::Opaque { values, .. } => values,
+            Self::TriangleDelta(stream) => stream.values(),
         }
     }
 }
@@ -1734,10 +1755,9 @@ fn registry_attributes(
                 ELEMENT_PACKED_DIRECTION => MeshElements::PackedDirection {
                     values: stream.bytes.clone(),
                 },
-                ELEMENT_TRIANGLE_DELTA => MeshElements::TriangleDelta {
-                    values: stream.bytes.clone(),
-                    decoded: decode_terminal_delta_values(&stream.bytes)?,
-                },
+                ELEMENT_TRIANGLE_DELTA => {
+                    MeshElements::TriangleDelta(TriangleDeltaStream::new(stream.bytes.clone())?)
+                }
                 code => MeshElements::Opaque {
                     code: u32::try_from(code).map_err(|_| {
                         malformed("paramesh channel declares an out-of-range element code")
@@ -1812,10 +1832,10 @@ fn registry_triangle_groups(
     let mut channels = attributes
         .iter()
         .filter_map(|attribute| match &attribute.elements {
-            MeshElements::TriangleDelta { decoded, .. }
+            MeshElements::TriangleDelta(stream)
                 if attribute.domain == MeshAttributeDomain::Triangle && attribute.role == 0 =>
             {
-                Some((attribute, decoded))
+                Some((attribute, stream.decoded()))
             }
             _ => None,
         });
@@ -1904,7 +1924,7 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
         ));
     }
     match &channel.elements {
-        MeshElements::TriangleDelta { decoded, .. } => Ok(Some(decoded.clone())),
+        MeshElements::TriangleDelta(stream) => Ok(Some(stream.decoded().to_vec())),
         _ => Err(malformed(
             "paramesh tid channel has an invalid registry declaration",
         )),
@@ -2533,7 +2553,7 @@ mod tests {
         assert_eq!(attribute.item_size(), Some(4));
         assert_eq!(attribute.count(), Some(1));
         assert!(
-            matches!(&attribute.elements, MeshElements::TriangleDelta { decoded, .. } if decoded == &[0])
+            matches!(&attribute.elements, MeshElements::TriangleDelta(stream) if stream.decoded() == [0])
         );
         assert_eq!(mesh.triangle_groups.len(), 1);
         assert_eq!(mesh.triangle_groups[0].source_id, GROUP);
