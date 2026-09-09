@@ -1138,7 +1138,7 @@ impl CompoundState {
                     }));
                 }
                 DirectoryKind::Root => {
-                    return malformed("root or empty object appears in a storage child tree")
+                    return malformed("root object appears in a storage child tree")
                 }
             }
             if entry.left != NO_STREAM {
@@ -1648,10 +1648,10 @@ fn validate_sibling_tree(directory: &[DirectorySlot], root: u32) -> Result<(), C
     let root_entry = directory
         .get(root as usize)
         .ok_or_else(|| CodecError::Malformed("CFB sibling root is out of range".into()))?;
-    if !root_entry
-        .live()
-        .is_some_and(|entry| entry.color == DirectoryColor::Black)
-    {
+    let root_entry = root_entry.live().ok_or_else(|| {
+        CodecError::Malformed("CFB sibling-tree root points to a free directory slot".into())
+    })?;
+    if root_entry.color != DirectoryColor::Black {
         return malformed("CFB sibling-tree root is not black");
     }
     visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
