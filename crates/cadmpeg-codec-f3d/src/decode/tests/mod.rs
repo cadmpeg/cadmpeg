@@ -15,3 +15,5 @@ mod surfaces;
 mod surfaces_deform;
 mod topology;
 mod xref;
+
+mod projection_gaps;
