@@ -390,7 +390,13 @@ fn decode_record(
                 let targets = read_connections(record, &mut at)
                     .map_err(|error| connection_error(error, at))?;
                 match count {
-                    Some(count) => PropertyContent::MultipleReferences { count, targets },
+                    Some(count) => match std::num::NonZeroUsize::new(count) {
+                        Some(count) => PropertyContent::MultipleReferences { count, targets },
+                        None => PropertyContent::Value {
+                            value: PropertyValue::Multiple(Vec::new()),
+                            connections: targets,
+                        },
+                    },
                     None => PropertyContent::Reference(targets),
                 }
             }
@@ -709,12 +715,21 @@ mod tests {
             assert!(outcome.rejected.is_empty(), "{:?}", outcome.rejected);
             let records = outcome.records;
             assert_eq!(records.len(), 1);
-            assert!(records[0].properties["targets"].value().is_none());
+            assert_eq!(
+                records[0].properties["targets"].value().is_none(),
+                count != 0
+            );
             assert_eq!(
                 records[0].properties["targets"].content,
-                PropertyContent::MultipleReferences {
-                    count: count as usize,
-                    targets: vec!["target".into()],
+                match std::num::NonZeroUsize::new(count as usize) {
+                    Some(count) => PropertyContent::MultipleReferences {
+                        count,
+                        targets: vec!["target".into()],
+                    },
+                    None => PropertyContent::Value {
+                        value: PropertyValue::Multiple(Vec::new()),
+                        connections: vec!["target".into()],
+                    },
                 }
             );
         }
