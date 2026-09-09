@@ -2,9 +2,13 @@
 //! Product-structure transfer unit tests.
 
 use crate::native;
-use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
+use crate::product::{
+    list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
+    RealWidth,
+};
 use crate::test_support::*;
 use crate::FcstdCodec;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -1132,4 +1136,37 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .map(|record| (record.object.as_str(), record))
         .collect();
     assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
+}
+
+#[test]
+fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
+    for width in [RealWidth::Single, RealWidth::Double] {
+        let mut bytes = vec![0xff; 9];
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        for value in [2.0_f32, -3.0, 4.0] {
+            match width {
+                RealWidth::Single => bytes.extend_from_slice(&value.to_le_bytes()),
+                RealWidth::Double => bytes.extend_from_slice(&f64::from(value).to_le_bytes()),
+            }
+        }
+        let end = bytes.len();
+        bytes.push(0xff);
+        let view = View::over_retained(&bytes).child(9, end).unwrap();
+        let rows = list_layout::<3>(view, "ScaleList")
+            .unwrap()
+            .map(|row| {
+                row.into_iter()
+                    .map(read_real)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows, [[2.0, -3.0, 4.0]]);
+        assert!(list_layout::<3>(
+            View::over_retained(&bytes).child(9, end - 1).unwrap(),
+            "ScaleList"
+        )
+        .is_err());
+    }
+    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
 }
