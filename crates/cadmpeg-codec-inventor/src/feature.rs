@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
 
+use crate::pmdc::unique_by;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -960,13 +962,13 @@ pub(crate) fn project(
     }
 
     let index = ProjectionIndex {
-        properties: unique_by_key(&inventory.properties, |record| {
+        properties: unique_by(&inventory.properties, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
             )
         }),
-        parameters: unique_by_key(&design.parameters, |record| {
+        parameters: unique_by(&design.parameters, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -978,7 +980,7 @@ pub(crate) fn project(
                 Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
             })
             .collect(),
-        sketches: unique_by_key(&sketch.sketches, |record| {
+        sketches: unique_by(&sketch.sketches, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -993,13 +995,13 @@ pub(crate) fn project(
                     .map(|native| (native, sketch.id.clone()))
             })
             .collect(),
-        directions: unique_by_key(&sketch.directions, |record| {
+        directions: unique_by(&sketch.directions, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
             )
         }),
-        transforms: unique_by_key(&sketch.transforms, |record| {
+        transforms: unique_by(&sketch.transforms, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -1016,7 +1018,7 @@ pub(crate) fn project(
             })
             .collect(),
     };
-    let labels = unique_by_key(&inventory.labels, |label| {
+    let labels = unique_by(&inventory.labels, |label| {
         (
             label.identity.segment_token.as_str(),
             label.header.owner.index.saturating_sub(1),
@@ -1629,24 +1631,6 @@ fn boolean_properties(
                 .map(|value| (format!("property_{slot}_boolean"), value.to_string()))
         })
         .collect()
-}
-
-fn unique_by_key<'a, T, K: Eq + std::hash::Hash + Copy>(
-    records: &'a [T],
-    key: impl Fn(&'a T) -> K,
-) -> HashMap<K, &'a T> {
-    let mut unique = HashMap::new();
-    let mut duplicate = HashSet::new();
-    for record in records {
-        let key = key(record);
-        if unique.insert(key, record).is_some() {
-            duplicate.insert(key);
-        }
-    }
-    for key in duplicate {
-        unique.remove(&key);
-    }
-    unique
 }
 
 pub(crate) type PmDcFeatureProperty = Located<PmDcFeaturePropertyPayload>;

@@ -404,3 +404,20 @@ pub(crate) fn u32_list(
         CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
     })
 }
+
+pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
+    records: &'a [T],
+    key: impl Fn(&'a T) -> K,
+) -> std::collections::HashMap<K, &'a T> {
+    let mut unique = std::collections::HashMap::new();
+    for record in records {
+        unique
+            .entry(key(record))
+            .and_modify(|value| *value = None)
+            .or_insert(Some(record));
+    }
+    unique
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|value| (key, value)))
+        .collect()
+}
