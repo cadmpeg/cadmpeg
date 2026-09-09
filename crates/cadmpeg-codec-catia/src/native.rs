@@ -40,11 +40,13 @@ use owner_chart::{
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
+pub use crate::families::zero_entity::topology::EdgeEnd;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
 };
+use crate::unique_index::UniqueIndex;
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
@@ -257,7 +259,7 @@ impl CatiaConsolidatedOwnerPacket {
         }
     }
 
-    pub fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
+    pub(crate) fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
         match &mut self.payload {
             CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_mut(),
             CatiaOwnerPacketPayload::Counted { .. } => None,
@@ -6576,7 +6578,7 @@ pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
     /// Start or end of that candidate's oriented endpoint pair.
-    pub endpoint_index: crate::families::zero_entity::topology::EdgeEnd,
+    pub endpoint_index: EdgeEnd,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
@@ -8700,19 +8702,14 @@ fn resolve_owner_chart_support_aliases(
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
 ) {
-    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
-    for alias in aliases {
-        unique_by_tag
-            .entry(alias.tag())
-            .and_modify(|unique| *unique = None)
-            .or_insert(Some(alias));
-    }
+    let unique_by_tag = aliases
+        .iter()
+        .map(|alias| (alias.tag(), alias))
+        .collect::<UniqueIndex<_, _>>();
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = unique_by_tag
                 .get(&reference.value)
-                .copied()
-                .flatten()
                 .map(|row| CatiaOwnerChartAliasBinding {
                     row: row.id.clone(),
                     canonical_tag: row.canonical_surface_tag,

@@ -62,6 +62,7 @@ pub(crate) mod object_graph;
 pub(crate) mod pmi;
 pub(crate) mod sketch;
 pub(crate) mod solve;
+mod unique_index;
 pub(crate) mod value_block;
 pub(crate) mod variant;
 pub(crate) mod wire;

@@ -147,6 +147,9 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
             (None, Some(_)) => {
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
+            (Some(row), _) if row.is_empty() => {
+                return Err("owner-chart alias_row must not be empty".to_owned());
+            }
             (Some(row), canonical_tag) => Some(CatiaOwnerChartAliasBinding { row, canonical_tag }),
         };
         let mut reference = Self::new(wire.value, wire.encoding);
@@ -337,6 +340,9 @@ impl CatiaOwnerChartBridgeWire {
                         "owner-chart bridge framing controls do not match carrier".to_owned()
                     );
                 }
+                if !construction_radius.is_finite() || construction_radius <= 0.0 {
+                    return Err("construction_radius must be finite and positive".to_owned());
+                }
                 let middle_controls = [
                     CatiaOwnerChartMiddleControl::from_byte(controls[2])
                         .ok_or("invalid first owner-chart middle control")?,
@@ -479,6 +485,32 @@ mod tests {
     }
 
     #[test]
+    fn bridge_wire_rejects_invalid_construction_radius() {
+        let native =
+            crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
+        let relation = native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("supported owner chart");
+        for radius in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut wire =
+                CatiaOwnerChartBridgeWire::from_bridge(relation.bridge.clone(), relation.carrier);
+            let CatiaOwnerChartBridgeWire::SupportedSurface {
+                construction_radius,
+                ..
+            } = &mut wire
+            else {
+                panic!("supported surface");
+            };
+            *construction_radius = radius;
+            assert_eq!(
+                wire.into_bridge(relation.carrier)
+                    .expect_err("invalid construction radius"),
+                "construction_radius must be finite and positive"
+            );
+        }
+    }
+
+    #[test]
     fn bridge_preserves_independent_middle_control_bytes() {
         let native =
             crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
@@ -552,6 +584,19 @@ mod tests {
                 serde_json::to_value(reference).expect("serialize alias"),
                 wire
             );
+        }
+    }
+
+    #[test]
+    fn reference_wire_rejects_empty_alias_rows() {
+        for canonical_tag in [None, Some(23)] {
+            let mut wire = json!({ "value": 17, "encoding": "width_coded", "alias_row": "" });
+            if let Some(tag) = canonical_tag {
+                wire["canonical_surface_tag"] = json!(tag);
+            }
+            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire)
+                .expect_err("empty alias row");
+            assert!(error.to_string().contains("alias_row must not be empty"));
         }
     }
 

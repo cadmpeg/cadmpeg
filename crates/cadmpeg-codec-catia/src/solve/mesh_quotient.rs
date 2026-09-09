@@ -1014,7 +1014,7 @@ impl MeshQuotient {
         for node in 0..self.union.len() {
             if self.union.find(node) == node {
                 work = work
-                    .saturating_add(self.members[node].len())
+                    .saturating_add(self.members(node).len())
                     .saturating_add(self.domains[node].len());
             }
         }
@@ -1039,7 +1039,7 @@ impl MeshQuotient {
             if self.union.find(node) != node {
                 continue;
             }
-            let mut members = self.members[node].clone();
+            let mut members = self.members(node).to_vec();
             members.sort_unstable();
             let mut domain = self.domains[node].iter().copied().collect::<Vec<_>>();
             domain.sort_unstable();
@@ -1231,7 +1231,8 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> bool {
-        let edges = self.members[root]
+        let edges = self
+            .members(root)
             .iter()
             .map(|node| node / 2)
             .filter(|edge| !edge_candidates[*edge].is_empty())
@@ -1246,13 +1247,12 @@ impl MeshQuotient {
         budget: Option<&WorkBudget<'_>>,
     ) -> bool {
         fn enqueue_component_edges(
-            root: usize,
-            members: &[Vec<usize>],
+            members: &[usize],
             edge_candidates: &[Vec<[usize; 2]>],
             queue: &mut VecDeque<usize>,
             queued: &mut HashSet<usize>,
         ) {
-            for edge in members[root].iter().map(|node| node / 2) {
+            for edge in members.iter().map(|node| node / 2) {
                 if !edge_candidates[edge].is_empty() && queued.insert(edge) {
                     queue.push_back(edge);
                 }
@@ -1290,8 +1290,7 @@ impl MeshQuotient {
                 if supported != *self.domains[start] {
                     self.domains[start] = Arc::new(supported);
                     enqueue_component_edges(
-                        start,
-                        &self.members,
+                        self.members(start),
                         edge_candidates,
                         &mut queue,
                         &mut queued,
@@ -1320,8 +1319,7 @@ impl MeshQuotient {
             if supported_starts != *self.domains[start] {
                 self.domains[start] = Arc::new(supported_starts);
                 enqueue_component_edges(
-                    start,
-                    &self.members,
+                    self.members(start),
                     edge_candidates,
                     &mut queue,
                     &mut queued,
@@ -1330,8 +1328,7 @@ impl MeshQuotient {
             if supported_ends != *self.domains[end] {
                 self.domains[end] = Arc::new(supported_ends);
                 enqueue_component_edges(
-                    end,
-                    &self.members,
+                    self.members(end),
                     edge_candidates,
                     &mut queue,
                     &mut queued,
@@ -1365,9 +1362,9 @@ impl MeshQuotient {
                 };
                 for &root in rest {
                     affected_edges.extend(
-                        self.members[first]
+                        self.members(first)
                             .iter()
-                            .chain(&self.members[root])
+                            .chain(self.members(root))
                             .map(|node| node / 2)
                             .filter(|edge| !edge_candidates[*edge].is_empty()),
                     );
@@ -1928,8 +1925,8 @@ impl MeshQuotient {
                 let right_root = direction_union.find(right_node);
                 left_root == right_root
                     || (self.domains[left_root] == self.domains[right_root]
-                        && self.members[left_root].as_slice() == [left_node]
-                        && self.members[right_root].as_slice() == [right_node])
+                        && self.members(left_root) == [left_node]
+                        && self.members(right_root) == [right_node])
             })
             .collect::<HashSet<_>>();
         let mut oriented = oriented_edges.clone();
@@ -7674,7 +7671,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<(StandardTopology, Vec<usize>)> {
     let face_run = largest_fbb_run(bytes)?;
-    let face_count = face_run.face_count;
+    let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
@@ -8510,7 +8507,7 @@ where
     let endpoint_budget = budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
     let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) = (|| {
         let face_run = largest_fbb_run(bytes)?;
-        let face_count = face_run.face_count;
+        let face_count = face_run.face_count();
         let after_faces = face_run.after_faces();
         let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
         let vertex_points = parse_vertex_table(bytes, vertex_header)?;
