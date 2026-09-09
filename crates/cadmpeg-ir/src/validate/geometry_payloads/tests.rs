@@ -4,7 +4,6 @@
 use crate::examples::unit_cube;
 use crate::geometry::SurfaceGeometry;
 use crate::math::{Point3, Vector3};
-use crate::report::Check;
 use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
 use crate::validate::validate_neutral;
 
@@ -30,8 +29,7 @@ fn tessellation_counts_must_be_consistent() {
         .expect("valid tessellation")
         .with_faces(vec![
             FaceId::mint("synthetic:test:face#missing").expect("valid identity")
-        ])
-        .with_chordal_deflection(Some(-1.0)),
+        ]),
     );
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
@@ -39,10 +37,6 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("missing tessellation face")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("invalid tessellation deflection")));
 }
 
 #[test]
@@ -101,16 +95,23 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
             triangles: vec![0],
         }])
         .expect("valid local texture assignment");
-    invalid_texture.id = "synthetic:test:tessellation#missing-texture".into();
+    invalid_texture.id = "synthetic:test:tessellation#missing-texture"
+        .try_into()
+        .unwrap();
 
     let mut ir = unit_cube();
-    ir.model.assets.push(Asset {
-        id: texture,
-        name: None,
-        media_type: None,
-        content: AssetContent::Embedded { data: vec![0] },
-        native_ref: None,
-    });
+    ir.model.assets.push(
+        Asset::try_new(
+            texture,
+            None,
+            None,
+            AssetContent::Embedded {
+                data: crate::assets::AssetData::new(vec![0]).expect("nonempty asset data"),
+            },
+            None,
+        )
+        .expect("valid asset"),
+    );
     ir.model.tessellations.extend([valid, invalid_texture]);
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
@@ -153,30 +154,4 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     );
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
-}
-
-#[test]
-fn topology_tolerance_is_bounds_checked() {
-    let mut ir = unit_cube();
-    let edge_id = ir.model.edges[0].id.as_str().to_owned();
-    ir.model.edges[0].tolerance = Some(-1.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(
-            |finding| (finding.check == Check::Bounds || finding.check == Check::Tolerances)
-                && finding.entity.as_deref() == Some(edge_id.as_str())
-        ));
-}
-
-#[test]
-fn document_and_entity_tolerances_are_checked() {
-    let mut ir = unit_cube();
-    ir.tolerances.angular = f64::NAN;
-    ir.model.faces[0].tolerance = Some(0.0);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Tolerances));
 }

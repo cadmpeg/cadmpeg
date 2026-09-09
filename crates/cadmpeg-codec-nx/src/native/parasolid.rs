@@ -133,7 +133,7 @@ pub(crate) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::walk(&stream.inflated).records {
+        for record in crate::deltas::walk(&stream.inflated).into_events().records {
             let crate::deltas::record_family::RecordFamily::Group {
                 node_id,
                 selector,
@@ -289,7 +289,7 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
         Record(crate::deltas::Record),
         Tombstone(u32),
     }
-    let census = crate::deltas::walk(bytes);
+    let census = crate::deltas::walk(bytes).into_events();
     let mut events = census
         .records
         .into_iter()
@@ -976,6 +976,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 stream.inflated.len(),
             );
         }
+        let census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
             events.transmit_headers.push(ParasolidDeltasTransmitHeader {
@@ -1778,9 +1779,13 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            header_references: row.header_references,
+            header_references: row
+                .header_references
+                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
             sense: row.sense,
-            construction_references: row.references,
+            construction_references: row
+                .references
+                .map(crate::framing::xmt_reference::XmtTarget::to_wire),
             delta_twin: row.delta_twin,
             inflated_offset: row.pos as u64,
         }
@@ -2612,22 +2617,24 @@ pub(crate) fn parasolid_topology_attribute_list_references(
         for topology_type in TopologyAttributeKind::ALL {
             for node in graph.of_kind(topology_type.node_kind()) {
                 let attribute_list_xmt = match topology_type {
-                    TopologyAttributeKind::Shell => {
-                        node.shell_fields().map(|fields| fields.attributes)
-                    }
-                    TopologyAttributeKind::Face => {
-                        node.face_fields().map(|fields| fields.attributes)
-                    }
-                    TopologyAttributeKind::Loop => {
-                        node.loop_fields().map(|fields| fields.attributes)
-                    }
-                    TopologyAttributeKind::Edge => {
-                        node.edge_fields().map(|fields| fields.attributes)
-                    }
-                    TopologyAttributeKind::Fin => node.fin_fields().map(|fields| fields.attributes),
-                    TopologyAttributeKind::Vertex => {
-                        node.vertex_fields().map(|fields| fields.attributes)
-                    }
+                    TopologyAttributeKind::Shell => node
+                        .shell_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
+                    TopologyAttributeKind::Face => node
+                        .face_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
+                    TopologyAttributeKind::Loop => node
+                        .loop_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
+                    TopologyAttributeKind::Edge => node
+                        .edge_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
+                    TopologyAttributeKind::Fin => node
+                        .fin_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
+                    TopologyAttributeKind::Vertex => node
+                        .vertex_fields()
+                        .and_then(|fields| fields.attributes.map(u32::from)),
                 };
                 let Some(attribute_list_xmt) = attribute_list_xmt.filter(|value| *value > 1) else {
                     continue;
@@ -4822,7 +4829,9 @@ mod tests {
                 .expect("required invariant")
                 .face_fields()
                 .expect("required invariant")
-                .attributes,
+                .attributes
+                .map(u32::from)
+                .expect("non-null attribute target"),
             41
         );
         assert_eq!(
@@ -4831,7 +4840,9 @@ mod tests {
                 .expect("required invariant")
                 .loop_fields()
                 .expect("required invariant")
-                .attributes,
+                .attributes
+                .map(u32::from)
+                .expect("non-null attribute target"),
             42
         );
         assert_eq!(
@@ -4840,7 +4851,9 @@ mod tests {
                 .expect("required invariant")
                 .fin_fields()
                 .expect("required invariant")
-                .attributes,
+                .attributes
+                .map(u32::from)
+                .expect("non-null attribute target"),
             43
         );
         assert_eq!(
@@ -4849,7 +4862,9 @@ mod tests {
                 .expect("required invariant")
                 .edge_fields()
                 .expect("required invariant")
-                .attributes,
+                .attributes
+                .map(u32::from)
+                .expect("non-null attribute target"),
             44
         );
         assert_eq!(
@@ -4858,7 +4873,9 @@ mod tests {
                 .expect("required invariant")
                 .vertex_fields()
                 .expect("required invariant")
-                .attributes,
+                .attributes
+                .map(u32::from)
+                .expect("non-null attribute target"),
             45
         );
 

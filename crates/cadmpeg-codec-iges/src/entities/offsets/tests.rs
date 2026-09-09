@@ -37,7 +37,7 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 1, 0, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 1, 0, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,

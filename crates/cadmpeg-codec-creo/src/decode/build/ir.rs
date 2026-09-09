@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
+use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -23,7 +24,6 @@ use crate::container::ContainerScan;
 
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::surfaces::BrepTransferDiagnostics;
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
@@ -197,7 +197,7 @@ fn transfer_reference_lines(
             });
     for line in &scan.references.lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
-        let Some(direction) = normalized(direction) else {
+        let Some(direction) = normalize(direction) else {
             continue;
         };
         let (family, native_identity) = match &line.kind {
@@ -232,7 +232,12 @@ fn transfer_reference_lines(
             ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:{family}:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:{family}:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -259,7 +264,7 @@ fn transfer_reference_circles(
             });
     for circle in &scan.references.circles {
         let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
-        let Some(reference) = normalized(radial) else {
+        let Some(reference) = normalize(radial) else {
             continue;
         };
         let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
@@ -290,7 +295,12 @@ fn transfer_reference_circles(
             ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:arc_z:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:arc_z:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -348,7 +358,12 @@ fn transfer_reference_ellipses(
             ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("MdlRefInfo:conic:{native_identity}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "MdlRefInfo:conic:{native_identity}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -364,7 +379,7 @@ fn transfer_display_tessellations(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         let mut triangles = Vec::new();
@@ -407,9 +422,12 @@ fn transfer_display_tessellations(
                 Vec::new(),
                 Vec::new(),
             )
-            .expect("decoded Creo triangle strip is a valid tessellation"),
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+            })?,
         );
     }
+    Ok(())
 }
 
 fn transfer_datum_plane_surfaces(
@@ -447,7 +465,13 @@ fn transfer_datum_plane_surfaces(
             ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("ActDatums:{}", plane.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "ActDatums:{}",
+                    plane.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -507,7 +531,12 @@ fn transfer_placed_plane_surfaces_into_ir(
             ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{surface_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{surface_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -535,7 +564,7 @@ pub(in super::super) fn build_ir(
     transfer_reference_lines(scan, &mut ir, &mut annotations)?;
     transfer_reference_circles(scan, &mut ir, &mut annotations)?;
     transfer_reference_ellipses(scan, &mut ir, &mut annotations)?;
-    transfer_display_tessellations(scan, &mut ir, &mut annotations);
+    transfer_display_tessellations(scan, &mut ir, &mut annotations)?;
     transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations)?;
     transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations)?;
     transfer_and_record_scanned_geometry(

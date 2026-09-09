@@ -76,12 +76,15 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
-                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
-                    apex: [0.5, 0.0, 0.0],
-                    axis: [-1.0, 0.0, 0.0],
-                    ref_direction: [0.0, 1.0, 0.0],
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                }),
+                crate::surface::InlineSurfaceCarrier::Cone(
+                    crate::surface::PositionalConeFrame::new(
+                        [0.5, 0.0, 0.0],
+                        [-1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        std::f64::consts::FRAC_PI_4,
+                    )
+                    .expect("valid positional cone frame"),
+                ),
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,

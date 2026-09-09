@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS surface boundaries and extrusion-plane generator curves.
 
+use crate::vecmath::normalize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 
-use super::super::sketch::normalized;
 use crate::decode::analytic::equations::{quadratic_real_roots, PlaneEquation};
 use crate::vecmath::{cross, dot};
 
@@ -116,7 +116,7 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     plane: PlaneEquation,
 ) -> Option<CurveGeometry> {
     let boundaries = nurbs_surface_boundaries(nurbs)?;
-    let normal = normalized(plane.normal)?;
+    let normal = normalize(plane.normal)?;
     let tolerance = point_tolerance(nurbs.control_points().iter())?
         .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
     let signed_distances = nurbs
@@ -268,7 +268,7 @@ pub(in super::super) fn generator_separates_control_nets(
         return false;
     };
     let generator = [end.x - origin.x, end.y - origin.y, end.z - origin.z];
-    let Some(generator) = normalized(generator) else {
+    let Some(generator) = normalize(generator) else {
         return false;
     };
     let seed = if generator[0].abs() < 0.8 {
@@ -276,7 +276,7 @@ pub(in super::super) fn generator_separates_control_nets(
     } else {
         [0.0, 1.0, 0.0]
     };
-    let Some(first_axis) = normalized(cross(generator, seed)) else {
+    let Some(first_axis) = normalize(cross(generator, seed)) else {
         return false;
     };
     let second_axis = cross(generator, first_axis);
@@ -522,8 +522,8 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             nurbs.control_points()[1].y - nurbs.control_points()[0].y,
             nurbs.control_points()[1].z - nurbs.control_points()[0].z,
         ];
-        normalized(generator)?;
-        let normal = normalized(plane.normal)?;
+        normalize(generator)?;
+        let normal = normalize(plane.normal)?;
         let tolerance = point_tolerance(nurbs.control_points().iter())?
             .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
         let structural_tolerance = 64.0

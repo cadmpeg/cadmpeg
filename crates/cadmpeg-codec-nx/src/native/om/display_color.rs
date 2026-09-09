@@ -86,7 +86,7 @@ pub fn rm_display_color_assignments(
         let record_area_offset = record_area.offset;
         let record_area = record_area.bytes;
         let source_base =
-            entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
+            entry.file_span().map_or(0, |(offset, _)| offset) + record_area_offset as u64;
         for row in crate::om::column_row::scan::linked_rows(record_area) {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())

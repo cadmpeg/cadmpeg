@@ -228,7 +228,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::ExtensionRecord>("extensions")
         .expect("extensions");
     assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].dependency_allow_partial, Some(2));
+    assert_eq!(
+        objects[0]
+            .dependency_allow_partial
+            .map(std::num::NonZeroU64::get),
+        Some(2)
+    );
     assert_eq!(objects[1].dependency_allow_partial, None);
     assert_eq!(extensions.len(), 1);
     assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
@@ -284,13 +289,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
         .expect("shape payloads");
     assert_eq!(shape_payloads.len(), 1);
-    assert_eq!(
-        shape_payloads[0]
-            .payload
-            .shape_set()
-            .map(|facts| facts.topology_version),
-        Some(1)
-    );
+    assert_eq!(shape_payloads[0].payload.topology_version(), Some(1));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
@@ -383,7 +382,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(result.ir().model.tessellations[0].body.is_none());
     assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(
-        result.ir().model.tessellations[0].chordal_deflection,
+        result.ir().model.tessellations[0].chordal_deflection(),
         Some(0.01)
     );
     let entries = namespace
@@ -403,10 +402,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .iter()
             .filter(|span| span.entry == entry.name)
             .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.start);
-        assert_eq!(spans.first().map(|span| span.start), Some(0));
-        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
-        assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
+        spans.sort_by_key(|span| span.span.start());
+        assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
+        assert_eq!(
+            spans.last().map(|span| span.span.end()),
+            Some(entry.byte_len())
+        );
+        assert!(spans
+            .windows(2)
+            .all(|pair| pair[0].span.end() == pair[1].span.start()));
     }
     assert!(ledger
         .iter()
@@ -461,18 +465,6 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .message
             .contains("logical ledger omits nonempty entry Payload.bin")
     }));
-
-    let mut corrupted = result.ir().clone();
-    let mut invalid_objects = objects.clone();
-    invalid_objects[0].dependency_allow_partial = Some(0);
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena("objects", &invalid_objects)
-        .expect("replace objects");
-    assert!(crate::validate_native(&corrupted)
-        .iter()
-        .any(|finding| finding.message.contains("invalid partial-load capability")));
 }
 
 #[test]

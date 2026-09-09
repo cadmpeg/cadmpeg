@@ -8,6 +8,9 @@ use crate::native::features::{
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
+pub(crate) mod om_location;
+use om_location::OmLocation;
+mod row_wire;
 
 /// Classify the semantic role of one linked OM registry.
 ///
@@ -62,7 +65,7 @@ pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     index
         .rows
         .into_iter()
@@ -93,11 +96,12 @@ pub enum SegmentIndexSlot {
 
 /// Validated link from a segment-index word to a compressed stream wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "row_wire::Wire", into = "row_wire::Wire")]
 pub struct SegmentStreamLink {
     /// Globally unique link identity.
     pub id: String,
     /// Owning segment-index row.
-    pub row: String,
+    pub row: usize,
     /// Row word containing the wrapper offset.
     pub slot: SegmentIndexSlot,
     /// Zero-based stream ordinal in first segment-wrapper order.
@@ -197,12 +201,9 @@ pub struct SegmentOmLink {
     pub slot: SegmentIndexSlot,
     /// Role established by exact class declarations in the pointed registry.
     pub schema_role: OmSchemaRole,
-    /// Bytes from the pointed offset to the OM section signature.
-    pub separator_byte_len: u32,
-    /// Absolute file offset of the pointed location.
-    pub source_offset: u64,
-    /// Absolute file offset of the `ff ff ff ff` OM signature.
-    pub section_offset: u64,
+    /// Checked pointed and signature offsets.
+    #[serde(flatten)]
+    pub location: OmLocation,
 }
 
 /// Return body objects whose latest decoded writer is not consumed by a later
@@ -528,7 +529,7 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let sections = container
         .om_sections()
         .into_iter()
@@ -560,14 +561,18 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             } else {
                 continue;
             };
+            let Some(location) = entry_offset
+                .checked_add(relative as u64)
+                .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
+            else {
+                continue;
+            };
             links.push(SegmentOmLink {
                 id: format!("nx:segment-om-links:link#{}", links.len()),
                 row: format!("nx:segment-index:row#{row_ordinal}"),
                 slot,
                 schema_role,
-                separator_byte_len: separator_byte_len as u32,
-                source_offset: entry_offset + relative as u64,
-                section_offset: entry_offset + relative as u64 + separator_byte_len as u64,
+                location,
             });
         }
     }
@@ -593,7 +598,7 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
         };
         links.push(SegmentStreamLink {
             id: format!("nx:segment-stream-links:link#{}", links.len()),
-            row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
+            row: wrapper.row_ordinal,
             slot,
             stream_ordinal: stream_ordinal as u32,
             stream_kind: stream.kind(),
@@ -609,7 +614,7 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let words = index
         .rows
         .iter()
@@ -624,7 +629,7 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
             )
         })
         .filter_map(|link| {
-            let row = link.row.rsplit_once('#')?.1.parse::<usize>().ok()?;
+            let row = link.row;
             let slot = match link.slot {
                 SegmentIndexSlot::TypeCode => 0,
                 SegmentIndexSlot::SubtypeCode => 1,
@@ -696,7 +701,7 @@ mod tests {
             .arena_as::<super::SegmentStreamLink>("segment_stream_links")
             .expect("required invariant");
         assert_eq!(links.len(), 1);
-        assert_eq!(links[0].row, "nx:segment-index:row#0");
+        assert_eq!(links[0].row, 0);
         assert_eq!(links[0].slot, super::SegmentIndexSlot::TypeCode);
         assert_eq!(links[0].stream_ordinal, 0);
         assert_eq!(links[0].stream_kind.label(), "deltas");
@@ -829,10 +834,10 @@ mod tests {
                 links[0].schema_role,
                 crate::native::om::OmSchemaRole::FeatureHistory
             );
-            assert_eq!(links[0].separator_byte_len, expected_separator);
+            assert_eq!(links[0].location.separator_byte_len(), expected_separator);
             assert_eq!(
-                links[0].section_offset,
-                links[0].source_offset + u64::from(expected_separator)
+                links[0].location.section_offset(),
+                links[0].location.source_offset() + u64::from(expected_separator)
             );
         }
     }

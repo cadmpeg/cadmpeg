@@ -153,14 +153,7 @@ pub(crate) fn try_decode_geometry(
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
-        .map(|(_, table)| {
-            table
-                .object_ids
-                .into_vec()
-                .into_iter()
-                .map(|object_id| object_id.value)
-                .collect::<Vec<_>>()
-        })
+        .map(|(_, table)| table.object_ids.into_vec())
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
@@ -265,7 +258,7 @@ pub(crate) fn try_decode_geometry(
             let unknown = unknown_stream_metadata(si, stream);
             let container_stream = annotations.stream("nx:container");
             annotations
-                .note(unknown.id(), container_stream, stream.file_offset as u64)
+                .note(unknown.id(), &container_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
@@ -281,7 +274,7 @@ pub(crate) fn try_decode_geometry(
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
-        completion_streams.push((si, source_stream));
+        completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
@@ -307,8 +300,10 @@ pub(crate) fn try_decode_geometry(
         {
             let pid = PointId::mint(format!("nx:s{si}:pt#{pi}")).expect("identity grammar");
             let vid = VertexId::mint(format!("nx:s{si}:v#{pi}")).expect("identity grammar");
-            annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
-            annotations.derived(&pid, "position");
+            annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
+            annotations
+                .derived(&pid, "position")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position,
@@ -342,11 +337,13 @@ pub(crate) fn try_decode_geometry(
             annotate_node(
                 &mut annotations,
                 &id,
-                source_stream,
+                &source_stream,
                 node,
                 surface_tag(&geometry),
             );
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -359,9 +356,11 @@ pub(crate) fn try_decode_geometry(
             let id =
                 SurfaceId::mint(format!("nx:s{si}:nurbs-surf#{fi}")).expect("identity grammar");
             annotations
-                .note(&id, source_stream, surf.pos as u64)
+                .note(&id, &source_stream, surf.pos as u64)
                 .tag("B_SPLINE_SURFACE");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: surf.geometry,
@@ -376,7 +375,7 @@ pub(crate) fn try_decode_geometry(
             graph,
             &view.offset_surfaces,
             &surfaces_by_xmt,
-            ir.tolerances.linear,
+            ir.tolerances.linear.get(),
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
@@ -392,9 +391,11 @@ pub(crate) fn try_decode_geometry(
                     let surface_id = SurfaceId::mint(format!("nx:s{si}:offset-surf#{oi}"))
                         .expect("identity grammar");
                     annotations
-                        .note(&surface_id, source_stream, offset.pos as u64)
+                        .note(&surface_id, &source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
-                    annotations.derived(&surface_id, "geometry");
+                    annotations
+                        .derived(&surface_id, "geometry")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                     ir.model.surfaces.push(Surface {
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
@@ -403,7 +404,15 @@ pub(crate) fn try_decode_geometry(
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Nx,
-                            object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
+                            object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                "nx:s{si}:offset-surface-record#{}",
+                                offset.xmt
+                            ))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                             name: None,
                             color: None,
                             visible: None,
@@ -414,9 +423,11 @@ pub(crate) fn try_decode_geometry(
                     (surface_id, None)
                 };
             annotations
-                .note(&procedural_id, source_stream, offset.pos as u64)
+                .note(&procedural_id, &source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
-            annotations.derived(&procedural_id, "definition");
+            annotations
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = ProceduralSurface::try_new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset {
@@ -449,9 +460,11 @@ pub(crate) fn try_decode_geometry(
             let procedural_id = ProceduralSurfaceId::mint(format!("nx:s{si}:blend#{bi}"))
                 .expect("identity grammar");
             annotations
-                .note(&surface_id, source_stream, blend.pos as u64)
+                .note(&surface_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
-            annotations.derived(&surface_id, "geometry");
+            annotations
+                .derived(&surface_id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -460,7 +473,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:blend-surface-record#{}",
+                        blend.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -469,9 +488,11 @@ pub(crate) fn try_decode_geometry(
                 }),
             });
             annotations
-                .note(&procedural_id, source_stream, blend.pos as u64)
+                .note(&procedural_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
-            annotations.derived(&procedural_id, "definition");
+            annotations
+                .derived(&procedural_id, "definition")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural_index = ir.model.procedural_surfaces.len();
             let attached = ir.model.add_procedural_surface(
                 surface_id.clone(),
@@ -550,11 +571,13 @@ pub(crate) fn try_decode_geometry(
             annotate_node(
                 &mut annotations,
                 &id,
-                source_stream,
+                &source_stream,
                 node,
                 curve_tag(&geometry),
             );
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry,
@@ -566,9 +589,11 @@ pub(crate) fn try_decode_geometry(
             counts.nurbs_curves += 1;
             let id = CurveId::mint(format!("nx:s{si}:nurbs-crv#{ci}")).expect("identity grammar");
             annotations
-                .note(&id, source_stream, crv.pos as u64)
+                .note(&id, &source_stream, crv.pos as u64)
                 .tag("B_SPLINE_CURVE");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: crv.geometry,
@@ -582,9 +607,11 @@ pub(crate) fn try_decode_geometry(
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
             let id = PcurveId::mint(format!("nx:s{si}:pcurve#{pi}")).expect("identity grammar");
             annotations
-                .note(&id, source_stream, pcurve.pos as u64)
+                .note(&id, &source_stream, pcurve.pos as u64)
                 .tag("B_CURVE_2D");
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
@@ -656,8 +683,8 @@ pub(crate) fn try_decode_geometry(
                 .and_then(|uncharted| {
                     let supports = uncharted
                         .supports
-                        .each_ref()
-                        .map(|xmt| surfaces_by_xmt.get(xmt).cloned());
+                        .references()
+                        .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
                     let [Some(first), Some(second)] = supports else {
                         return None;
                     };
@@ -686,10 +713,12 @@ pub(crate) fn try_decode_geometry(
                 ));
             }
             annotations
-                .note(&curve_id, source_stream, construction.pos as u64)
+                .note(&curve_id, &source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(&curve_id, "geometry");
+                annotations
+                    .derived(&curve_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             } else {
                 annotations.exactness(&curve_id, Exactness::Unknown);
             }
@@ -718,7 +747,13 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "nx:s{si}:intersection-record#{}",
+                        construction.xmt
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -727,10 +762,12 @@ pub(crate) fn try_decode_geometry(
                 }),
             });
             annotations
-                .note(&procedural_id, source_stream, construction.pos as u64)
+                .note(&procedural_id, &source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(&procedural_id, "definition");
+                annotations
+                    .derived(&procedural_id, "definition")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             } else {
                 annotations.exactness(&procedural_id, Exactness::Unknown);
             }
@@ -884,7 +921,8 @@ pub(crate) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance());
+                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
+                            .map(cadmpeg_ir::units::PositiveScalar::get);
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
                                 metadata
@@ -933,7 +971,7 @@ pub(crate) fn try_decode_geometry(
             &mut surfaces_by_xmt,
             &mut curves_by_xmt,
             &pcurves_by_xmt,
-            source_stream,
+            &source_stream,
             &mut annotations,
         );
         let intersection_starts = IntersectionEntityStarts {
@@ -956,7 +994,7 @@ pub(crate) fn try_decode_geometry(
             &pcurves_by_xmt,
             &pcurve_supports_by_xmt,
             &trim_ranges,
-            source_stream,
+            &source_stream,
             &mut annotations,
             &mut intersection_index,
             intersection_starts,
@@ -1041,11 +1079,11 @@ pub(crate) fn try_decode_geometry(
             &format!("nx:s{si}"),
             intersection_starts.coedges,
             intersection_starts.procedural_curves,
-            source_stream,
+            source_stream.clone(),
             &mut annotations,
             &validated_endpoint_witnesses,
             &completion_geometry_budget,
-        );
+        )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(si, stream);
@@ -1061,7 +1099,7 @@ pub(crate) fn try_decode_geometry(
         );
         let container_stream = annotations.stream("nx:container");
         annotations
-            .note(unknown.id(), container_stream, stream.file_offset as u64)
+            .note(unknown.id(), &container_stream, stream.file_offset as u64)
             .tag(stream.kind().label());
         annotations.exactness(unknown.id(), Exactness::Derived);
         unknowns.push(unknown);
@@ -1074,7 +1112,7 @@ pub(crate) fn try_decode_geometry(
         .map(|(si, source_stream)| IntersectionCompletionSource {
             prefix: format!("nx:s{si}"),
             graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
-            source_stream: *source_stream,
+            source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
         })
@@ -1085,7 +1123,7 @@ pub(crate) fn try_decode_geometry(
         &mut annotations,
         &model_endpoint_witnesses,
         &completion_geometry_budget,
-    );
+    )?;
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
@@ -1148,7 +1186,7 @@ pub(crate) fn try_decode_geometry(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
+    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let completion_budget = CompletionBudgetStatus {
@@ -1179,7 +1217,7 @@ pub(crate) fn try_decode_geometry(
         dialect_losses,
         notes,
     );
-    report_untransferred_streams(scan, &mut report, true);
+    report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
@@ -1301,7 +1339,7 @@ pub(crate) fn retain_live_unknown_links(
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
     ids.extend(ir.model.surfaces.iter().map(|entity| entity.id.to_string()));
     ids.extend(ir.model.curves.iter().map(|entity| entity.id.to_string()));
@@ -1321,9 +1359,12 @@ pub(crate) fn retain_live_unknown_links(
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
-            annotations.derived(unknown.id(), "links");
+            annotations
+                .derived(unknown.id(), "links")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 pub(crate) fn topology_body_node_ids(
@@ -1334,7 +1375,11 @@ pub(crate) fn topology_body_node_ids(
     let body_xmts: BTreeSet<_> = graph
         .body_shape_shells()
         .into_iter()
-        .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
+        .filter_map(|shell| {
+            shell
+                .shell_fields()
+                .and_then(|fields| fields.body.map(u32::from))
+        })
         .collect();
     body_xmts
         .into_iter()
@@ -1344,42 +1389,52 @@ pub(crate) fn topology_body_node_ids(
                 .filter(|shell| {
                     shell
                         .shell_fields()
-                        .is_some_and(|fields| fields.body == body_xmt)
+                        .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
                 })
                 .map(|shell| shell.xmt)
                 .collect();
             let faces: Vec<_> = graph
                 .of_kind(NodeKind::Face)
                 .filter(|face| {
-                    face.face_fields()
-                        .is_some_and(|fields| shells.contains(&fields.shell))
+                    face.face_fields().is_some_and(|fields| {
+                        fields
+                            .shell
+                            .is_some_and(|target| shells.contains(&u32::from(target)))
+                    })
                 })
                 .collect();
             let face_xmts: BTreeSet<_> = faces.iter().map(|face| face.xmt).collect();
             let loops: BTreeSet<_> = graph
                 .of_kind(NodeKind::Loop)
                 .filter(|loop_| {
-                    loop_
-                        .loop_fields()
-                        .is_some_and(|fields| face_xmts.contains(&fields.face))
+                    loop_.loop_fields().is_some_and(|fields| {
+                        fields
+                            .face
+                            .is_some_and(|target| face_xmts.contains(&u32::from(target)))
+                    })
                 })
                 .map(|loop_| loop_.xmt)
                 .collect();
             let fins: Vec<_> = graph
                 .of_kind(NodeKind::Fin)
                 .filter(|fin| {
-                    fin.fin_fields()
-                        .is_some_and(|fields| loops.contains(&fields.loop_xmt))
+                    fin.fin_fields().is_some_and(|fields| {
+                        fields
+                            .loop_xmt
+                            .is_some_and(|target| loops.contains(&u32::from(target)))
+                    })
                 })
                 .collect();
             let edge_xmts: BTreeSet<_> = fins
                 .iter()
-                .filter_map(|fin| fin.fin_fields().map(|fields| fields.edge))
-                .collect();
+                .filter_map(|fin| fin.fin_fields())
+                .map(|fields| fields.edge.map(u32::from))
+                .collect::<Option<_>>()?;
             let vertex_xmts: BTreeSet<_> = fins
                 .iter()
-                .filter_map(|fin| fin.fin_fields().map(|fields| fields.vertex))
-                .collect();
+                .filter_map(|fin| fin.fin_fields())
+                .map(|fields| fields.vertex.map(u32::from))
+                .collect::<Option<_>>()?;
             let face_ids = faces
                 .iter()
                 .map(|face| face.u32_at(4))
@@ -1755,7 +1810,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
     let stream = annotations.stream("nx:container");
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations
-            .note(id, stream, 0)
+            .note(id, &stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(id, Exactness::Inferred);
     }
@@ -1765,7 +1820,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
         let vertex_id =
             VertexId::mint(format!("nx:derived:point-vertex#{index}")).expect("identity grammar");
         annotations
-            .note(&vertex_id, stream, 0)
+            .note(&vertex_id, &stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(&vertex_id, Exactness::Inferred);
         ir.model.vertices.push(Vertex {

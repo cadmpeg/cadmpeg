@@ -26,7 +26,10 @@ fn type406_form32_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 5));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 406 Form 32 table boundary");
     assert_eq!(groups.token_start, 5);
@@ -95,7 +98,7 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -148,9 +151,15 @@ fn type406_form33_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
         ],
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 33 table boundary");
         assert_eq!(groups.token_start, 4);
@@ -186,7 +195,10 @@ fn type406_form33_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 6));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 406 Form 33 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -267,7 +279,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -285,7 +297,10 @@ fn type406_form2_entity_table_boundary_follows_fixed_values() {
     let record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 406 Form 2 table boundary");
     assert_eq!(groups.token_start, 5);
@@ -306,7 +321,10 @@ fn type406_form2_table_boundary_precedes_generic_candidate() {
     assert_eq!(generic[0].token_start, 4);
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -324,7 +342,11 @@ fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let record = integer_parameter_record(1, &values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 0, "values={values:?}");
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            0,
+            "values={values:?}"
+        );
         assert_eq!(analysis.valid_candidate_count(), 0, "values={values:?}");
         assert!(analysis.groups().is_none(), "values={values:?}");
     }
@@ -332,7 +354,10 @@ fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
     let mut record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
     record.tokens[1].value = TokenValue::Real(3.0);
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -357,7 +382,10 @@ fn type406_form3_entity_table_boundary_follows_fixed_values() {
     );
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 406 Form 3 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -377,7 +405,10 @@ fn type406_form3_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 2));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -417,7 +448,7 @@ fn type406_form3_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -446,7 +477,10 @@ fn type406_form8_entity_table_boundary_follows_fixed_values() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 8 table boundary");
         assert_eq!(groups.token_start, 3);
@@ -467,7 +501,10 @@ fn type406_form8_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 2));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -494,7 +531,7 @@ fn type406_form8_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -529,7 +566,10 @@ fn type406_form9_entity_table_boundary_follows_fixed_values() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 9 table boundary");
         assert_eq!(groups.token_start, 6);
@@ -562,7 +602,10 @@ fn type406_form9_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 5));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -597,7 +640,7 @@ fn type406_form9_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -635,7 +678,10 @@ fn type406_form10_entity_table_boundary_follows_fixed_values() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 10 table boundary");
         assert_eq!(groups.token_start, 8);
@@ -670,7 +716,10 @@ fn type406_form10_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 7));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -709,7 +758,7 @@ fn type406_form10_malformed_np_or_span_does_not_enable_generic_recovery() {
         let record = token_parameter_record(1, values);
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -767,9 +816,15 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
         ),
     ] {
         assert_eq!(values[1], TokenValue::Integer(np));
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 13 table boundary");
         assert_eq!(groups.token_start, expected_start);
@@ -814,9 +869,15 @@ fn type406_form13_table_boundary_precedes_generic_candidate() {
             .iter()
             .any(|candidate| candidate.token_start == expected_generic_start));
 
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 0);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            0
+        );
         assert_eq!(analysis.valid_candidate_count(), 0);
         assert!(analysis.groups().is_none());
     }
@@ -847,10 +908,13 @@ fn type406_form13_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -913,9 +977,15 @@ fn type406_form14_entity_table_boundary_follows_string_list() {
             3,
         ),
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 14 table boundary");
         assert_eq!(groups.token_start, expected_start);
@@ -949,7 +1019,10 @@ fn type406_form14_table_boundary_precedes_generic_candidate() {
     assert!(generic.iter().any(|candidate| candidate.token_start == 6));
 
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
-    assert_eq!(analysis.candidate_count(), 1);
+    assert_eq!(
+        analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+        1
+    );
     assert_eq!(analysis.valid_candidate_count(), 1);
     let groups = analysis.groups().expect("Type 406 Form 14 table boundary");
     assert_eq!(groups.token_start, 4);
@@ -1025,7 +1098,7 @@ fn type406_form14_malformed_count_or_span_does_not_enable_generic_recovery() {
         let generic_count = structural_pointer_group_candidates(&record).len();
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
             "generic_count={generic_count}"
         );
@@ -1057,7 +1130,10 @@ fn type406_form15_entity_table_boundary_follows_fixed_values() {
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 15 table boundary");
         assert_eq!(groups.token_start, 3);
@@ -1082,8 +1158,15 @@ fn type406_form15_table_boundary_precedes_generic_candidate() {
     let generic = structural_pointer_group_candidates(&token_parameter_record(1, values.clone()));
     assert!(generic.iter().any(|candidate| candidate.token_start == 2));
 
-    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    let analysis_record = token_parameter_record(1, values);
+    let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+    assert_eq!(
+        analysis.candidate_count(
+            &analysis_record,
+            entity_primary_end(&analysis_record, &directory)
+        ),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1112,10 +1195,13 @@ fn type406_form15_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -1181,9 +1267,15 @@ fn type406_form24_entity_table_boundary_follows_definition_lists() {
             7,
         ),
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 24 table boundary");
         assert_eq!(groups.token_start, expected_start);
@@ -1212,8 +1304,15 @@ fn type406_form24_table_boundary_precedes_generic_candidate() {
     let generic = structural_pointer_group_candidates(&token_parameter_record(1, values.clone()));
     assert!(generic.iter().any(|candidate| candidate.token_start == 6));
 
-    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    let analysis_record = token_parameter_record(1, values);
+    let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+    assert_eq!(
+        analysis.candidate_count(
+            &analysis_record,
+            entity_primary_end(&analysis_record, &directory)
+        ),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1256,10 +1355,13 @@ fn type406_form24_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -1317,9 +1419,15 @@ fn type406_form25_entity_table_boundary_follows_level_lists() {
             5,
         ),
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 25 table boundary");
         assert_eq!(groups.token_start, expected_start);
@@ -1346,8 +1454,15 @@ fn type406_form25_table_boundary_precedes_generic_candidate() {
     let generic = structural_pointer_group_candidates(&token_parameter_record(1, values.clone()));
     assert!(generic.iter().any(|candidate| candidate.token_start == 4));
 
-    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    let analysis_record = token_parameter_record(1, values);
+    let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+    assert_eq!(
+        analysis.candidate_count(
+            &analysis_record,
+            entity_primary_end(&analysis_record, &directory)
+        ),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1394,10 +1509,13 @@ fn type406_form25_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -1434,9 +1552,15 @@ fn type406_form26_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
         ],
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 26 table boundary");
         assert_eq!(groups.token_start, 5);
@@ -1463,8 +1587,15 @@ fn type406_form26_table_boundary_precedes_generic_candidate() {
     let generic = structural_pointer_group_candidates(&token_parameter_record(1, values.clone()));
     assert!(generic.iter().any(|candidate| candidate.token_start == 4));
 
-    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    let analysis_record = token_parameter_record(1, values);
+    let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+    assert_eq!(
+        analysis.candidate_count(
+            &analysis_record,
+            entity_primary_end(&analysis_record, &directory)
+        ),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1505,10 +1636,13 @@ fn type406_form26_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -1564,9 +1698,15 @@ fn type406_form28_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
         ],
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 28 table boundary");
         assert_eq!(groups.token_start, 8);
@@ -1596,8 +1736,15 @@ fn type406_form28_table_boundary_precedes_generic_candidate() {
     let generic = structural_pointer_group_candidates(&token_parameter_record(1, values.clone()));
     assert!(generic.iter().any(|candidate| candidate.token_start == 7));
 
-    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-    assert_eq!(analysis.candidate_count(), 0);
+    let analysis_record = token_parameter_record(1, values);
+    let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+    assert_eq!(
+        analysis.candidate_count(
+            &analysis_record,
+            entity_primary_end(&analysis_record, &directory)
+        ),
+        0
+    );
     assert_eq!(analysis.valid_candidate_count(), 0);
     assert!(analysis.groups().is_none());
 }
@@ -1647,10 +1794,13 @@ fn type406_form28_malformed_np_or_span_does_not_enable_generic_recovery() {
     ] {
         let generic_count =
             structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
         assert_eq!(
-            analysis.candidate_count(),
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
             0,
             "generic_count={generic_count}"
         );
@@ -1712,9 +1862,15 @@ fn type406_form29_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
         ],
     ] {
-        let analysis =
-            analyze_trailing_pointer_groups(&token_parameter_record(1, values), &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        let analysis_record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&analysis_record, &directory);
+        assert_eq!(
+            analysis.candidate_count(
+                &analysis_record,
+                entity_primary_end(&analysis_record, &directory)
+            ),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("Type 406 Form 29 table boundary");
         assert_eq!(groups.token_start, 10);

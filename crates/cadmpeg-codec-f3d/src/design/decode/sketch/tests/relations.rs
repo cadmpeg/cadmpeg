@@ -310,7 +310,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
             angle_parameter: 336,
             count_parameter: 333,
             evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: 3,
+            evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
         })
     );
 }
@@ -375,12 +375,12 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     else {
         panic!("expected rectangular pattern definition");
     };
-    assert_eq!(directions[0].evaluated_count, 3);
+    assert_eq!(directions[0].evaluated_count.get(), 3);
     assert_eq!(directions[0].count_parameter, 464);
     assert_eq!(directions[0].direction, [1.0, 0.0, 0.0]);
     assert_eq!(directions[0].evaluated_distance, 3.0);
     assert_eq!(directions[0].distance_parameter, 470);
-    assert_eq!(directions[1].evaluated_count, 1);
+    assert_eq!(directions[1].evaluated_count.get(), 1);
     assert_eq!(directions[1].count_parameter, 467);
     assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
     assert_eq!(directions[1].evaluated_distance, 0.5);

@@ -977,8 +977,16 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
         } else {
             (&edge.end, &edge.start)
         };
-        let start = vertex_point(&ir.model, start).expect("fixture start");
-        let end = vertex_point(&ir.model, end).expect("fixture end");
+        let vertex_point = |id: &cadmpeg_ir::ids::VertexId| {
+            let vertex = ir.model.vertices.iter().find(|vertex| vertex.id == *id)?;
+            ir.model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .map(|point| point.position)
+        };
+        let start = vertex_point(start).expect("fixture start");
+        let end = vertex_point(end).expect("fixture end");
         let scale = domain[1] - domain[0];
         let direction =
             cadmpeg_ir::math::Point2::new((end.x - start.x) / scale, (end.y - start.y) / scale);

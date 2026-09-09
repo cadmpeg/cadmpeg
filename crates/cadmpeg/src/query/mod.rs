@@ -14,6 +14,7 @@ mod fidelity;
 mod graph;
 mod item;
 mod join;
+mod output;
 mod schema;
 mod schema_infer;
 
@@ -451,10 +452,10 @@ impl<'de> Deserialize<'de> for ArenaLen {
 pub fn run(view: &QueryView) -> Result<()> {
     match view {
         QueryView::Aggregate(view) => run_aggregate(view),
-        QueryView::Item(args) => item::run(args, args.mode()),
+        QueryView::Item(args) => item::run(args),
         QueryView::Schema(args) => schema::run(args),
-        QueryView::Graph(args) => graph::run(args, args.mode()),
-        QueryView::Join(args) => join::run(args, args.mode()),
+        QueryView::Graph(args) => graph::run(args),
+        QueryView::Join(args) => join::run(args),
         QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
 }

@@ -81,7 +81,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
+        let Ok(sketch_id) =
+            SketchId::mint(format!("creo:model:sketch#{}", definition.identity.id()))
+        else {
+            continue;
+        };
         if let Some(sketch) = exactly_one(
             ir.model
                 .sketches
@@ -193,15 +197,20 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: native_surface.map_or_else(
-                        || {
-                            format!(
-                                "FeatDefs:revolution#{feature_id}:segment{}",
-                                segment.external_id
-                            )
-                        },
-                        |id| format!("VisibGeom:{id}"),
-                    ),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(
+                        native_surface.map_or_else(
+                            || {
+                                format!(
+                                    "FeatDefs:revolution#{feature_id}:segment{}",
+                                    segment.external_id
+                                )
+                            },
+                            |id| format!("VisibGeom:{id}"),
+                        ),
+                    )
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -252,7 +261,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: format!("VisibGeom:{native_surface}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                            "VisibGeom:{native_surface}"
+                        ))
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "source object_id must not be empty",
+                            )
+                        })?,
                         name: None,
                         color: None,
                         visible: None,
@@ -325,7 +341,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{native_surface}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{native_surface}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -368,7 +389,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut pending = Vec::new();
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -402,12 +423,18 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         ) else {
             continue;
         };
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
+        let Ok(sketch_id) =
+            SketchId::mint(format!("creo:model:sketch#{}", definition.identity.id()))
+        else {
+            continue;
+        };
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
                 };
+                let geometry = CurveGeometry::try_from(geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 pending.push((
                     CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
@@ -439,7 +466,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id,
+                object_id: cadmpeg_ir::products::NonEmptyString::new(object_id).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
+                )?,
                 name: None,
                 color: None,
                 visible: None,
@@ -449,14 +478,14 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut pending = Vec::new();
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -479,7 +508,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
@@ -516,7 +547,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id,
+                object_id: cadmpeg_ir::products::NonEmptyString::new(object_id).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
+                )?,
                 name: None,
                 color: None,
                 visible: None,
@@ -526,5 +559,5 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

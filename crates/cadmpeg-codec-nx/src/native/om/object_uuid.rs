@@ -67,7 +67,7 @@ pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
             let Some(end) = last.offset.checked_add(last.bytes.len()) else {
                 return Vec::new();
             };
-            let Some((entry_offset, _)) = entry.file_span else {
+            let Some((entry_offset, _)) = entry.file_span() else {
                 return Vec::new();
             };
             let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {

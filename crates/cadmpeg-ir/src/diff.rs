@@ -502,7 +502,8 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
 /// Whether two tolerance declarations agree, each component within the
 /// comparator's tolerance.
 fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Tolerances) -> bool {
-    floats_agree(left.linear, right.linear) && floats_agree(left.angular, right.angular)
+    floats_agree(left.linear.get(), right.linear.get())
+        && floats_agree(left.angular.get(), right.angular.get())
 }
 
 /// Compare the source metadata of two documents, classifying each differing
@@ -686,10 +687,15 @@ mod tests {
     fn a_last_place_tolerance_move_is_not_a_difference() {
         let left = unit_cube();
         let mut right = left.clone();
-        right.tolerances.linear = f64::from_bits(left.tolerances.linear.to_bits() + 1);
+        right.tolerances.linear = crate::units::PositiveScalar::new(f64::from_bits(
+            left.tolerances.linear.get().to_bits() + 1,
+        ))
+        .expect("positive finite tolerance");
         assert!(diff(&left, &right).is_empty());
 
-        right.tolerances.linear = left.tolerances.linear * 2.0;
+        right.tolerances.linear =
+            crate::units::PositiveScalar::new(left.tolerances.linear.get() * 2.0)
+                .expect("positive finite tolerance");
         assert!(diff(&left, &right).tolerance_change.is_some());
     }
 

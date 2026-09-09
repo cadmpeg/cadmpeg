@@ -430,7 +430,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         FORMAT,
         DecodePurpose::Model,
     )
-    .unwrap();
+    .expect("valid BREP tolerances");
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
@@ -588,10 +588,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     );
     assert_eq!(
         (
-            decoded.color.r,
-            decoded.color.g,
-            decoded.color.b,
-            decoded.color.a,
+            decoded.color.r(),
+            decoded.color.g(),
+            decoded.color.b(),
+            decoded.color.a(),
         ),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
@@ -1022,7 +1022,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         &HashSet::new(),
         &HashSet::new(),
         FORMAT,
-    );
+    )
+    .expect("valid edge tolerance");
 
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.edges[0].curve, None);

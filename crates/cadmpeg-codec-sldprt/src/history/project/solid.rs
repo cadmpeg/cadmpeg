@@ -214,11 +214,7 @@ pub(crate) fn project_extrude(
         extent,
         op,
         solid: Some(!matches!(
-            feature
-                .input_class
-                .as_deref()
-                .map(native_object_class)
-                .map(|class| class.kind),
+            feature.input_class.as_deref().map(native_object_class),
             Some(NativeClassKind::SurfaceExtrusion)
         )),
         face_maker: None,

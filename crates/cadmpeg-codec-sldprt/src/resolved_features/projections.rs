@@ -33,7 +33,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Face;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -60,7 +60,8 @@ pub(super) fn bind_circular_profile_by_dimension(
             let [entity] = profile.as_slice() else {
                 return None;
             };
-            let SketchGeometry::Circle { radius, .. } = geometry_by_entity.get(&entity.entity)?
+            let SketchGeometryDefinition::Circle { radius, .. } =
+                (geometry_by_entity.get(&entity.entity)?).definition()
             else {
                 return None;
             };
@@ -1188,9 +1189,8 @@ pub(crate) fn project_compact_surface_selections(
             else {
                 continue;
             };
-            let face_selections = [center_faces, side_one_faces, side_two_faces]
-                .into_iter()
-                .map(|selection| {
+            let [center_faces, side_one_faces, side_two_faces] =
+                [center_faces, side_one_faces, side_two_faces].map(|selection| {
                     let native = compact_surface_selection_value(&selection.components);
                     let generated = selection
                         .terminal_feature_ref
@@ -1224,19 +1224,15 @@ pub(crate) fn project_compact_surface_selections(
                         }
                     }
                     face
-                })
-                .collect::<Vec<_>>();
-            let [center_faces, side_one_faces, side_two_faces] = face_selections.as_slice() else {
-                unreachable!("full-round candidate has three face selections")
-            };
+                });
             feature.definition = FeatureDefinition::FullRoundFillet {
                 groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
-                    center_faces: center_faces.clone(),
+                    center_faces,
                     side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
-                        side_one_faces.clone(),
+                        side_one_faces,
                     ),
                     side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
-                        side_two_faces.clone(),
+                        side_two_faces,
                     ),
                 }],
             };

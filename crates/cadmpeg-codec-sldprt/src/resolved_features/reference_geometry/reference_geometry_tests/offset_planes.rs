@@ -198,18 +198,18 @@ fn offset_plane_frame_translates_its_reference_frame() {
     };
     let features = vec![
         neutral(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
             FeatureDefinition::DatumPrincipalPlane {
                 plane: PrincipalPlane::Top,
             },
         ),
         neutral(
-            "offset",
+            "synthetic:test:id#offset",
             "offset-native",
             FeatureDefinition::DatumOffsetPlane {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                    FeatureId::mint("plane").expect("identity grammar"),
+                    FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
                 )),
                 distance: Length(3.0),
             },

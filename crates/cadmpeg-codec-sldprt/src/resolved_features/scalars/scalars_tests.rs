@@ -3,6 +3,7 @@
 use super::super::names::object_names;
 use super::super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use super::named_scalars;
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureInputOperandKind;
 
 #[test]
@@ -73,8 +74,14 @@ fn compact_scalar_header_ends_at_the_value() {
             .map(|operand| (operand.kind, operand.entity_index))
             .collect::<Vec<_>>(),
         [
-            (FeatureInputOperandKind::Native(0x8152), 7),
-            (FeatureInputOperandKind::Native(0x8152), 9),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
+                7
+            ),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
+                9
+            ),
         ]
     );
 }
@@ -133,7 +140,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     assert_eq!(scalar.operands[0].offset, (trailer + 36) as u64);
     assert_eq!(
         scalar.operands[0].kind,
-        crate::records::FeatureInputOperandKind::Native(0x80cc)
+        crate::records::FeatureInputOperandKind::Native(NativeOperandTag::TAG_80CC)
     );
     assert_eq!(scalar.operands[0].entity_index, 0);
 }
@@ -179,8 +186,14 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
             .map(|operand| (operand.kind, operand.entity_index))
             .collect::<Vec<_>>(),
         [
-            (FeatureInputOperandKind::Native(0x81b2), 0),
-            (FeatureInputOperandKind::Native(0x81b2), 1),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_81B2),
+                0
+            ),
+            (
+                FeatureInputOperandKind::Native(NativeOperandTag::TAG_81B2),
+                1
+            ),
         ]
     );
 }

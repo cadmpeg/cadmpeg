@@ -3,6 +3,8 @@ use super::super::super::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
     B5Surface,
 };
+const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
+
 use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
@@ -13,6 +15,7 @@ use super::super::pcurves::{
 use super::super::surfaces::revolution_surface;
 use super::super::*;
 use super::*;
+use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
@@ -169,12 +172,15 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: vec![B5LogicalVertex {
-            object_id: 50,
-            point: [2.0, 0.0, 0.5],
-        }],
-        edge_vertices: BTreeMap::from([(30, [0, 0])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            vec![B5LogicalVertex {
+                object_id: 50,
+                point: [2.0, 0.0, 0.5],
+            }],
+            BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::from([(
@@ -441,7 +447,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         [8.0, 0.0, 2.0],
     )
     .expect("tolerant trimmed range");
-    assert!((tolerant.edge_tolerance.expect("edge tolerance") - (1e-4 + 1.0e-9)).abs() < 1e-15);
+    assert!(
+        (tolerant.edge_tolerance.expect("edge tolerance").get()
+            - (1e-4 + EPS_PCURVE_RESIDUAL_INCREMENT))
+            .abs()
+            < 1e-15
+    );
 }
 
 #[test]
@@ -516,7 +527,9 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     }));
     let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
         .expect("tolerant line endpoints");
-    assert!(tolerant.edge_tolerance.is_some_and(|value| value > 0.001));
+    assert!(tolerant
+        .edge_tolerance
+        .is_some_and(|value| value.get() > 0.001));
     assert_eq!(tolerant.cache_fit_tolerance, None);
     assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
     assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
@@ -949,9 +962,16 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
-        logical_vertices: Vec::new(),
-        edge_vertices: BTreeMap::from([(5, [0, 1]), (6, [1, 2]), (7, [2, 0])]),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
+            Vec::new(),
+            BTreeMap::from([
+                (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
+                (6, [B5VertexRef::Raw(1), B5VertexRef::Raw(2)]),
+                (7, [B5VertexRef::Raw(2), B5VertexRef::Raw(0)]),
+            ]),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -960,7 +980,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         .expect("identity grammar");
 
     assert!(ownership_plan(&graph).is_some());
-    assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
+    assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
     let senses = graph.loops[&3].edge_senses();
     assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
     let plan = build_plan(&graph, &payload).expect("complete owned graph");
@@ -1038,9 +1058,12 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: Vec::new(),
-        edge_vertices: BTreeMap::new(),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
@@ -1109,17 +1132,24 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
             ],
         ];
         for (row, point) in component.vertices.into_iter().zip(points) {
-            assert_eq!(row, graph.vertex_points.len(), "contiguous vertex rows");
-            graph.vertex_points.push(point);
+            assert_eq!(
+                row,
+                graph.vertices.raw_points().len(),
+                "contiguous vertex rows"
+            );
+            graph.vertices.push_raw(point);
         }
         for (position, edge) in component.edges.into_iter().enumerate() {
-            graph.edge_vertices.insert(
-                edge,
-                [
-                    component.vertices[position],
-                    component.vertices[(position + 1) % 3],
-                ],
-            );
+            graph
+                .vertices
+                .insert_edge(
+                    edge,
+                    [
+                        B5VertexRef::Raw(component.vertices[position]),
+                        B5VertexRef::Raw(component.vertices[(position + 1) % 3]),
+                    ],
+                )
+                .expect("edge references select existing rows");
         }
     }
     graph

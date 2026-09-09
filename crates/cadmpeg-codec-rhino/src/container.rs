@@ -1258,7 +1258,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody {
-            geometry_transferred: false,
+            transfer: cadmpeg_ir::report::DecodeTransfer::ContainerOnly,
             coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes,
@@ -1304,10 +1304,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
-    Ok(crate::decode::decode(
-        &scan,
-        crate::mesh::MeshExpand::new(ctx, root),
-    ))
+    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }
 
 #[cfg(test)]

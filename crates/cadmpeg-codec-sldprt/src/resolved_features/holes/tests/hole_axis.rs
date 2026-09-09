@@ -222,7 +222,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[0].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -230,7 +230,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[1].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -238,7 +238,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[2].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 3,
                 trailing_fields: Vec::new(),
             },
@@ -246,7 +246,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[3].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -330,7 +330,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut placed = model_hole();
-    placed.id = FeatureId::mint("placed").expect("identity grammar");
+    placed.id = FeatureId::mint("synthetic:test:id#placed").expect("identity grammar");
     let FeatureDefinition::Hole {
         placements,
         construction,
@@ -353,7 +353,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             axis: Vector3::new(0.0, 0.0, -1.0),
         });
     let mut unplaced = model_hole();
-    unplaced.id = FeatureId::mint("unplaced").expect("identity grammar");
+    unplaced.id = FeatureId::mint("synthetic:test:id#unplaced").expect("identity grammar");
     let FeatureDefinition::Hole { construction, .. } = &mut unplaced.definition else {
         unreachable!();
     };
@@ -394,7 +394,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     );
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
-    ambiguous[2].id = FeatureId::mint("also-unplaced").expect("identity grammar");
+    ambiguous[2].id = FeatureId::mint("synthetic:test:id#also-unplaced").expect("identity grammar");
     project_hole_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[1].definition else {
         unreachable!();
@@ -568,7 +568,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut ambiguous = [unplaced.clone(), unplaced.clone()];
-    ambiguous[1].id = FeatureId::mint("second-hole").expect("identity grammar");
+    ambiguous[1].id = FeatureId::mint("synthetic:test:id#second-hole").expect("identity grammar");
     project_hole_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
         unreachable!();
@@ -692,7 +692,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
     let FeatureDefinition::Hole {
         placements,
         construction,
@@ -720,7 +720,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         .get_or_insert_default()
         .push(placement(0.0, 30.0, x_axis));
     let mut vertical = horizontal.clone();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
     let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
         unreachable!();
     };
@@ -830,7 +830,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     };
     let placement = |origin, axis| HolePlacement::Axis { origin, axis };
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
     let FeatureDefinition::Hole { placements, .. } = &mut horizontal.definition else {
         unreachable!();
     };
@@ -838,7 +838,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .get_or_insert_default()
         .push(placement(axes[0].0, axes[0].1));
     let mut vertical = model_hole();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
     let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
         unreachable!();
     };
@@ -846,7 +846,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .get_or_insert_default()
         .push(placement(axes[2].0, axes[2].1));
     let mut other = model_hole();
-    other.id = FeatureId::mint("other").expect("identity grammar");
+    other.id = FeatureId::mint("synthetic:test:id#other").expect("identity grammar");
     let FeatureDefinition::Hole { placements, .. } = &mut other.definition else {
         unreachable!();
     };

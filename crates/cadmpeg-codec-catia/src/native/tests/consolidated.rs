@@ -355,7 +355,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert_eq!(circle.center_pair, [4.0, -2.0]);
     assert_eq!(circle.radius, 3.0);
     assert_eq!(circle.range, [0.0, std::f64::consts::TAU * circle.radius]);
-    assert!(circle.full_circle);
+    assert!(circle.full_circle());
     assert_eq!(circle.chart_shift, 0.0);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -364,14 +364,23 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA circle"),
         native
     );
+}
 
-    let mut invalid = native;
-    invalid.consolidated_circles[0].full_circle = false;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA circle for load validation");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+#[test]
+fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
+    let native = crate::native::CatiaNative::decode(&b2_circle_stream());
+    let [circle] = native.consolidated_circles.as_slice() else {
+        panic!("one consolidated circle")
+    };
+    let mut wire = serde_json::to_value(circle).expect("serialize CATIA circle");
+    let full_circle = wire["full_circle"]
+        .as_bool()
+        .expect("serialized circle flag");
+    wire["full_circle"] = serde_json::json!(!full_circle);
+
+    let error = serde_json::from_value::<crate::native::CatiaConsolidatedCircle>(wire)
+        .expect_err("full_circle mismatch must fail admission");
+    assert!(error.to_string().contains("full_circle"), "{error}");
 }
 
 #[test]
@@ -1902,4 +1911,17 @@ fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
         panic!("one consolidated edge run");
     };
     assert_eq!(run.support_bindings, [None, None]);
+}
+
+#[test]
+fn cone_face_followed_by_spanning_parameter_point_terminates() {
+    let bytes = b2_cone_face_parameter_point_stream();
+    let split = b2_cone_face_stream().len() + 6;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [[0..split, split..bytes.len()]],
+    );
+    let faces = crate::native::consolidated_cone_faces(&bytes, &records, &[]);
+    assert_eq!(faces.len(), 1);
+    assert!(faces[0].parameter_points.is_empty());
 }

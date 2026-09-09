@@ -25,12 +25,16 @@ use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShe
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
-    let mut surface_geo: HashMap<i64, (SurfaceGeometry, bool)> = HashMap::new();
+    let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
+    let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
         if is_analytic_surface(r.head()) {
-            if let Some(g) = decode_surface(r) {
-                surface_geo.insert(r.index as i64, g);
+            if let Some((geometry, inward)) = decode_surface(r) {
+                if inward {
+                    inward_normal_surfaces.insert(r.index as i64);
+                }
+                surface_geo.insert(r.index as i64, geometry);
             }
         } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(r) {
@@ -38,13 +42,6 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
             }
         }
     }
-    // Carriers whose native normal points opposite the IR carrier's normal;
-    // the reversal folds into the referencing faces' senses.
-    let inward_normal_surfaces: HashSet<i64> = surface_geo
-        .iter()
-        .filter(|(_, (_, inward))| *inward)
-        .map(|(&index, _)| index)
-        .collect();
     let carriers = Carriers {
         surface_geo,
         curve_geo,
@@ -115,7 +112,7 @@ pub(crate) fn keep_faces_and_carriers(
             }
             surface_geo
                 .entry(surf_ref)
-                .or_insert_with(|| (SurfaceGeometry::Unknown { record: None }, false));
+                .or_insert_with(|| SurfaceGeometry::Unknown { record: None });
             kept_surfaces.insert(surf_ref);
             continue;
         }
@@ -126,16 +123,16 @@ pub(crate) fn keep_faces_and_carriers(
         }
         if let Some(geometry) = procedural_surface_defs
             .get(&surf_ref)
-            .and_then(|procedural| analytic_procedural_surface(&procedural.definition))
+            .and_then(|procedural| analytic_procedural_surface(procedural.definition()))
         {
-            surface_geo.insert(surf_ref, (geometry, false));
+            surface_geo.insert(surf_ref, geometry);
         }
         let exact_cacheless_construction =
             procedural_surface_defs
                 .get(&surf_ref)
                 .is_some_and(|procedural| {
-                    procedural.cache_fit_tolerance.is_none()
-                        && procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                    procedural.cache_fit_tolerance().is_none()
+                        && procedural_surface_definition_is_exact_carrier(procedural.definition())
                 });
         // A non-analytic surface may still carry a decodable B-spline face
         // cache. Exact cacheless constructions own their nested surface blocks
@@ -145,7 +142,7 @@ pub(crate) fn keep_faces_and_carriers(
                 if let Some(ns) =
                     nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
                 {
-                    e.insert((SurfaceGeometry::Nurbs(ns), false));
+                    e.insert(SurfaceGeometry::Nurbs(ns));
                     if surf_rec.head() == "spline"
                         && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -158,36 +155,33 @@ pub(crate) fn keep_faces_and_carriers(
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
             let analytic_geometry = procedural_surface_defs
                 .get(&surf_ref)
-                .and_then(|procedural| analytic_procedural_surface(&procedural.definition));
+                .and_then(|procedural| analytic_procedural_surface(procedural.definition()));
             let construction_is_exact_carrier =
                 procedural_surface_defs
                     .get(&surf_ref)
                     .is_some_and(|procedural| {
-                        procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                        procedural_surface_definition_is_exact_carrier(procedural.definition())
                     });
             surface_geo.insert(
                 surf_ref,
-                (
-                    if let Some(geometry) = analytic_geometry {
-                        geometry
-                    } else if construction_is_exact_carrier {
-                        SurfaceGeometry::Procedural {
-                            construction: ProceduralSurfaceId::mint(format!(
-                                "{format}:brep:procedural_surface#{surf_ref}"
-                            ))
-                            .expect("identity grammar"),
-                            cache: None,
-                        }
-                    } else {
-                        SurfaceGeometry::Unknown {
-                            record: Some(
-                                UnknownId::mint(unknown_record_id(surf_rec, format))
-                                    .expect("identity grammar"),
-                            ),
-                        }
-                    },
-                    false,
-                ),
+                if let Some(geometry) = analytic_geometry {
+                    geometry
+                } else if construction_is_exact_carrier {
+                    SurfaceGeometry::Procedural {
+                        construction: ProceduralSurfaceId::mint(format!(
+                            "{format}:brep:procedural_surface#{surf_ref}"
+                        ))
+                        .expect("identity grammar"),
+                        cache: None,
+                    }
+                } else {
+                    SurfaceGeometry::Unknown {
+                        record: Some(
+                            UnknownId::mint(unknown_record_id(surf_rec, format))
+                                .expect("identity grammar"),
+                        ),
+                    }
+                },
             );
             if !construction_is_exact_carrier {
                 undecoded_carriers.insert(surf_ref);
@@ -240,7 +234,6 @@ pub(crate) fn walk_reachable_topology(
     let Carriers {
         curve_geo,
         procedural_curve_defs,
-        cacheless_procedural_curve_defs,
         pcurve_geo,
         pcurve_parameter_ranges,
         ..
@@ -289,10 +282,13 @@ pub(crate) fn walk_reachable_topology(
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
-                                pcurve_geo.entry(pc).or_insert_with(|| {
-                                    PcurveGeometry::Line(cadmpeg_ir::geometry::LinePcurve::U_AXIS)
-                                });
-                                pcurve_parameter_ranges.entry(ci).or_insert([0.0, 0.0]);
+                                pcurve_geo
+                                    .entry(super::PcurveRecordIndex(pc))
+                                    .or_insert_with(|| {
+                                        PcurveGeometry::Line(
+                                            cadmpeg_ir::geometry::LinePcurve::U_AXIS,
+                                        )
+                                    });
                                 kept_pcurves.insert(pc);
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
@@ -367,8 +363,12 @@ pub(crate) fn walk_reachable_topology(
                                         .map(|range| (decoded, range))
                                 });
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    pcurve_geo.insert(pc, PcurveGeometry::Nurbs { nurbs: decoded });
-                                    pcurve_parameter_ranges.insert(ci, parameter_range);
+                                    pcurve_geo.insert(
+                                        super::PcurveRecordIndex(pc),
+                                        PcurveGeometry::Nurbs { nurbs: decoded },
+                                    );
+                                    pcurve_parameter_ranges
+                                        .insert(super::CoedgeRecordIndex(ci), parameter_range);
                                     kept_pcurves.insert(pc);
                                 } else {
                                     count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
@@ -427,8 +427,8 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(cv, CurveGeometry::Nurbs(curve));
                                                 procedural_curve_defs.insert(
                                                     cv,
-                                                    super::ProceduralCurveTail {
-                                                        construction: decoded.construction,
+                                                    super::ProceduralCurveSource::Cached {
+                                                        construction: Box::new(decoded.construction),
                                                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                                                     },
                                                 );
@@ -453,8 +453,7 @@ pub(crate) fn walk_reachable_topology(
                                                         cache: None,
                                                     },
                                                 );
-                                                cacheless_procedural_curve_defs
-                                                    .insert(cv, definition);
+                                                procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
@@ -650,7 +649,6 @@ fn keep_wire_edge(
     let Carriers {
         curve_geo,
         procedural_curve_defs,
-        cacheless_procedural_curve_defs,
         ..
     } = carriers;
     let Reachable {
@@ -711,8 +709,8 @@ fn keep_wire_edge(
                 entry.insert(CurveGeometry::Nurbs(curve));
                 procedural_curve_defs.insert(
                     curve_index,
-                    super::ProceduralCurveTail {
-                        construction: decoded.construction,
+                    super::ProceduralCurveSource::Cached {
+                        construction: Box::new(decoded.construction),
                         cache_fit_tolerance: decoded.cache_fit_tolerance,
                     },
                 );
@@ -736,7 +734,10 @@ fn keep_wire_edge(
                     .expect("valid owning format and numeric record index"),
                     cache: None,
                 });
-                cacheless_procedural_curve_defs.insert(curve_index, definition);
+                procedural_curve_defs.insert(
+                    curve_index,
+                    super::ProceduralCurveSource::Cacheless(Box::new(definition)),
+                );
                 kept_curves.insert(curve_index);
             } else {
                 undecoded_carriers.insert(curve_index);
@@ -987,3 +988,6 @@ pub(crate) fn region_chain(
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

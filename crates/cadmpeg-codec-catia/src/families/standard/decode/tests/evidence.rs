@@ -199,9 +199,12 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertex_points: Vec::new(),
-        logical_vertices: Vec::new(),
-        edge_vertices: BTreeMap::new(),
+        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
+        .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::from([(
@@ -817,7 +820,8 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         [0, 1],
         Some(&native),
         None,
-    );
+    )
+    .expect("valid source object identity");
     let curve = curve.expect("native support identifies the curve");
     assert_eq!(range, Some([2.0, 5.0]));
     assert_eq!(ir.model.surfaces.len(), 2);
@@ -1029,7 +1033,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         [0, 1],
         None,
         Some((&limit_curve, binding.parameter_range)),
-    );
+    )
+    .expect("valid source object identity");
     assert_eq!(range, Some(binding.parameter_range));
     assert!(matches!(
         curve
@@ -1087,7 +1092,8 @@ fn standard_line_edge_uses_distance_parameterization() {
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 5.0]));
 }
 
@@ -1120,7 +1126,8 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         [0, 1],
         None,
         None,
-    );
+    )
+    .expect("valid source object identity");
     assert!(curve.is_some());
     assert_eq!(range, Some([0.0, 1e-200]));
 }
@@ -1267,7 +1274,8 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         [0, 1],
         Some(&native),
         None,
-    );
+    )
+    .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));
 }
 

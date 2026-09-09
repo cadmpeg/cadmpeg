@@ -116,13 +116,16 @@ fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
     let forward = build([0x12, 0x11], [2.0, 8.0, 12.0, 3.0, 5.0, 18.0, 7.0, 9.0]);
     assert_eq!(
         decode_selector_corner_interval_cylinder_frame(&forward, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [10.0, 7.0, 9.0],
-            axis: [1.0, 0.0, 0.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 4.0,
-            length: Some(6.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [10.0, 7.0, 9.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                4.0,
+                Some(6.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     let mut split_second_selector = forward.clone();
     split_second_selector.splice(9..10, [0x00, 0x11, 0x13]);
@@ -140,13 +143,16 @@ fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
     let reversed = build([0x14, 0x13], [2.0, 8.0, 18.0, 3.0, 5.0, 12.0, 7.0, 9.0]);
     assert_eq!(
         decode_selector_corner_interval_cylinder_frame(&reversed, &cache),
-        Some(PositionalCylinderFrame {
-            origin: [20.0, 3.0, 5.0],
-            axis: [-1.0, 0.0, 0.0],
-            ref_direction: [0.0, 1.0, 0.0],
-            radius: 4.0,
-            length: Some(6.0),
-        })
+        Some(
+            PositionalCylinderFrame::new(
+                [20.0, 3.0, 5.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                4.0,
+                Some(6.0)
+            )
+            .expect("valid positional cylinder frame")
+        )
     );
     let mut split_first_selector = build([0x13, 0x12], [2.0, 8.0, 18.0, 3.0, 5.0, 12.0, 7.0, 9.0]);
     split_first_selector.splice(0..1, [0x00, 0x13, 0x1a]);

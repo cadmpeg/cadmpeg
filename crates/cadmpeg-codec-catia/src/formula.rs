@@ -14,7 +14,7 @@ pub(crate) fn transfer_parameters(
     native: &CatiaNative,
     annotations: &mut Annotations,
     graph_scope: Option<&HashSet<String>>,
-) -> FormulaTransfer {
+) -> Result<FormulaTransfer, cadmpeg_core::CodecError> {
     let entities = native
         .entity_records
         .iter()
@@ -210,13 +210,19 @@ pub(crate) fn transfer_parameters(
                 )
             })
             .flatten()
-            .filter(|value| value.satisfies_source_type(&signature.result_type));
+            .filter(|value| {
+                canonical_parameter_type(&signature.result_type)
+                    .is_some_and(|source_type| value.satisfies_source_type(source_type))
+            });
         let evaluated_expression = formula_complete
             .then(|| {
                 evaluate_formula_expression(&expression.expression.value, &expression_bindings)
             })
             .flatten()
-            .filter(|value| value.satisfies_source_type(&signature.result_type));
+            .filter(|value| {
+                canonical_parameter_type(&signature.result_type)
+                    .is_some_and(|source_type| value.satisfies_source_type(source_type))
+            });
         let transferable_expression = if formula_complete {
             evaluated_expression.clone()
         } else {
@@ -236,7 +242,7 @@ pub(crate) fn transfer_parameters(
             if let Some(output_value) = output.parameter_value() {
                 let output_id = neutral_parameter_id(&output.id);
                 if !dependencies.contains(&output_id) {
-                    if let Some(value) =
+                    if let Some((parameter_type, value)) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
                     {
                         let accepted = match &value {
@@ -250,8 +256,6 @@ pub(crate) fn transfer_parameters(
                             }
                         };
                         if accepted {
-                            let parameter_type = canonical_parameter_type(&signature.result_type)
-                                .expect("typed evaluation requires a supported type");
                             programs.push(FormulaProgramCandidate {
                                 relation_entity: formula_entity.id.clone(),
                                 expression_entity: expression_entity.id.clone(),
@@ -469,7 +473,7 @@ pub(crate) fn transfer_parameters(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return FormulaTransfer::default();
+        return Ok(FormulaTransfer::default());
     };
     let definition_chain_parameter_count = parameters
         .iter()
@@ -484,9 +488,13 @@ pub(crate) fn transfer_parameters(
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotation_builder.derived(candidate.parameter.id.as_str(), "properties");
+        annotation_builder
+            .derived(candidate.parameter.id.as_str(), "properties")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
-            annotation_builder.derived(candidate.parameter.id.as_str(), "expression");
+            annotation_builder
+                .derived(candidate.parameter.id.as_str(), "expression")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     *annotations = annotation_builder.build();
@@ -494,7 +502,7 @@ pub(crate) fn transfer_parameters(
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
-    FormulaTransfer {
+    Ok(FormulaTransfer {
         typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
         definition_chain_parameter_count,
         relation_program_parameter_count,
@@ -502,7 +510,7 @@ pub(crate) fn transfer_parameters(
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
         consumed_object_records,
-    }
+    })
 }
 
 /// Add only typed scalar values from the exact two-definition chain grammar.
@@ -543,20 +551,21 @@ fn definition_chain_parameter_candidate(
     entity: &crate::native::entity_record::CatiaEntityRecord,
     chain: &crate::native::CatiaDefinitionChainValue,
 ) -> Option<FormulaParameterCandidate> {
-    let parameter_type = canonical_parameter_type(&chain.role.value)?;
-    let (evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
+    let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
-        } => (
-            typed_parameter_evaluation(&chain.role.value, evaluation)?,
-            Some(*opcode_offset),
-            None,
-        ),
+        } => {
+            let (parameter_type, evaluation) =
+                typed_parameter_evaluation(&chain.role.value, evaluation)?;
+            (parameter_type, evaluation, Some(*opcode_offset), None)
+        }
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
-            if parameter_type == FormulaParameterType::Boolean =>
+            if canonical_parameter_type(&chain.role.value)
+                == Some(FormulaParameterType::Boolean) =>
         {
             (
+                FormulaParameterType::Boolean,
                 TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
                     0 => false,
                     1 => true,
@@ -696,11 +705,11 @@ fn collect_legacy_parameters(
                     crate::native::CatiaEntityEvaluation::Unset
                 }
             };
-            let Some(evaluation) = typed_parameter_evaluation(value_type, &evaluation) else {
+            let Some((parameter_type, evaluation)) =
+                typed_parameter_evaluation(value_type, &evaluation)
+            else {
                 continue;
             };
-            let parameter_type = canonical_parameter_type(value_type)
-                .expect("typed evaluation requires a supported type");
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
                 TypedParameterEvaluation::Value(value) => {
@@ -972,7 +981,7 @@ fn legacy_relation_evaluation<'a>(
     }
     let evaluated = evaluate_formula_expression(expression, &bindings)?;
     evaluated
-        .satisfies_source_type(source_type)
+        .satisfies_source_type(canonical_parameter_type(source_type)?)
         .then_some(LegacyRelationEvaluation {
             source_type,
             expression,
@@ -1128,9 +1137,8 @@ fn typed_entity_parameter_candidate(
     parameter: &crate::native::CatiaParameterValue,
     source_type: &str,
 ) -> Option<FormulaParameterCandidate> {
-    let evaluation = typed_parameter_evaluation(source_type, &parameter.evaluation)?;
-    let parameter_type =
-        canonical_parameter_type(source_type).expect("typed evaluation requires a supported type");
+    let (parameter_type, evaluation) =
+        typed_parameter_evaluation(source_type, &parameter.evaluation)?;
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -1282,11 +1290,17 @@ fn relation_program_output_candidate(
 
     let type_checked_expression =
         evaluate_formula_expression_with_mode(&expression.expression.value, &type_bindings, false)
-            .filter(|value| value.satisfies_source_type(&signature.result_type));
+            .filter(|value| {
+                canonical_parameter_type(&signature.result_type)
+                    .is_some_and(|source_type| value.satisfies_source_type(source_type))
+            });
     let evaluated_expression = all_inputs_complete
         .then(|| evaluate_formula_expression(&expression.expression.value, &expression_bindings))
         .flatten()
-        .filter(|value| value.satisfies_source_type(&signature.result_type));
+        .filter(|value| {
+            canonical_parameter_type(&signature.result_type)
+                .is_some_and(|source_type| value.satisfies_source_type(source_type))
+        });
     (if all_inputs_complete {
         evaluated_expression.as_ref()
     } else {
@@ -1297,7 +1311,8 @@ fn relation_program_output_candidate(
     if dependencies.contains(&output_id) {
         return None;
     }
-    let value = typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)?;
+    let (parameter_type, value) =
+        typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)?;
     let accepted = match &value {
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
@@ -1309,8 +1324,6 @@ fn relation_program_output_candidate(
     if !accepted {
         return None;
     }
-    let parameter_type = canonical_parameter_type(&signature.result_type)
-        .expect("typed evaluation requires a supported type");
     let candidate = FormulaParameterCandidate {
         parameter: DesignParameter {
             id: output_id.clone(),
@@ -1580,12 +1593,12 @@ impl EvaluatedFormulaScalar {
         *self = Self::from_parts(self.value(), self.dimension(), self.integral(), known_value);
     }
 
-    fn satisfies_source_type(self, source_type: &str) -> bool {
+    fn satisfies_source_type(self, source_type: FormulaParameterType) -> bool {
         match source_type {
-            "LENGTH" => self.dimension() == FormulaDimension::LENGTH,
-            "ANGLE" => self.dimension() == FormulaDimension::ANGLE,
-            "Real" | "R" => self.dimension() == FormulaDimension::SCALAR,
-            "Integer" | "I" => {
+            FormulaParameterType::Length => self.dimension() == FormulaDimension::LENGTH,
+            FormulaParameterType::Angle => self.dimension() == FormulaDimension::ANGLE,
+            FormulaParameterType::Real => self.dimension() == FormulaDimension::SCALAR,
+            FormulaParameterType::Integer => {
                 self.dimension() == FormulaDimension::SCALAR
                     && self.integral() == Some(true)
                     && self
@@ -1595,7 +1608,7 @@ impl EvaluatedFormulaScalar {
                         .known_value()
                         .is_none_or(|value| value < -(i64::MIN as f64))
             }
-            _ => false,
+            FormulaParameterType::Boolean | FormulaParameterType::String => false,
         }
     }
 }
@@ -1755,11 +1768,11 @@ impl EvaluatedFormulaValue {
         }
     }
 
-    fn satisfies_source_type(&self, source_type: &str) -> bool {
+    fn satisfies_source_type(&self, source_type: FormulaParameterType) -> bool {
         match self {
             Self::Scalar(value) => value.satisfies_source_type(source_type),
-            Self::Boolean(_) => source_type == "Boolean",
-            Self::String(_) => source_type == "String",
+            Self::Boolean(_) => source_type == FormulaParameterType::Boolean,
+            Self::String(_) => source_type == FormulaParameterType::String,
         }
     }
 
@@ -1789,6 +1802,31 @@ impl EvaluatedFormulaValue {
                 }
             },
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ComparisonOperator {
+    Eq,
+    Ne,
+    Ge,
+    Le,
+    Gt,
+    Lt,
+}
+
+impl ComparisonOperator {
+    fn parse(input: &str) -> Option<(Self, usize)> {
+        [
+            ("==", Self::Eq),
+            ("<>", Self::Ne),
+            (">=", Self::Ge),
+            ("<=", Self::Le),
+            (">", Self::Gt),
+            ("<", Self::Lt),
+        ]
+        .into_iter()
+        .find_map(|(text, operator)| input.starts_with(text).then_some((operator, text.len())))
     }
 }
 
@@ -2020,32 +2058,41 @@ impl FormulaExpressionParser<'_, '_> {
     fn comparison(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         let left = self.sum(depth)?;
         self.skip_whitespace();
-        let operator = ["==", "<>", ">=", "<=", ">", "<"]
-            .into_iter()
-            .find(|operator| self.remaining().starts_with(operator));
-        let Some(operator) = operator else {
+        let Some((operator, width)) = ComparisonOperator::parse(self.remaining()) else {
             return Some(left);
         };
-        self.at += operator.len();
+        self.at += width;
         let right = self.sum(depth)?;
         let (value, known) = match (operator, left, right) {
-            ("==", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                (
-                    left.value() == right.value(),
-                    left.is_known() && right.is_known(),
-                )
-            }
-            ("<>", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                (
-                    left.value() != right.value(),
-                    left.is_known() && right.is_known(),
-                )
-            }
-            ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+            (
+                ComparisonOperator::Eq,
+                EvaluatedFormulaValue::Boolean(left),
+                EvaluatedFormulaValue::Boolean(right),
+            ) => (
                 left.value() == right.value(),
                 left.is_known() && right.is_known(),
             ),
-            ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+            (
+                ComparisonOperator::Ne,
+                EvaluatedFormulaValue::Boolean(left),
+                EvaluatedFormulaValue::Boolean(right),
+            ) => (
+                left.value() != right.value(),
+                left.is_known() && right.is_known(),
+            ),
+            (
+                ComparisonOperator::Eq,
+                EvaluatedFormulaValue::String(left),
+                EvaluatedFormulaValue::String(right),
+            ) => (
+                left.value() == right.value(),
+                left.is_known() && right.is_known(),
+            ),
+            (
+                ComparisonOperator::Ne,
+                EvaluatedFormulaValue::String(left),
+                EvaluatedFormulaValue::String(right),
+            ) => (
                 left.value() != right.value(),
                 left.is_known() && right.is_known(),
             ),
@@ -2055,13 +2102,12 @@ impl FormulaExpressionParser<'_, '_> {
                 EvaluatedFormulaValue::Scalar(right),
             ) if left.dimension() == right.dimension() => (
                 match operator {
-                    "==" => left.value() == right.value(),
-                    "<>" => left.value() != right.value(),
-                    ">=" => left.value() >= right.value(),
-                    "<=" => left.value() <= right.value(),
-                    ">" => left.value() > right.value(),
-                    "<" => left.value() < right.value(),
-                    _ => unreachable!(),
+                    ComparisonOperator::Eq => left.value() == right.value(),
+                    ComparisonOperator::Ne => left.value() != right.value(),
+                    ComparisonOperator::Ge => left.value() >= right.value(),
+                    ComparisonOperator::Le => left.value() <= right.value(),
+                    ComparisonOperator::Gt => left.value() > right.value(),
+                    ComparisonOperator::Lt => left.value() < right.value(),
                 },
                 left.known_value().is_some() && right.known_value().is_some(),
             ),
@@ -2540,7 +2586,9 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn string_index(&self, value: EvaluatedFormulaScalar) -> Option<usize> {
         (value.dimension() == FormulaDimension::SCALAR).then_some(())?;
-        if (self.static_check || self.evaluate) && !value.satisfies_source_type("Integer") {
+        if (self.static_check || self.evaluate)
+            && !value.satisfies_source_type(FormulaParameterType::Integer)
+        {
             return None;
         }
         if self.static_check && value.known_value().is_some_and(|value| value < 0.0) {
@@ -2637,7 +2685,9 @@ impl FormulaExpressionParser<'_, '_> {
             let [EvaluatedFormulaValue::Scalar(value)] = arguments.as_slice() else {
                 return None;
             };
-            if (self.static_check || self.evaluate) && !value.satisfies_source_type("Integer") {
+            if (self.static_check || self.evaluate)
+                && !value.satisfies_source_type(FormulaParameterType::Integer)
+            {
                 return None;
             }
             let known = value.known_value().is_some();
@@ -2697,7 +2747,9 @@ impl FormulaExpressionParser<'_, '_> {
             } else if self.evaluate || (self.static_check && unit.is_known()) {
                 return None;
             }
-            if (self.static_check || self.evaluate) && !digits.satisfies_source_type("Integer") {
+            if (self.static_check || self.evaluate)
+                && !digits.satisfies_source_type(FormulaParameterType::Integer)
+            {
                 return None;
             }
             if self.static_check
@@ -2971,7 +3023,7 @@ impl FormulaExpressionParser<'_, '_> {
                 if dividend.dimension() == FormulaDimension::SCALAR
                     && divisor.dimension() == FormulaDimension::SCALAR
                     && (!self.static_check && !self.evaluate
-                        || divisor.satisfies_source_type("Integer"))
+                        || divisor.satisfies_source_type(FormulaParameterType::Integer))
                     && (!self.static_check || divisor.known_value() != Some(0.0))
                     && (!self.evaluate || divisor.value() != 0.0) =>
             {
@@ -3241,33 +3293,31 @@ fn static_formula_value(parameter_type: FormulaParameterType) -> EvaluatedFormul
 fn typed_parameter_evaluation(
     source_type: &str,
     evaluation: &crate::native::CatiaEntityEvaluation,
-) -> Option<TypedParameterEvaluation> {
-    canonical_parameter_type(source_type)?;
+) -> Option<(FormulaParameterType, TypedParameterEvaluation)> {
+    let parameter_type = canonical_parameter_type(source_type)?;
     let bits = match evaluation {
         crate::native::CatiaEntityEvaluation::Unset => {
-            return Some(TypedParameterEvaluation::Unset);
+            return Some((parameter_type, TypedParameterEvaluation::Unset));
         }
         crate::native::CatiaEntityEvaluation::Scalar { bits } => bits,
     };
-    if matches!(source_type, "Boolean" | "String") {
-        return None;
-    }
     let value = f64::from_bits(*bits);
     if !value.is_finite() {
         return None;
     }
-    let value = match source_type {
-        "LENGTH" => ParameterValue::Length(Length(value)),
-        "ANGLE" => ParameterValue::Angle(Angle(value)),
-        "Real" | "R" => ParameterValue::Real(value),
-        "Integer" | "I"
-            if value.fract() == 0.0 && value >= i64::MIN as f64 && value < -(i64::MIN as f64) =>
-        {
+    let value = match parameter_type {
+        FormulaParameterType::Length => ParameterValue::Length(Length(value)),
+        FormulaParameterType::Angle => ParameterValue::Angle(Angle(value)),
+        FormulaParameterType::Real => ParameterValue::Real(value),
+        FormulaParameterType::Integer => {
+            if value.fract() != 0.0 || value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                return None;
+            }
             ParameterValue::Integer(value as i64)
         }
-        _ => return None,
+        FormulaParameterType::Boolean | FormulaParameterType::String => return None,
     };
-    Some(TypedParameterEvaluation::Value(value))
+    Some((parameter_type, TypedParameterEvaluation::Value(value)))
 }
 
 fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
@@ -3297,7 +3347,8 @@ mod parser_tests {
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             parameter: DesignParameter {
-                id: ParameterId::mint("parameter".to_string()).expect("identity grammar"),
+                id: ParameterId::mint("synthetic:test:id#parameter".to_string())
+                    .expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "Value".to_string(),
@@ -3371,27 +3422,27 @@ mod parser_tests {
 
         assert!(
             evaluate_formula_expression_with_mode("#1_ /2+1mm", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type("LENGTH"))
+                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length))
         );
         assert!(
             evaluate_formula_expression_with_mode("#3_ ? #2_ ; 1", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type("Integer"))
+                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Integer))
         );
         assert!(
             evaluate_formula_expression_with_mode("#4_", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type("String"))
+                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String))
         );
         assert!(
             evaluate_formula_expression_with_mode("ToString(#2_)", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type("String"))
+                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String))
         );
         assert!(
             evaluate_formula_expression_with_mode("(#1_) / #2_", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type("LENGTH"))
+                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length))
         );
         assert!(
             evaluate_formula_expression_with_mode("#5_ + 0", &bindings, false)
-                .is_none_or(|value| !value.satisfies_source_type("Integer"))
+                .is_none_or(|value| !value.satisfies_source_type(FormulaParameterType::Integer))
         );
         assert!(evaluate_formula_expression_with_mode("#1_ ** #2_", &bindings, false).is_none());
         assert!(
@@ -3558,9 +3609,10 @@ mod parser_tests {
                     bits: 12.5_f64.to_bits(),
                 }
             ),
-            Some(TypedParameterEvaluation::Value(ParameterValue::Length(
-                Length(12.5)
-            )))
+            Some((
+                FormulaParameterType::Length,
+                TypedParameterEvaluation::Value(ParameterValue::Length(Length(12.5)))
+            ))
         ));
         assert!(matches!(
             typed_parameter_evaluation(
@@ -3569,7 +3621,10 @@ mod parser_tests {
                     bits: (-7.0_f64).to_bits(),
                 }
             ),
-            Some(TypedParameterEvaluation::Value(ParameterValue::Integer(-7)))
+            Some((
+                FormulaParameterType::Integer,
+                TypedParameterEvaluation::Value(ParameterValue::Integer(-7))
+            ))
         ));
     }
 

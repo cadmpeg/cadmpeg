@@ -7,23 +7,27 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry::Line;
+    use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition::Line};
 
-    let first = Line {
+    let first = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 10.0, 0.0),
-    };
-    let second = Line {
+    })
+    .unwrap();
+    let second = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(3.0, 0.0, 4.0),
         end: Point3::new(3.0, -5.0, 4.0),
-    };
-    let crossing = Line {
+    })
+    .unwrap();
+    let crossing = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(1.0, 0.0, 0.0),
-    };
+    })
+    .unwrap();
 
     assert!(spatial_parallel_line_distance_matches(&first, &second, 5.0));
     assert!(!spatial_parallel_line_distance_matches(
@@ -36,18 +40,24 @@ fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
 
 #[test]
 fn spatial_point_distance_requires_point_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry::{Line, Point};
+    use cadmpeg_ir::sketches::{
+        SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition::{Line, Point},
+    };
 
-    let first = Point {
+    let first = SpatialSketchGeometry::try_from(Point {
         position: Point3::new(1.0, 2.0, 3.0),
-    };
-    let second = Point {
+    })
+    .unwrap();
+    let second = SpatialSketchGeometry::try_from(Point {
         position: Point3::new(4.0, 6.0, 3.0),
-    };
-    let line = Line {
+    })
+    .unwrap();
+    let line = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(1.0, 2.0, 3.0),
         end: Point3::new(4.0, 6.0, 3.0),
-    };
+    })
+    .unwrap();
 
     assert!(spatial_point_distance_matches(&first, &second, 5.0));
     assert!(!spatial_point_distance_matches(&first, &second, 4.0));
@@ -57,15 +67,17 @@ fn spatial_point_distance_requires_point_geometry_and_exact_value() {
 #[test]
 fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     let mut entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#circle".into()),
-        SketchId("f3d:model:sketch#radial".into()),
-        SketchGeometry::Circle {
+        SketchEntityId::mint("f3d:model:sketch-entity#circle").unwrap(),
+        SketchId::mint("f3d:model:sketch#radial").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(2.0, 3.0),
             radius: Length(5.0),
-        },
+        })
+        .unwrap(),
     );
     let radius_parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#radius").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
+            .expect("identity grammar");
     assert!(matches!(
         radial_dimension_definition(
             &entity,
@@ -73,7 +85,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             0.5,
             radius_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Radius { entity: ref actual, parameter: ref p })
+        Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
@@ -83,11 +95,12 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             0.5,
             radius_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Radius { entity: ref actual, .. })
+        Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
     let diameter_parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#diameter").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
+            .expect("identity grammar");
     assert!(matches!(
         radial_dimension_definition(
             &entity,
@@ -95,7 +108,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             1.0,
             diameter_parameter.clone(),
         ),
-        Some(SketchConstraintDefinition::Diameter { entity: ref actual, parameter: ref p })
+        Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
     assert!(radial_dimension_definition(
@@ -122,13 +135,13 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &diameter_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Diameter {
+        Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
         }) if actual == entity.id()
     ));
     let mut duplicate = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#duplicate-circle".into()),
+        SketchEntityId::mint("f3d:model:sketch-entity#duplicate-circle").unwrap(),
         entity.sketch.clone(),
         entity.geometry.clone(),
     )
@@ -136,10 +149,15 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .with_native_ref(entity.native_ref.clone())
     .with_geometry_ref(entity.geometry_ref.clone())
     .with_endpoint_refs(entity.endpoint_refs.clone());
-    let SketchGeometry::Circle { radius, .. } = &mut duplicate.geometry else {
-        unreachable!("test entity is circular")
-    };
-    radius.0 += 5.0e-7;
+    duplicate
+        .geometry
+        .edit(|definition| {
+            let SketchGeometryDefinition::Circle { radius, .. } = definition else {
+                unreachable!("test entity is circular")
+            };
+            radius.0 += 5.0e-7;
+        })
+        .unwrap();
     assert!(matches!(
         owner_scoped_radial_dimension_definition(
             &[entity.clone(), duplicate.clone()],
@@ -148,7 +166,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &diameter_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedDiameter {
+        Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
@@ -172,30 +190,32 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &radius_parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedRadius {
+        Some(SketchConstraintDefinitionInput::RepeatedRadius {
             entities,
             parameter,
         }) if entities == vec![entity.id().clone(), duplicate.id().clone()]
             && parameter == radius_parameter
     ));
 
-    entity.geometry = SketchGeometry::Arc {
+    entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(2.0, 3.0),
         radius: Length(5.0),
         start_angle: cadmpeg_ir::features::Angle(0.0),
         end_angle: cadmpeg_ir::features::Angle(1.0),
-    };
+    })
+    .unwrap();
     assert!(
         radial_dimension_definition(&entity, "Diameter Dimension", 1.0, diameter_parameter,)
             .is_some()
     );
-    entity.geometry = SketchGeometry::Ellipse {
+    entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
         major_angle: cadmpeg_ir::features::Angle(0.0),
         major_radius: Length(5.0),
         minor_radius: Length(3.0),
         bounds: None,
-    };
+    })
+    .unwrap();
     assert!(
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
             .is_none()
@@ -204,15 +224,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
 
 #[test]
 fn owner_scoped_line_lengths_preserve_repeated_entities() {
-    let sketch = SketchId("f3d:model:sketch#line-length".into());
+    let sketch = SketchId::mint("f3d:model:sketch#line-length").unwrap();
     let line = |name: &str, v: f64, length: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, v),
                 end: Point2::new(length, v),
-            },
+            })
+            .unwrap(),
         )
     };
     let first = line("first", 0.0, 4.0);
@@ -227,7 +248,8 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
     ))
     .expect("linear parameter");
     let parameter_id =
-        cadmpeg_ir::features::ParameterId::mint("parameter#line-length").expect("identity grammar");
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#line-length")
+            .expect("identity grammar");
 
     assert!(matches!(
         owner_scoped_line_length_dimension_definition(
@@ -237,7 +259,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
             parameter: ref actual_parameter,
@@ -251,7 +273,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::RepeatedLength {
+        Some(SketchConstraintDefinitionInput::RepeatedLength {
             entities,
             parameter,
         }) if entities == vec![first.id().clone(), second.id().clone()]
@@ -261,15 +283,16 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
 
 #[test]
 fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
-    let sketch = SketchId("f3d:model:sketch#angular".into());
+    let sketch = SketchId::mint("f3d:model:sketch#angular").unwrap();
     let line = |name: &str, angle: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(angle.cos(), angle.sin()),
-            },
+            })
+            .unwrap(),
         )
     };
     let horizontal = line("horizontal", 0.0);
@@ -284,8 +307,8 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         std::f64::consts::FRAC_PI_6,
     ))
     .expect("angular parameter");
-    let parameter_id =
-        cadmpeg_ir::features::ParameterId::mint("parameter#angle").expect("identity grammar");
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#angle")
+        .expect("identity grammar");
 
     assert!(matches!(
         owner_scoped_angular_dimension_definition(
@@ -294,7 +317,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
             &parameter,
             &parameter_id,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter,
@@ -314,7 +337,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
 #[test]
 fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
     let stream = "f3d:A";
-    let sketch = SketchId("f3d:model:sketch#angular-incidence".into());
+    let sketch = SketchId::mint("f3d:model:sketch#angular-incidence").unwrap();
     let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
@@ -323,7 +346,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         byte_offset,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: u64::from(record_index),
+        primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(0.0, 0.0, 0.0),
@@ -338,35 +361,39 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         curve(12, 110, std::f64::consts::FRAC_PI_2),
         curve(13, 120, -std::f64::consts::FRAC_PI_4),
     ];
-    let point = |record_index, byte_offset, incident_curves| SketchPoint {
-        id: format!("{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            Some(crate::records::SketchPointCompanion {
+    let point = |record_index, byte_offset, incident_curves| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset,
+            coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
                 prefix_present_zero: false,
                 incident_curves,
-            }),
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
     };
     let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
     let entity = |record_index, angle: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#line-{record_index}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#line-{record_index}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(angle.cos(), angle.sin()),
-            },
+            })
+            .unwrap(),
         )
     };
     let entities = [
@@ -390,8 +417,9 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         3.0 * std::f64::consts::FRAC_PI_4,
     ))
     .expect("angular parameter");
-    parameter.byte_offset = 100;
-    let parameter_id = ParameterId::mint("parameter#angle").expect("identity grammar");
+    parameter.try_translate_offsets(100).unwrap();
+    let parameter_id =
+        ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
         preceding_incident_angular_dimension_definition(
@@ -403,7 +431,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             &parameter,
             &parameter_id,
         ),
-        Some(SketchConstraintDefinition::Angle {
+        Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter,
@@ -413,14 +441,15 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
 
 #[test]
 fn owner_scoped_point_dimensions_quotient_coincident_identities() {
-    let sketch = SketchId("f3d:model:sketch#point-classes".into());
+    let sketch = SketchId::mint("f3d:model:sketch#point-classes").unwrap();
     let point = |name: &str, u: f64, v: f64| {
         SketchEntity::new(
-            SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+            SketchEntityId::mint(format!("f3d:model:sketch-entity#{name}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
     let lower = point("lower", -53.0, -20.875);
@@ -435,8 +464,9 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
         1.3,
     ))
     .expect("linear parameter");
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("parameter#point-classes")
-        .expect("identity grammar");
+    let parameter_id =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#point-classes")
+            .expect("identity grammar");
 
     assert!(matches!(
         unique_point_class_dimension_definition(
@@ -446,7 +476,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             &parameter_id,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::VerticalDistance {
+        Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             parameter,
@@ -466,31 +496,33 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
 
 #[test]
 fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
-    let sketch = SketchId("f3d:model:sketch#radial-loci".into());
+    let sketch = SketchId::mint("f3d:model:sketch#radial-loci").unwrap();
     let point = |id: &str, u, v| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
     let circle = |id: &str, u, v, radius| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(u, v),
                 radius: Length(radius),
-            },
+            })
+            .unwrap(),
         )
     };
-    let center = point("center", 2.0, 3.0);
-    let annotation = point("annotation", 7.0, 3.0);
-    let measured = circle("measured", 2.0, 3.0, 5.0);
-    let other_center = circle("other-center", 20.0, 30.0, 5.0);
-    let other_radius = circle("other-radius", 2.0, 3.0, 7.0);
+    let center = point("synthetic:test:id#center", 2.0, 3.0);
+    let annotation = point("synthetic:test:id#annotation", 7.0, 3.0);
+    let measured = circle("synthetic:test:id#measured", 2.0, 3.0, 5.0);
+    let other_center = circle("synthetic:test:id#other-center", 20.0, 30.0, 5.0);
+    let other_radius = circle("synthetic:test:id#other-radius", 2.0, 3.0, 7.0);
     let all = [
         center.clone(),
         annotation.clone(),
@@ -498,8 +530,8 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         other_center,
         other_radius,
     ];
-    let parameter =
-        cadmpeg_ir::features::ParameterId::mint("parameter#radial-loci").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radial-loci")
+        .expect("identity grammar");
 
     assert!(matches!(
         radial_locus_dimension_definition(
@@ -509,9 +541,9 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             0.5,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id().clone()
+        Some(SketchConstraintDefinitionInput::Radius { entity, .. }) if entity == measured.id().clone()
     ));
-    let repeated = circle("repeated", 12.0, 3.0, 5.0);
+    let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
         radial_locus_dimension_definition(
             &[&measured, &annotation, &repeated],
@@ -520,7 +552,7 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             1.0,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::RepeatedDiameter { entities, parameter: actual })
+        Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
             if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
     ));
     assert!(matches!(
@@ -531,33 +563,37 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             1.0,
             &parameter,
         ),
-        Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id().clone()
+        Some(SketchConstraintDefinitionInput::Diameter { entity, .. }) if entity == measured.id().clone()
     ));
 }
 
 #[test]
 fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
-    let sketch = SketchId("f3d:model:sketch#radial-extension".into());
-    let entity =
-        |id: &str, geometry| SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry);
+    let sketch = SketchId::mint("f3d:model:sketch#radial-extension").unwrap();
+    let entity = |id: &str, geometry| {
+        SketchEntity::new(SketchEntityId::mint(id).unwrap(), sketch.clone(), geometry)
+    };
     let line = entity(
-        "line",
-        SketchGeometry::Line {
+        "synthetic:test:id#line",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(6.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let extension_point = entity(
-        "extension-point",
-        SketchGeometry::Point {
+        "synthetic:test:id#extension-point",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(6.5, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let off_carrier = entity(
-        "off-carrier",
-        SketchGeometry::Point {
+        "synthetic:test:id#off-carrier",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(6.5, 0.25),
-        },
+        })
+        .unwrap(),
     );
     let parameter = parse_design_parameter(&parameter_record(
         Some(1),
@@ -579,12 +615,16 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     ));
 
     let mut linear = parameter;
-    linear.source = crate::records::DesignParameterSource::new(
-        "Linear Dimension-2".into(),
-        linear.owner_record_index(),
-        linear.family_discriminator(),
-    )
-    .unwrap();
+    linear
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                linear.owner_record_index(),
+                linear.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     assert!(!radial_extension_annotation_group(
         &[&extension_point, &line],
         &linear,

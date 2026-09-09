@@ -2,6 +2,7 @@
 //! Hole, split, round, and positional cylinders and cones.
 
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -22,7 +23,6 @@ use super::super::holes::{
     counterbore_patch_geometries, cylinder_from_complementary_outline_bounds, simple_hole_geometry,
 };
 use super::super::native::annotate;
-use super::super::sketch::normalized;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
 use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
@@ -104,7 +104,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for datum in &scan.planes.datum_cylinders {
         let id = super::native_surface_id(scan, datum.id);
@@ -113,14 +113,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         }
         let frame = datum.frame;
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
-            Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
             ),
-            frame.radius,
+            frame.radius(),
         ) else {
             continue;
         };
@@ -137,7 +137,13 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("ActDatums:{}", datum.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "ActDatums:{}",
+                    datum.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -147,14 +153,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let round_feature_ids = scan
         .features
         .rows
@@ -243,7 +249,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("AllFeatur:{}:{}", feature_id, row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "AllFeatur:{}:{}",
+                    feature_id, row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -253,7 +265,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 #[cfg(test)]
@@ -263,7 +275,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let round_feature_ids = scan
         .features
         .rows
@@ -306,7 +318,12 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             geometry: SurfaceGeometry::Cylinder(*cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("AllFeatur:{rowless_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "AllFeatur:{rowless_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -316,14 +333,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_hole_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let hole_feature_ids = scan
         .features
         .rows
@@ -334,16 +351,15 @@ pub(in super::super) fn transfer_hole_cylinders(
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
         let cylinders = if let Some(hole) = simple_hole_geometry(scan, feature_id) {
-            hole.cylinder_ids
+            hole.cylinder_rows
                 .into_iter()
-                .map(|id| (id, hole.geometry.clone()))
+                .map(|row| (row, hole.geometry))
                 .collect::<Vec<_>>()
         } else {
             counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
         };
-        for (cylinder_id, geometry) in cylinders {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)
-                .expect("validated cylinder row");
+        for (row, geometry) in cylinders {
+            let cylinder_id = row.id;
             let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
                 .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -359,10 +375,16 @@ pub(in super::super) fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry,
+                geometry: SurfaceGeometry::try_from(geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -373,14 +395,14 @@ pub(in super::super) fn transfer_hole_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_split_outline_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
         .into_iter()
         .map(|row| (row.id, row))
@@ -479,7 +501,12 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -490,7 +517,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 fn round_edge_cylinder_frame(
@@ -524,7 +551,7 @@ fn round_edge_cylinder_frame(
     };
     let mut candidates = Vec::new();
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
-        let Some(first_normal) = normalized(first_support.normal) else {
+        let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
         let first_support = PlaneEquation {
@@ -532,7 +559,7 @@ fn round_edge_cylinder_frame(
             normal: first_normal,
         };
         for second_support in support_planes.iter().copied().skip(first_index + 1) {
-            let Some(second_normal) = normalized(second_support.normal) else {
+            let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
             let second_support = PlaneEquation {
@@ -581,7 +608,7 @@ fn round_edge_cylinder_frame(
                     let radial = std::array::from_fn(|index| {
                         relative[index] - axis[index] * dot(relative, axis)
                     });
-                    let Some(ref_direction) = normalized(radial) else {
+                    let Some(ref_direction) = normalize(radial) else {
                         continue;
                     };
                     let axial_span = dot(
@@ -589,22 +616,24 @@ fn round_edge_cylinder_frame(
                         axis,
                     )
                     .abs();
-                    let frame = crate::surface::PositionalCylinderFrame {
+                    let Some(frame) = crate::surface::PositionalCylinderFrame::new(
                         origin,
                         axis,
                         ref_direction,
                         radius,
-                        length: (axial_span > EPS_ROUND_EDGE_RELATIVE * radius.max(1.0))
+                        (axial_span > EPS_ROUND_EDGE_RELATIVE * radius.max(1.0))
                             .then_some(axial_span),
-                    };
-                    if !frame.is_valid() {
+                    ) else {
                         continue;
-                    }
+                    };
                     let same_line = candidates.iter().any(
                         |candidate: &crate::surface::PositionalCylinderFrame| {
-                            let parallel = dot(candidate.axis, frame.axis).abs();
-                            let origin_distance =
-                                distance_from_axis(candidate.origin, frame.origin, frame.axis);
+                            let parallel = dot(candidate.axis(), frame.axis()).abs();
+                            let origin_distance = distance_from_axis(
+                                candidate.origin(),
+                                frame.origin(),
+                                frame.axis(),
+                            );
                             parallel >= 1.0 - EPS_ROUND_EDGE_RELATIVE
                                 && origin_distance <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0)
                         },
@@ -630,20 +659,20 @@ fn unique_tangent_axial_interval_corner_frame(
         .iter()
         .copied()
         .filter_map(|candidate| {
-            let axis = normalized(candidate.axis)?;
+            let axis = normalize(candidate.axis())?;
             let score = support_planes
                 .iter()
                 .filter(|plane| {
-                    let Some(normal) = normalized(plane.normal) else {
+                    let Some(normal) = normalize(plane.normal) else {
                         return false;
                     };
                     if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
                         return false;
                     }
                     let distance =
-                        (dot(normal, candidate.origin) - dot(normal, plane.origin)).abs();
-                    (distance - candidate.radius).abs()
-                        <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius.max(1.0)
+                        (dot(normal, candidate.origin()) - dot(normal, plane.origin)).abs();
+                    (distance - candidate.radius()).abs()
+                        <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius().max(1.0)
                 })
                 .count();
             (score != 0).then_some((candidate, score))
@@ -661,12 +690,12 @@ fn unique_support_tangent_cylinder_frame(
     stored: crate::surface::PositionalCylinderFrame,
     support_planes: &[PlaneEquation],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let axis = normalized(stored.axis)?;
-    let mut origins = vec![stored.origin];
+    let axis = normalize(stored.axis())?;
+    let mut origins = vec![stored.origin()];
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     for plane in support_planes {
-        let normal = normalized(plane.normal)?;
+        let normal = normalize(plane.normal)?;
         if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
             return None;
         }
@@ -683,18 +712,18 @@ fn unique_support_tangent_cylinder_frame(
             .ok()?;
         let plane_offset = dot(normal, plane.origin);
         let candidates = [
-            (plane_offset - stored.radius) / normal[axis_index],
-            (plane_offset + stored.radius) / normal[axis_index],
+            (plane_offset - stored.radius()) / normal[axis_index],
+            (plane_offset + stored.radius()) / normal[axis_index],
         ]
         .into_iter()
         .filter(|coordinate| coordinate.is_finite())
         .filter(|coordinate| {
             let scale = coordinate
                 .abs()
-                .max(stored.origin[axis_index].abs())
-                .max(stored.radius)
+                .max(stored.origin()[axis_index].abs())
+                .max(stored.radius())
                 .max(1.0);
-            (coordinate.abs() - stored.origin[axis_index].abs()).abs()
+            (coordinate.abs() - stored.origin()[axis_index].abs()).abs()
                 <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
         })
         .collect::<Vec<_>>();
@@ -732,19 +761,26 @@ fn unique_support_tangent_cylinder_frame(
         let tangent_to_all = witnessed_planes.iter().all(|plane| {
             let normal = plane.normal;
             let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
-            let scale = distance.max(stored.radius).max(1.0);
-            (distance - stored.radius).abs() <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+            let scale = distance.max(stored.radius()).max(1.0);
+            (distance - stored.radius()).abs() <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
         });
         if !tangent_to_all {
             continue;
         }
-        let candidate = crate::surface::PositionalCylinderFrame { origin, ..stored };
-        if candidate.is_valid()
-            && !frames
-                .iter()
-                .any(|known: &crate::surface::PositionalCylinderFrame| {
-                    crate::surface::positional_cylinder_frames_agree(*known, candidate)
-                })
+        let Some(candidate) = crate::surface::PositionalCylinderFrame::new(
+            origin,
+            stored.axis(),
+            stored.ref_direction(),
+            stored.radius(),
+            stored.length(),
+        ) else {
+            continue;
+        };
+        if !frames
+            .iter()
+            .any(|known: &crate::surface::PositionalCylinderFrame| {
+                crate::surface::positional_cylinder_frames_agree(*known, candidate)
+            })
         {
             frames.push(candidate);
         }
@@ -775,7 +811,7 @@ fn perpendicular_round_edge_cylinder_frame(
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
-        let Some(first_normal) = normalized(first_support.normal) else {
+        let Some(first_normal) = normalize(first_support.normal) else {
             continue;
         };
         let first_support = PlaneEquation {
@@ -783,7 +819,7 @@ fn perpendicular_round_edge_cylinder_frame(
             normal: first_normal,
         };
         for second_support in support_planes.iter().copied().skip(first_index + 1) {
-            let Some(second_normal) = normalized(second_support.normal) else {
+            let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
             if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
@@ -838,7 +874,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> PositionalCylinderTransferSummary {
+) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let constant_round_radii = scan
         .surfaces
         .rows
@@ -1087,7 +1123,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());
         if feature_class == Some(SchemaClass::Hole)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
-                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
+                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius())
             })
         {
             continue;
@@ -1112,14 +1148,14 @@ pub(in super::super) fn transfer_positional_cylinders(
                 {
                     surface.geometry = SurfaceGeometry::Cylinder(
                         match cadmpeg_ir::geometry::CylinderSurface::try_new(
-                            Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-                            Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+                            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                             Vector3::new(
-                                frame.ref_direction[0],
-                                frame.ref_direction[1],
-                                frame.ref_direction[2],
+                                frame.ref_direction()[0],
+                                frame.ref_direction()[1],
+                                frame.ref_direction()[2],
                             ),
-                            frame.radius,
+                            frame.radius(),
                         ) {
                             Ok(payload) => payload,
                             Err(_) => continue,
@@ -1138,14 +1174,14 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
-            Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
             ),
-            frame.radius,
+            frame.radius(),
         ) else {
             continue;
         };
@@ -1162,7 +1198,13 @@ pub(in super::super) fn transfer_positional_cylinders(
             geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1174,7 +1216,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         summary.round_edge_transferred_carriers +=
             usize::from(mechanism == CylinderFrameMechanism::RoundEdgeEndpoint);
     }
-    summary
+    Ok(summary)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1239,8 +1281,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .chain(&second.center)
         .map(|value| value.abs())
         .fold(radius_scale, f64::max);
-    let first_axis = normalized(first.axis)?;
-    let second_axis = normalized(second.axis)?;
+    let first_axis = normalize(first.axis)?;
+    let second_axis = normalize(second.axis)?;
     ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);
@@ -1260,14 +1302,13 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     };
     let (radial, radial_length) = validated_radial(first, first_axis)?;
     validated_radial(second, second_axis)?;
-    Some(crate::surface::PositionalCylinderFrame {
-        origin: first.center,
-        axis: first_axis,
-        ref_direction: radial.map(|value| value / radial_length),
+    crate::surface::PositionalCylinderFrame::new(
+        first.center,
+        first_axis,
+        radial.map(|value| value / radial_length),
         radius,
-        length: Some(length),
-    })
-    .filter(crate::surface::PositionalCylinderFrame::is_valid)
+        Some(length),
+    )
 }
 
 pub(in super::super) fn reference_cap_bound_round_frame(
@@ -1339,25 +1380,25 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         let reference_index = radial_indices[0];
         ref_direction[reference_index] =
             (second[reference_index] - first[reference_index]).signum();
-        candidates.push(crate::surface::PositionalCylinderFrame {
+        candidates.push(crate::surface::PositionalCylinderFrame::new(
             origin,
             axis,
             ref_direction,
-            radius: envelope.diameter / 2.0,
-            length: Some((second[axis_index] - first[axis_index]).abs()),
-        });
+            envelope.diameter / 2.0,
+            Some((second[axis_index] - first[axis_index]).abs()),
+        )?);
     }
     let [frame] = candidates.as_slice() else {
         return None;
     };
-    Some(*frame).filter(crate::surface::PositionalCylinderFrame::is_valid)
+    Some(*frame)
 }
 
 pub(in super::super) fn transfer_positional_cones(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(frame) = record.positional_cone_frame() else {
@@ -1379,16 +1420,16 @@ pub(in super::super) fn transfer_positional_cones(
             continue;
         }
         let Ok(cone_surface) = cadmpeg_ir::geometry::ConeSurface::try_new(
-            Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
-            Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+            Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
+            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
+                frame.ref_direction()[0],
+                frame.ref_direction()[1],
+                frame.ref_direction()[2],
             ),
             0.0,
             1.0,
-            frame.half_angle,
+            frame.half_angle(),
         ) else {
             continue;
         };
@@ -1405,7 +1446,13 @@ pub(in super::super) fn transfer_positional_cones(
             geometry: SurfaceGeometry::Cone(cone_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", record.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    record.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1415,14 +1462,14 @@ pub(in super::super) fn transfer_positional_cones(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_circular_sweep_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let sweep_feature_ids = scan
         .features
         .rows
@@ -1442,9 +1489,8 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         let Some(sweep) = circular_sweep_geometry(scan, feature_id) else {
             continue;
         };
-        for cylinder_id in &sweep.cylinder_ids {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *cylinder_id)
-                .expect("validated cylinder row");
+        for row in &sweep.cylinder_rows {
+            let cylinder_id = row.id;
             let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
                 .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -1460,10 +1506,16 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: sweep.geometry.clone(),
+                geometry: SurfaceGeometry::try_from(sweep.geometry)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -1474,14 +1526,14 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             transferred += 1;
         }
     }
-    transferred
+    Ok(transferred)
 }
 
 pub(in super::super) fn transfer_cross_section_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for frame in &scan.planes.cross_section_local_systems {
         let decoded_frame = frame.frame();
@@ -1523,7 +1575,13 @@ pub(in super::super) fn transfer_cross_section_planes(
             geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("Xsections:{}", frame.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "Xsections:{}",
+                    frame.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1562,7 +1620,13 @@ pub(in super::super) fn transfer_cross_section_planes(
             geometry: SurfaceGeometry::Plane(plane_surface),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("Xsections:{}", plane.surface_id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "Xsections:{}",
+                    plane.surface_id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -1572,5 +1636,5 @@ pub(in super::super) fn transfer_cross_section_planes(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

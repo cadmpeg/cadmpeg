@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge parameter ranges for lines, NURBS, and conics.
 
+use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
@@ -26,7 +26,7 @@ pub fn orient_line_edge_carrier(
     };
     let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
     let length = dot(delta, delta).sqrt();
-    let oriented = normalized(delta)?;
+    let oriented = normalize(delta)?;
     *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
         Point3::new(points[0][0], points[0][1], points[0][2]),
         Vector3::new(oriented[0], oriented[1], oriented[2]),
@@ -485,10 +485,10 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
         }
         _ => return None,
     };
-    let normal = normalized(normal)?;
-    let x_axis = normalized(x_axis)?;
+    let normal = normalize(normal)?;
+    let x_axis = normalize(x_axis)?;
     (dot(normal, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalized(cross(normal, x_axis))?;
+    let y_axis = normalize(cross(normal, x_axis))?;
     (origin.into_iter().all(f64::is_finite)
         && x_scale > 0.0
         && x_scale.is_finite()
@@ -528,10 +528,10 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
         }
         _ => return None,
     };
-    let axis = normalized(axis)?;
-    let x_axis = normalized(x_axis)?;
+    let axis = normalize(axis)?;
+    let x_axis = normalize(x_axis)?;
     (dot(axis, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalized(cross(axis, x_axis))?;
+    let y_axis = normalize(cross(axis, x_axis))?;
     (center.into_iter().all(f64::is_finite)
         && radii
             .into_iter()

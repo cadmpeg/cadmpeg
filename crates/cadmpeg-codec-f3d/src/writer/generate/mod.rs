@@ -109,32 +109,32 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         let mut configuration_names = BTreeSet::new();
         let mut configuration_ids = BTreeSet::new();
         for configuration in &native.design_configurations {
-            if !configuration_names.insert(configuration.entry_name.as_str())
-                || !configuration_ids.insert(configuration.id.as_str())
+            if !configuration_names.insert(configuration.entry_name().as_str())
+                || !configuration_ids.insert(configuration.id().as_str())
             {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D configuration identity: {}",
-                    configuration.entry_name
+                    configuration.entry_name()
                 )));
             }
-            let valid_name = match configuration.kind {
+            let valid_name = match configuration.kind() {
                 crate::records::DesignConfigurationKind::Table => {
-                    configuration.entry_name.ends_with(".dsgcfg")
+                    configuration.entry_name().ends_with(".dsgcfg")
                 }
                 crate::records::DesignConfigurationKind::Rule => {
-                    configuration.entry_name.ends_with(".dsgcfgrule")
+                    configuration.entry_name().ends_with(".dsgcfgrule")
                 }
             };
             if !valid_name {
                 return Err(CodecError::malformed(format_args!(
                     "F3D configuration kind conflicts with entry name: {}",
-                    configuration.entry_name
+                    configuration.entry_name()
                 )));
             }
             let payload =
                 crate::design::configurations::encode_configuration_payload(configuration)?;
             archive
-                .start_file(&configuration.entry_name, options)
+                .start_file(configuration.entry_name(), options)
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
                         "cannot create F3D configuration entry: {error}"

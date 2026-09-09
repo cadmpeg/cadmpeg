@@ -20,23 +20,20 @@ fn distance(a: Point3, b: Point3) -> f64 {
 
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
-fn allowance(document_tolerance: f64, tolerances: &[Option<f64>]) -> f64 {
-    let document_tolerance = if document_tolerance.is_finite() && document_tolerance > 0.0 {
-        document_tolerance
-    } else {
-        0.0
-    };
-    tolerances
-        .iter()
-        .flatten()
-        .copied()
-        .fold(COINCIDENCE_TOLERANCE.max(document_tolerance), f64::max)
+fn allowance(document_tolerance: crate::units::PositiveScalar, tolerances: &[Option<f64>]) -> f64 {
+    tolerances.iter().flatten().copied().fold(
+        COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
+        f64::max,
+    )
 }
 
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
-fn procedural_support_allowance(document_tolerance: f64, cache_fit_tolerance: Option<f64>) -> f64 {
+fn procedural_support_allowance(
+    document_tolerance: crate::units::PositiveScalar,
+    cache_fit_tolerance: Option<f64>,
+) -> f64 {
     COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
 }
 
@@ -272,7 +269,13 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
         .iter()
         .filter_map(|vertex| {
             let position = points.get(vertex.point.as_str())?;
-            Some((vertex.id.as_str(), (*position, vertex.tolerance)))
+            Some((
+                vertex.id.as_str(),
+                (
+                    *position,
+                    vertex.tolerance.map(crate::units::PositiveScalar::get),
+                ),
+            ))
         })
         .collect()
 }
@@ -326,7 +329,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let bound = allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance,
+                edge.tolerance.map(crate::units::PositiveScalar::get),
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
@@ -383,7 +386,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let bound = allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance,
+                edge.tolerance.map(crate::units::PositiveScalar::get),
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
@@ -513,10 +516,10 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let bound = allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance,
+                edge.tolerance.map(crate::units::PositiveScalar::get),
                 *start_tol,
                 *end_tol,
-                face.tolerance,
+                face.tolerance.map(crate::units::PositiveScalar::get),
                 first.fit_tolerance(),
                 last.fit_tolerance(),
             ],
@@ -527,7 +530,12 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // different, merely nearby part of the carrier.
         let recovery_bound = allowance(
             ir.tolerances.linear,
-            &[edge.tolerance, *start_tol, *end_tol, face.tolerance],
+            &[
+                edge.tolerance.map(crate::units::PositiveScalar::get),
+                *start_tol,
+                *end_tol,
+                face.tolerance.map(crate::units::PositiveScalar::get),
+            ],
         );
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another

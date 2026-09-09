@@ -4,6 +4,7 @@
 //! NURBS surface carriers from a zero-entity record stream.
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -125,6 +126,81 @@ impl ZeroEntityFace {
     }
 }
 
+/// A nonempty descending run of logical loop members below its terminal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZeroEntityLoopMembers {
+    terminal_id: u32,
+    gap: u32,
+    member_count: NonZeroUsize,
+}
+
+impl ZeroEntityLoopMembers {
+    /// Admit a nonempty run with a positive gap and no identifier underflow.
+    pub fn try_new(terminal_id: u32, gap: u32, member_count: NonZeroUsize) -> Option<Self> {
+        if gap == 0 {
+            return None;
+        }
+        terminal_id
+            .checked_sub(gap)?
+            .checked_sub(u32::try_from(member_count.get() - 1).ok()?)?;
+        Some(Self {
+            terminal_id,
+            gap,
+            member_count,
+        })
+    }
+
+    /// Terminal even-lane logical identifier.
+    pub const fn terminal_id(&self) -> u32 {
+        self.terminal_id
+    }
+
+    /// Difference between the terminal and first member identifiers.
+    pub const fn gap(&self) -> u32 {
+        self.gap
+    }
+
+    /// Nonterminal identifiers in source order.
+    pub fn member_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        std::iter::successors(Some(self.terminal_id - self.gap), |id| id.checked_sub(1))
+            .take(self.member_count.get())
+    }
+
+    /// Face-local support slots in member order.
+    pub fn support_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        (self.gap..=self.terminal_id).take(self.member_count.get())
+    }
+}
+
+/// Admitted zero-entity loop classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ZeroEntityLoopClass {
+    /// Outer loop with forward face sense.
+    Outer41 = 0x41,
+    /// Inner bound loop.
+    Bound50 = 0x50,
+    /// Outer loop with reversed face sense.
+    ReversedC1 = 0xc1,
+}
+
+impl ZeroEntityLoopClass {
+    /// Admit a declared loop-class byte.
+    pub const fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x41 => Some(Self::Outer41),
+            0x50 => Some(Self::Bound50),
+            0xc1 => Some(Self::ReversedC1),
+            _ => None,
+        }
+    }
+
+    /// Native loop-class byte.
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+}
+
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityLoop {
@@ -134,18 +210,14 @@ pub struct ZeroEntityLoop {
     pub record_ordinal: u32,
     /// Complete two-byte record tag.
     pub tag: [u8; 2],
-    /// Nonterminal even-lane logical member identifiers.
-    pub member_ids: Vec<u32>,
+    /// Nonterminal even-lane arithmetic run.
+    pub members: ZeroEntityLoopMembers,
     /// Odd-lane typed references in member order.
     pub typed_references: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
     pub support_record_ordinals: Vec<u32>,
-    /// Terminal even-lane logical identifier.
-    pub terminal_id: u32,
-    /// Difference between the terminal and first member identifiers.
-    pub gap: u32,
     /// Stored loop-class byte.
-    pub loop_class: u8,
+    pub loop_class: ZeroEntityLoopClass,
     /// Absolute coedge senses in member order; `true` is forward.
     pub forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
@@ -161,12 +233,22 @@ pub struct ZeroEntityEdgeStride {
     pub record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub allocations: [u32; 5],
-    /// The three allocations in the `0638`/`2569` topology namespace, in
-    /// source order `[T, T-1, T-2]`.
-    pub topology_refs: [u32; 3],
-    /// The two allocations selecting the adjacent surface-support slots, in
-    /// source order `[X, Y]`.
-    pub surface_support_refs: [u32; 2],
+}
+
+impl ZeroEntityEdgeStride {
+    /// Topology allocations in source order.
+    pub const fn topology_refs(&self) -> [u32; 3] {
+        [
+            self.allocations[0],
+            self.allocations[3],
+            self.allocations[4],
+        ]
+    }
+
+    /// Adjacent surface-support allocations in source order.
+    pub const fn surface_support_refs(&self) -> [u32; 2] {
+        [self.allocations[1], self.allocations[2]]
+    }
 }
 
 /// One positional `0638` oriented use.
@@ -176,10 +258,25 @@ pub struct ZeroEntityOrientedUse {
     pub pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Positional side number, either one or two.
-    pub side: u32,
-    /// Two stored allocation values.
-    pub allocations: [u32; 2],
+}
+
+/// Position within an oriented-use pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZeroEntityUseSlot {
+    /// First use in source order.
+    First,
+    /// Second use in source order.
+    Second,
+}
+
+impl ZeroEntityUseSlot {
+    /// One-based positional side number.
+    pub const fn side(self) -> u32 {
+        match self {
+            Self::First => 1,
+            Self::Second => 2,
+        }
+    }
 }
 
 /// One `2569` header and its two immediately following positional uses.
@@ -189,10 +286,22 @@ pub struct ZeroEntityOrientedUsePair {
     pub header_pos: usize,
     /// One-based global record ordinal of the `2569` header.
     pub header_record_ordinal: u32,
-    /// Stored base columns.
-    pub base_columns: [u32; 2],
+    base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
     pub uses: [ZeroEntityOrientedUse; 2],
+}
+
+impl ZeroEntityOrientedUsePair {
+    /// Stored base columns.
+    pub const fn base_columns(&self) -> [u32; 2] {
+        self.base_columns
+    }
+
+    /// Allocation columns for the selected use slot.
+    pub const fn allocations(&self, slot: ZeroEntityUseSlot) -> [u32; 2] {
+        let side = slot.side();
+        [self.base_columns[0] + side, self.base_columns[1] + side]
+    }
 }
 
 /// Counted allocation vector of a zero-entity vertex-incidence record.
@@ -751,7 +860,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
         .collect::<Vec<_>>();
     let loop_terminals = loops
         .iter()
-        .map(|loop_record| loop_record.terminal_id)
+        .map(|loop_record| loop_record.members.terminal_id())
         .collect::<Vec<_>>();
     let loop_roster_is_valid = flattened_terminals == loop_terminals && {
         let mut loop_index = 0;
@@ -761,8 +870,12 @@ pub(crate) fn zero_entity_support_runs_in_range(
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             face_loops.first().is_some_and(|outer| {
-                matches!(outer.loop_class, 0x41 | 0xc1)
-                    && face_loops[1..].iter().all(|inner| inner.loop_class == 0x50)
+                matches!(
+                    outer.loop_class,
+                    ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+                ) && face_loops[1..]
+                    .iter()
+                    .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
             })
         })
     };
@@ -815,12 +928,9 @@ fn bind_face_support_occurrences(
         .iter()
         .map(|loop_record| {
             loop_record
-                .member_ids
-                .iter()
-                .map(|member| {
-                    let slot = loop_record.terminal_id.checked_sub(*member)?;
-                    supports_by_slot.get(&slot).copied().flatten()
-                })
+                .members
+                .support_slots()
+                .map(|slot| supports_by_slot.get(&slot).copied().flatten())
                 .collect::<Option<Vec<_>>>()
         })
         .collect::<Option<Vec<_>>>();
@@ -983,22 +1093,16 @@ fn zero_entity_loops_from_records(
             }
             let terminal_id = *references.last()?;
             let gap = terminal_id.checked_sub(*member_ids.first()?)?;
-            if gap == 0
-                || !member_ids.iter().enumerate().all(|(index, member)| {
-                    u32::try_from(index)
-                        .ok()
-                        .and_then(|index| terminal_id.checked_sub(gap)?.checked_sub(index))
-                        == Some(*member)
-                })
-            {
+            let members =
+                ZeroEntityLoopMembers::try_new(terminal_id, gap, NonZeroUsize::new(edge_count)?)?;
+            if !members.member_ids().eq(member_ids) {
                 return None;
             }
             let trailer = record
                 .pos
                 .checked_add(13 + reference_count.checked_mul(5)?)?;
-            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?))
-                || !matches!(data.get(trailer + 1), Some(0x41 | 0x50 | 0xc1))
-            {
+            let loop_class = ZeroEntityLoopClass::from_byte(*data.get(trailer + 1)?)?;
+            if data.get(trailer) != Some(&(0x80 + u8::try_from(edge_count).ok()?)) {
                 return None;
             }
             let packed_length = edge_count.checked_mul(3)?.checked_add(7)? / 8;
@@ -1026,12 +1130,10 @@ fn zero_entity_loops_from_records(
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
-                member_ids,
+                members,
                 typed_references,
                 support_record_ordinals: Vec::new(),
-                terminal_id,
-                gap,
-                loop_class: data[trailer + 1],
+                loop_class,
                 forward_senses,
                 oriented_model_endpoints: Vec::new(),
             })
@@ -1701,8 +1803,6 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                topology_refs: [allocations[0], allocations[3], allocations[4]],
-                surface_support_refs: [allocations[1], allocations[2]],
                 allocations,
             })
         })
@@ -1762,8 +1862,6 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
                 Some(ZeroEntityOrientedUse {
                     pos: record.pos,
                     record_ordinal: record.ordinal,
-                    side: expected_side,
-                    allocations,
                 })
             };
             Some(ZeroEntityOrientedUsePair {
@@ -1991,6 +2089,22 @@ fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {
+        let count = NonZeroUsize::new(3).expect("nonzero loop member count");
+        let members =
+            ZeroEntityLoopMembers::try_new(4, 2, count).expect("admitted loop member run");
+        assert_eq!(members.member_ids().collect::<Vec<_>>(), [2, 1, 0]);
+        assert_eq!(members.support_slots().collect::<Vec<_>>(), [2, 3, 4]);
+        assert!(ZeroEntityLoopMembers::try_new(4, 0, count).is_none());
+        assert!(ZeroEntityLoopMembers::try_new(4, 3, count).is_none());
+        let singleton = ZeroEntityLoopMembers::try_new(u32::MAX, u32::MAX, NonZeroUsize::MIN)
+            .expect("admitted loop member run");
+        assert_eq!(singleton.member_ids().collect::<Vec<_>>(), [0]);
+        assert_eq!(singleton.support_slots().collect::<Vec<_>>(), [u32::MAX]);
+    }
+
     use crate::test_support::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
@@ -2673,8 +2787,8 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-        assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
-        assert_eq!(edge_stride.surface_support_refs, [7, 8]);
+        assert_eq!(edge_stride.topology_refs(), [5, 4, 3]);
+        assert_eq!(edge_stride.surface_support_refs(), [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -2682,10 +2796,12 @@ mod tests {
         };
         assert_eq!(pair.header_record_ordinal, 2);
         assert_eq!(pair.base_columns, [100, 200]);
+        assert_eq!(ZeroEntityUseSlot::First.side(), 1);
+        assert_eq!(ZeroEntityUseSlot::Second.side(), 2);
         assert_eq!(pair.uses[0].record_ordinal, 3);
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
         assert_eq!(pair.uses[1].record_ordinal, 4);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
 
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
@@ -2740,8 +2856,8 @@ mod tests {
         let [pair] = pairs.as_slice() else {
             panic!("one oriented-use pair")
         };
-        assert_eq!(pair.uses[0].allocations, [101, 201]);
-        assert_eq!(pair.uses[1].allocations, [102, 202]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::First), [101, 201]);
+        assert_eq!(pair.allocations(ZeroEntityUseSlot::Second), [102, 202]);
         let incidences = zero_entity_vertex_incidences(&stream);
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")
@@ -2870,11 +2986,11 @@ mod tests {
         };
         assert_eq!(loop_record.record_ordinal, 4);
         assert_eq!(loop_record.tag, [0x62, 0x14]);
-        assert_eq!(loop_record.member_ids, [6]);
+        assert_eq!(loop_record.members.member_ids().collect::<Vec<_>>(), [6]);
         assert_eq!(loop_record.typed_references, [1]);
-        assert_eq!(loop_record.terminal_id, 7);
-        assert_eq!(loop_record.gap, 1);
-        assert_eq!(loop_record.loop_class, 0x41);
+        assert_eq!(loop_record.members.terminal_id(), 7);
+        assert_eq!(loop_record.members.gap(), 1);
+        assert_eq!(loop_record.loop_class.as_byte(), 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
     }

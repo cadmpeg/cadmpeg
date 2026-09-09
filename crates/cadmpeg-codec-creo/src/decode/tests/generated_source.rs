@@ -31,6 +31,7 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
+use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
     extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
@@ -48,8 +49,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchLocus,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
@@ -205,6 +207,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     );
     let mut wrong_class = table.clone();
     wrong_class.entries[2].class_id = 201;
+    wrong_class.entries[2].payload = crate::feature::EntryPayload::Plain;
     assert_eq!(
         generated_surface_id_for_feature(&[wrong_class], 17, 9),
         None
@@ -242,10 +245,13 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         BTreeMap::from([(9, 43)])
     );
     assert_eq!(
-        section_generated_profile_surface_kinds(&SketchGeometry::Circle {
-            center: Point2::new(1.0, 2.0),
-            radius: Length(3.0),
-        }),
+        section_generated_profile_surface_kinds(
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(3.0),
+            })
+            .expect("valid test fixture")
+        ),
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
     assert!(section_entity_is_generated_profile(
@@ -1135,10 +1141,8 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .iter()
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
-            matches!(geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (origin, axis, _, radius) = cylinder_surface.parts();
-                *origin == Point3::new(1.0, 2.0, 3.0)
+            matches!(geometry, crate::decode::holes::placement::HoleCylinder { origin, axis, radius, .. }
+                if { *origin == Point3::new(1.0, 2.0, 3.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
                     && (*radius - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
             })
@@ -1234,12 +1238,9 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
 
 #[test]
 fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
-    let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
-        origin,
-        axis,
-        ref_direction: [0.0, 1.0, 0.0],
-        radius,
-        length: None,
+    let frame = |origin, axis, radius| {
+        crate::surface::PositionalCylinderFrame::new(origin, axis, [0.0, 1.0, 0.0], radius, None)
+            .expect("valid positional cylinder frame")
     };
     let first = frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.25);
     let shifted = frame([7.0, -3.0, 4.0], [-1.0, 0.0, 0.0], 0.25);
@@ -1259,11 +1260,6 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
     .is_none());
     assert!(simple_drilled_axis_placement_from_frames(
         &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.3)],
-        0.5,
-    )
-    .is_none());
-    assert!(simple_drilled_axis_placement_from_frames(
-        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], f64::NAN,)],
         0.5,
     )
     .is_none());
@@ -1402,7 +1398,8 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         ),
         source_object: Some(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: format!("VisibGeom:{native_id}"),
+            object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
+                .expect("nonempty source identity"),
             name: None,
             color: None,
             visible: None,
@@ -1471,7 +1468,8 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Creo,
-        object_id: format!("VisibGeom:{native_id}"),
+        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,
@@ -1508,11 +1506,14 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
 
 #[test]
 fn design_constraint_coverage_separates_typed_and_native_constraints() {
-    let sketch = SketchId("sketch".to_string());
+    let sketch =
+        SketchId::mint("synthetic:test:id#sketch".to_string()).expect("valid test fixture");
     let constraint = |id: &str, definition| SketchConstraint {
-        id: SketchConstraintId(id.to_string()),
+        id: SketchConstraintId::mint(format!("synthetic:test:id#{id}"))
+            .expect("valid test fixture"),
         sketch: sketch.clone(),
-        definition,
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+            .expect("valid test fixture"),
         name: None,
         driving: None,
         active: None,
@@ -1524,17 +1525,18 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         metadata: None,
         native_ref: None,
     };
-    let entity = SketchEntityId("entity".to_string());
+    let entity =
+        SketchEntityId::mint("synthetic:test:id#entity".to_string()).expect("valid test fixture");
     let mut constraints = vec![
         constraint(
             "sketch:relation:1",
-            SketchConstraintDefinition::Fixed {
+            SketchConstraintDefinitionInput::Fixed {
                 entity: entity.clone(),
             },
         ),
         constraint(
             "sketch:relation:2",
-            SketchConstraintDefinition::Native {
+            SketchConstraintDefinitionInput::Native {
                 native_kind: "creo:relation:9".to_string(),
                 entities: vec![entity.clone()],
                 parameter: None,
@@ -1546,7 +1548,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         ),
         constraint(
             "sketch:skamp:3",
-            SketchConstraintDefinition::Fixed { entity },
+            SketchConstraintDefinitionInput::Fixed { entity },
         ),
     ];
     constraints[0].active = Some(true);
@@ -1588,44 +1590,54 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 
 #[test]
 fn native_curve_families_accept_only_their_defined_loci() {
-    let point = SketchEntityId("point".to_string());
-    let bounded = SketchEntityId("bounded".to_string());
-    let line = SketchEntityId("line".to_string());
-    let reference_line = SketchEntityId("reference_line".to_string());
-    let circle = SketchEntityId("circle".to_string());
+    let point =
+        SketchEntityId::mint("synthetic:test:id#point".to_string()).expect("valid test fixture");
+    let bounded =
+        SketchEntityId::mint("synthetic:test:id#bounded".to_string()).expect("valid test fixture");
+    let line =
+        SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture");
+    let reference_line = SketchEntityId::mint("synthetic:test:id#reference_line".to_string())
+        .expect("valid test fixture");
+    let circle =
+        SketchEntityId::mint("synthetic:test:id#circle".to_string()).expect("valid test fixture");
     let geometry = BTreeMap::from([
         (
             point.clone(),
-            SketchGeometry::Native {
-                native_kind: "point".to_string(),
-            },
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("point")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
             bounded.clone(),
-            SketchGeometry::Native {
-                native_kind: "bounded_curve".to_string(),
-            },
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("bounded_curve")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
             line.clone(),
-            SketchGeometry::Native {
-                native_kind: "line".to_string(),
-            },
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("line")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
             reference_line.clone(),
-            SketchGeometry::Native {
-                native_kind: "reference_line".to_string(),
-            },
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("reference_line")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
             circle.clone(),
-            SketchGeometry::Native {
-                native_kind: "circle".to_string(),
-            },
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("circle")
+                    .expect("nonempty source identity"),
+            ),
         ),
     ]);
-    let compatible = SketchConstraintDefinition::CoincidentLoci {
+    let compatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![
             SketchLocus::Entity(point),
             SketchLocus::Start(bounded),
@@ -1633,21 +1645,25 @@ fn native_curve_families_accept_only_their_defined_loci() {
         ],
     };
     assert!(sketch_constraint_loci_compatible(&compatible, &geometry));
-    let incompatible = SketchConstraintDefinition::CoincidentLoci {
+    let incompatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
-    let centered_midpoint = SketchConstraintDefinition::Midpoint {
-        point: SketchLocus::Center(SketchEntityId("line".to_string())),
-        entity: SketchEntityId("bounded".to_string()),
+    let centered_midpoint = SketchConstraintDefinitionInput::Midpoint {
+        point: SketchLocus::Center(
+            SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture"),
+        ),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
+            .expect("valid test fixture"),
     };
     assert!(sketch_constraint_loci_compatible(
         &centered_midpoint,
         &geometry
     ));
-    let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
+    let incompatible_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(reference_line),
-        entity: SketchEntityId("bounded".to_string()),
+        entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
+            .expect("valid test fixture"),
     };
     assert!(!sketch_constraint_loci_compatible(
         &incompatible_midpoint,
@@ -1814,23 +1830,25 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
 
 #[test]
 fn extrusion_profile_area_includes_oriented_arc_sector() {
-    let arc = SketchGeometry::Arc {
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(1.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
-    let line = SketchGeometry::Line {
+    })
+    .expect("valid test fixture");
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(-1.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     let counterclockwise = vec![
-        (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
-        (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
+        ProfileEntity::new(arc.clone(), false).expect("valid profile entity"),
+        ProfileEntity::new(line.clone(), false).expect("valid profile entity"),
     ];
     let clockwise = vec![
-        (arc, true, [-1.0, 0.0], [1.0, 0.0]),
-        (line, true, [1.0, 0.0], [-1.0, 0.0]),
+        ProfileEntity::new(arc, true).expect("valid profile entity"),
+        ProfileEntity::new(line, true).expect("valid profile entity"),
     ];
     assert!(
         (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
@@ -1848,20 +1866,27 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
 
 #[test]
 fn full_turn_arc_remains_a_closed_extrusion_profile() {
-    let profile = vec![(
-        SketchGeometry::Arc {
+    let profile = vec![ProfileEntity::new(
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
-        },
+        })
+        .expect("valid test fixture"),
         false,
-        [2.0, 0.0],
-        [2.0, 0.0],
-    )];
-    let (profiles, area) = ordered_extrusion_profiles(vec![profile.clone()])
+    )
+    .expect("valid profile entity")];
+    let profiles = ordered_extrusion_profiles(vec![profile.clone()])
         .expect("a full-turn arc is a closed profile");
-    assert_eq!(profiles, vec![profile]);
+    let area = profiles[0].area();
+    assert_eq!(
+        profiles
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        vec![profile]
+    );
     assert!((area - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(
         oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
@@ -1875,12 +1900,15 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
 
 #[test]
 fn circle_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId("creo:model:sketch#circle".to_string());
-    let entity_id = SketchEntityId("creo:model:sketch_entity#circle".to_string());
-    let circle = SketchGeometry::Circle {
+    let sketch_id =
+        SketchId::mint("creo:model:sketch#circle".to_string()).expect("valid test fixture");
+    let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string())
+        .expect("valid test fixture");
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(1.0, -2.0),
         radius: Length(3.0),
-    };
+    })
+    .expect("valid test fixture");
     let seam = [4.0, -2.0];
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
@@ -1889,10 +1917,11 @@ fn circle_remains_a_closed_extrusion_profile() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![SketchEntityUse {
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
-        }]],
+        }]])
+        .expect("valid test fixture"),
         native_ref: None,
     });
     ir.model.sketch_entities.push(SketchEntity::new(
@@ -1902,9 +1931,21 @@ fn circle_remains_a_closed_extrusion_profile() {
     ));
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
-    assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);
-    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
-    assert_eq!(ordered, profiles);
+    assert_eq!(
+        profiles,
+        vec![vec![
+            ProfileEntity::new(circle.clone(), false).expect("valid profile entity")
+        ]]
+    );
+    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
+    let area = ordered[0].area();
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|profile| profile.entities().clone())
+            .collect::<Vec<_>>(),
+        profiles
+    );
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
@@ -1936,7 +1977,9 @@ fn circle_remains_a_closed_extrusion_profile() {
             ]
         );
         assert_eq!(
-            profile_arc(&(circle.clone(), reversed, seam, seam)),
+            profile_arc(
+                &ProfileEntity::new(circle.clone(), reversed).expect("valid profile entity")
+            ),
             Some((
                 [1.0, -2.0],
                 3.0,
@@ -1951,7 +1994,8 @@ fn circle_remains_a_closed_extrusion_profile() {
     }
     assert!(point_on_profile_arc(
         seam,
-        profile_arc(&(circle, false, seam, seam)).expect("circle arc"),
+        profile_arc(&ProfileEntity::new(circle, false).expect("valid profile entity"))
+            .expect("circle arc"),
         1.0e-9,
     ));
     assert_eq!(

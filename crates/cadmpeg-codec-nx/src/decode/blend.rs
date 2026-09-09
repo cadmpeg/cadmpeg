@@ -2793,7 +2793,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let tolerance = index.ir().tolerances.linear;
+    let tolerance = index.ir().tolerances.linear.get();
     if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
     }
@@ -3325,7 +3325,7 @@ fn surface_contact_direction_with_index_and_budget(
         return Some(direction);
     }
     let carrier = index.surfaces(surface.as_str())?;
-    let tolerance = ir.tolerances.linear;
+    let tolerance = ir.tolerances.linear.get();
     if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
     }

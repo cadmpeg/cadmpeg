@@ -10,43 +10,69 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-macro_rules! string_id {
-    ($name:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
-        pub struct $name(pub String);
+crate::ids::id_type!(
+    /// Identifies a neutral planar sketch.
+    SketchId
+);
+crate::ids::id_type!(
+    /// Identifies solved geometry in a sketch.
+    SketchEntityId
+);
+crate::ids::id_type!(
+    /// Identifies a neutral spatial sketch.
+    SpatialSketchId
+);
+crate::ids::id_type!(
+    /// Identifies solved geometry in a spatial sketch.
+    SpatialSketchEntityId
+);
+crate::ids::id_type!(
+    /// Identifies a geometric sketch constraint.
+    SketchConstraintId
+);
 
-        impl Serialize for $name {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                crate::schema::serialize_reference_id(&self.0, serializer)
-            }
-        }
-
-        impl $name {
-            /// Borrow the underlying id string.
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-        }
-    };
+/// Font weight admitted by neutral sketch text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "i32", into = "i32")]
+#[repr(i32)]
+pub enum SketchFontWeight {
+    /// Regular text weight.
+    Regular = 400,
+    /// Medium text weight.
+    Medium = 500,
+    /// Bold text weight.
+    Bold = 750,
 }
 
-string_id!(SketchId, "Identifies a neutral planar sketch.");
-string_id!(SketchEntityId, "Identifies solved geometry in a sketch.");
-string_id!(SpatialSketchId, "Identifies a neutral spatial sketch.");
-string_id!(
-    SpatialSketchEntityId,
-    "Identifies solved geometry in a spatial sketch."
-);
-string_id!(
-    SketchConstraintId,
-    "Identifies a geometric sketch constraint."
-);
+impl TryFrom<i32> for SketchFontWeight {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            400 => Ok(Self::Regular),
+            500 => Ok(Self::Medium),
+            750 => Ok(Self::Bold),
+            _ => Err("sketch text font_weight must be 400, 500, or 750"),
+        }
+    }
+}
+
+impl From<SketchFontWeight> for i32 {
+    fn from(value: SketchFontWeight) -> Self {
+        value as Self
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchFontWeight {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchFontWeight".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type": "integer", "enum": [400, 500, 750]})
+    }
+}
 
 /// Horizontal placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,8 +133,8 @@ pub struct Sketch {
     /// Placement of sketch coordinates in model space.
     pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub profiles: Vec<Vec<SketchEntityUse>>,
+    #[serde(default, skip_serializing_if = "SketchProfiles::is_empty")]
+    pub profiles: SketchProfiles,
     /// Identifier of the full-fidelity native input lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -123,26 +149,178 @@ pub enum SketchPlacement {
     Unresolved,
     /// Complete model-space sketch frame.
     Resolved {
-        /// Sketch-plane origin in model space.
-        origin: Point3,
-        /// Sketch-plane unit normal.
-        normal: Vector3,
-        /// Sketch-plane u-axis.
-        u_axis: Vector3,
+        /// Checked origin and nonzero perpendicular axes.
+        #[serde(flatten)]
+        frame: SketchPlaneFrame,
     },
 }
 
+const EPS_SKETCH_PLANE_ORTHOGONALITY: f64 = 1.0e-9;
+
+/// A finite origin with nonzero perpendicular sketch axes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchPlaneFrameWire")]
+pub struct SketchPlaneFrame {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPlaneFrameWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+}
+
+impl TryFrom<SketchPlaneFrameWire> for SketchPlaneFrame {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchPlaneFrameWire) -> Result<Self, Self::Error> {
+        let normal = wire.normal.norm();
+        let u_norm = wire.u_axis.norm();
+        let dot = wire.normal.x * wire.u_axis.x
+            + wire.normal.y * wire.u_axis.y
+            + wire.normal.z * wire.u_axis.z;
+        if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
+            return Err("sketch normal and u_axis must have finite positive length");
+        }
+        if dot.abs() > EPS_SKETCH_PLANE_ORTHOGONALITY * normal * u_norm {
+            return Err("sketch normal and u_axis must be perpendicular");
+        }
+        if !wire.origin.x.is_finite() || !wire.origin.y.is_finite() || !wire.origin.z.is_finite() {
+            return Err("sketch origin must be finite");
+        }
+        Ok(Self {
+            origin: wire.origin,
+            normal: wire.normal,
+            u_axis: wire.u_axis,
+        })
+    }
+}
+
 impl SketchPlacement {
+    /// Admit a resolved sketch frame with finite origin and nonzero perpendicular axes.
+    pub fn try_resolved(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+    ) -> Result<Self, &'static str> {
+        Ok(Self::Resolved {
+            frame: SketchPlaneFrameWire {
+                origin,
+                normal,
+                u_axis,
+            }
+            .try_into()?,
+        })
+    }
+
     /// Return the complete frame when placement is resolved.
     pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
         match self {
             Self::Unresolved => None,
-            Self::Resolved {
-                origin,
-                normal,
-                u_axis,
-            } => Some((origin, normal, u_axis)),
+            Self::Resolved { frame } => Some((frame.origin, frame.normal, frame.u_axis)),
         }
+    }
+}
+
+/// An ordered collection of nonempty sketch profile chains.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vec<Vec<SketchEntityUse>>")]
+pub struct SketchProfiles(Vec<Vec<SketchEntityUse>>);
+
+impl TryFrom<Vec<Vec<SketchEntityUse>>> for SketchProfiles {
+    type Error = &'static str;
+
+    fn try_from(profiles: Vec<Vec<SketchEntityUse>>) -> Result<Self, Self::Error> {
+        if profiles.iter().any(Vec::is_empty) {
+            return Err("sketch profiles must contain no empty chain");
+        }
+        Ok(Self(profiles))
+    }
+}
+
+impl std::ops::Deref for SketchProfiles {
+    type Target = [Vec<SketchEntityUse>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a SketchProfiles {
+    type Item = &'a Vec<SketchEntityUse>;
+    type IntoIter = std::slice::Iter<'a, Vec<SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for SketchProfiles {
+    type Item = Vec<SketchEntityUse>;
+    type IntoIter = std::vec::IntoIter<Vec<SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl SketchProfiles {
+    /// Borrow the ordered nonempty profile chains.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Vec<SketchEntityUse>] {
+        &self.0
+    }
+
+    /// Whether the sketch has no profile chains.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Append a profile containing one entity use.
+    pub fn push_single(&mut self, entity: SketchEntityUse) {
+        self.0.push(vec![entity]);
+    }
+
+    /// Retain matching entity uses and remove chains emptied by the filter.
+    pub fn retain_uses(&mut self, mut keep: impl FnMut(&SketchEntityUse) -> bool) {
+        let mut profiles = self.0.clone();
+        for profile in &mut profiles {
+            profile.retain(&mut keep);
+        }
+        profiles.retain(|profile| !profile.is_empty());
+        self.0 = profiles;
+    }
+
+    /// Append a nonempty profile chain.
+    pub fn try_push(&mut self, profile: Vec<SketchEntityUse>) -> Result<(), &'static str> {
+        if profile.is_empty() {
+            return Err("sketch profile chain must be nonempty");
+        }
+        self.0.push(profile);
+        Ok(())
+    }
+
+    /// Replace profile chains only after every edited chain passes admission.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut Vec<Vec<SketchEntityUse>>),
+    ) -> Result<(), &'static str> {
+        let mut profiles = self.0.clone();
+        edit(&mut profiles);
+        *self = profiles.try_into()?;
+        Ok(())
+    }
+
+    /// Remove all profile chains.
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 }
 
@@ -165,12 +343,8 @@ pub struct SketchEntityUse {
 }
 
 /// Solved geometry belonging to one sketch.
-///
-/// Prefer [`SketchEntity::new`] for invariant-bearing construction. There is no
-/// public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SketchEntityWire")]
 pub struct SketchEntity {
     /// Globally unique entity id.
     id: SketchEntityId,
@@ -195,7 +369,6 @@ pub struct SketchEntity {
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
     pub fn new(id: SketchEntityId, sketch: SketchId, geometry: SketchGeometry) -> Self {
-        assert!(!id.0.is_empty(), "SketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -241,46 +414,170 @@ impl SketchEntity {
     }
 }
 
-#[derive(Deserialize)]
+/// Solved two-dimensional sketch geometry with finite numeric coordinates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SketchEntityWire {
-    id: SketchEntityId,
-    sketch: SketchId,
-    #[serde(default)]
-    construction: bool,
-    #[serde(default)]
-    native_ref: Option<String>,
-    #[serde(default)]
-    geometry_ref: Option<String>,
-    #[serde(default)]
-    endpoint_refs: Vec<String>,
-    geometry: SketchGeometry,
-}
+#[serde(try_from = "SketchGeometryDefinition")]
+pub struct SketchGeometry(SketchGeometryDefinition);
 
-impl TryFrom<SketchEntityWire> for SketchEntity {
-    type Error = &'static str;
+impl SketchGeometry {
+    /// Retain source-native geometry without solved numeric fields.
+    #[must_use]
+    pub fn native(native_kind: NonEmptyString) -> Self {
+        Self(SketchGeometryDefinition::Native { native_kind })
+    }
 
-    fn try_from(wire: SketchEntityWire) -> Result<Self, Self::Error> {
-        if wire.id.0.is_empty() {
-            return Err("SketchEntity.id must not be empty");
-        }
-        Ok(Self {
-            id: wire.id,
-            sketch: wire.sketch,
-            construction: wire.construction,
-            native_ref: wire.native_ref,
-            geometry_ref: wire.geometry_ref,
-            endpoint_refs: wire.endpoint_refs,
-            geometry: wire.geometry,
-        })
+    /// Admit an already checked planar NURBS curve.
+    #[must_use]
+    pub fn nurbs(curve: crate::geometry::PcurveNurbs) -> Self {
+        Self(SketchGeometryDefinition::Nurbs { curve })
+    }
+
+    /// Borrow the admitted geometry definition.
+    #[must_use]
+    pub fn definition(&self) -> &SketchGeometryDefinition {
+        &self.0
+    }
+
+    /// Extract the admitted definition.
+    #[must_use]
+    pub fn into_definition(self) -> SketchGeometryDefinition {
+        self.0
+    }
+
+    /// Replace the definition only after its numeric invariants pass.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut SketchGeometryDefinition),
+    ) -> Result<(), &'static str> {
+        let mut definition = self.0.clone();
+        edit(&mut definition);
+        *self = definition.try_into()?;
+        Ok(())
     }
 }
 
-/// Solved two-dimensional sketch geometry.
+impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
+    type Error = &'static str;
+
+    fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
+        let finite_point = |point: &Point2| point.u.is_finite() && point.v.is_finite();
+        let positive = |length: &Length| length.0.is_finite() && length.0 > 0.0;
+        match &definition {
+            SketchGeometryDefinition::Point { position } if !finite_point(position) => {
+                return Err("sketch point position must be finite");
+            }
+            SketchGeometryDefinition::Line { start, end }
+                if !finite_point(start) || !finite_point(end) =>
+            {
+                return Err("sketch line endpoints must be finite");
+            }
+            SketchGeometryDefinition::ReferenceLine { origin, direction }
+                if !finite_point(origin)
+                    || !finite_point(direction)
+                    || direction.u.hypot(direction.v) <= f64::EPSILON =>
+            {
+                return Err(
+                    "sketch reference line requires finite origin and nonzero finite direction",
+                );
+            }
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. }
+                if !finite_point(center) || !positive(radius) =>
+            {
+                return Err(
+                    "sketch circular geometry requires finite center and positive finite radius",
+                );
+            }
+            SketchGeometryDefinition::Arc {
+                start_angle,
+                end_angle,
+                ..
+            } if !start_angle.0.is_finite() || !end_angle.0.is_finite() => {
+                return Err("sketch arc angles must be finite");
+            }
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => {
+                if !finite_point(center) || !major_angle.0.is_finite() {
+                    return Err("sketch ellipse center and major_angle must be finite");
+                }
+                if !positive(major_radius) || !positive(minor_radius) {
+                    return Err("sketch ellipse radii must be positive and finite");
+                }
+                if major_radius.0 < minor_radius.0 {
+                    return Err("sketch ellipse major_radius must be at least minor_radius");
+                }
+                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
+                    return Err("sketch ellipse bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => {
+                if !finite_point(center) || !major_angle.0.is_finite() {
+                    return Err("sketch hyperbola center and major_angle must be finite");
+                }
+                if !positive(major_radius) || !positive(minor_radius) {
+                    return Err("sketch hyperbola radii must be positive and finite");
+                }
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
+                    return Err("sketch hyperbola bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => {
+                if !finite_point(vertex) || !axis_angle.0.is_finite() {
+                    return Err("sketch parabola vertex and axis_angle must be finite");
+                }
+                if !positive(focal_length) {
+                    return Err("sketch parabola focal_length must be positive and finite");
+                }
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
+                    return Err("sketch parabola bounds must be finite");
+                }
+            }
+            SketchGeometryDefinition::Text {
+                height,
+                width_factor,
+                placement,
+                ..
+            } => {
+                if !positive(height) {
+                    return Err("sketch text height must be positive and finite");
+                }
+                if width_factor.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+                    return Err("sketch text width_factor must be positive and finite");
+                }
+                if placement.is_some_and(|placement| {
+                    !finite_point(&placement.anchor) || !placement.rotation.0.is_finite()
+                }) {
+                    return Err("sketch text anchor and rotation must be finite");
+                }
+            }
+            _ => {}
+        }
+        Ok(Self(definition))
+    }
+}
+
+/// Definition admitted by a solved two-dimensional sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchGeometry {
+pub enum SketchGeometryDefinition {
     /// Isolated point.
     Point {
         /// Solved point position.
@@ -370,11 +667,11 @@ pub enum SketchGeometry {
     /// Text placed in sketch coordinates.
     Text {
         /// Unicode text content.
-        text: String,
+        text: NonEmptyString,
         /// Source font-family name.
-        font_family: String,
-        /// Numeric font weight from the source text style.
-        font_weight: i32,
+        font_family: NonEmptyString,
+        /// Font weight from the source text style.
+        font_weight: SketchFontWeight,
         /// Nominal character height.
         height: Length,
         /// Horizontal scale relative to the nominal font width, absent when the
@@ -400,7 +697,8 @@ pub enum SketchGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         document: Option<String>,
         /// Referenced object identity.
-        object: String,
+        #[serde(deserialize_with = "deserialize_object")]
+        object: NonEmptyString,
         /// Ordered source subelement selectors.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subelements: Vec<String>,
@@ -408,7 +706,8 @@ pub enum SketchGeometry {
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
-        native_kind: String,
+        #[serde(deserialize_with = "deserialize_native_kind")]
+        native_kind: NonEmptyString,
     },
 }
 
@@ -571,18 +870,106 @@ pub struct SpatialSketch {
     pub native_ref: Option<String>,
 }
 
-/// One closed spatial-sketch profile and its model-space plane.
+const EPS_SPATIAL_PROFILE_FRAME: f64 = 1.0e-9;
+
+/// One closed spatial-sketch profile and its admitted model-space plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchProfileWire")]
 pub struct SpatialSketchProfile {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+    boundary: Vec<SpatialSketchEntityUse>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpatialSketchProfileWire {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+    boundary: Vec<SpatialSketchEntityUse>,
+}
+
+impl TryFrom<SpatialSketchProfileWire> for SpatialSketchProfile {
+    type Error = &'static str;
+
+    fn try_from(wire: SpatialSketchProfileWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.origin, wire.normal, wire.u_axis, wire.boundary)
+    }
+}
+
+impl SpatialSketchProfile {
+    /// Admit a finite plane with unit orthogonal axes and a nonempty distinct boundary.
+    pub fn try_new(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+        boundary: Vec<SpatialSketchEntityUse>,
+    ) -> Result<Self, &'static str> {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+            return Err("spatial profile origin must be finite");
+        }
+        let normal_length = normal.norm();
+        let u_length = u_axis.norm();
+        let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+        if !normal_length.is_finite()
+            || !u_length.is_finite()
+            || !dot.is_finite()
+            || (normal_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
+            || (u_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
+            || dot.abs() > EPS_SPATIAL_PROFILE_FRAME
+        {
+            return Err("spatial profile normal and u_axis must be unit and orthogonal");
+        }
+        let unique = boundary
+            .iter()
+            .map(|use_| &use_.entity)
+            .collect::<std::collections::HashSet<_>>();
+        if boundary.is_empty() || unique.len() != boundary.len() {
+            return Err("spatial profile boundary must be nonempty and contain distinct entities");
+        }
+        Ok(Self {
+            origin,
+            normal,
+            u_axis,
+            boundary,
+        })
+    }
+
     /// Profile-plane origin in model space.
-    pub origin: Point3,
-    /// Profile-plane unit normal, oriented by boundary traversal.
-    pub normal: Vector3,
+    #[must_use]
+    pub fn origin(&self) -> Point3 {
+        self.origin
+    }
+
+    /// Profile-plane unit normal.
+    #[must_use]
+    pub fn normal(&self) -> Vector3 {
+        self.normal
+    }
+
     /// Profile-plane unit u-axis.
-    pub u_axis: Vector3,
+    #[must_use]
+    pub fn u_axis(&self) -> Vector3 {
+        self.u_axis
+    }
+
     /// Ordered oriented boundary uses.
-    pub boundary: Vec<SpatialSketchEntityUse>,
+    #[must_use]
+    pub fn boundary(&self) -> &[SpatialSketchEntityUse] {
+        &self.boundary
+    }
+
+    /// Replace the origin after finite-coordinate admission.
+    pub fn set_origin(&mut self, origin: Point3) -> Result<(), &'static str> {
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+            return Err("spatial profile origin must be finite");
+        }
+        self.origin = origin;
+        Ok(())
+    }
 }
 
 /// Oriented use of one spatial-sketch entity in a profile boundary.
@@ -597,12 +984,8 @@ pub struct SpatialSketchEntityUse {
 }
 
 /// Solved model-space geometry belonging to one spatial sketch.
-///
-/// Prefer [`SpatialSketchEntity::new`] for invariant-bearing construction. There
-/// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SpatialSketchEntityWire")]
 pub struct SpatialSketchEntity {
     /// Globally unique spatial entity id.
     id: SpatialSketchEntityId,
@@ -631,7 +1014,6 @@ impl SpatialSketchEntity {
         sketch: SpatialSketchId,
         geometry: SpatialSketchGeometry,
     ) -> Self {
-        assert!(!id.0.is_empty(), "SpatialSketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -677,41 +1059,6 @@ impl SpatialSketchEntity {
     }
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SpatialSketchEntityWire {
-    id: SpatialSketchEntityId,
-    sketch: SpatialSketchId,
-    #[serde(default)]
-    construction: bool,
-    #[serde(default)]
-    native_ref: Option<String>,
-    #[serde(default)]
-    geometry_ref: Option<String>,
-    #[serde(default)]
-    endpoint_refs: Vec<String>,
-    geometry: SpatialSketchGeometry,
-}
-
-impl TryFrom<SpatialSketchEntityWire> for SpatialSketchEntity {
-    type Error = &'static str;
-
-    fn try_from(wire: SpatialSketchEntityWire) -> Result<Self, Self::Error> {
-        if wire.id.0.is_empty() {
-            return Err("SpatialSketchEntity.id must not be empty");
-        }
-        Ok(Self {
-            id: wire.id,
-            sketch: wire.sketch,
-            construction: wire.construction,
-            native_ref: wire.native_ref,
-            geometry_ref: wire.geometry_ref,
-            endpoint_refs: wire.endpoint_refs,
-            geometry: wire.geometry,
-        })
-    }
-}
-
 /// One geometric relation owned by a spatial sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -737,11 +1084,115 @@ pub struct SpatialSketchEntityPair {
     pub second: SpatialSketchEntityId,
 }
 
+const EPS_SPATIAL_CONSTRAINT_UNIT: f64 = 1.0e-9;
+
+/// A spatial sketch constraint with admitted local members and scalar values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchConstraintDefinitionInput")]
+pub struct SpatialSketchConstraintDefinition(SpatialSketchConstraintDefinitionInput);
+
+impl SpatialSketchConstraintDefinition {
+    /// Borrow the admitted spatial constraint kind.
+    #[must_use]
+    pub fn kind(&self) -> &SpatialSketchConstraintDefinitionInput {
+        &self.0
+    }
+
+    /// Replace the kind only after all edited local invariants pass.
+    pub fn edit<R>(
+        &mut self,
+        edit: impl FnOnce(&mut SpatialSketchConstraintDefinitionInput) -> R,
+    ) -> Result<R, &'static str> {
+        let mut kind = self.0.clone();
+        let result = edit(&mut kind);
+        *self = kind.try_into()?;
+        Ok(result)
+    }
+}
+
+impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraintDefinition {
+    type Error = &'static str;
+
+    fn try_from(kind: SpatialSketchConstraintDefinitionInput) -> Result<Self, Self::Error> {
+        use SpatialSketchConstraintDefinitionInput as Kind;
+        let unit = |direction: &Vector3| {
+            let norm = direction.norm();
+            norm.is_finite() && (norm - 1.0).abs() <= EPS_SPATIAL_CONSTRAINT_UNIT
+        };
+        let valid = match &kind {
+            Kind::Native { .. } | Kind::LineLength { .. } => true,
+            Kind::Coincident { first, second }
+            | Kind::Tangent { first, second }
+            | Kind::PointDistance { first, second, .. }
+            | Kind::ParallelLineDistance { first, second, .. } => first != second,
+            Kind::Symmetric {
+                first,
+                second,
+                axis,
+            } => first != second && first != axis && second != axis,
+            Kind::PointOnSurface { point, surface } => point != surface,
+            Kind::Midpoint { point, entity } => point != entity,
+            Kind::PointLineDistance { point, line, .. } => point != line,
+            Kind::RepeatedLineLength { entities, .. } | Kind::SplineGroup { entities } => {
+                entities.len() >= 2
+                    && entities
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == entities.len()
+            }
+            Kind::RepeatedParallelLineDistance { pairs, .. } => {
+                let mut entities = std::collections::HashSet::new();
+                pairs.len() >= 2
+                    && pairs
+                        .iter()
+                        .all(|pair| entities.insert(&pair.first) && entities.insert(&pair.second))
+            }
+            Kind::ParallelLineSetDistance { first, second, .. } => {
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && first
+                        .iter()
+                        .chain(second)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == first.len() + second.len()
+            }
+            Kind::Offset {
+                sources,
+                results,
+                normal,
+                distance,
+                ..
+            } => {
+                !sources.is_empty()
+                    && !results.is_empty()
+                    && unit(normal)
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && sources
+                        .iter()
+                        .chain(results)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == sources.len() + results.len()
+            }
+            Kind::ParallelToDirection { direction, .. } => unit(direction),
+        };
+        if !valid {
+            return Err("invalid spatial sketch constraint local arity or scalar value");
+        }
+        Ok(Self(kind))
+    }
+}
+
 /// Neutral geometric relations between model-space sketch entities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SpatialSketchConstraintDefinition {
+pub enum SpatialSketchConstraintDefinitionInput {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
@@ -882,11 +1333,157 @@ pub enum SpatialSketchConstraintDefinition {
     },
 }
 
-/// Solved model-space spatial-sketch geometry.
+/// NURBS curve with positive degree and positive rational weights.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SpatialSketchNurbsCurve(crate::geometry::NurbsCurve);
+
+impl TryFrom<crate::geometry::NurbsCurve> for SpatialSketchNurbsCurve {
+    type Error = &'static str;
+
+    fn try_from(curve: crate::geometry::NurbsCurve) -> Result<Self, Self::Error> {
+        if curve.degree() == 0 {
+            return Err("spatial sketch NURBS degree must be at least one");
+        }
+        if curve
+            .weights()
+            .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        {
+            return Err("spatial sketch NURBS weights must be positive");
+        }
+        Ok(Self(curve))
+    }
+}
+
+impl<'de> Deserialize<'de> for SpatialSketchNurbsCurve {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(crate::geometry::NurbsCurve::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::ops::Deref for SpatialSketchNurbsCurve {
+    type Target = crate::geometry::NurbsCurve;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl SpatialSketchNurbsCurve {
+    /// Atomically edit control points and preserve finite coordinates.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnOnce(&mut [Point3]),
+    ) -> Result<(), crate::geometry::NurbsError> {
+        self.0.edit_control_points(edit)
+    }
+}
+
+const EPS_SPATIAL_LINE_LENGTH: f64 = 1.0e-12;
+const EPS_SPATIAL_CIRCLE_FRAME: f64 = 1.0e-9;
+
+/// Spatial-sketch geometry with checked analytic numeric fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchGeometryDefinition")]
+pub struct SpatialSketchGeometry(SpatialSketchGeometryDefinition);
+
+impl SpatialSketchGeometry {
+    /// Borrow the admitted spatial geometry definition.
+    #[must_use]
+    pub fn definition(&self) -> &SpatialSketchGeometryDefinition {
+        &self.0
+    }
+
+    /// Replace the spatial definition only after numeric admission succeeds.
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut SpatialSketchGeometryDefinition),
+    ) -> Result<(), &'static str> {
+        let mut definition = self.0.clone();
+        edit(&mut definition);
+        *self = definition.try_into()?;
+        Ok(())
+    }
+}
+
+impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
+    type Error = &'static str;
+
+    fn try_from(definition: SpatialSketchGeometryDefinition) -> Result<Self, Self::Error> {
+        let finite_point =
+            |point: &Point3| point.x.is_finite() && point.y.is_finite() && point.z.is_finite();
+        match &definition {
+            SpatialSketchGeometryDefinition::Point { position } if !finite_point(position) => {
+                return Err("spatial sketch point position must be finite");
+            }
+            SpatialSketchGeometryDefinition::Line { start, end } => {
+                let distance = (end.x - start.x)
+                    .hypot(end.y - start.y)
+                    .hypot(end.z - start.z);
+                if !finite_point(start) || !finite_point(end) || distance <= EPS_SPATIAL_LINE_LENGTH
+                {
+                    return Err("spatial sketch line endpoints must be finite and separated");
+                }
+            }
+            SpatialSketchGeometryDefinition::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius,
+            }
+            | SpatialSketchGeometryDefinition::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                ..
+            } => {
+                if !finite_point(center) || !radius.0.is_finite() || radius.0 <= 0.0 {
+                    return Err("spatial circular geometry requires finite center and positive finite radius");
+                }
+                let normal_length = normal.norm();
+                let reference_length = reference_direction.norm();
+                let orthogonal = (normal.x * reference_direction.x
+                    + normal.y * reference_direction.y
+                    + normal.z * reference_direction.z)
+                    .abs()
+                    <= EPS_SPATIAL_CIRCLE_FRAME;
+                if !normal_length.is_finite()
+                    || !reference_length.is_finite()
+                    || (normal_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
+                    || (reference_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
+                    || !orthogonal
+                {
+                    return Err("spatial circular normal and reference_direction must be unit and orthogonal");
+                }
+                if let SpatialSketchGeometryDefinition::Arc {
+                    start_angle,
+                    end_angle,
+                    ..
+                } = &definition
+                {
+                    if !start_angle.0.is_finite()
+                        || !end_angle.0.is_finite()
+                        || start_angle == end_angle
+                    {
+                        return Err("spatial sketch arc angles must be finite and distinct");
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(Self(definition))
+    }
+}
+
+/// Definition admitted by model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SpatialSketchGeometry {
+pub enum SpatialSketchGeometryDefinition {
     /// Model-space point.
     Point {
         /// Point position in model coordinates.
@@ -929,7 +1526,7 @@ pub enum SpatialSketchGeometry {
     Nurbs {
         /// Checked model-space knot, pole, and weight payload.
         #[serde(flatten)]
-        curve: crate::geometry::NurbsCurve,
+        curve: SpatialSketchNurbsCurve,
     },
     /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
@@ -940,7 +1537,8 @@ pub enum SpatialSketchGeometry {
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
-        native_kind: String,
+        #[serde(deserialize_with = "deserialize_native_kind")]
+        native_kind: NonEmptyString,
     },
 }
 
@@ -975,10 +1573,10 @@ pub struct SketchConstraint {
     pub orientation: Option<u32>,
     /// Persisted label offset from the constrained geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_distance: Option<f64>,
+    pub label_distance: Option<SketchLabelValue>,
     /// Persisted position along the dimension label path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label_position: Option<f64>,
+    pub label_position: Option<SketchLabelValue>,
     /// Application metadata text attached to this relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
@@ -1137,13 +1735,51 @@ mod offset_parameter_wire {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
-    pub direction: [f64; 2],
+    direction: [f64; 2],
     /// Adjacent-instance spacing along `direction`.
-    pub spacing: Length,
+    spacing: Length,
     /// Driving distance parameter and the distance form it controls.
     pub distance: Option<SketchPatternDistance>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     pub count_parameter: Option<ParameterId>,
+}
+
+const EPS_PATTERN_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
+
+impl SketchPatternDirection {
+    /// Admit a finite unit direction and finite signed spacing.
+    pub fn new(
+        direction: [f64; 2],
+        spacing: Length,
+        distance: Option<SketchPatternDistance>,
+        count_parameter: Option<ParameterId>,
+    ) -> Option<Self> {
+        if !spacing.0.is_finite()
+            || !direction.iter().all(|value| value.is_finite())
+            || (direction[0].hypot(direction[1]) - 1.0).abs() > EPS_PATTERN_DIRECTION_UNIT
+        {
+            return None;
+        }
+        Some(Self {
+            direction,
+            spacing,
+            distance,
+            count_parameter,
+        })
+    }
+
+    /// Unit direction in sketch coordinates.
+    #[must_use]
+    pub fn direction(&self) -> [f64; 2] {
+        self.direction
+    }
+
+    /// Adjacent-instance signed spacing.
+    #[must_use]
+    pub fn spacing(&self) -> Length {
+        self.spacing
+    }
 }
 
 /// Distance form controlled by a rectangular-pattern parameter.
@@ -1212,6 +1848,19 @@ impl SketchRectangularPattern {
         {
             return None;
         }
+        let dot = directions[0].direction[0] * directions[1].direction[0]
+            + directions[0].direction[1] * directions[1].direction[1];
+        let mut entities = std::collections::HashSet::new();
+        if dot.abs() > EPS_PATTERN_DIRECTION_ORTHOGONALITY
+            || rows.iter().flatten().any(|instance| {
+                instance
+                    .entities
+                    .iter()
+                    .any(|entity| !entities.insert(entity))
+            })
+        {
+            return None;
+        }
         Some(Self { directions, rows })
     }
 
@@ -1261,6 +1910,19 @@ impl SketchCircularPattern {
             || instances
                 .iter()
                 .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        let mut entities = std::collections::HashSet::new();
+        if !angle.0.is_finite()
+            || instances.first()?.angle.0 != 0.0
+            || instances.iter().any(|instance| {
+                !instance.angle.0.is_finite()
+                    || instance
+                        .entities
+                        .iter()
+                        .any(|entity| entity == &center || !entities.insert(entity))
+            })
         {
             return None;
         }
@@ -1351,12 +2013,8 @@ impl SketchPatternDirectionWire {
                 return Err("spacing_parameter and span_parameter are mutually exclusive")
             }
         };
-        Ok(SketchPatternDirection {
-            direction: self.direction,
-            spacing: self.spacing,
-            distance,
-            count_parameter: self.count_parameter,
-        })
+        SketchPatternDirection::new(self.direction, self.spacing, distance, self.count_parameter)
+            .ok_or("pattern direction must be finite and unit, with finite spacing")
     }
 }
 
@@ -1756,11 +2414,280 @@ mod internal_alignment_wire {
     }
 }
 
-/// Neutral geometric and dimensional sketch relations.
+/// Ordered polygon members with at least three distinct identities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchPolygonWire")]
+pub struct SketchPolygon {
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPolygonWire {
+    entities: Vec<SketchEntityId>,
+}
+
+impl TryFrom<SketchPolygonWire> for SketchPolygon {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchPolygonWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.entities)
+    }
+}
+
+impl SketchPolygon {
+    /// Admits at least three distinct polygon members.
+    pub fn try_new(entities: Vec<SketchEntityId>) -> Result<Self, &'static str> {
+        if entities.len() < 3
+            || entities
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != entities.len()
+        {
+            return Err("entities requires at least three distinct polygon members");
+        }
+        Ok(Self { entities })
+    }
+
+    /// Returns the ordered polygon members.
+    pub fn entities(&self) -> &[SketchEntityId] {
+        &self.entities
+    }
+}
+
+/// Two distinct loci aligned on one sketch coordinate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchSameCoordinateWire")]
+pub struct SketchSameCoordinate {
+    first: SketchLocus,
+    second: SketchLocus,
+    axis: SketchCoordinateAxis,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchSameCoordinateWire {
+    first: SketchLocus,
+    second: SketchLocus,
+    axis: SketchCoordinateAxis,
+}
+
+impl TryFrom<SketchSameCoordinateWire> for SketchSameCoordinate {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchSameCoordinateWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.first, wire.second, wire.axis)
+    }
+}
+
+impl SketchSameCoordinate {
+    /// Admits two distinct loci and their shared coordinate axis.
+    pub fn try_new(
+        first: SketchLocus,
+        second: SketchLocus,
+        axis: SketchCoordinateAxis,
+    ) -> Result<Self, &'static str> {
+        if first == second {
+            return Err("first and second require distinct loci");
+        }
+        Ok(Self {
+            first,
+            second,
+            axis,
+        })
+    }
+
+    /// Returns the first locus.
+    pub fn first(&self) -> &SketchLocus {
+        &self.first
+    }
+
+    /// Returns the second locus.
+    pub fn second(&self) -> &SketchLocus {
+        &self.second
+    }
+
+    /// Returns the shared coordinate axis.
+    pub fn axis(&self) -> SketchCoordinateAxis {
+        self.axis
+    }
+}
+
+/// A finite sketch constraint label coordinate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "f64")]
+pub struct SketchLabelValue(f64);
+
+impl TryFrom<f64> for SketchLabelValue {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if !value.is_finite() {
+            return Err("sketch constraint label coordinate must be finite");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl SketchLabelValue {
+    /// Return the admitted label coordinate.
+    #[must_use]
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
+const EPS_POLAR_DISTANCE_ZERO: f64 = 1.0e-12;
+
+/// A sketch constraint definition with admitted local arity and scalar values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchConstraintDefinitionInput")]
+pub struct SketchConstraintDefinition(SketchConstraintDefinitionInput);
+
+impl SketchConstraintDefinition {
+    /// Borrow the admitted constraint kind.
+    #[must_use]
+    pub fn kind(&self) -> &SketchConstraintDefinitionInput {
+        &self.0
+    }
+
+    /// Consume the admitted definition and return its kind.
+    #[must_use]
+    pub fn into_kind(self) -> SketchConstraintDefinitionInput {
+        self.0
+    }
+
+    /// Replace the kind only after all edited local invariants pass.
+    pub fn edit<R>(
+        &mut self,
+        edit: impl FnOnce(&mut SketchConstraintDefinitionInput) -> R,
+    ) -> Result<R, &'static str> {
+        let mut kind = self.0.clone();
+        let result = edit(&mut kind);
+        *self = kind.try_into()?;
+        Ok(result)
+    }
+}
+
+impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
+    type Error = &'static str;
+
+    fn try_from(kind: SketchConstraintDefinitionInput) -> Result<Self, Self::Error> {
+        use SketchConstraintDefinitionInput as Kind;
+        let valid = match &kind {
+            Kind::Coincident { entities } | Kind::SplineGroup { entities } => entities.len() >= 2,
+            Kind::CoincidentLoci { loci } => loci.len() >= 2,
+            Kind::Distance { entities, .. } => !entities.is_empty(),
+            Kind::TextFrame { text, frame } => {
+                !frame.is_empty() && frame.iter().all(|entity| entity != text)
+            }
+            Kind::TextPath {
+                text,
+                path,
+                glyph_transforms,
+            } => text != path && !glyph_transforms.is_empty(),
+            Kind::DistanceLociValue { distance, .. } => distance.0.is_finite() && distance.0 >= 0.0,
+            Kind::PointCoordinateValues { values, .. } => {
+                values.iter().all(|value| value.0.is_finite())
+            }
+            Kind::MidpointCoordinate { value, .. } => value.0.is_finite(),
+            Kind::PolarDistance {
+                distance, angle, ..
+            } => {
+                distance.0.is_finite()
+                    && distance.0 >= 0.0
+                    && if distance.0 <= EPS_POLAR_DISTANCE_ZERO {
+                        angle.is_none()
+                    } else {
+                        angle.is_some_and(|angle| angle.0.is_finite())
+                    }
+            }
+            Kind::AngleDifference { value, .. } => {
+                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
+            }
+            Kind::ScalarEquality { first, second } => first != second,
+            Kind::RepeatedDistance { measurements, .. } => {
+                let mut entities = std::collections::HashSet::new();
+                !measurements.is_empty()
+                    && measurements.iter().all(|measurement| {
+                        let (first, second) = match measurement {
+                            SketchDistanceMeasurement::Distance { first, second }
+                            | SketchDistanceMeasurement::Horizontal { first, second }
+                            | SketchDistanceMeasurement::Vertical { first, second } => {
+                                (first, second)
+                            }
+                        };
+                        let entity = |locus: &SketchLocus| match locus {
+                            SketchLocus::Entity(id)
+                            | SketchLocus::Start(id)
+                            | SketchLocus::End(id)
+                            | SketchLocus::Center(id) => id.clone(),
+                        };
+                        entities.insert(entity(first)) && entities.insert(entity(second))
+                    })
+            }
+            Kind::RepeatedLength { entities, .. }
+            | Kind::RepeatedRadius { entities, .. }
+            | Kind::RepeatedDiameter { entities, .. } => {
+                entities.len() >= 2
+                    && entities
+                        .iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == entities.len()
+            }
+            Kind::ParallelLineSetDistance { first, second, .. } => {
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && first
+                        .iter()
+                        .chain(second)
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        == first.len() + second.len()
+            }
+            Kind::Offset {
+                pairs, distance, ..
+            } => {
+                let mut sources = std::collections::HashSet::new();
+                let mut results = std::collections::HashSet::new();
+                !pairs.is_empty()
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && pairs.iter().all(|pair| {
+                        pair.source != pair.result
+                            && sources.insert(&pair.source)
+                            && results.insert(&pair.result)
+                    })
+            }
+            Kind::ProjectedCopy { source, result } => source != result,
+            Kind::Group { elements } | Kind::Text { elements, .. } => !elements.is_empty(),
+            Kind::Native {
+                native_kind,
+                entities,
+                operands,
+                ..
+            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
+            _ => true,
+        };
+        if !valid {
+            return Err("invalid sketch constraint local arity or scalar value");
+        }
+        Ok(Self(kind))
+    }
+}
+
+/// Candidate geometric and dimensional sketch relations for checked admission.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchConstraintDefinition {
+pub enum SketchConstraintDefinitionInput {
     /// Persisted no-op relation slot.
     Disabled,
     /// Two entity loci coincide.
@@ -1770,8 +2697,9 @@ pub enum SketchConstraintDefinition {
     },
     /// Entities participate in one native polygon relation.
     Polygon {
-        /// Ordered polygon members.
-        entities: Vec<SketchEntityId>,
+        /// Checked polygon members.
+        #[serde(flatten)]
+        polygon: SketchPolygon,
     },
     /// A spline's defining entities grouped by one native spline relation.
     SplineGroup {
@@ -1814,12 +2742,9 @@ pub enum SketchConstraintDefinition {
     },
     /// Two loci share one sketch-space coordinate.
     SameCoordinate {
-        /// First aligned locus.
-        first: SketchLocus,
-        /// Second aligned locus.
-        second: SketchLocus,
-        /// Shared sketch coordinate.
-        axis: SketchCoordinateAxis,
+        /// Checked coordinate relation.
+        #[serde(flatten)]
+        relation: SketchSameCoordinate,
     },
     /// A point locus lies on another sketch entity.
     PointOnObject {
@@ -2241,6 +3166,19 @@ pub enum SketchConstraintDefinition {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         operands: Vec<SketchNativeOperand>,
     },
+}
+
+fn deserialize_object<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("object: {error}")))
+}
+fn deserialize_native_kind<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::products::NonEmptyString, D::Error> {
+    crate::products::NonEmptyString::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("native_kind: {error}")))
 }
 
 #[cfg(test)]

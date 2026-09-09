@@ -455,7 +455,7 @@ fn frame_impl(
         let mut depth = 0usize;
         let mut name_done = false;
         let mut is_delta = false;
-        let mut embedded_history_entity = None;
+        let mut embedded_history_edge = false;
         let mut payload_start = true;
 
         loop {
@@ -496,7 +496,7 @@ fn frame_impl(
                         && name_parts.join("-") == "End-of-ASM-History-Section"
                         && identifier == "edge"
                     {
-                        embedded_history_entity = Some(identifier.clone());
+                        embedded_history_edge = true;
                     }
                     payload_start = false;
                     tokens.push(Token::Ident(identifier));
@@ -534,10 +534,11 @@ fn frame_impl(
         if is_delta {
             break;
         }
-        let mut name = name_parts.join("-");
-        if let Some(embedded) = embedded_history_entity {
-            name = embedded;
-        }
+        let name = if embedded_history_edge {
+            "edge".to_owned()
+        } else {
+            name_parts.join("-")
+        };
 
         records.push(Record {
             index,

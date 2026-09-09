@@ -53,7 +53,7 @@ pub(super) fn emit_topology(
     pcurves: &BTreeMap<u32, PcurveId>,
     pcurve_supports: &BTreeMap<u32, SurfaceId>,
     trim_ranges: &BTreeMap<u32, [f64; 2]>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     intersection_starts: IntersectionEntityStarts,
@@ -85,7 +85,7 @@ pub(super) fn emit_topology(
             graph
                 .get(NodeKind::Fin, *xmt)?
                 .fin_fields()
-                .map(|fields| fields.edge)
+                .and_then(|fields| fields.edge.map(u32::from))
         })
         .collect();
     let valid_vertex_xmts: BTreeSet<u32> = valid_fin_xmts
@@ -93,19 +93,26 @@ pub(super) fn emit_topology(
         .flat_map(|xmt| {
             let fields = graph.get(NodeKind::Fin, *xmt).and_then(Node::fin_fields);
             let partner_vertex = fields
-                .filter(|fields| fields.other > 1)
-                .and_then(|fields| graph.get(NodeKind::Fin, fields.other))
+                .filter(|fields| fields.other.is_some_and(|target| u32::from(target) > 1))
+                .and_then(|fields| graph.get_target(NodeKind::Fin, fields.other))
                 .and_then(Node::fin_fields)
-                .map(|fields| fields.vertex);
-            [fields.map(|fields| fields.vertex), partner_vertex]
-                .into_iter()
-                .flatten()
+                .and_then(|fields| fields.vertex.map(u32::from));
+            [
+                fields.and_then(|fields| fields.vertex.map(u32::from)),
+                partner_vertex,
+            ]
+            .into_iter()
+            .flatten()
         })
         .filter(|xmt| *xmt > 1)
         .collect();
     let body_xmts: BTreeSet<_> = body_shape_shells
         .iter()
-        .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
+        .filter_map(|shell| {
+            shell
+                .shell_fields()
+                .and_then(|fields| fields.body.map(u32::from))
+        })
         .collect();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
@@ -115,7 +122,7 @@ pub(super) fn emit_topology(
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
             shell
                 .shell_fields()
-                .is_some_and(|fields| fields.body == body_xmt)
+                .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
         }) {
             annotations
                 .note(&id, source_stream, shell.pos as u64)
@@ -140,18 +147,25 @@ pub(super) fn emit_topology(
         let Some(fields) = node.shell_fields() else {
             continue;
         };
-        let Some(body) = bodies.get(&fields.body).cloned() else {
+        let Some(body) = fields
+            .body
+            .and_then(|target| bodies.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
-        let region_id = if let Some((region, owner)) = regions.get(&fields.region) {
+        let Some(region_xmt) = fields.region.map(u32::from) else {
+            continue;
+        };
+        let region_id = if let Some((region, owner)) = regions.get(&region_xmt) {
             if owner != &body {
                 continue;
             }
             region.clone()
         } else {
-            let region = RegionId::mint(format!("{prefix}:region#{}", fields.region))
-                .expect("identity grammar");
-            if let Some(region_node) = graph.get(NodeKind::Region, fields.region) {
+            let region =
+                RegionId::mint(format!("{prefix}:region#{region_xmt}")).expect("identity grammar");
+            if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
                 annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
                 annotations
@@ -159,7 +173,9 @@ pub(super) fn emit_topology(
                     .tag("UNRESOLVED_REGION_REFERENCE");
                 annotations.exactness(&region, Exactness::Unknown);
             }
-            annotations.derived(&region, "body");
+            annotations
+                .derived(&region, "body")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
@@ -173,7 +189,7 @@ pub(super) fn emit_topology(
             {
                 parent.regions.push(region.clone());
             }
-            regions.insert(fields.region, (region.clone(), body.clone()));
+            regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
         let shell_id =
@@ -213,7 +229,11 @@ pub(super) fn emit_topology(
         let Some(fields) = node.vertex_fields() else {
             continue;
         };
-        let Some(point) = points.get(&fields.point).cloned() else {
+        let Some(point) = fields
+            .point
+            .and_then(|target| points.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
         let Some(point_position) = point_positions.get(&point).copied() else {
@@ -224,7 +244,9 @@ pub(super) fn emit_topology(
             VertexId::mint(format!("{prefix}:vertex#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
-            annotations.derived(&vertex, "tolerance");
+            annotations
+                .derived(&vertex, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.vertices.push(Vertex {
             id: vertex.clone(),
@@ -232,7 +254,13 @@ pub(super) fn emit_topology(
             tolerance,
         });
         vertices.insert(node.xmt, vertex.clone());
-        vertex_positions.insert(vertex, (point_position, tolerance));
+        vertex_positions.insert(
+            vertex,
+            (
+                point_position,
+                tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+            ),
+        );
     }
     let pcurve_indices: BTreeMap<_, _> = ir
         .model
@@ -265,7 +293,7 @@ pub(super) fn emit_topology(
         let Some(fields) = node.edge_fields() else {
             continue;
         };
-        let Some(fin) = graph.get(NodeKind::Fin, fields.fin) else {
+        let Some(fin) = graph.get_target(NodeKind::Fin, fields.fin) else {
             continue;
         };
         let Some(fin_fields) = fin.fin_fields() else {
@@ -273,6 +301,8 @@ pub(super) fn emit_topology(
         };
         let curve_xmt = [fields.curve, fin_fields.curve_xmt]
             .into_iter()
+            .flatten()
+            .map(u32::from)
             .find(|xmt| *xmt > 1);
         let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
@@ -306,7 +336,9 @@ pub(super) fn emit_topology(
                 annotations
                     .note(&carrier, source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
-                annotations.derived(&carrier, "geometry");
+                annotations
+                    .derived(&carrier, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.curves.push(Curve {
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -346,51 +378,61 @@ pub(super) fn emit_topology(
                 param_range = None;
             }
         }
-        let closed_edge = fin_fields.vertex == 1
-            && fin_fields.forward == fin.xmt
-            && fin_fields.backward == fin.xmt;
-        let start = vertices.get(&fin_fields.vertex).cloned().or_else(|| {
-            closed_edge
-                .then(|| {
-                    let curve = curve.as_ref()?;
-                    let curve_index = curve_indices.get(curve).copied()?;
-                    synthesize_closed_edge_vertex_with_curve_index_and_budget(
-                        ir,
-                        annotations,
-                        &prefix,
-                        node,
-                        curve,
-                        curve_index,
-                        param_range,
-                        source_stream,
-                        decoded_tolerance(fields.tolerance),
-                        &mut curve_point_cache,
-                        adaptive_geometry_budget,
-                    )
-                })
-                .flatten()
-        });
+        let closed_edge = fin_fields.vertex.is_none()
+            && fin_fields.forward.map(u32::from) == Some(fin.xmt)
+            && fin_fields.backward.map(u32::from) == Some(fin.xmt);
+        let start = fin_fields
+            .vertex
+            .and_then(|target| vertices.get(&u32::from(target)))
+            .cloned()
+            .or_else(|| {
+                closed_edge
+                    .then(|| {
+                        let curve = curve.as_ref()?;
+                        let curve_index = curve_indices.get(curve).copied()?;
+                        synthesize_closed_edge_vertex_with_curve_index_and_budget(
+                            ir,
+                            annotations,
+                            &prefix,
+                            node,
+                            curve,
+                            curve_index,
+                            param_range,
+                            source_stream,
+                            decoded_tolerance(fields.tolerance),
+                            &mut curve_point_cache,
+                            adaptive_geometry_budget,
+                        )
+                    })
+                    .flatten()
+            });
         let Some(start) = start else {
             continue;
         };
-        let end_fin = if fin_fields.other > 1 {
-            fin_fields.other
-        } else {
-            fin_fields.forward
-        };
-        let Some(end_fields) = graph.get(NodeKind::Fin, end_fin).and_then(Node::fin_fields) else {
+        let end_fin = fin_fields
+            .other
+            .filter(|target| u32::from(*target) > 1)
+            .or(fin_fields.forward);
+        let Some(end_fields) = graph
+            .get_target(NodeKind::Fin, end_fin)
+            .and_then(Node::fin_fields)
+        else {
             continue;
         };
-        let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
-            // A partnered closed FIN repeats the null vertex and closes its own
-            // forward/backward links. Its endpoint is the same analytic point
-            // as the current FIN's synthesized start, even when `end_fin` is a
-            // distinct radial partner record.
-            (end_fields.vertex == 1
-                && end_fields.forward == end_fin
-                && end_fields.backward == end_fin)
-                .then(|| start.clone())
-        });
+        let end = end_fields
+            .vertex
+            .and_then(|target| vertices.get(&u32::from(target)))
+            .cloned()
+            .or_else(|| {
+                // A partnered closed FIN repeats the null vertex and closes its own
+                // forward/backward links. Its endpoint is the same analytic point
+                // as the current FIN's synthesized start, even when `end_fin` is a
+                // distinct radial partner record.
+                (end_fields.vertex.is_none()
+                    && end_fields.forward == end_fin
+                    && end_fields.backward == end_fin)
+                    .then(|| start.clone())
+            });
         let Some(end) = end else {
             continue;
         };
@@ -398,7 +440,9 @@ pub(super) fn emit_topology(
         let id = EdgeId::mint(format!("{prefix}:edge#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
             let oriented = curve_indices.get(carrier).copied().and_then(|curve_index| {
@@ -412,7 +456,7 @@ pub(super) fn emit_topology(
                     start_tolerance,
                     end_position,
                     end_tolerance,
-                    decoded_tolerance(fields.tolerance),
+                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::units::PositiveScalar::get),
                     procedural_curve_ids.contains(carrier),
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
@@ -454,16 +498,26 @@ pub(super) fn emit_topology(
         let Some(fields) = node.face_fields() else {
             continue;
         };
-        let Some(shell) = shells.get(&fields.shell).cloned() else {
+        let Some(shell) = fields
+            .shell
+            .and_then(|target| shells.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
-        let Some(surface) = surfaces.get(&fields.surface).cloned() else {
+        let Some(surface) = fields
+            .surface
+            .and_then(|target| surfaces.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
         let id = FaceId::mint(format!("{prefix}:face#{}", node.xmt)).expect("identity grammar");
         annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
-            annotations.derived(&id, "tolerance");
+            annotations
+                .derived(&id, "tolerance")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.faces.push(Face {
             id: id.clone(),
@@ -493,7 +547,11 @@ pub(super) fn emit_topology(
             graph
                 .get(NodeKind::Fin, *fin_xmt)
                 .and_then(Node::fin_fields)
-                .is_some_and(|fields| edges.contains_key(&fields.edge))
+                .is_some_and(|fields| {
+                    fields
+                        .edge
+                        .is_some_and(|target| edges.contains_key(&u32::from(target)))
+                })
         });
         if !ring_resolves {
             continue;
@@ -504,7 +562,11 @@ pub(super) fn emit_topology(
         let Some(fields) = node.loop_fields() else {
             continue;
         };
-        let Some(face) = faces.get(&fields.face).cloned() else {
+        let Some(face) = fields
+            .face
+            .and_then(|target| faces.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
         let id = LoopId::mint(format!("{prefix}:loop#{}", node.xmt)).expect("identity grammar");
@@ -518,7 +580,11 @@ pub(super) fn emit_topology(
             graph
                 .get(NodeKind::Fin, **xmt)
                 .and_then(Node::fin_fields)
-                .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
+                .is_some_and(|fields| {
+                    fields
+                        .loop_xmt
+                        .is_some_and(|target| loops.contains_key(&u32::from(target)))
+                })
         })
         .map(|xmt| {
             (
@@ -560,18 +626,25 @@ pub(super) fn emit_topology(
             .keys()
             .filter_map(|fin_xmt| {
                 let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
-                let edge = edges.get(&fields.edge)?;
+                let edge = fields
+                    .edge
+                    .and_then(|target| edges.get(&u32::from(target)))?;
                 let support = graph
-                    .get(NodeKind::Loop, fields.loop_xmt)
+                    .get_target(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
+                    .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
-                    .and_then(|face| surfaces.get(&face.surface))?;
-                let carrier = pcurves
-                    .get(&fields.curve_xmt)
+                    .and_then(|face| {
+                        face.surface
+                            .and_then(|target| surfaces.get(&u32::from(target)))
+                    })?;
+                let carrier = fields
+                    .curve_xmt
+                    .and_then(|target| pcurves.get(&u32::from(target)))
                     .and_then(|id| index.pcurves(id.as_str()))?;
-                let use_range = trim_ranges
-                    .get(&fields.curve_xmt)
+                let use_range = fields
+                    .curve_xmt
+                    .and_then(|target| trim_ranges.get(&u32::from(target)))
                     .copied()
                     .and_then(ordered_parameter_range);
                 let parameter_range = use_range
@@ -610,13 +683,18 @@ pub(super) fn emit_topology(
                     return None;
                 }
                 let fields = graph.get(NodeKind::Fin, *fin_xmt)?.fin_fields()?;
-                let edge = edges.get(&fields.edge)?;
+                let edge = fields
+                    .edge
+                    .and_then(|target| edges.get(&u32::from(target)))?;
                 let support = graph
-                    .get(NodeKind::Loop, fields.loop_xmt)
+                    .get_target(NodeKind::Loop, fields.loop_xmt)
                     .and_then(Node::loop_fields)
-                    .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
+                    .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
                     .and_then(Node::face_fields)
-                    .and_then(|face| surfaces.get(&face.surface))
+                    .and_then(|face| {
+                        face.surface
+                            .and_then(|target| surfaces.get(&u32::from(target)))
+                    })
                     .cloned()?;
                 let carrier = edge_curves_by_id.get(edge).cloned()?;
                 let (geometry, parameter_range, fit_tolerance) = intersection_pcurves
@@ -647,45 +725,73 @@ pub(super) fn emit_topology(
         let Some(fields) = node.fin_fields() else {
             continue;
         };
-        let Some(loop_id) = loops.get(&fields.loop_xmt).cloned() else {
+        let Some(loop_id) = fields
+            .loop_xmt
+            .and_then(|target| loops.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
-        let Some(edge) = edges.get(&fields.edge).cloned() else {
+        let Some(edge) = fields
+            .edge
+            .and_then(|target| edges.get(&u32::from(target)))
+            .cloned()
+        else {
             continue;
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
         annotate_node(annotations, &id, source_stream, node, "FIN");
-        let _next = fin_ids
-            .get(&fields.forward)
+        let _next = fields
+            .forward
+            .and_then(|target| fin_ids.get(&u32::from(target)))
             .cloned()
             .expect("validated FIN ring resolves forward link");
-        let _previous = fin_ids
-            .get(&fields.backward)
+        let _previous = fields
+            .backward
+            .and_then(|target| fin_ids.get(&u32::from(target)))
             .cloned()
             .expect("validated FIN ring resolves backward link");
-        let partner = fin_ids.get(&fields.other).cloned();
+        let partner = fields
+            .other
+            .and_then(|target| fin_ids.get(&u32::from(target)))
+            .cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
         let support = graph
-            .get(NodeKind::Loop, fields.loop_xmt)
+            .get_target(NodeKind::Loop, fields.loop_xmt)
             .and_then(Node::loop_fields)
-            .and_then(|loop_| graph.get(NodeKind::Face, loop_.face))
+            .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
             .and_then(Node::face_fields)
-            .and_then(|face| surfaces.get(&face.surface))
+            .and_then(|face| {
+                face.surface
+                    .and_then(|target| surfaces.get(&u32::from(target)))
+            })
             .cloned();
-        let pcurve_use_range = trim_ranges
-            .get(&fields.curve_xmt)
+        let pcurve_use_range = fields
+            .curve_xmt
+            .and_then(|target| trim_ranges.get(&u32::from(target)))
             .copied()
             .and_then(ordered_parameter_range);
         let mut pcurve = valid_pcurve_fins
             .contains(&node.xmt)
-            .then(|| pcurves.get(&fields.curve_xmt).cloned())
+            .then(|| {
+                fields
+                    .curve_xmt
+                    .and_then(|target| pcurves.get(&u32::from(target)))
+                    .cloned()
+            })
             .flatten();
         let edge_curve = edge_curves_by_id.get(&edge);
         if let (Some(pcurve), Some(edge_curve), Some(support)) =
             (pcurve.as_ref(), edge_curve, support.as_ref())
         {
-            if curves.get(&fields.curve_xmt) == Some(edge_curve)
-                && pcurve_supports.get(&fields.curve_xmt) == Some(support)
+            if fields
+                .curve_xmt
+                .and_then(|target| curves.get(&u32::from(target)))
+                == Some(edge_curve)
+                && fields
+                    .curve_xmt
+                    .and_then(|target| pcurve_supports.get(&u32::from(target)))
+                    == Some(support)
             {
                 serialized_branch_pcurves.insert((
                     edge_curve.clone(),
@@ -704,10 +810,16 @@ pub(super) fn emit_topology(
                 annotations
                     .note(&pcurve_id, source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
-                annotations.derived(&pcurve_id, "geometry");
-                annotations.derived(&pcurve_id, "parameter_range");
+                annotations
+                    .derived(&pcurve_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                annotations
+                    .derived(&pcurve_id, "parameter_range")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(&pcurve_id, "fit_tolerance");
+                    annotations
+                        .derived(&pcurve_id, "fit_tolerance")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
@@ -738,7 +850,12 @@ pub(super) fn emit_topology(
                 .collect(),
             use_curve: None,
         });
-        loop_coedges.entry(fields.loop_xmt).or_default().push(id);
+        if let Some(loop_xmt) = fields.loop_xmt {
+            loop_coedges
+                .entry(u32::from(loop_xmt))
+                .or_default()
+                .push(id);
+        }
     }
     for (loop_xmt, (id, face)) in loop_specs {
         let Some(ring) = loop_coedges
@@ -769,7 +886,7 @@ pub(super) fn emit_topology(
         source_stream,
         annotations,
         adaptive_geometry_budget,
-    );
+    )?;
     intersection_index.complete_from_stream(ir, intersection_starts);
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
         ir,
@@ -778,14 +895,14 @@ pub(super) fn emit_topology(
         intersection_starts.procedural_curves,
         annotations,
         completion_geometry_budget,
-    );
+    )?;
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
         procedural_start,
         exact_transfer_budget,
         completion_geometry_budget,
-    );
+    )?;
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
         procedural_start,
@@ -824,13 +941,16 @@ pub(crate) fn retain_unresolved_topology_carriers(
     surfaces: &mut BTreeMap<u32, SurfaceId>,
     curves: &mut BTreeMap<u32, CurveId>,
     pcurves: &BTreeMap<u32, PcurveId>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
     let unknown = UnknownId::mint(format!("nx:container:parasolid#{stream_index}"))
         .expect("identity grammar");
     for face in graph.of_kind(NodeKind::Face) {
-        let Some(surface_xmt) = face.face_fields().map(|fields| fields.surface) else {
+        let Some(surface_xmt) = face
+            .face_fields()
+            .and_then(|fields| fields.surface.map(u32::from))
+        else {
             continue;
         };
         if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
@@ -853,7 +973,10 @@ pub(crate) fn retain_unresolved_topology_carriers(
     }
 
     for edge in graph.of_kind(NodeKind::Edge) {
-        let Some(curve_xmt) = edge.edge_fields().map(|fields| fields.curve) else {
+        let Some(curve_xmt) = edge
+            .edge_fields()
+            .and_then(|fields| fields.curve.map(u32::from))
+        else {
             continue;
         };
         if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
@@ -879,7 +1002,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
 pub(crate) fn annotate_node(
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
     node: &Node,
     tag: &str,
 ) {
@@ -918,11 +1041,11 @@ pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     }
 }
 
-pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
+pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
     match value {
         MISSING_TOLERANCE => None,
         value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
-            Some(value * 1000.0)
+            cadmpeg_ir::units::PositiveScalar::new(value * 1000.0)
         }
         _ => None,
     }
@@ -937,8 +1060,8 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     curve: &CurveId,
     curve_index: usize,
     range: Option<[f64; 2]>,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<f64>,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
@@ -1055,7 +1178,10 @@ pub(crate) fn orient_edge_range_with_budget(
             .points
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
-        Some((point.position, vertex.tolerance))
+        Some((
+            point.position,
+            vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        ))
     };
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;
@@ -1177,7 +1303,7 @@ pub(crate) fn unknown_stream(
     si: usize,
     stream: &Stream,
 ) -> Result<UnknownRecord, CodecError> {
-    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream", None)?;
+    let data = ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?;
     Ok(unknown_stream_record(si, stream, Some(data)))
 }
 
@@ -1191,11 +1317,7 @@ pub(crate) fn retain_unknown_stream_data(
     unknown: &mut UnknownRecord,
 ) -> Result<(), CodecError> {
     if unknown.data().is_none() {
-        unknown.retain_data(ctx.copy_retained(
-            &stream.inflated,
-            "retain NX unknown stream",
-            None,
-        )?);
+        unknown.retain_data(ctx.copy_retained(&stream.inflated, "retain NX unknown stream")?);
     }
     Ok(())
 }
@@ -1228,17 +1350,12 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     );
     attributes.insert(
         "header_entry_count".to_string(),
-        match scan.container.layout {
-            crate::container::ContainerLayout::Modern {
-                header_entry_count, ..
-            } => header_entry_count,
-            crate::container::ContainerLayout::LegacyCfb { entry_count, .. } => entry_count,
-        }
-        .to_string(),
+        scan.container
+            .entry_count(crate::container::Region::Header)
+            .to_string(),
     );
     if let crate::container::ContainerLayout::Modern {
         footer_offset,
-        footer_entry_count,
         footer_fingerprint,
         ..
     } = scan.container.layout
@@ -1246,7 +1363,9 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         attributes.insert("footer_offset".to_string(), footer_offset.to_string());
         attributes.insert(
             "footer_entry_count".to_string(),
-            footer_entry_count.to_string(),
+            scan.container
+                .entry_count(crate::container::Region::Footer)
+                .to_string(),
         );
         attributes.insert(
             "footer_fingerprint".to_string(),
@@ -1301,7 +1420,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         .iter()
         .filter(|entry| entry.name == "/Root/images/preview")
     {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
@@ -1339,7 +1458,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         );
         attributes.insert(
             format!("deltas.{index}.bytes_decoded"),
-            census.bytes_decoded.to_string(),
+            census.bytes_decoded().to_string(),
         );
         if !census.body_revisions.is_empty() {
             attributes.insert(

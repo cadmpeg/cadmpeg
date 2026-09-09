@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
-use super::edges::{b5_support_endpoints, b5_vertex_point};
+use super::edges::b5_support_endpoints;
 use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
@@ -26,14 +26,12 @@ pub(super) fn transfer_vertex_tolerances(
 ) -> BTreeMap<usize, f64> {
     let mut tolerances = graph.vertex_tolerances.clone();
     for (&edge, supports) in supports {
-        let Some(&vertices) = graph.edge_vertices.get(&edge) else {
+        let Some(&vertices) = graph.vertices.edges().get(&edge) else {
             continue;
         };
-        let [Some(first), Some(second)] = vertices.map(|vertex| b5_vertex_point(graph, vertex))
-        else {
+        let Some(coordinates) = graph.vertices.edge_points(edge) else {
             continue;
         };
-        let coordinates = [first, second];
         for support in supports {
             let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves) else {
                 continue;
@@ -54,7 +52,7 @@ pub(super) fn transfer_vertex_tolerances(
             for (vertex, residual) in residuals {
                 if residual > EPS_VERTEX_RESIDUAL_INCREMENT && residual.is_finite() {
                     tolerances
-                        .entry(vertex)
+                        .entry(vertex.combined_index(graph.vertices.raw_points().len()))
                         .and_modify(|tolerance| {
                             *tolerance = tolerance.max(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
                         })
@@ -72,10 +70,10 @@ pub(super) fn emit_vertices(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
-    for (index, coordinates) in graph.vertex_points.iter().enumerate() {
+    for (index, coordinates) in graph.vertices.raw_points().iter().enumerate() {
         if !used_vertices.contains(&index) {
             continue;
         }
@@ -101,15 +99,17 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
-    for (rank, vertex) in graph.logical_vertices.iter().enumerate() {
-        let index = graph.vertex_points.len() + rank;
+    for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
+        let index = graph.vertices.raw_points().len() + rank;
         if !used_vertices.contains(&index) {
             continue;
         }
@@ -124,7 +124,7 @@ pub(super) fn emit_vertices(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-            source_object: Some(cgm_source("vertex", vertex.object_id)),
+            source_object: Some(cgm_source("vertex", vertex.object_id)?),
         });
         let vertex_id =
             VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
@@ -135,11 +135,14 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations
+            .derived(&vertex_id, "point")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
+    Ok(())
 }

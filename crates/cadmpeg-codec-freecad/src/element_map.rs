@@ -7,8 +7,8 @@ use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
-    ElementMapGroup, ElementMapNode, ElementMapRecord, ElementMappedName, EntryRecord,
-    PropertyRecord, StringTableEntry, StringTableRecord,
+    ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
+    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord,
 };
 use crate::topology_transfer::TopologyOccurrence;
 
@@ -91,15 +91,18 @@ pub(crate) fn parse(
             parse_count(data_node, "StringHasher")?
         };
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
-        tables.push(StringTableRecord {
-            id: crate::native::native_id("string-table", index.to_string()),
-            index,
-            owner_property,
-            save_all,
-            threshold,
-            source_entry: source_entry.map(str::to_owned),
-            entries,
-        });
+        tables.push(
+            StringTableRecord::try_new(
+                crate::native::native_id("string-table", index.to_string()),
+                index,
+                owner_property,
+                save_all,
+                threshold,
+                source_entry.map(str::to_owned),
+                entries,
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
 
     let mut maps = Vec::new();
@@ -107,7 +110,7 @@ pub(crate) fn parse(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        let property_xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        let property_xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid shape property XML {}: {error}",
                 property.id
@@ -203,9 +206,7 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
 pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
     for map in maps {
-        let Some(root) = map.maps.last_mut() else {
-            continue;
-        };
+        let root = map.maps.root_mut();
         for group in &mut root.groups {
             let indexed_name = group.indexed_name.clone();
             for occurrence in occurrences.iter().filter(|occurrence| {
@@ -235,7 +236,7 @@ fn owning_property(
     let start = node.range().start as u64;
     let mut owners = properties
         .iter()
-        .filter(|property| property.byte_start <= start && start < property.byte_end);
+        .filter(|property| property.xml.start() <= start && start < property.xml.end());
     let Some(owner) = owners.next() else {
         return Ok(None);
     };
@@ -432,10 +433,7 @@ fn direct_element_map<'a, 'input>(
 }
 
 fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
-    let root = parsed
-        .maps
-        .last()
-        .ok_or_else(|| CodecError::Malformed("element map has no root node".into()))?;
+    let root = parsed.maps.root();
     let mapped_name_count = root
         .groups
         .iter()
@@ -667,7 +665,7 @@ fn legacy_map_payload(
     let parsed = ParsedMap {
         map_id: 0,
         postfixes: Vec::new(),
-        maps: vec![ElementMapNode {
+        maps: ElementMapNode {
             index: 1,
             map_id: 0,
             groups: groups
@@ -678,7 +676,8 @@ fn legacy_map_payload(
                     names,
                 })
                 .collect(),
-        }],
+        }
+        .into(),
     };
     Ok(MapPayload {
         source_entry,
@@ -971,7 +970,7 @@ impl<'a> TextScanner<'a> {
 pub(crate) struct ParsedMap {
     map_id: u64,
     postfixes: Vec<String>,
-    maps: Vec<ElementMapNode>,
+    maps: ElementMapNodes,
 }
 
 pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
@@ -990,11 +989,6 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
         .collect::<Result<Vec<_>, _>>()?;
     expect(&mut tokens, "MapCount")?;
     let map_count = next_count(&mut tokens, "map count", MAX_MAP_NODES)?;
-    if map_count == 0 {
-        return Err(CodecError::Malformed(
-            "element map has zero map nodes".into(),
-        ));
-    }
     // Each map node consumes at least one whitespace-separated token, so its count
     // cannot exceed the element map's byte length.
     let map_capacity = bounded_len(map_count as u64, 1, text.len())
@@ -1069,7 +1063,7 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
     Ok(ParsedMap {
         map_id,
         postfixes,
-        maps,
+        maps: maps.try_into().map_err(CodecError::Malformed)?,
     })
 }
 
@@ -1196,9 +1190,7 @@ mod tests {
                 dynamic: None,
             },
             order: 0,
-            raw_xml: raw_xml.into(),
-            byte_start: 0,
-            byte_end: raw_xml.len() as u64,
+            xml: crate::native::RetainedXml::from_text(raw_xml.into(), 0).unwrap(),
         }
     }
 
@@ -1261,7 +1253,7 @@ mod tests {
         )
         .expect("legacy string table carrier");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].payload, "legacy");
+        assert_eq!(tables[0].entries()[0].payload, "legacy");
         assert!(maps.is_empty());
     }
 
@@ -1599,7 +1591,7 @@ Co 1001000 +2 0 *
             .arena_as::<crate::native::StringTableRecord>("string_tables")
             .expect("required invariant");
         assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries[0].string_id, 10);
+        assert_eq!(tables[0].entries()[0].string_id, 10);
         let maps = namespace
             .arena_as::<crate::native::ElementMapRecord>("element_maps")
             .expect("required invariant");
@@ -1768,10 +1760,10 @@ Co 1001000 +2 0 *
             .expect("test XML");
         let node = xml.root_element().first_element_child().expect("hasher");
         let mut first = test_property("App::PropertyString", "<Property/>");
-        first.byte_end = 1000;
+        first.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
         let mut second = test_property("App::PropertyString", "<Property/>");
         second.id = "fcstd:test:property#Other".into();
-        second.byte_end = 1000;
+        second.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
 
         assert!(matches!(
             owning_property(node, &[first, second]),

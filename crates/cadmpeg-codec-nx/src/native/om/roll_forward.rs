@@ -113,9 +113,110 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
     }
 }
 
+/// Roll-forward groups with one set of table facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "Vec<OmRollForwardStateGroup>",
+    into = "Vec<OmRollForwardStateGroup>"
+)]
+pub(crate) struct OmRollForwardStateTable {
+    groups: Vec<OmRollForwardStateGroup>,
+}
+
+impl OmRollForwardStateTable {
+    pub(crate) fn from_frames(
+        section_ordinal: usize,
+        section_link: &str,
+        source_entry: &str,
+        table_footer: GroupTableFooter,
+        table_end_offset: u64,
+        frames: Vec<OperationStateGroup<u64>>,
+    ) -> Self {
+        Self {
+            groups: frames.into_iter().enumerate().filter_map(|(ordinal, frame)| {
+                let ordinal = u32::try_from(ordinal).ok()?;
+                Some(OmRollForwardStateGroup {
+                    id: format!("nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"),
+                    section_link: section_link.to_owned(), ordinal, frame, table_footer,
+                    source_entry: source_entry.to_owned(), table_end_offset,
+                })
+            }).collect(),
+        }
+    }
+
+    pub(crate) fn groups(&self) -> &[OmRollForwardStateGroup] {
+        &self.groups
+    }
+}
+
+impl From<OmRollForwardStateTable> for Vec<OmRollForwardStateGroup> {
+    fn from(table: OmRollForwardStateTable) -> Self {
+        table.groups
+    }
+}
+
+impl TryFrom<Vec<OmRollForwardStateGroup>> for OmRollForwardStateTable {
+    type Error = &'static str;
+
+    fn try_from(groups: Vec<OmRollForwardStateGroup>) -> Result<Self, Self::Error> {
+        for (index, group) in groups.iter().enumerate() {
+            if usize::try_from(group.ordinal).ok() != Some(index) {
+                return Err("ordinal must equal the group index");
+            }
+        }
+        if let Some(first) = groups.first() {
+            for group in &groups[1..] {
+                if group.section_link != first.section_link
+                    || group.source_entry != first.source_entry
+                {
+                    return Err("section_link and source_entry must identify one table");
+                }
+                if group.table_footer != first.table_footer {
+                    return Err("table_trailing_bytes must agree across table groups");
+                }
+                if group.table_end_offset != first.table_end_offset {
+                    return Err("table_end_offset must agree across table groups");
+                }
+            }
+        }
+        Ok(Self { groups })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::OmRollForwardStateGroup;
+
+    #[test]
+    fn table_admission_rejects_disagreeing_group_facts() {
+        let group = serde_json::json!({
+            "id": "group", "section_link": "section", "ordinal": 0,
+            "opener": [1, 0], "count_prefix": null, "declared_count": 0,
+            "rows": [], "table_trailing_bytes": [], "source_entry": "om",
+            "source_offset": 0, "table_end_offset": 8
+        });
+        let mut wire = serde_json::json!([group, group]);
+        wire[1]["ordinal"] = 1.into();
+        let table: super::OmRollForwardStateTable = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(table).unwrap(), wire);
+        for (field, value) in [
+            ("ordinal", serde_json::json!(0)),
+            ("ordinal", serde_json::json!(2)),
+            ("table_trailing_bytes", serde_json::json!([1, 1])),
+            ("table_end_offset", serde_json::json!(9)),
+            ("section_link", serde_json::json!("other")),
+            ("source_entry", serde_json::json!("other")),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[1][field] = value;
+            assert!(
+                serde_json::from_value::<super::OmRollForwardStateTable>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
+        }
+    }
 
     #[test]
     fn wire_rows_follow_group_header_and_preceding_tokens() {

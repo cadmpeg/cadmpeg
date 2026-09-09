@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native assembly joint payloads and wire admission.
 
+use super::frame::FiniteFrame;
 use super::LinkTarget;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -46,9 +47,9 @@ pub enum JointBody {
     /// Object-to-ground constraint.
     Grounded {
         /// Grounded object reference.
-        reference: LinkTarget,
+        reference: Option<LinkTarget>,
         /// Connector-local coordinate frame.
-        placement: [[f64; 4]; 4],
+        placement: FiniteFrame,
     },
     /// Two-connector joint.
     Pair {
@@ -63,11 +64,11 @@ pub enum JointBody {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JointConnectorRecord {
     /// Connector reference with subelement paths.
-    pub reference: LinkTarget,
+    pub reference: Option<LinkTarget>,
     /// Connector-local coordinate frame.
-    pub placement: [[f64; 4]; 4],
+    pub placement: FiniteFrame,
     /// Connector attachment-offset frame.
-    pub offset: [[f64; 4]; 4],
+    pub offset: FiniteFrame,
 }
 
 impl JointRecord {
@@ -82,19 +83,23 @@ impl JointRecord {
     /// Ordered connector references.
     pub fn references(&self) -> Vec<&LinkTarget> {
         match &self.body {
-            JointBody::Grounded { reference, .. } => vec![reference],
-            JointBody::Pair { connectors, .. } => {
-                vec![&connectors[0].reference, &connectors[1].reference]
-            }
+            JointBody::Grounded { reference, .. } => reference.iter().collect(),
+            JointBody::Pair { connectors, .. } => connectors
+                .iter()
+                .filter_map(|connector| connector.reference.as_ref())
+                .collect(),
         }
     }
 
     /// Connector-local coordinate frames in connector order.
     pub fn placements(&self) -> Vec<[[f64; 4]; 4]> {
         match &self.body {
-            JointBody::Grounded { placement, .. } => vec![*placement],
+            JointBody::Grounded { placement, .. } => vec![placement.rows()],
             JointBody::Pair { connectors, .. } => {
-                vec![connectors[0].placement, connectors[1].placement]
+                vec![
+                    connectors[0].placement.rows(),
+                    connectors[1].placement.rows(),
+                ]
             }
         }
     }
@@ -104,18 +109,25 @@ impl JointRecord {
         match &self.body {
             JointBody::Grounded { .. } => Vec::new(),
             JointBody::Pair { connectors, .. } => {
-                vec![connectors[0].offset, connectors[1].offset]
+                vec![connectors[0].offset.rows(), connectors[1].offset.rows()]
             }
         }
     }
 }
 
-pub(crate) fn empty_link_target() -> LinkTarget {
+fn empty_link_target() -> LinkTarget {
     LinkTarget {
         document: None,
         object: None,
         subelements: Vec::new(),
     }
+}
+
+pub(crate) fn optional_reference(reference: LinkTarget) -> Option<LinkTarget> {
+    (reference.document.is_some()
+        || reference.object.is_some()
+        || !reference.subelements.is_empty())
+    .then_some(reference)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -132,7 +144,20 @@ struct JointRecordWire {
 impl From<JointRecord> for JointRecordWire {
     fn from(value: JointRecord) -> Self {
         let kind = value.kind().to_owned();
-        let references = value.references().into_iter().cloned().collect();
+        let references = match &value.body {
+            JointBody::Grounded { reference, .. } => {
+                vec![reference.clone().unwrap_or_else(empty_link_target)]
+            }
+            JointBody::Pair { connectors, .. } => connectors
+                .iter()
+                .map(|connector| {
+                    connector
+                        .reference
+                        .clone()
+                        .unwrap_or_else(empty_link_target)
+                })
+                .collect(),
+        };
         let placements = value.placements();
         let offsets = value.offsets();
         Self {
@@ -157,14 +182,16 @@ impl TryFrom<JointRecordWire> for JointRecord {
             if !wire.offsets.is_empty() {
                 return Err("grounded joint cannot carry offsets".to_owned());
             }
-            let reference = match wire.references.len() {
-                0 => empty_link_target(),
-                1 => wire.references.into_iter().next().expect("one reference"),
-                _ => return Err("grounded joint must carry at most one reference".to_owned()),
-            };
+            let mut references = wire.references.into_iter();
+            let reference = references.next().and_then(optional_reference);
+            if references.next().is_some() {
+                return Err("grounded joint must carry at most one reference".to_owned());
+            }
             JointBody::Grounded {
                 reference,
-                placement,
+                placement: placement
+                    .try_into()
+                    .map_err(|error| format!("placements: {error}"))?,
             }
         } else {
             let [first_placement, second_placement] = <[_; 2]>::try_from(wire.placements)
@@ -172,8 +199,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
             let [first_offset, second_offset] = <[_; 2]>::try_from(wire.offsets)
                 .map_err(|_| "paired joint must carry two offsets".to_owned())?;
             let mut references = wire.references.into_iter();
-            let first_reference = references.next().unwrap_or_else(empty_link_target);
-            let second_reference = references.next().unwrap_or_else(empty_link_target);
+            let first_reference = references.next().and_then(optional_reference);
+            let second_reference = references.next().and_then(optional_reference);
             if references.next().is_some() {
                 return Err("paired joint carries more than two references".to_owned());
             }
@@ -182,13 +209,21 @@ impl TryFrom<JointRecordWire> for JointRecord {
                 connectors: [
                     JointConnectorRecord {
                         reference: first_reference,
-                        placement: first_placement,
-                        offset: first_offset,
+                        placement: first_placement
+                            .try_into()
+                            .map_err(|error| format!("placements: {error}"))?,
+                        offset: first_offset
+                            .try_into()
+                            .map_err(|error| format!("offsets: {error}"))?,
                     },
                     JointConnectorRecord {
                         reference: second_reference,
-                        placement: second_placement,
-                        offset: second_offset,
+                        placement: second_placement
+                            .try_into()
+                            .map_err(|error| format!("placements: {error}"))?,
+                        offset: second_offset
+                            .try_into()
+                            .map_err(|error| format!("offsets: {error}"))?,
                     },
                 ],
             }
@@ -207,14 +242,69 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wire_admission_rejects_nonfinite_connector_frames() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for kind in ["grounded", "Fixed"] {
+                for offset in [false, true] {
+                    if kind == "grounded" && offset {
+                        continue;
+                    }
+                    let mut wire = JointRecordWire {
+                        id: "joint".into(),
+                        object: "object".into(),
+                        kind: kind.into(),
+                        references: vec![],
+                        placements: vec![
+                            crate::product::identity();
+                            if kind == "grounded" { 1 } else { 2 }
+                        ],
+                        offsets: if kind == "grounded" {
+                            vec![]
+                        } else {
+                            vec![crate::product::identity(); 2]
+                        },
+                        parameters: BTreeMap::new(),
+                    };
+                    if offset {
+                        wire.offsets[0][0][3] = bad;
+                    } else {
+                        wire.placements[0][0][3] = bad;
+                    }
+                    assert!(JointRecord::try_from(wire)
+                        .unwrap_err()
+                        .contains(if offset { "offsets" } else { "placements" }));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn missing_first_reference_keeps_second_wire_position() {
+        let identity = crate::product::identity();
+        let wire = serde_json::json!({"id":"joint", "object":"object", "kind":"Fixed",
+            "references":[{"document":null,"document_attribute":null,"object":"","subelements":[]}, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
+            "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
+        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
+        let JointBody::Pair { connectors, .. } = &record.body else {
+            panic!("paired joint")
+        };
+        assert!(connectors[0].reference.is_none());
+        assert_eq!(
+            connectors[1].reference.as_ref().unwrap().object(),
+            Some("second")
+        );
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+
+    #[test]
     fn paired_families_reserve_grounded_and_retain_custom_labels() {
         for name in ["grounded", "Grounded", "GROUNDED"] {
             assert!(PairedJointFamily::new(name.into()).is_err());
         }
         let connector = JointConnectorRecord {
-            reference: empty_link_target(),
-            placement: crate::product::identity(),
-            offset: crate::product::identity(),
+            reference: None,
+            placement: crate::product::identity().try_into().unwrap(),
+            offset: crate::product::identity().try_into().unwrap(),
         };
         let record = JointRecord {
             id: "joint".into(),

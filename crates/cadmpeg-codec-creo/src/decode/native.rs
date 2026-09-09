@@ -112,7 +112,7 @@ pub(super) fn annotate(
     exactness: Exactness,
 ) {
     let stream = annotations.stream(format!("creo:{source_stream}"));
-    annotations.note(id.to_string(), stream, offset).tag(tag);
+    annotations.note(id.to_string(), &stream, offset).tag(tag);
     annotations.exactness(id, exactness);
 }
 

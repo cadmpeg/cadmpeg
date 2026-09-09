@@ -45,7 +45,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -70,12 +70,13 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         offset: 40,
     };
     let points = BTreeMap::from([(1, [0.0, -2.0]), (2, [0.0, 2.0]), (3, [0.0, 0.0])]);
-    let Some(SketchGeometry::Arc {
+    let Some(SketchGeometryDefinition::Arc {
         center,
         radius,
         start_angle,
         end_angle,
     }) = section_arc_geometry(&points, &segment)
+        .map(cadmpeg_ir::sketches::SketchGeometry::into_definition)
     else {
         panic!("complete arc");
     };
@@ -127,12 +128,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
     };
     let profiles = resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
-    assert_eq!(profiles[0][0].entity.0, "creo:featdefs:sketch_entity#40:10");
+    assert_eq!(
+        profiles[0][0].entity.as_str(),
+        "creo:featdefs:sketch_entity#40:10"
+    );
     assert!(!profiles[0][0].reversed);
     assert!(profiles[0][1].reversed);
 
@@ -147,7 +151,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     assert!(resolved_profile_chains(
         &incomplete,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     )
     .is_empty());
@@ -161,7 +165,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
     assert!(resolved_profile_chains(
         &definition,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32]),
     )
     .is_empty());
@@ -199,7 +203,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .retain(|row| row.external_id != 13);
     let profiles = resolved_profile_chains(
         &incomplete_trim_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
@@ -252,7 +256,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let arc_profile = resolved_profile_chains(
         &arcs,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11]),
     );
     assert_eq!(arc_profile.len(), 1);
@@ -292,7 +296,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     });
     let segment_profile = resolved_profile_chains(
         &segment_graph,
-        &SketchId("creo:model:sketch#40".to_string()),
+        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
         &BTreeSet::from([10, 11, 12, 13, 20]),
     );
     assert_eq!(segment_profile.len(), 1);
@@ -303,9 +307,12 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
 #[test]
 fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
-    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),
@@ -385,15 +392,15 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
         saved_section: None,
         offset: 1,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 40,
-        feature_id: Some(40),
-        origin: [5.0, 7.0, 11.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 3,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        40,
+        Some(40),
+        [5.0, 7.0, 11.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        3,
+    )
+    .expect("valid section frame");
 
     let axis = resolved_revolution_axis(&definition, &transform).expect("axis");
     assert_eq!(axis.origin, Point3::new(5.0, 7.0, 9.0));
@@ -495,15 +502,15 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         saved_section: None,
         offset: 0,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 7,
-        feature_id: Some(7),
-        origin: [0.0, 0.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        7,
+        Some(7),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     assert_eq!(
         revolution_axis_for_transfer(
             &scan,
@@ -638,15 +645,15 @@ fn named_revolve_transfers_profile_axis() {
         saved_section: None,
         offset: 80,
     };
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 822,
-        feature_id: Some(822),
-        origin: [0.0; 3],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 90,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        822,
+        Some(822),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        90,
+    )
+    .expect("valid section frame");
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.definitions.push(definition);
     scan.features.section_transforms.push(transform);
@@ -859,10 +866,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!((derivative[0] - 1.0).abs() < 1.0e-12);
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
-    assert!(matches!(
-        saved_spline_sketch_geometry(&spline),
-        Some(SketchGeometry::Nurbs { curve }) if curve.degree() == 3
-    ));
+    assert!(
+        matches!(saved_spline_sketch_geometry(&spline).map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
+            Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
+        )
+    );
     let definition = crate::feature::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),
@@ -1012,15 +1020,15 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
 
 #[test]
 fn nonplanar_saved_spline_places_as_model_curve() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 917,
-        feature_id: Some(40),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [0.0, -1.0, 0.0],
-        offset: 5,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        917,
+        Some(40),
+        [10.0, 20.0, 30.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        5,
+    )
+    .expect("valid section frame");
     let local = NurbsCurve::new(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -1084,22 +1092,22 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
 fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 1,
-        feature_id: Some(2),
-        origin: [0.0, 0.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
-        v_axis: [0.0, 1.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-        offset: 0,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        1,
+        Some(2),
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("valid section frame");
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
         reference: None,
     };
-    let spline = SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    let spline = SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1112,8 +1120,9 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             false,
         )
         .unwrap(),
-    };
-    let segment = (spline.clone(), false, [2.0, 0.0], [2.0, 2.0]);
+    );
+    let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
+        .expect("valid profile entity");
     let surface =
         revolved_brep_surface(&transform, &spline, false, &axis).expect("revolved spline surface");
     let SurfaceGeometry::Nurbs(surface) = &surface else {
@@ -1136,7 +1145,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
-        segment.2,
+        segment.start(),
         RevolutionBoundary::Start,
     )
     .expect("start boundary pcurve");
@@ -1145,7 +1154,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
-        segment.3,
+        segment.end(),
         RevolutionBoundary::End,
     )
     .expect("end boundary pcurve");

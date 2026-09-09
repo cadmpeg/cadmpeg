@@ -1073,6 +1073,10 @@ pub(crate) fn partial_ext11_charted_intersection_curve_stream() -> Vec<u8> {
 /// Wrap a partition topology and its ext11 intersection auxiliaries as a paired
 /// partition/deltas stream set.
 pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec<u8> {
+    prt_with_streams(&[partition, &ext11_intersection_deltas(ext11)])
+}
+
+pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
     let chart = crate::intersection::chart_source_records(
         ext11,
         crate::intersection::ChartPointLayout::Ext11,
@@ -1099,7 +1103,7 @@ pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec
     let (_, support_uv_end) =
         crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
     deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
-    prt_with_streams(&[partition, &deltas])
+    deltas
 }
 
 pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {

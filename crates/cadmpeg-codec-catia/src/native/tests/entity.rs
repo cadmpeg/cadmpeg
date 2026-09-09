@@ -950,9 +950,8 @@ fn typed_definition_chain_values_transfer_as_parameters() {
                 inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                     parameter: "#1_".to_string(),
                     value_type: "Real".to_string(),
-                    entity: crate::native::CatiaEntityReference::from_parts(
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
                         parameter_entity.entity_id,
-                        false,
                         Some(parameter_entity.id.clone()),
                         Some("param".to_string()),
                     ),
@@ -966,7 +965,8 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         &native,
         &mut Annotations::default(),
         None,
-    );
+    )
+    .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
     assert_eq!(relation_transfer.relation_program_parameter_count, 1);
     assert_eq!(relation_ir.model.parameters.len(), 1);

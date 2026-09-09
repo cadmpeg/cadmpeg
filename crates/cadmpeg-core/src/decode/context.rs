@@ -9,7 +9,7 @@ use crate::{CodecError, ReadSeek};
 use super::arena::DecodeArena;
 use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{
-    ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
+    ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
@@ -19,6 +19,12 @@ use super::space::{
 };
 use super::view::View;
 
+#[derive(Clone, Copy)]
+enum LimitScope {
+    Global,
+    PerExpand,
+}
+
 /// Cap on the initial per-expand reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 
@@ -26,7 +32,6 @@ const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
-    policy: DecodePolicy,
     container_only: bool,
     budget: DecodeBudget,
     spaces: RefCell<Vec<SpaceDescriptor>>,
@@ -126,7 +131,6 @@ impl<'a> DecodeContext<'a> {
         }
         let ctx = DecodeContext {
             arena,
-            policy: *policy,
             container_only,
             budget: DecodeBudget::new(*policy, length),
             spaces: RefCell::new(vec![SpaceDescriptor {
@@ -139,7 +143,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
-        &self.policy
+        &self.budget.policy
     }
 
     /// Returns whether the caller requested container-only decoding.
@@ -155,7 +159,8 @@ impl<'a> DecodeContext<'a> {
         let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
             DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.budget.input_bytes()),
         );
-        self.policy
+        self.budget
+            .policy
             .limits
             .max_decompressed_bytes_per_expand
             .min(proportional)
@@ -185,7 +190,6 @@ impl<'a> DecodeContext<'a> {
         scope: LimitScope,
         amount: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> CodecError {
         let limit = match scope {
             LimitScope::Global => self.decompression_allowance(),
@@ -194,12 +198,10 @@ impl<'a> DecodeContext<'a> {
         self.budget.refuse(
             ResourceDimension::DecompressedBytes,
             reason,
-            scope,
             limit,
             self.budget.decompressed_used(),
             amount,
             operation,
-            location,
         )
     }
 
@@ -208,19 +210,13 @@ impl<'a> DecodeContext<'a> {
         &self,
         bytes: u64,
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<ScopedReservation<'_>, CodecError> {
-        self.budget.reserve_scoped(bytes, operation, location)
+        self.budget.reserve_scoped(bytes, operation)
     }
 
     /// Charges bytes retained for the remainder of this session.
-    pub fn charge_retained(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<(), CodecError> {
-        self.budget.charge_retained(bytes, operation, location)
+    pub fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget.charge_retained(bytes, operation)
     }
 
     /// Copies bytes into session-retained storage after charging and reserving safely.
@@ -228,9 +224,8 @@ impl<'a> DecodeContext<'a> {
         &self,
         bytes: &[u8],
         operation: &'static str,
-        location: Option<SourceLocation>,
     ) -> Result<Vec<u8>, CodecError> {
-        self.charge_retained(bytes.len() as u64, operation, location)?;
+        self.charge_retained(bytes.len() as u64, operation)?;
         let mut copy = Vec::new();
         copy.try_reserve_exact(bytes.len()).map_err(|_| {
             self.fuse(
@@ -238,7 +233,6 @@ impl<'a> DecodeContext<'a> {
                 LimitScope::Global,
                 bytes.len() as u64,
                 operation,
-                location,
             )
         })?;
         copy.extend_from_slice(bytes);
@@ -290,12 +284,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Enters one recursive nesting level until the returned guard is dropped.
-    pub fn enter_nested(
-        &self,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<DepthGuard<'_>, CodecError> {
-        self.budget.enter_nested(operation, location)
+    pub fn enter_nested(&self, operation: &'static str) -> Result<DepthGuard<'_>, CodecError> {
+        self.budget.enter_nested(operation)
     }
 
     /// Charges session-global algorithm work, fusing on refusal.
@@ -314,17 +304,14 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
         limit: u64,
         requested: u64,
-        location: Option<SourceLocation>,
     ) -> CodecError {
         self.budget.refuse(
             ResourceDimension::Codec(operation),
             ResourceFailure::BudgetExceeded,
-            LimitScope::Global,
             limit,
             requested.min(limit),
             requested.saturating_sub(limit),
             operation,
-            location,
         )
     }
 
@@ -363,7 +350,6 @@ impl<'a> DecodeContext<'a> {
                     LimitScope::PerExpand,
                     size,
                     "begin_expand",
-                    Some(source.location()),
                 ));
             }
             if size
@@ -376,7 +362,6 @@ impl<'a> DecodeContext<'a> {
                     LimitScope::Global,
                     size,
                     "begin_expand",
-                    Some(source.location()),
                 ));
             }
         }
@@ -393,7 +378,6 @@ impl<'a> DecodeContext<'a> {
                     LimitScope::PerExpand,
                     reserve as u64,
                     "begin_expand",
-                    Some(source.location()),
                 )
             })?;
         }
@@ -415,33 +399,28 @@ impl<'a> DecodeContext<'a> {
         let (first, additional) = inputs
             .split_first()
             .ok_or_else(|| CodecError::Malformed("cannot concatenate an empty view list".into()))?;
-        let location = Some(first.location());
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
                     ResourceDimension::RetainedBytes,
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::Global,
-                    self.policy.limits.max_retained_bytes,
+                    self.budget.policy.limits.max_retained_bytes,
                     total as u64,
                     view.window().len() as u64,
                     "concat_views",
-                    location,
                 )
             })
         })?;
-        let reservation = self.reserve_scoped(total as u64, "concat_views", location)?;
+        let reservation = self.reserve_scoped(total as u64, "concat_views")?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
             self.budget.refuse(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::AllocationFailed,
-                LimitScope::Global,
-                self.policy.limits.max_materialized_bytes,
+                self.budget.policy.limits.max_materialized_bytes,
                 0,
                 total as u64,
                 "concat_views",
-                location,
             )
         })?;
         for view in inputs {
@@ -525,13 +504,11 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
         dimension: ResourceDimension::InputBytes,
         reason,
-        scope: LimitScope::Global,
         limit,
         used,
         additional: used.saturating_sub(limit),
         context: ErrorContext {
             operation: "read_root",
-            location: None,
         },
     })
 }
@@ -576,19 +553,15 @@ impl<'a> ExpandWriter<'_, 'a> {
                 LimitScope::PerExpand,
                 len,
                 "expand_write",
-                Some(self.location),
             ));
         }
-        self.ctx
-            .budget
-            .charge_decompressed(len, "expand_write", Some(self.location))?;
+        self.ctx.budget.charge_decompressed(len, "expand_write")?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
                 LimitScope::PerExpand,
                 len,
                 "expand_write",
-                Some(self.location),
             )
         })?;
         self.buffer.extend_from_slice(data);

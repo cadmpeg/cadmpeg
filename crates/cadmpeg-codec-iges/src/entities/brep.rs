@@ -442,10 +442,9 @@ pub(super) fn project(
                     pcurves.clear();
                     break;
                 };
-                if entries
-                    .get(&sequence)
-                    .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
-                {
+                if entries.get(&sequence).is_none_or(|entry| {
+                    entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
+                }) {
                     pcurves.clear();
                     break;
                 }

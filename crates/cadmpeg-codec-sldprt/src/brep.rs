@@ -16,7 +16,7 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use std::collections::{HashMap, HashSet};
+use self::index::scan_carriers;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -31,6 +31,7 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 mod attrib;
 mod blend;
 pub(crate) mod entity;
+mod index;
 mod intersection;
 mod offset;
 pub(crate) mod spline;
@@ -42,10 +43,11 @@ pub(crate) mod typed;
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
-pub use self::graph::{decode, decode_bodies, Brep};
+pub(crate) use self::graph::{decode, decode_bodies, Brep};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 
+pub(crate) mod feature_source;
 mod graph;
 
 /// The native persistent identity shared by B-rep face attributes and display
@@ -53,7 +55,7 @@ mod graph;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PersistentFaceIdentity {
     /// Native history-feature object identifier.
-    pub(crate) feature_source_id: u32,
+    pub(crate) feature_source_id: feature_source::FeatureSourceId,
     /// Face identity local to the producing feature.
     pub(crate) local_id: u32,
     /// Optional signed path fields stored as their native u32 bit patterns.
@@ -82,14 +84,14 @@ fn unit(v: &[f64]) -> Vector3 {
 /// `[hi][lo][01]` triple ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)). Offsets below are measured from the
 /// tag byte; the optional `0xff` shifts everything after it by one.
 pub(crate) mod tag {
-    pub const LINE: u8 = 0x1e;
-    pub const CIRCLE: u8 = 0x1f;
-    pub const ELLIPSE: u8 = 0x20;
-    pub const PLANE: u8 = 0x32;
-    pub const CYLINDER: u8 = 0x33;
-    pub const CONE: u8 = 0x34;
-    pub const SPHERE: u8 = 0x35;
-    pub const TORUS: u8 = 0x36;
+    pub(crate) const LINE: u8 = 0x1e;
+    pub(crate) const CIRCLE: u8 = 0x1f;
+    pub(crate) const ELLIPSE: u8 = 0x20;
+    pub(crate) const PLANE: u8 = 0x32;
+    pub(crate) const CYLINDER: u8 = 0x33;
+    pub(crate) const CONE: u8 = 0x34;
+    pub(crate) const SPHERE: u8 = 0x35;
+    pub(crate) const TORUS: u8 = 0x36;
 }
 
 const COMPACT_REF_COUNT: usize = 5;
@@ -162,24 +164,24 @@ pub(crate) enum Carrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CurveCarrier {
-    pub attr: u16,
-    pub offset: usize,
-    pub end: usize,
-    pub geometry: CurveGeometry,
-    pub parameter_range: Option<[f64; 2]>,
+    pub(crate) attr: u16,
+    pub(crate) offset: usize,
+    pub(crate) end: usize,
+    pub(crate) geometry: CurveGeometry,
+    pub(crate) parameter_range: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct SurfaceCarrier {
-    pub attr: u16,
-    pub offset: usize,
-    pub end: usize,
-    pub geometry: SurfaceGeometry,
-    pub orientation_reversed: bool,
+    pub(crate) attr: u16,
+    pub(crate) offset: usize,
+    pub(crate) end: usize,
+    pub(crate) geometry: SurfaceGeometry,
+    pub(crate) orientation_reversed: bool,
 }
 
 impl SurfaceCarrier {
-    pub fn frame(&self) -> Option<(Vector3, Vector3)> {
+    pub(crate) fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
             SurfaceGeometry::Plane(plane_surface) => {
                 let (_, normal, u_axis) = plane_surface.parts();
@@ -202,113 +204,6 @@ impl SurfaceCarrier {
                 Some((*ref_direction, *axis))
             }
             _ => None,
-        }
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct CarrierIndex {
-    curves: HashMap<u16, CurveCarrier>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
-    /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
-    /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
-    /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
-    /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
-    /// Curve attrs whose geometry is a derived cache, not an exact carrier.
-    derived_curves: HashSet<u16>,
-    /// Support metadata carried by surface-intersection curves.
-    intersection_support_data: HashMap<u16, intersection::IntersectionSupportData>,
-}
-
-impl CarrierIndex {
-    fn insert(&mut self, carrier: Carrier) {
-        match carrier {
-            Carrier::Curve(carrier) => {
-                self.curves.insert(carrier.attr, carrier);
-            }
-            Carrier::Surface(carrier) => {
-                self.surfaces.insert(carrier.attr, carrier);
-            }
-        }
-    }
-
-    pub(crate) fn curve(&self, attr: u16) -> Option<&CurveCarrier> {
-        self.curves.get(&attr)
-    }
-
-    pub(crate) fn curve_attrs(&self) -> HashSet<u16> {
-        self.curves.keys().copied().collect()
-    }
-
-    pub(crate) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
-        self.surfaces.get(&attr)
-    }
-
-    /// Swept/spun surface construction carried by one attribute.
-    pub(crate) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
-        self.sweeps.get(&attr)
-    }
-
-    /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(crate) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
-        self.blends.get(&attr)
-    }
-
-    /// Exact offset-surface construction carried by `attr`.
-    pub(crate) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
-        self.offsets.get(&attr)
-    }
-
-    /// Zero-offset surface pair carried by `attr`.
-    pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
-        self.blend_support_pairs.get(&attr)
-    }
-
-    /// Whether a curve attr holds a derived solved cache rather than an
-    /// exact carrier.
-    pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
-        self.derived_curves.contains(&attr)
-    }
-
-    /// Support metadata carried by one surface-intersection curve.
-    fn intersection_support_data(
-        &self,
-        attr: u16,
-    ) -> Option<&intersection::IntersectionSupportData> {
-        self.intersection_support_data.get(&attr)
-    }
-
-    pub(crate) fn merge_missing(&mut self, other: Self) {
-        for (attr, carrier) in other.curves {
-            if let std::collections::hash_map::Entry::Vacant(entry) = self.curves.entry(attr) {
-                if other.derived_curves.contains(&attr) {
-                    self.derived_curves.insert(attr);
-                }
-                if let Some(support_data) = other.intersection_support_data.get(&attr) {
-                    self.intersection_support_data
-                        .insert(attr, support_data.clone());
-                }
-                entry.insert(carrier);
-            }
-        }
-        for (attr, carrier) in other.surfaces {
-            self.surfaces.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.sweeps {
-            self.sweeps.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blends {
-            self.blends.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.offsets {
-            self.offsets.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blend_support_pairs {
-            self.blend_support_pairs.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -500,48 +395,6 @@ fn decode_carrier_values(
     Some(g)
 }
 
-/// Scan the whole stream body for compact analytic carriers, keyed by attribute
-/// id. A later occurrence in one stream replaces an earlier occurrence at the
-/// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
-/// the partition carrier remains authoritative and a deltas carrier fills only
-/// an absent identity.
-pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
-    let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            if let Some(c) = parse_carrier(body, i) {
-                out.insert(c);
-            }
-        }
-        i += 1;
-    }
-    for (attr, carrier) in spline::scan_curve_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.curves.insert(attr, carrier);
-    }
-    for (attr, carrier) in spline::scan_surface_carriers(body) {
-        debug_assert_eq!(attr, carrier.attr);
-        out.surfaces.insert(attr, carrier);
-    }
-    for carrier in subset::scan(body, &out) {
-        out.curves.insert(carrier.attr, carrier);
-    }
-    out.sweeps = sweep::scan_sweep_carriers(body);
-    (out.blends, out.blend_support_pairs) = blend::scan(body);
-    out.offsets = offset::scan(body);
-    for (attr, intersection) in intersection::scan_intersection_carriers(body) {
-        debug_assert_eq!(attr, intersection.carrier.attr);
-        if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
-            entry.insert(intersection.carrier);
-            out.derived_curves.insert(attr);
-            out.intersection_support_data
-                .insert(attr, intersection.support_data);
-        }
-    }
-    out
-}
-
 /// Return the typed curve carried by one stream-local attribute.
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
     Some(scan_carriers(body).curve(attr)?.geometry.clone())
@@ -699,9 +552,9 @@ mod tests {
 
     #[test]
     fn merge_retains_zero_offset_blend_support_pairs() {
-        let mut base = CarrierIndex::default();
-        let mut delta = CarrierIndex::default();
-        delta.blend_support_pairs.insert(
+        let mut base = index::CarrierIndex::default();
+        let mut delta = index::CarrierIndex::default();
+        delta.insert_blend_support_pair(
             9,
             blend::SupportPairCarrier {
                 supports: [11, 12],

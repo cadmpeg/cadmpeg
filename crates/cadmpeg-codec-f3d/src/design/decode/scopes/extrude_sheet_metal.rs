@@ -286,7 +286,11 @@ fn exact_compact_shifted_extrude_prologue(
     if side_extent_discriminators != [1, 0] {
         return None;
     }
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
+    let extent = exact_extrude_extent(
+        ExtrudeExtentContext::Common,
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+    )?;
     let direction_reversed_offset = start.checked_add(compact_extrude::DIRECTION_REVERSED)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
@@ -1239,13 +1243,17 @@ fn exact_current_extrude_prologue(
     {
         return None;
     }
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)
-        .or_else(|| {
-            (legacy_class_415_symmetric_distance
-                && direction_face_extend_values == [3, 2]
-                && side_extent_discriminators == [1, 1])
-            .then_some(DesignExtrudeExtent::SymmetricDistance)
-        })?;
+    let extent = exact_extrude_extent(
+        ExtrudeExtentContext::Common,
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+    )
+    .or_else(|| {
+        (legacy_class_415_symmetric_distance
+            && direction_face_extend_values == [3, 2]
+            && side_extent_discriminators == [1, 1])
+        .then_some(DesignExtrudeExtent::SymmetricDistance)
+    })?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
@@ -1268,6 +1276,27 @@ fn exact_current_extrude_prologue(
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TailForm {
+    Ordered,
+    Unordered,
+    SymmetricThroughAll,
+}
+
+#[derive(Clone, Copy)]
+struct ShiftedReferenceAwareLayout {
+    frame_length: usize,
+    reference_count_offset: usize,
+    reference_member_count: usize,
+    expected_paired_class: &'static [u8; 3],
+    trailing_reference_count_offset: usize,
+    trailing_reference_offset: usize,
+    trailing_reference_padding_offset: usize,
+    guid_prefix_offset: usize,
+    second_side_extent_offset: usize,
+    tail_form: TailForm,
+}
+
 fn exact_shifted_reference_aware_extrude_prologue(
     bytes: &[u8],
     start: usize,
@@ -1285,7 +1314,19 @@ fn exact_shifted_reference_aware_extrude_prologue(
     let has_reference_layout = |reference_count: usize, reference_count_at: usize| {
         reference_count_at.checked_sub(start) == Some(reference_count)
     };
-    let (
+    let ordered = ShiftedReferenceAwareLayout {
+        frame_length: 538,
+        reference_count_offset: shifted_reference_aware::REFERENCE_COUNT,
+        reference_member_count: 13,
+        expected_paired_class: b"258",
+        trailing_reference_count_offset: shifted_reference_aware::BODY_GROUP_COUNT,
+        trailing_reference_offset: shifted_reference_aware::BODY_GROUP_REFERENCE,
+        trailing_reference_padding_offset: shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
+        guid_prefix_offset: shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+        second_side_extent_offset: shifted_reference_aware::SECOND_SIDE_EXTENT,
+        tail_form: TailForm::Ordered,
+    };
+    let ShiftedReferenceAwareLayout {
         frame_length,
         reference_count_offset,
         reference_member_count,
@@ -1295,47 +1336,37 @@ fn exact_shifted_reference_aware_extrude_prologue(
         trailing_reference_padding_offset,
         guid_prefix_offset,
         second_side_extent_offset,
-        trailing_reference_is_ordered,
-        symmetric_through_all,
-    ) = match primary_class {
-        b"357" | b"275" | b"361" | b"349" | b"397" => (
-            538,
-            shifted_reference_aware::REFERENCE_COUNT,
-            13,
-            match primary_class {
-                b"357" => &b"258"[..],
-                b"275" | b"361" => &b"262"[..],
-                b"349" => &b"266"[..],
-                b"397" => &b"262"[..],
-                _ => unreachable!(),
-            },
-            shifted_reference_aware::BODY_GROUP_COUNT,
-            shifted_reference_aware::BODY_GROUP_REFERENCE,
-            shifted_reference_aware::BODY_GROUP_REFERENCE + 11,
-            shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-            shifted_reference_aware::SECOND_SIDE_EXTENT,
-            true,
-            false,
-        ),
+        tail_form,
+    } = match primary_class {
+        b"357" => ordered,
+        b"275" | b"361" | b"397" => ShiftedReferenceAwareLayout {
+            expected_paired_class: b"262",
+            ..ordered
+        },
+        b"349" => ShiftedReferenceAwareLayout {
+            expected_paired_class: b"266",
+            ..ordered
+        },
         b"323"
             if has_reference_layout(
                 shifted_reference_aware::REFERENCE_COUNT,
                 reference_count_at,
             ) && reference_members.len() == 11 =>
         {
-            (
-                516,
-                shifted_reference_aware::REFERENCE_COUNT,
-                11,
-                &b"263"[..],
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE,
-                shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
-                shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
-                shifted_reference_aware::SECOND_SIDE_EXTENT,
-                false,
-                false,
-            )
+            ShiftedReferenceAwareLayout {
+                frame_length: 516,
+                reference_count_offset: shifted_reference_aware::REFERENCE_COUNT,
+                reference_member_count: 11,
+                expected_paired_class: b"263",
+                trailing_reference_count_offset:
+                    shifted_reference_aware_323_tail::TRAILING_REFERENCE_COUNT,
+                trailing_reference_offset: shifted_reference_aware_323_tail::TRAILING_REFERENCE,
+                trailing_reference_padding_offset:
+                    shifted_reference_aware_323_tail::TRAILING_REFERENCE_PADDING,
+                guid_prefix_offset: shifted_reference_aware::BODY_GROUP_GUID_PREFIX,
+                second_side_extent_offset: shifted_reference_aware::SECOND_SIDE_EXTENT,
+                tail_form: TailForm::Unordered,
+            }
         }
         b"323"
             if has_reference_layout(
@@ -1343,19 +1374,22 @@ fn exact_shifted_reference_aware_extrude_prologue(
                 reference_count_at,
             ) && reference_members.len() == 10 =>
         {
-            (
-                485,
-                shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
-                10,
-                &b"263"[..],
-                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
-                shifted_reference_aware_323_symmetric::TRAILING_REFERENCE,
-                shifted_reference_aware_323_symmetric::GUID_PREFIX,
-                shifted_reference_aware_323_symmetric::GUID_PREFIX,
-                shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
-                true,
-                true,
-            )
+            ShiftedReferenceAwareLayout {
+                frame_length: 485,
+                reference_count_offset: shifted_reference_aware_323_symmetric::REFERENCE_COUNT,
+                reference_member_count: 10,
+                expected_paired_class: b"263",
+                trailing_reference_count_offset:
+                    shifted_reference_aware_323_symmetric::TRAILING_REFERENCE_COUNT,
+                trailing_reference_offset:
+                    shifted_reference_aware_323_symmetric::TRAILING_REFERENCE,
+                trailing_reference_padding_offset:
+                    shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                guid_prefix_offset: shifted_reference_aware_323_symmetric::GUID_PREFIX,
+                second_side_extent_offset:
+                    shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
+                tail_form: TailForm::SymmetricThroughAll,
+            }
         }
         _ => return None,
     };
@@ -1400,7 +1434,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
         View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
     ];
-    let expected_direction_face_extend = if symmetric_through_all {
+    let expected_direction_face_extend = if tail_form == TailForm::SymmetricThroughAll {
         [3, 0]
     } else {
         [2, 1]
@@ -1465,7 +1499,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if slot_offset != first_side_extent_offset {
         return None;
     }
-    let second_side_extent_offset = if symmetric_through_all {
+    let second_side_extent_offset = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(second_side_extent_offset)?
     } else {
         reference_count_at.checked_sub(4)?
@@ -1474,8 +1508,12 @@ fn exact_shifted_reference_aware_extrude_prologue(
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
-    let expected_side_extent_discriminators = if symmetric_through_all {
+    let extent = exact_extrude_extent(
+        ExtrudeExtentContext::Common,
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+    )?;
+    let expected_side_extent_discriminators = if tail_form == TailForm::SymmetricThroughAll {
         [4, 4]
     } else {
         [2, 0]
@@ -1483,7 +1521,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if side_extent_discriminators != expected_side_extent_discriminators {
         return None;
     }
-    let ordered_tail_references_valid = if symmetric_through_all {
+    let ordered_tail_references_valid = if tail_form == TailForm::SymmetricThroughAll {
         [
             marked_record_reference(
                 bytes,
@@ -1523,17 +1561,20 @@ fn exact_shifted_reference_aware_extrude_prologue(
     };
     let trailing_reference =
         marked_record_reference(bytes, start.checked_add(trailing_reference_offset)?)?;
-    let trailing_reference_valid = if trailing_reference_is_ordered {
-        reference_members.contains(&trailing_reference)
-    } else {
-        trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+    let trailing_reference_valid = match tail_form {
+        TailForm::Unordered => {
+            trailing_reference != 0 && !reference_members.contains(&trailing_reference)
+        }
+        TailForm::Ordered | TailForm::SymmetricThroughAll => {
+            reference_members.contains(&trailing_reference)
+        }
     };
     let zero_range = |range_start: usize, range_end: usize| {
         bytes
             .get(start + range_start..start + range_end)
             .is_some_and(|value| value.iter().all(|byte| *byte == 0))
     };
-    let tail_fixed_valid = if symmetric_through_all {
+    let tail_fixed_valid = if tail_form == TailForm::SymmetricThroughAll {
         zero_range(
             shifted_reference_aware_323_symmetric::FIRST_SIDE_PADDING,
             shifted_reference_aware_323_symmetric::SECOND_SIDE_EXTENT,
@@ -1604,7 +1645,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     }
     let (guid, guid_end) =
         lp_utf16_bounded(bytes, start.checked_add(guid_prefix_offset)?, 36..=36)?;
-    let expected_guid_end = if symmetric_through_all {
+    let expected_guid_end = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(guid_prefix_offset)?.checked_add(76)?
     } else {
         second_side_extent_offset.checked_add(1)?
@@ -1638,10 +1679,22 @@ fn exact_shifted_reference_aware_extrude_prologue(
     })
 }
 
+/// Grammar that assigns meaning to the side extent discriminators.
+#[derive(Clone, Copy)]
+pub(crate) enum ExtrudeExtentContext {
+    Common,
+    Class397Symmetric(super::legacy_class_397::Class397SymmetricFrame),
+}
+
 pub(crate) fn exact_extrude_extent(
+    context: ExtrudeExtentContext,
     direction: u32,
     side_extent_discriminators: [u32; 2],
 ) -> Option<DesignExtrudeExtent> {
+    if let ExtrudeExtentContext::Class397Symmetric(_) = context {
+        return (direction == 3 && side_extent_discriminators == [1, 1])
+            .then_some(DesignExtrudeExtent::SymmetricDistance);
+    }
     match (direction, side_extent_discriminators) {
         (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
         (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
@@ -1773,7 +1826,11 @@ fn exact_legacy_shifted_extrude_prologue(
             View::u32_le_at(bytes, offsets[0])?,
             View::u32_le_at(bytes, offsets[1])?,
         ];
-        let extent = exact_extrude_extent(direction_face_extend_values[0], discriminators)?;
+        let extent = exact_extrude_extent(
+            ExtrudeExtentContext::Common,
+            direction_face_extend_values[0],
+            discriminators,
+        )?;
         Some((offsets, discriminators, extent))
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
@@ -1786,7 +1843,11 @@ fn exact_legacy_shifted_extrude_prologue(
             (
                 offsets,
                 discriminators,
-                exact_extrude_extent(direction_face_extend_values[0], discriminators)?,
+                exact_extrude_extent(
+                    ExtrudeExtentContext::Common,
+                    direction_face_extend_values[0],
+                    discriminators,
+                )?,
             )
         } else {
             let (first_offset, second_offset) = match reference_count_delta {
@@ -2021,10 +2082,7 @@ pub(crate) fn exact_surface_stitch_operation(
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
         return None;
     }
-    let gap_tolerance = scalar.value;
-    if !gap_tolerance.is_finite() || gap_tolerance <= 0.0 {
-        return None;
-    }
+    let gap_tolerance = crate::records::feature::DesignPositiveScalar::new(scalar.value)?;
     Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,
@@ -2060,10 +2118,8 @@ pub(crate) fn exact_base_flange_operation(
     {
         return None;
     }
-    let thickness = View::f64_le_at(bytes, start + 123)?;
-    if !thickness.is_finite() || thickness <= 0.0 {
-        return None;
-    }
+    let thickness =
+        crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(bytes, start + 123)?)?;
     Some(DesignBaseFlangeOperation {
         thickness,
         thickness_offset: u64::try_from(start + 123).ok()?,
@@ -2295,11 +2351,9 @@ pub(crate) fn exact_edge_flange_operation(
 #[derive(Clone, Copy)]
 struct LegacyEdgeFlangeLayout {
     frame_length: usize,
-    reference_count: usize,
     bend_position_offset: usize,
     edge_count_offset: usize,
-    edge_wrapper_offsets: &'static [usize],
-    edge_group_offsets: &'static [usize],
+    edge_columns: &'static [(usize, usize)],
     settings_offset: usize,
     height_datum_offset: usize,
     angle_owner_offset: usize,
@@ -2310,21 +2364,36 @@ struct LegacyEdgeFlangeLayout {
     result_trailer_start: usize,
     result_separator_offset: usize,
     aggregate_group_offset: usize,
-    aggregate_operand_count: usize,
-    width_owner_count: usize,
     auxiliary_reference_count: usize,
     width_mode: DesignEdgeWidthMode,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource,
     result_trailers: &'static [u32],
 }
 
+impl LegacyEdgeFlangeLayout {
+    fn width_owner_count(self) -> usize {
+        match self.width_mode {
+            DesignEdgeWidthMode::FullEdge => 0,
+            DesignEdgeWidthMode::Symmetric => 1,
+            DesignEdgeWidthMode::TwoSides => 2,
+            DesignEdgeWidthMode::SymmetricPerEdge => self.edge_columns.len(),
+            DesignEdgeWidthMode::TwoSidesPerEdge => 2 * self.edge_columns.len(),
+        }
+    }
+
+    fn reference_count(self) -> usize {
+        4 + 4 * self.edge_columns.len() + self.width_owner_count() + self.auxiliary_reference_count
+    }
+}
+
 const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 494,
-    reference_count: 8,
     bend_position_offset: edge_flange_legacy::BEND_POSITION,
     edge_count_offset: edge_flange_legacy::EDGE_COUNT,
-    edge_wrapper_offsets: &[edge_flange_legacy::EDGE_WRAPPER_REFERENCE],
-    edge_group_offsets: &[edge_flange_legacy::EDGE_GROUP_REFERENCE],
+    edge_columns: &[(
+        edge_flange_legacy::EDGE_WRAPPER_REFERENCE,
+        edge_flange_legacy::EDGE_GROUP_REFERENCE,
+    )],
     settings_offset: edge_flange_legacy::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_legacy::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_legacy::ANGLE_OWNER_REFERENCE,
@@ -2335,8 +2404,6 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
     result_trailer_start: edge_flange_legacy::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_legacy::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_legacy::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 1,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2345,16 +2412,17 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
 
 const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 591,
-    reference_count: 12,
     bend_position_offset: edge_flange_multi::BEND_POSITION,
     edge_count_offset: edge_flange_multi::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_multi::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_multi::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_multi::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_multi::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_multi::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_multi::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_multi::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_multi::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_multi::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_multi::HEIGHT_DATUM,
@@ -2366,8 +2434,6 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     result_trailer_start: edge_flange_multi::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_multi::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_multi::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2376,16 +2442,17 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
 
 const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 669,
-    reference_count: 16,
     bend_position_offset: edge_flange_325_per_edge::BEND_POSITION,
     edge_count_offset: edge_flange_325_per_edge::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_325_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_325_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_325_per_edge::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_325_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_325_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_325_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_325_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_325_per_edge::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_325_per_edge::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_325_per_edge::HEIGHT_DATUM,
@@ -2397,8 +2464,6 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: edge_flange_325_per_edge::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_325_per_edge::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_325_per_edge::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 4,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2407,16 +2472,17 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
 
 const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 643,
-    reference_count: 14,
     bend_position_offset: edge_flange_364_width::BEND_POSITION,
     edge_count_offset: edge_flange_364_width::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_364_width::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_364_width::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_364_width::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_364_width::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_364_width::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_364_width::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_364_width::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_364_width::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_364_width::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_364_width::HEIGHT_DATUM,
@@ -2428,8 +2494,6 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
     result_trailer_start: edge_flange_364_width::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_364_width::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_364_width::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 2,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::SymmetricPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2438,16 +2502,17 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
 
 const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 801,
-    reference_count: 28,
     bend_position_offset: edge_flange_286_per_edge::BEND_POSITION,
     edge_count_offset: edge_flange_286_per_edge::EDGE_COUNT,
-    edge_wrapper_offsets: &[
-        edge_flange_286_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
-        edge_flange_286_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
-    ],
-    edge_group_offsets: &[
-        edge_flange_286_per_edge::EDGE_GROUP_ONE_REFERENCE,
-        edge_flange_286_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    edge_columns: &[
+        (
+            edge_flange_286_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+            edge_flange_286_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        ),
+        (
+            edge_flange_286_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+            edge_flange_286_per_edge::EDGE_GROUP_TWO_REFERENCE,
+        ),
     ],
     settings_offset: edge_flange_286_per_edge::SETTINGS_REFERENCE,
     height_datum_offset: edge_flange_286_per_edge::HEIGHT_DATUM,
@@ -2459,8 +2524,6 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: edge_flange_286_per_edge::RESULT_ONE_TRAILER,
     result_separator_offset: edge_flange_286_per_edge::RESULT_SEPARATOR,
     aggregate_group_offset: edge_flange_286_per_edge::AGGREGATE_GROUP_REFERENCE,
-    aggregate_operand_count: 2,
-    width_owner_count: 4,
     auxiliary_reference_count: 12,
     width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeOffset,
@@ -2469,11 +2532,9 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
 
 const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 483,
-    reference_count: 8,
     bend_position_offset: 80,
     edge_count_offset: 84,
-    edge_wrapper_offsets: &[88],
-    edge_group_offsets: &[196],
+    edge_columns: &[(88, 196)],
     settings_offset: 99,
     height_datum_offset: 110,
     angle_owner_offset: 114,
@@ -2484,8 +2545,6 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailer_start: 165,
     result_separator_offset: 169,
     aggregate_group_offset: 173,
-    aggregate_operand_count: 1,
-    width_owner_count: 0,
     auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
     width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
@@ -2500,8 +2559,8 @@ fn legacy_edge_flange_operation_at(
     references: &[u32],
     layout: LegacyEdgeFlangeLayout,
 ) -> Option<DesignEdgeFlangeOperation> {
-    let edge_count = layout.edge_wrapper_offsets.len();
-    if references.len() != layout.reference_count
+    let edge_count = layout.edge_columns.len();
+    if references.len() != layout.reference_count()
         || paired_at.checked_sub(start)? != layout.frame_length
         || View::u32_le_at(bytes, start.checked_add(layout.edge_count_offset)?)?
             != u32::try_from(edge_count).ok()?
@@ -2515,9 +2574,9 @@ fn legacy_edge_flange_operation_at(
         Some(index)
     };
     let edge_wrapper_record_indices = layout
-        .edge_wrapper_offsets
+        .edge_columns
         .iter()
-        .map(|offset| {
+        .map(|(offset, _)| {
             claim(
                 marked_record_reference(bytes, start.checked_add(*offset)?)?,
                 &mut unclaimed,
@@ -2541,7 +2600,7 @@ fn legacy_edge_flange_operation_at(
         &mut unclaimed,
     )?;
     let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -2576,9 +2635,9 @@ fn legacy_edge_flange_operation_at(
         &mut unclaimed,
     )?;
     let edge_group_record_indices = layout
-        .edge_group_offsets
+        .edge_columns
         .iter()
-        .map(|offset| {
+        .map(|(_, offset)| {
             claim(
                 marked_record_reference(bytes, start.checked_add(*offset)?)?,
                 &mut unclaimed,
@@ -2589,26 +2648,14 @@ fn legacy_edge_flange_operation_at(
         .iter()
         .map(|record_index| claim(record_index.checked_add(3)?, &mut unclaimed))
         .collect::<Option<Vec<_>>>()?;
-    if unclaimed.len()
-        != layout.aggregate_operand_count
-            + layout.width_owner_count
-            + layout.auxiliary_reference_count
-    {
-        return None;
-    }
-    let aggregate_operand_start = unclaimed
-        .len()
-        .checked_sub(layout.aggregate_operand_count)?;
+    let aggregate_operand_start = layout.width_owner_count() + layout.auxiliary_reference_count;
     let aggregate_operand_record_indices = unclaimed.split_off(aggregate_operand_start);
     let width_distance_owner_record_indices = unclaimed
-        .drain(..layout.width_owner_count)
+        .drain(..layout.width_owner_count())
         .collect::<Vec<_>>();
     let auxiliary_reference_record_indices = unclaimed;
     let width_distance_owner_record_indices_by_edge =
         if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
-            if width_distance_owner_record_indices.len() != edge_count.checked_mul(2)? {
-                return None;
-            }
             width_distance_owner_record_indices
                 .chunks_exact(2)
                 .map(|pair| [pair[0], pair[1]])
@@ -2619,33 +2666,35 @@ fn legacy_edge_flange_operation_at(
     let edges = crate::records::feature::DesignEdgeFlangeEdge::from_columns(
         edge_wrapper_record_indices,
         edge_group_record_indices,
-        edge_operand_record_indices,
+        &edge_operand_record_indices,
         aggregate_operand_record_indices,
     )
     .ok()?;
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
-            edges,
-            Some(layout.width_mode),
-            width_distance_owner_record_indices,
-            width_distance_owner_record_indices_by_edge,
-            layout.width_parameter_source,
-            DesignEdgeFlangeHeightExtent::Distance,
-        )
-        .ok()?,
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
             start.checked_add(layout.bend_position_offset)?,
         )?),
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::from_wire(
+                edges,
+                Some(layout.width_mode),
+                width_distance_owner_record_indices,
+                width_distance_owner_record_indices_by_edge,
+                layout.width_parameter_source,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -2696,7 +2745,7 @@ fn edge_flange_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -2717,7 +2766,7 @@ fn edge_flange_operation_at(
     let aggregate_operand_record_index =
         claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
-    let edge_operand_record_index = claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
+    claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
 
     if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
         return None;
@@ -2733,30 +2782,31 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
-            vec![crate::records::feature::DesignEdgeFlangeEdge {
-                wrapper_record_index: edge_wrapper_record_index,
-                group_record_index: edge_group_record_index,
-                operand_record_index: edge_operand_record_index,
-                aggregate_operand_record_index,
-            }],
-            None,
-            width_distance_owner_record_indices,
-            Vec::new(),
-            DesignEdgeFlangeWidthParameterSource::EdgeWidth,
-            DesignEdgeFlangeHeightExtent::Distance,
-        )
-        .ok()?,
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position,
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::from_wire(
+                vec![crate::records::feature::DesignEdgeFlangeEdge {
+                    wrapper_record_index: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index,
+                    aggregate_operand_record_index,
+                }],
+                None,
+                width_distance_owner_record_indices,
+                Vec::new(),
+                DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                DesignEdgeFlangeHeightExtent::Distance,
+            )
+            .ok()?,
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -2799,7 +2849,7 @@ fn edge_flange_to_object_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
@@ -2881,7 +2931,7 @@ fn edge_flange_to_object_operation_at(
         claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let aggregate_operand_record_index =
         claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     let [offset_owner_record_index] = unclaimed.as_slice() else {
         return None;
     };
@@ -2890,30 +2940,31 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::feature::DesignEdgeFlangeShape::FullEdge {
-            edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
-                wrapper_record_index: edge_wrapper_record_index,
-                group_record_index: edge_group_record_index,
-                operand_record_index: edge_operand_record_index,
-                aggregate_operand_record_index,
-            }],
-            height: DesignEdgeFlangeHeightExtent::ToObject {
-                target_group_record_index,
-                target_operand_record_index,
-                offset_owner_record_index: *offset_owner_record_index,
-                reference_record_indices,
-            },
-        },
-        aggregate_group_record_index,
         height_owner_record_index,
         angle_owner_record_index,
         auxiliary_reference_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-
         height_datum,
         bend_position,
+        selection: crate::records::feature::DesignEdgeFlangeSelection::try_new(
+            crate::records::feature::DesignEdgeFlangeShape::FullEdge {
+                edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
+                    wrapper_record_index: edge_wrapper_record_index,
+                    group_record_index: edge_group_record_index,
+                    aggregate_operand_record_index,
+                }],
+                height: DesignEdgeFlangeHeightExtent::ToObject {
+                    target_group_record_index,
+                    target_operand_record_index,
+                    offset_owner_record_index: *offset_owner_record_index,
+                    reference_record_indices,
+                },
+            },
+            aggregate_group_record_index,
+        )
+        .ok()?,
     })
 }
 
@@ -3012,21 +3063,21 @@ pub(super) fn bind_hem_operation_from_parameters(
     let parameter_source_kinds = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
                 && scope
                     .reference_members
                     .values()
-                    .any(|value| value == &owner.record_index)
+                    .any(|value| value == &owner.record_index())
         })
         .flat_map(|owner| {
             parameters
                 .iter()
                 .filter(move |parameter| {
                     native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index
+                        && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(move |parameter| (owner.record_index, parameter.source_kind()))
+                .map(move |parameter| (owner.record_index(), parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     let Some(start) = usize::try_from(scope.byte_offset).ok() else {
@@ -3093,16 +3144,15 @@ fn hem_gap_length_operation_at(
     let length_owner_record_index = slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
 
     let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
 
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3110,9 +3160,7 @@ fn hem_gap_length_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::GapLength {
             gap_owner_record_index,
             length_owner_record_index,
@@ -3165,15 +3213,14 @@ fn hem_radius_angle_operation_at(
     let angle_owner_record_index = slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3181,9 +3228,7 @@ fn hem_radius_angle_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index,
             angle_owner_record_index,
@@ -3232,15 +3277,14 @@ fn hem_gap_length_radius_operation_at(
     let length_owner_record_index = slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
-    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+    let bend_radius = crate::records::feature::DesignPositiveScalar::new(View::f64_le_at(
         bytes,
         bend_radius_offset,
     )?)?;
     let aggregate_group_record_index = slot(118, &mut unclaimed)?;
     let edge_group_record_index = slot(145, &mut unclaimed)?;
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
     if !unclaimed.is_empty() {
         return None;
     }
@@ -3248,9 +3292,7 @@ fn hem_gap_length_radius_operation_at(
     Some(DesignHemOperation {
         edge_wrapper_record_index,
         edge_group_record_index,
-        edge_operand_record_index,
         aggregate_group_record_index,
-        aggregate_operand_record_index,
         parameter_owners: DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index,
             length_owner_record_index,

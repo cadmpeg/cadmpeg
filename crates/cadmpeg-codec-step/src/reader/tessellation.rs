@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
@@ -24,7 +25,7 @@ pub(super) fn decode(
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, CodecError> {
     let coordinates = exchange
         .records
         .iter()
@@ -78,7 +79,7 @@ pub(super) fn decode(
             active: BTreeSet::new(),
         };
         for item in item_ids {
-            associator.visit(item, 0, None);
+            associator.visit(item, 0, None)?;
         }
         typed.insert(id);
     }
@@ -128,7 +129,7 @@ pub(super) fn decode(
             active: BTreeSet::new(),
         };
         for item in items {
-            associator.visit(item, 0, None);
+            associator.visit(item, 0, None)?;
         }
     }
     for (&id, record) in &exchange.records {
@@ -155,7 +156,7 @@ pub(super) fn decode(
             mode: AssociationMode::DetachedAnnotation,
             active: BTreeSet::new(),
         };
-        associator.visit(item, 0, None);
+        associator.visit(item, 0, None)?;
     }
     for id in unresolved_placements {
         let message = format!(
@@ -363,19 +364,41 @@ pub(super) fn decode(
                 .iter_mut()
                 .find(|surface| surface.id.as_str() == surface_id)
             {
-                surface
-                    .source_object
-                    .get_or_insert_with(|| SourceObjectAssociation {
+                if surface.source_object.is_none() {
+                    surface.source_object = Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                        object_id: format!("#{id}"),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
                         name: None,
                         color: None,
                         visible: None,
                         layer: None,
                         instance_path: Vec::new(),
                     });
+                }
             }
         }
+        let mesh = match Tessellation::from_decoded(
+            ids::tessellation("mesh", id),
+            local_vertices,
+            local_triangles,
+            strip_lengths,
+            normals,
+            Vec::new(),
+            Vec::new(),
+        ) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                losses.push(
+                    StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
+                );
+                continue;
+            }
+        };
         if !declared_items.contains(&id) {
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
@@ -384,17 +407,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
         ir.model.tessellations.push(
-            Tessellation::from_decoded(
-                ids::tessellation("mesh", id),
-                local_vertices,
-                local_triangles,
-                strip_lengths,
-                normals,
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("decoded STEP tessellation is valid")
-            .with_body(
+            mesh.with_body(
                 (!unresolved_items.contains(&id))
                     .then(|| item_bodies.get(&id))
                     .flatten()
@@ -405,15 +418,23 @@ pub(super) fn decode(
                 (!declared_items.contains(&id)
                     || unresolved_items.contains(&id)
                     || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
-                .then(|| SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-                    object_id: format!("#{id}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
+                .then(|| -> Result<_, cadmpeg_core::CodecError> {
+                    Ok(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}"))
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "source object_id must not be empty",
+                                )
+                            })?,
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    })
+                })
+                .transpose()?,
             ),
         );
         typed.extend([id, coordinate_id]);
@@ -428,13 +449,13 @@ pub(super) fn decode(
             }
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
@@ -467,13 +488,18 @@ struct TessellationItemAssociator<'a> {
 }
 
 impl TessellationItemAssociator<'_> {
-    fn visit(&mut self, id: u64, depth: usize, inherited_placement: Option<Transform>) {
+    fn visit(
+        &mut self,
+        id: u64,
+        depth: usize,
+        inherited_placement: Option<Transform>,
+    ) -> Result<(), CodecError> {
         if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
-            return;
+            return Ok(());
         }
         let Some(record) = self.exchange.records.get(&id) else {
             self.active.remove(&id);
-            return;
+            return Ok(());
         };
         let local_placement = if has_entity(record, "REPOSITIONED_TESSELLATED_ITEM") {
             let placement = repositioned_placement(record, self.geometry);
@@ -484,9 +510,15 @@ impl TessellationItemAssociator<'_> {
         } else {
             None
         };
-        let placement = local_placement.map_or(inherited_placement, |local| {
-            Some(inherited_placement.map_or(local, |parent| parent.compose(local)))
-        });
+        let placement = match (inherited_placement, local_placement) {
+            (Some(parent), Some(local)) => Some(parent.compose(local).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "invalid STEP tessellation placement #{id}: {error}"
+                ))
+            })?),
+            (parent, None) => parent,
+            (None, local) => local,
+        };
         if entity_kind(
             record,
             &[
@@ -541,7 +573,7 @@ impl TessellationItemAssociator<'_> {
                 })
                 .unwrap_or_default();
             for item in item_ids {
-                self.visit(item, depth + 1, placement);
+                self.visit(item, depth + 1, placement)?;
             }
         } else if self.mode == AssociationMode::BodyItems {
             self.declared_items.insert(id);
@@ -551,6 +583,7 @@ impl TessellationItemAssociator<'_> {
                 .extend(self.bodies.iter().cloned());
         }
         self.active.remove(&id);
+        Ok(())
     }
 }
 

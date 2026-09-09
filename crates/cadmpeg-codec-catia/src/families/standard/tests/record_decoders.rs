@@ -643,9 +643,9 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
 
     let record =
         crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3).expect("three-byte packet");
-    assert_eq!(record.handles, handles);
-    assert_eq!(record.strip_lengths, [3, 3]);
-    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.packet.handles(), handles);
+    assert_eq!(record.packet.strip_lengths(), [3, 3]);
+    assert!(record.packet.fan_lengths().is_empty());
 }
 
 #[test]
@@ -661,9 +661,9 @@ fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
 
     let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
         .expect("raw 0xff strip length");
-    assert_eq!(record.handles.len(), handle_count as usize);
-    assert_eq!(record.strip_lengths, [255, 1]);
-    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.packet.handles().len(), handle_count as usize);
+    assert_eq!(record.packet.strip_lengths(), [255, 1]);
+    assert!(record.packet.fan_lengths().is_empty());
 }
 
 #[test]
@@ -827,12 +827,13 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     };
     let layout = |face_count: usize, edge_count: usize, vertex_count: usize, start: usize| {
         FbbPopulationLayout {
-            face_start: start,
-            face_count,
-            after_faces: start + face_count * 8,
+            face_run: crate::families::standard::fbb::FbbFaceRun {
+                face_start: start,
+                face_count,
+            },
             edge_count,
             vertex_count,
-            fbb_edge_table: true,
+            edge_table_form: crate::families::standard::fbb::EdgeTableForm::FbbOnly,
         }
     };
     let layouts = vec![layout(2, 3, 4, 10), layout(2, 3, 4, 20)];
@@ -842,12 +843,12 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(&layouts, &populations)
             .expect("source-ordered population relation");
     assert_eq!(pairs.len(), 2);
-    assert_eq!(pairs[0].0.face_start, 10);
+    assert_eq!(pairs[0].0.face_run.face_start, 10);
     assert!(matches!(
         &pairs[0].1.records[0],
         StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 100
     ));
-    assert_eq!(pairs[1].0.face_start, 20);
+    assert_eq!(pairs[1].0.face_run.face_start, 20);
     assert!(matches!(
         &pairs[1].1.records[0],
         StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 200

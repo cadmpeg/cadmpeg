@@ -51,15 +51,40 @@ pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum TypedSurface {
+    Plane {
+        plane: cadmpeg_ir::geometry::PlaneSurface,
+        parameterization: PlaneParameterization,
+    },
+    Nurbs(NurbsSurface),
+}
+
+impl TypedSurface {
+    pub(crate) fn plane_parameterization(&self) -> Option<PlaneParameterization> {
+        match self {
+            Self::Plane {
+                parameterization, ..
+            } => Some(*parameterization),
+            Self::Nurbs(_) => None,
+        }
+    }
+
+    pub(crate) fn into_geometry(self) -> SurfaceGeometry {
+        match self {
+            Self::Plane { plane, .. } => SurfaceGeometry::Plane(plane),
+            Self::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) enum DecodedSurface {
     /// A typed surface and its conversion state.
     Typed {
         /// Decoded surface geometry.
-        geometry: SurfaceGeometry,
+        geometry: TypedSurface,
         /// Whether native coordinates were scaled or reconstructed.
         derived: bool,
-        /// Source parameter mapping for a plane surface.
-        plane_parameterization: Option<PlaneParameterization>,
     },
     /// A solved native procedural surface and its ordered child trees.
     Procedural {
@@ -176,17 +201,14 @@ pub(crate) fn decode(
         NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
     ) {
         DecodedSurface::Typed {
-            geometry: SurfaceGeometry::Nurbs(read_nurbs_surface(&mut reader, scale)?),
+            geometry: TypedSurface::Nurbs(read_nurbs_surface(&mut reader, scale)?),
             derived: true,
-            plane_parameterization: None,
         }
     } else if class == PLANE_SURFACE {
-        let (geometry, plane_parameterization) =
-            read_plane_surface_with_parameterization(&mut reader, scale)?;
+        let geometry = read_plane_surface_with_parameterization(&mut reader, scale)?;
         DecodedSurface::Typed {
             geometry,
             derived: scale != 1.0,
-            plane_parameterization: Some(plane_parameterization),
         }
     } else if class == CLIPPING_PLANE_SURFACE {
         read_clipping_plane_surface(data, &mut reader, scale, archive)?
@@ -235,8 +257,7 @@ fn read_clipping_plane_surface(
     }
     let mut plane_reader =
         BoundedReader::new(data, plane_chunk.body().start, plane_chunk.body().end)?;
-    let (geometry, plane_parameterization) =
-        read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
+    let geometry = read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
     plane_reader.skip_remaining()?;
     payload.skip(plane_chunk.next_offset() - payload.position())?;
     read_clipping_plane(data, &mut payload, archive)?;
@@ -245,7 +266,6 @@ fn read_clipping_plane_surface(
     Ok(DecodedSurface::Typed {
         geometry,
         derived: scale != 1.0,
-        plane_parameterization: Some(plane_parameterization),
     })
 }
 
@@ -936,7 +956,7 @@ pub(crate) fn read_nurbs_surface_prefix(
 fn read_plane_surface_with_parameterization(
     reader: &mut BoundedReader<'_>,
     scale: f64,
-) -> Result<(SurfaceGeometry, PlaneParameterization), GeometryError> {
+) -> Result<TypedSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 {
@@ -957,25 +977,23 @@ fn read_plane_surface_with_parameterization(
     } else {
         (domain, v_domain)
     };
-    let plane = SurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+    let geometry = TypedSurface::Plane {
+        plane: cadmpeg_ir::geometry::PlaneSurface::try_new(
             scale_native_point(native_plane.origin, scale)
                 .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
             vector(native_plane.zaxis),
             vector(native_plane.xaxis),
         )
         .map_err(|message| error(reader.position(), message))?,
-    );
-    reader.skip_remaining()?;
-    Ok((
-        plane,
-        PlaneParameterization {
+        parameterization: PlaneParameterization {
             u_domain: domain,
             v_domain,
             u_extents,
             v_extents,
         },
-    ))
+    };
+    reader.skip_remaining()?;
+    Ok(geometry)
 }
 
 fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {

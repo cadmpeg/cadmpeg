@@ -56,3 +56,37 @@ fn expression_owner_requires_record_for_persistent_identity() {
     assert!(expression.owner.is_none());
     assert_eq!(serde_json::to_value(expression).unwrap(), wire);
 }
+
+#[test]
+fn expression_requires_nonempty_source_table() {
+    let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
+    wire["source_table"] = "".into();
+    assert!(serde_json::from_value::<Expression>(wire.clone())
+        .unwrap_err()
+        .to_string()
+        .contains("source_table"));
+    wire.as_object_mut().unwrap().remove("source_table");
+    assert!(serde_json::from_value::<Expression>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("source_table"));
+}
+
+#[test]
+fn expression_wire_rejects_nonfinite_rust_values() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
+        wire.value = Some(value);
+        assert!(Expression::try_from(wire).unwrap_err().contains("value"));
+    }
+    let mut wire: super::super::ExpressionWire = serde_json::from_str(EXPRESSION).unwrap();
+    wire.value = Some(-0.0);
+    let mut expression = Expression::try_from(wire).unwrap();
+    assert_eq!(
+        expression.value.unwrap().get().to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    expression.value = Some(super::super::finite_value::FiniteValue::try_from(-1.0).unwrap());
+    let wire = serde_json::to_value(expression).unwrap();
+    assert_eq!(wire["value"], serde_json::json!(-1.0));
+}

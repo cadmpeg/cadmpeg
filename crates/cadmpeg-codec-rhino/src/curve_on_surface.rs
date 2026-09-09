@@ -182,7 +182,8 @@ mod tests {
         let DecodedSurface::Typed { geometry, .. } = decoded.surface else {
             panic!("expected typed support surface");
         };
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = geometry else {
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = geometry.into_geometry()
+        else {
             panic!("expected plane support surface");
         };
         let (origin, _, _) = plane_surface.parts();

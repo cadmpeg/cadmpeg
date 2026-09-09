@@ -192,15 +192,15 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         assert_eq!(timeline.context_record_index.get(), 17);
         assert_eq!(
             timeline
-                .frame
+                .frame()
                 .items()
                 .iter()
                 .map(|item| item.value)
                 .collect::<Vec<_>>(),
             [101, 102]
         );
-        assert_eq!(timeline.frame.frame_length(), bulk.len() as u64);
-        for item in timeline.frame.items() {
+        assert_eq!(timeline.frame().frame_length(), bulk.len() as u64);
+        for item in timeline.frame().items() {
             assert_eq!(
                 u64::from_le_bytes(
                     bulk[item.offset as usize..item.offset as usize + 8]
@@ -212,7 +212,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         }
 
         let mut duplicate = bulk.clone();
-        let second_offset = timeline.frame.items()[1].offset as usize;
+        let second_offset = timeline.frame().items()[1].offset as usize;
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
             crate::design::decode::meta::decode_feature_timelines(scan)

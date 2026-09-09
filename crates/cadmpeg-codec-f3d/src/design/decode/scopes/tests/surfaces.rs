@@ -92,7 +92,7 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
             &[100, 200, 300, 301]
         ),
         Some(DesignSurfaceStitchOperation {
-            gap_tolerance: 0.01,
+            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
             tolerance_record_index: 300,
             settings_record_index: 301,

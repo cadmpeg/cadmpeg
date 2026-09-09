@@ -526,7 +526,6 @@
               "id": "nx:segment-om-links:link#0",
               "row": "nx:segment-index:row#0",
               "schema_role": "feature_history",
-              "section_offset": 382,
               "separator_byte_len": 0,
               "slot": "type_code",
               "source_offset": 382
@@ -535,7 +534,6 @@
               "id": "nx:segment-om-links:link#1",
               "row": "nx:segment-index:row#0",
               "schema_role": "feature_history",
-              "section_offset": 112,
               "separator_byte_len": 0,
               "slot": "subtype_code",
               "source_offset": 112
@@ -544,7 +542,6 @@
               "id": "nx:segment-om-links:link#2",
               "row": "nx:segment-index:row#1",
               "schema_role": "feature_history",
-              "section_offset": 112,
               "separator_byte_len": 0,
               "slot": "value",
               "source_offset": 112
@@ -553,7 +550,6 @@
               "id": "nx:segment-om-links:link#3",
               "row": "nx:segment-index:row#2",
               "schema_role": "feature_history",
-              "section_offset": 112,
               "separator_byte_len": 0,
               "slot": "type_code",
               "source_offset": 112

@@ -16,7 +16,7 @@ use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
 mod configurations;
-mod features;
+pub(crate) mod features;
 mod parameters;
 mod xml;
 
@@ -99,9 +99,14 @@ pub(crate) fn apply_feature_name_changes(
                     .iter()
                     .find_map(|(old_owner, new_owner)| {
                         token
-                            .value
+                            .value(&parameter.expression)
                             .strip_suffix(&format!("@{old_owner}"))
-                            .map(|base| (token.value.clone(), format!("{base}@{new_owner}")))
+                            .map(|base| {
+                                (
+                                    token.value(&parameter.expression).into_owned(),
+                                    format!("{base}@{new_owner}"),
+                                )
+                            })
                     })
             })
             .collect::<HashMap<_, _>>();
@@ -116,7 +121,7 @@ pub(crate) fn apply_feature_name_changes(
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub fn prepare_features_for_write(
+pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {

@@ -394,12 +394,12 @@ pub(crate) fn incidence_choice_components(
     }
     if let Some(mesh_quotient) = mesh_quotient {
         let mut quotient = mesh_quotient.clone();
-        if quotient.union.len() == choices.len().saturating_mul(2) {
+        if quotient.len() == choices.len().saturating_mul(2) {
             let mut owner = HashMap::<usize, usize>::new();
             for &edge in &ambiguous {
                 for port in [edge * 2, edge * 2 + 1] {
-                    let root = quotient.union.find(port);
-                    for point in quotient.domains[root].iter().copied() {
+                    let root = quotient.find(port);
+                    for point in quotient.domains()[root].iter().copied() {
                         match owner.entry(point) {
                             std::collections::hash_map::Entry::Occupied(entry) => {
                                 union.union(*entry.get(), edge);

@@ -13,6 +13,8 @@ use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+
 #[test]
 fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
     let xml =
@@ -1003,11 +1005,8 @@ pub(crate) fn semantic_writer_rejects_subds() {
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     });
 
     let error = crate::test_support::plan_inherited_write(
@@ -1305,9 +1304,9 @@ fn semantic_writer_preserves_unbound_material_definition() {
         .find(|appearance| appearance.name.as_deref() == Some("Steel"))
         .unwrap();
     let color = appearance.base_color.unwrap();
-    assert!((color.r - 32.0 / 255.0).abs() < 1.0e-6);
-    assert!((color.g - 64.0 / 255.0).abs() < 1.0e-6);
-    assert!((color.b - 128.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.r() - 32.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - 64.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - 128.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
 }
 
 #[test]
@@ -1325,12 +1324,10 @@ fn semantic_writer_rejects_overlong_material_names() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
-    decoded.ir_mut().model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 32.0 / 255.0,
-        g: 64.0 / 255.0,
-        b: 128.0 / 255.0,
-        a: 1.0,
-    });
+    decoded.ir_mut().model.bodies[0].color = Some(
+        cadmpeg_ir::topology::Color::new(32.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0, 1.0)
+            .expect("valid color"),
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -1389,7 +1386,7 @@ fn semantic_writer_preserves_face_appearance() {
         .find(|appearance| appearance.id == binding.appearance)
         .and_then(|appearance| appearance.base_color)
         .unwrap();
-    assert_eq!([color.r, color.g, color.b], [0.25, 0.5, 0.75]);
+    assert_eq!([color.r(), color.g(), color.b()], [0.25, 0.5, 0.75]);
 }
 
 #[test]

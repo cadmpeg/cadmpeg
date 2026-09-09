@@ -567,7 +567,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
         .expect("first owner-chart side");
 
     let mut wrong_selector = valid.clone();
-    wrong_selector[side_05.payload.start] = 0x09;
+    wrong_selector[side_05.payload().unwrap().start] = 0x09;
     let records = crate::wire::records::consolidated_records(&wrong_selector);
     assert!(
         crate::families::b2::records::b2_owner_charts_from_records(&wrong_selector, &records)
@@ -575,7 +575,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     );
 
     let mut wrong_bound = valid.clone();
-    wrong_bound[side_05.payload.start + 2..side_05.payload.start + 10]
+    wrong_bound[side_05.payload().unwrap().start + 2..side_05.payload().unwrap().start + 10]
         .copy_from_slice(&8.0f64.to_le_bytes());
     let records = crate::wire::records::consolidated_records(&wrong_bound);
     assert!(
@@ -584,7 +584,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     );
 
     let mut separated = valid;
-    separated.insert(side_05.range.start, 0x00);
+    separated.insert(side_05.byte_offset(), 0x00);
     let records = crate::wire::records::consolidated_records(&separated);
     assert!(
         crate::families::b2::records::b2_owner_charts_from_records(&separated, &records).is_empty()
@@ -1576,7 +1576,7 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     assert_eq!(circles[0].center_pair, [4.0, -2.0]);
     assert_eq!(circles[0].radius, 3.0);
     assert_eq!(circles[0].chart_shift, 0.0);
-    assert!(circles[0].full_circle);
+    assert!(circles[0].full_circle());
 
     let mut malformed = b2_circle_stream();
     malformed[49..57].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -1599,10 +1599,10 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     let mut tiny_full = b2_circle_stream();
     tiny_full[24..32].copy_from_slice(&tiny.to_le_bytes());
     tiny_full[40..48].copy_from_slice(&(std::f64::consts::TAU * tiny).to_le_bytes());
-    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
+    assert!(crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 
     tiny_full[40..48].copy_from_slice(&1e-10_f64.to_le_bytes());
-    assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle);
+    assert!(!crate::families::b2::records::b2_circles(&tiny_full)[0].full_circle());
 }
 
 #[test]

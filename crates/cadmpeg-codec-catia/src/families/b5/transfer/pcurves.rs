@@ -131,7 +131,13 @@ pub(super) fn oriented_line_plan(
             cadmpeg_ir::geometry::LineCurve::try_new(point3(origin), vector(direction)).ok()?,
         ),
         parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
@@ -205,7 +211,13 @@ pub(super) fn oriented_circle_plan(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(parameter_range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
@@ -287,7 +299,13 @@ pub(super) fn oriented_nurbs_range(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(range),
-        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
+        edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
+            Some(cadmpeg_ir::units::PositiveScalar::new(
+                residual + EPS_PCURVE_RESIDUAL,
+            )?)
+        } else {
+            None
+        },
         cache_fit_tolerance: None,
     })
 }
@@ -656,7 +674,7 @@ pub(super) fn cylinder_helix(
     })
 }
 
-/// Emitted pcurve carriers and intervals indexed by native loop occurrence.
+/// Emitted pcurve carriers and intervals indexed by native loop and member.
 pub(super) type PcurveUses = HashMap<(u32, usize), (PcurveId, [f64; 2])>;
 
 /// Emit distinct pcurve occurrences grouped by native parameter range,
@@ -667,7 +685,7 @@ pub(super) fn emit_pcurves(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> Option<PcurveUses> {
+) -> Result<PcurveUses, cadmpeg_core::CodecError> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
@@ -713,7 +731,9 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             );
             if *cylinder_reparameterized {
-                annotations.derived(&id, "geometry.control_points");
+                annotations
+                    .derived(&id, "geometry.control_points")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let parameter_range = range_bits.map(f64::from_bits);
             if graph
@@ -722,7 +742,9 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(&id, "parameter_range");
+                annotations
+                    .derived(&id, "parameter_range")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             for occurrence in occurrences {
                 pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
@@ -735,9 +757,9 @@ pub(super) fn emit_pcurves(
                     Some(parameter_range),
                     None,
                 )
-                .ok()?,
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             });
         }
     }
-    Some(pcurve_uses)
+    Ok(pcurve_uses)
 }

@@ -127,9 +127,9 @@ fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
             "identity_record_index": 9,
             "identity_record_offset": 0,
             "opaque_index": 1,
-            "opaque_index_offset": 0,
+            "opaque_index_offset": 18,
             "opaque_scalar": 1.0,
-            "opaque_scalar_offset": 0,
+            "opaque_scalar_offset": 22,
             "variant": false
         },
         "role": 0x10_0000_0000u64,
@@ -219,16 +219,18 @@ fn only_edge_treatments_use_single_member_transition_chains() {
 #[test]
 fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-    ];
+    selection_group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     first.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
@@ -289,11 +291,10 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
         root: 1,
         sides: vec![crate::records::topology::DesignTopologyRecipeSide {
-            field_count: std::num::NonZeroU32::new(1).expect("one recipe field"),
             header_value: 1,
             scalars: Vec::new(),
             payload_prefix: Vec::new(),
-            payload_entry_count: 0,
+
             entries: Vec::new(),
         }],
     });
@@ -364,24 +365,26 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     use crate::records::feature::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
 
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 12,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 13,
-            offset: 0,
-        },
-    ];
+    selection_group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+            crate::records::Located {
+                value: 12,
+                offset: 22,
+            },
+            crate::records::Located {
+                value: 13,
+                offset: 33,
+            },
+        ])
+        .unwrap();
     let mut first_edge = recipe_edge_operand(11, &[], &[]);
     first_edge.recipe_state_id = Some(7);
     first_edge.resolved_edge_slot = Some(17);
@@ -558,16 +561,18 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
 #[test]
 fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut group = group(2, 10);
-    group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-    ];
+    group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.recipe_references = vec![recipe_reference(&[17])];
     first.surface_patch_recipe_structure = Some(
@@ -584,7 +589,7 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
                     ],
                     face_reference_ordinals: [0, 0],
                     edge_reference_ordinals: [0, 0],
-                    payload_entry_count: 0,
+
                     entries: Vec::new(),
                 }
             }),
@@ -820,16 +825,18 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
 #[test]
 fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-    ];
+    selection_group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -880,16 +887,18 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
 #[test]
 fn lost_references_preserve_a_complete_compact_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-    ];
+    selection_group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -968,16 +977,18 @@ fn compact_identity_group_does_not_displace_a_possible_support_group() {
 #[test]
 fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![
-        crate::records::Located {
-            value: 10,
-            offset: 0,
-        },
-        crate::records::Located {
-            value: 11,
-            offset: 0,
-        },
-    ];
+    selection_group
+        .try_set_members(vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 11,
+            },
+        ])
+        .unwrap();
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;
@@ -1617,11 +1628,10 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
         root: 2,
         sides: (0..2)
             .map(|_| crate::records::topology::DesignTopologyRecipeSide {
-                field_count: std::num::NonZeroU32::new(3).expect("field count"),
                 header_value: 2,
                 scalars: vec![1, 0],
                 payload_prefix: vec![0],
-                payload_entry_count: 0,
+
                 entries: Vec::new(),
             })
             .collect(),

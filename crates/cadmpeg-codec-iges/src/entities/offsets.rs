@@ -3,7 +3,8 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, WireProjectionOutcome,
+    declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    WireProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -20,11 +21,6 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
-
-fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}
 
 fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
     let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0));
@@ -266,7 +262,9 @@ pub(super) fn project(
             ));
             continue;
         };
-        if !declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision()) {
+        if declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision())
+            .is_none()
+        {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is not a unit vector",
@@ -840,7 +838,13 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: offset_source_geometry.clone(),
-                source_object: Some(source_object(entry)),
+                source_object: Some(match source_object(entry) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error.to_string()));
+                        continue;
+                    }
+                }),
             });
         }
         ir.model.points.extend([
@@ -870,7 +874,13 @@ pub(super) fn project(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(source_object(entry)),
+            source_object: Some(match source_object(entry) {
+                Ok(source) => source,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            }),
         });
         ir.model.edges.push(Edge {
             id: edge_id.clone(),

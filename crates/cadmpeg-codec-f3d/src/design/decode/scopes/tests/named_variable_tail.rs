@@ -84,9 +84,9 @@ fn parameter_scope_parses_named_variable_tail() {
     owner_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
     let owners = vec![
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: "f3d:test:owner#327".into(),
-            byte_offset: 0,
+            byte_offset: (111) - 40,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 327,
@@ -98,10 +98,11 @@ fn parameter_scope_parses_named_variable_tail() {
             owned_ordinal: 3,
             variant: Some(0),
             companion_record_index: 328,
-        },
-        DesignParameterOwner {
+        })
+        .unwrap(),
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: "f3d:test:owner#330".into(),
-            byte_offset: 0,
+            byte_offset: (222) - 40,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index: 330,
@@ -113,7 +114,8 @@ fn parameter_scope_parses_named_variable_tail() {
             owned_ordinal: 4,
             variant: Some(0),
             companion_record_index: 331,
-        },
+        })
+        .unwrap(),
     ];
     let operation = exact_draft_operation_with_owners(
         &bytes,
@@ -122,7 +124,7 @@ fn parameter_scope_parses_named_variable_tail() {
         &owners,
     )
     .expect("owner-lane Draft operation");
-    assert_eq!(operation.angle, 0.0);
+    assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);
     assert_eq!(operation.opposite_angle_record_index, 330);
     assert_eq!(operation.angle_offset, 111);

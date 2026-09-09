@@ -20,10 +20,26 @@ use crate::records::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_SPATIAL_OWNER_DEPTH: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1.0e-12;
+
+fn spatial_geometry_owners(
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> HashSet<(String, u32)> {
+    curves
+        .iter()
+        .filter(|curve| sketch_curve_is_spatial(curve))
+        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
+        .chain(points.iter().filter_map(|point| {
+            (sketch_point_depth(point)?.abs() > EPS_SPATIAL_OWNER_DEPTH)
+                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
+        }))
+        .collect()
+}
 
 fn sketch_text_horizontal_alignment(
     code: Option<u32>,
@@ -129,7 +145,7 @@ pub fn project_sketch_design(
     Vec<cadmpeg_ir::sketches::SketchEntity>,
 ) {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
+    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let placements_by_suffix = placements
@@ -144,15 +160,7 @@ pub fn project_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let spatial_owners = curves
-        .iter()
-        .filter(|curve| sketch_curve_is_spatial(curve))
-        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
-        .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9)
-                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
-        }))
-        .collect::<HashSet<_>>();
+    let spatial_owners = spatial_geometry_owners(points, curves);
     let mut sketches = placements
         .iter()
         .filter(|placement| {
@@ -161,33 +169,36 @@ pub fn project_sketch_design(
                     .is_some_and(|scope| spatial_owners.contains(&(scope.to_owned(), owner)))
             })
         })
-        .map(|placement| Sketch {
-            id: neutral_sketch_id(placement),
-            name: Some(placement.entity_id.as_str().to_owned()),
-            configuration: None,
-            visible: placement
-                .visibility
-                .as_ref()
-                .map(|visibility| visibility.visible),
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(
-                    placement.transform()[0][3] * placement_origin_scale(placement),
-                    placement.transform()[1][3] * placement_origin_scale(placement),
-                    placement.transform()[2][3] * placement_origin_scale(placement),
-                ),
-                normal: Vector3::new(
-                    placement.transform()[0][2],
-                    placement.transform()[1][2],
-                    placement.transform()[2][2],
-                ),
-                u_axis: Vector3::new(
-                    placement.transform()[0][0],
-                    placement.transform()[1][0],
-                    placement.transform()[2][0],
-                ),
-            },
-            profiles: Vec::new(),
-            native_ref: Some(placement.id.clone()),
+        .filter_map(|placement| {
+            Some(Sketch {
+                id: neutral_sketch_id(placement)?,
+                name: Some(placement.entity_id.as_str().to_owned()),
+                configuration: None,
+                visible: placement
+                    .visibility
+                    .as_ref()
+                    .map(|visibility| visibility.visible),
+                placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    Point3::new(
+                        placement.transform()[0][3] * placement_origin_scale(placement),
+                        placement.transform()[1][3] * placement_origin_scale(placement),
+                        placement.transform()[2][3] * placement_origin_scale(placement),
+                    ),
+                    Vector3::new(
+                        placement.transform()[0][2],
+                        placement.transform()[1][2],
+                        placement.transform()[2][2],
+                    ),
+                    Vector3::new(
+                        placement.transform()[0][0],
+                        placement.transform()[1][0],
+                        placement.transform()[2][0],
+                    ),
+                )
+                .ok()?,
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+                native_ref: Some(placement.id.clone()),
+            })
         })
         .collect::<Vec<_>>();
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
@@ -201,17 +212,18 @@ pub fn project_sketch_design(
                 return None;
             }
             let placement = placements_by_suffix.get(&(scope, owner))?;
-            let sketch = neutral_sketch_id(placement);
+            let sketch = neutral_sketch_id(placement)?;
             Some(
                 SketchEntity::new(
                     point.persistent_id().map_or_else(
                         || neutral_sketch_record_id(&sketch, point.record_index),
                         |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
-                    ),
+                    )?,
                     sketch,
-                    SketchGeometry::Point {
-                        position: point.coordinates,
-                    },
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                        position: point.coordinates(),
+                    })
+                    .ok()?,
                 )
                 .with_native_ref(Some(point.id.clone())),
             )
@@ -232,10 +244,11 @@ pub fn project_sketch_design(
                 && normal.z.is_finite()
                 && normal.z != 0.0 =>
             {
-                SketchGeometry::Line {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(start.x, start.y),
                     end: Point2::new(end.x, end.y),
-                }
+                })
+                .ok()?
             }
             SketchCurveGeometry::Arc {
                 center,
@@ -255,17 +268,19 @@ pub fn project_sketch_design(
                 if (end_angle - start_angle).abs()
                     >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
                 {
-                    SketchGeometry::Circle {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
-                    }
+                    })
+                    .ok()?
                 } else {
-                    SketchGeometry::Arc {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
                         start_angle: Angle(start_angle),
                         end_angle: Angle(end_angle),
-                    }
+                    })
+                    .ok()?
                 }
             }
             SketchCurveGeometry::Nurbs {
@@ -277,8 +292,8 @@ pub fn project_sketch_design(
                 && usize::try_from(*degree).is_ok_and(|degree| poles.point_count() > degree)
                 && poles.points().all(planar_point) =>
             {
-                SketchGeometry::Nurbs {
-                    curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                SketchGeometry::nurbs(
+                    cadmpeg_ir::geometry::PcurveNurbs::new(
                         *degree,
                         knots.clone(),
                         poles
@@ -293,14 +308,14 @@ pub fn project_sketch_design(
                         false,
                     )
                     .ok()?,
-                }
+                )
             }
             _ => return None,
         };
-        let sketch = neutral_sketch_id(placement);
+        let sketch = neutral_sketch_id(placement)?;
         Some(
             SketchEntity::new(
-                neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)?,
                 sketch,
                 geometry,
             )
@@ -311,18 +326,20 @@ pub fn project_sketch_design(
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
-        let sketch = neutral_sketch_id(placement);
+        let sketch = neutral_sketch_id(placement)?;
         Some(
             SketchEntity::new(
                 text.persistent_id.map_or_else(
                     || neutral_sketch_record_id(&sketch, text.record_index),
                     |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
-                ),
+                )?,
                 sketch,
-                SketchGeometry::Text {
-                    text: text.text.clone(),
-                    font_family: text.font_family.clone(),
-                    font_weight: text.font_weight,
+                SketchGeometry::try_from(SketchGeometryDefinition::Text {
+                    text: cadmpeg_ir::products::NonEmptyString::new(text.text.clone())?,
+                    font_family: cadmpeg_ir::products::NonEmptyString::new(
+                        text.font_family.clone(),
+                    )?,
+                    font_weight: text.font_weight.try_into().ok()?,
                     height: Length(text.height),
                     // The record's `0` does not scale glyph advance to zero, so it
                     // is not a neutral horizontal scale of zero; only a positive
@@ -335,14 +352,22 @@ pub fn project_sketch_design(
                     vertical_alignment: sketch_text_vertical_alignment(
                         text.alignment().map(|alignment| alignment.vertical),
                     ),
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(text.id.clone())),
         )
     }));
     entities.sort_by(|a, b| a.id().cmp(b.id()));
     for sketch in &mut sketches {
-        sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed_sketch_profiles(
+            &sketch.id,
+            &entities,
+            linear_tolerance,
+        )) else {
+            continue;
+        };
+        sketch.profiles = profiles;
     }
     (sketches, entities)
 }
@@ -363,7 +388,9 @@ pub fn project_spatial_sketch_design(
     cadmpeg_core::CodecError,
 > {
     use cadmpeg_ir::features::{Angle, Length};
-    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
+    };
 
     let placements_by_suffix = placements
         .iter()
@@ -377,21 +404,13 @@ pub fn project_spatial_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let spatial_owners = curves
-        .iter()
-        .filter(|curve| sketch_curve_is_spatial(curve))
-        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
-        .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9)
-                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
-        }))
-        .chain(surfaces.iter().filter_map(|surface| {
-            Some((
-                native_stream(&surface.id)?.to_owned(),
-                surface.owner_reference?,
-            ))
-        }))
-        .collect::<HashSet<_>>();
+    let mut spatial_owners = spatial_geometry_owners(points, curves);
+    spatial_owners.extend(surfaces.iter().filter_map(|surface| {
+        Some((
+            native_stream(&surface.id)?.to_owned(),
+            surface.owner_reference?,
+        ))
+    }));
     let curves_by_record = curves
         .iter()
         .filter_map(|curve| Some(((native_stream(&curve.id)?, curve.record_index), curve)))
@@ -502,16 +521,20 @@ pub fn project_spatial_sketch_design(
                 .copied()
                 .flatten()
             {
-                SpatialSketchGeometry::Line {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                     start: transform_point(placement, &start),
                     end: transform_point(placement, &end),
-                }
+                })
+                .ok()?
             } else {
                 match curve.geometry.as_ref()? {
-                    SketchCurveGeometry::Line { start, end, .. } => SpatialSketchGeometry::Line {
-                        start: transform_point(placement, start),
-                        end: transform_point(placement, end),
-                    },
+                    SketchCurveGeometry::Line { start, end, .. } => {
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                            start: transform_point(placement, start),
+                            end: transform_point(placement, end),
+                        })
+                        .ok()?
+                    }
                     SketchCurveGeometry::Arc {
                         center,
                         normal,
@@ -527,21 +550,25 @@ pub fn project_spatial_sketch_design(
                             >= std::f64::consts::TAU
                                 - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
                         {
-                            SpatialSketchGeometry::Circle {
-                                center,
-                                normal,
-                                reference_direction,
-                                radius: Length(*radius),
-                            }
+                            SpatialSketchGeometry::try_from(
+                                SpatialSketchGeometryDefinition::Circle {
+                                    center,
+                                    normal,
+                                    reference_direction,
+                                    radius: Length(*radius),
+                                },
+                            )
+                            .ok()?
                         } else {
-                            SpatialSketchGeometry::Arc {
+                            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Arc {
                                 center,
                                 normal,
                                 reference_direction,
                                 radius: Length(*radius),
                                 start_angle: Angle(*start_angle),
                                 end_angle: Angle(*end_angle),
-                            }
+                            })
+                            .ok()?
                         }
                     }
                     SketchCurveGeometry::Nurbs {
@@ -549,35 +576,37 @@ pub fn project_spatial_sketch_design(
                         knots,
                         poles,
                         ..
-                    } if *degree != 0
-                        && usize::try_from(*degree)
-                            .is_ok_and(|degree| poles.point_count() > degree) =>
-                    {
-                        SpatialSketchGeometry::Nurbs {
-                            curve: cadmpeg_ir::geometry::NurbsCurve::new(
-                                *degree,
-                                knots.clone(),
-                                poles
-                                    .points()
-                                    .map(|point| transform_point(placement, point))
-                                    .collect(),
-                                poles
-                                    .weights()
-                                    .next()
-                                    .is_some()
-                                    .then(|| poles.weights().copied().collect()),
-                                false,
-                            )
-                            .ok()?,
-                        }
-                    }
-                    _ => return None,
+                    } => SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
+                        curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                            *degree,
+                            knots.clone(),
+                            poles
+                                .points()
+                                .map(|point| transform_point(placement, point))
+                                .collect(),
+                            poles
+                                .weights()
+                                .next()
+                                .is_some()
+                                .then(|| poles.weights().copied().collect()),
+                            false,
+                        )
+                        .ok()?
+                        .try_into()
+                        .ok()?,
+                    })
+                    .ok()?,
+                    SketchCurveGeometry::Arc { .. } => return None,
                 }
             };
-            let sketch = neutral_spatial_sketch_id(placement);
+            let sketch = neutral_spatial_sketch_id(placement)?;
             Some(
                 SpatialSketchEntity::new(
-                    neutral_spatial_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                    neutral_spatial_sketch_curve_id(
+                        &sketch,
+                        curve.primary_id.get(),
+                        curve.secondary_id,
+                    )?,
                     sketch,
                     geometry,
                 )
@@ -592,21 +621,22 @@ pub fn project_spatial_sketch_design(
             return None;
         }
         let placement = placements_by_suffix.get(&(scope, owner))?;
-        let sketch = neutral_spatial_sketch_id(placement);
+        let sketch = neutral_spatial_sketch_id(placement)?;
         let depth = sketch_point_depth(point)?;
         Some(
             SpatialSketchEntity::new(
                 point.persistent_id().map_or_else(
                     || neutral_spatial_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
-                ),
+                )?,
                 sketch,
-                SpatialSketchGeometry::Point {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                     position: transform_point(
                         placement,
-                        &Point3::new(point.coordinates.u, point.coordinates.v, depth),
+                        &Point3::new(point.coordinates().u, point.coordinates().v, depth),
                     ),
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(point.id.clone())),
         )
@@ -621,12 +651,19 @@ pub fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let sketch = neutral_spatial_sketch_id(placement);
+        let Some(sketch) = neutral_spatial_sketch_id(placement) else {
+            continue;
+        };
+        let Some(entity_id) =
+            neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get())
+        else {
+            continue;
+        };
         entities.push(
             SpatialSketchEntity::new(
-                neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
+                entity_id,
                 sketch,
-                SpatialSketchGeometry::NurbsSurface {
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
                     surface: cadmpeg_ir::geometry::BsplineSurface::new(
                         surface.u_degree,
                         surface.v_degree,
@@ -648,7 +685,8 @@ pub fn project_spatial_sketch_design(
                             surface.id
                         ))
                     })?,
-                },
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             )
             .with_native_ref(Some(surface.id.clone())),
         );
@@ -660,10 +698,12 @@ pub fn project_spatial_sketch_design(
         .collect::<HashSet<_>>();
     let mut sketches = placements
         .iter()
-        .filter(|placement| spatial_ids.contains(&neutral_spatial_sketch_id(placement)))
-        .map(|placement| {
-            let id = neutral_spatial_sketch_id(placement);
-            SpatialSketch {
+        .filter(|placement| {
+            neutral_spatial_sketch_id(placement).is_some_and(|id| spatial_ids.contains(&id))
+        })
+        .filter_map(|placement| {
+            let id = neutral_spatial_sketch_id(placement)?;
+            Some(SpatialSketch {
                 profiles: closed_spatial_sketch_profiles(&id, &entities, linear_tolerance),
                 id,
                 name: Some(placement.entity_id.as_str().to_owned()),
@@ -673,7 +713,7 @@ pub fn project_spatial_sketch_design(
                     .as_ref()
                     .map(|visibility| visibility.visible),
                 native_ref: Some(placement.id.clone()),
-            }
+            })
         })
         .collect::<Vec<_>>();
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
@@ -690,8 +730,8 @@ pub fn project_spatial_sketch_constraints(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchConstraint, SpatialSketchConstraintDefinition as Definition,
-        SpatialSketchGeometry,
+        SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput as Definition,
+        SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
     let spatial_sketches = entities
@@ -701,7 +741,7 @@ pub fn project_spatial_sketch_constraints(
     let sketches = placements
         .iter()
         .filter_map(|placement| {
-            let id = neutral_spatial_sketch_id(placement);
+            let id = neutral_spatial_sketch_id(placement)?;
             spatial_sketches.contains(&id).then_some((
                 (
                     native_stream(&placement.id)?,
@@ -768,17 +808,18 @@ pub fn project_spatial_sketch_constraints(
                     let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
-                    let point_on_surface = match (&first.geometry, &second.geometry) {
-                        (
-                            SpatialSketchGeometry::Point { .. },
-                            SpatialSketchGeometry::NurbsSurface { .. },
-                        ) => Some((first, second)),
-                        (
-                            SpatialSketchGeometry::NurbsSurface { .. },
-                            SpatialSketchGeometry::Point { .. },
-                        ) => Some((second, first)),
-                        _ => None,
-                    };
+                    let point_on_surface =
+                        match (first.geometry.definition(), second.geometry.definition()) {
+                            (
+                                SpatialSketchGeometryDefinition::Point { .. },
+                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                            ) => Some((first, second)),
+                            (
+                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                                SpatialSketchGeometryDefinition::Point { .. },
+                            ) => Some((second, first)),
+                            _ => None,
+                        };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
                             point: point.id().clone(),
@@ -786,13 +827,13 @@ pub fn project_spatial_sketch_constraints(
                         }
                     } else {
                         let (
-                            SpatialSketchGeometry::Point {
+                            SpatialSketchGeometryDefinition::Point {
                                 position: first_position,
                             },
-                            SpatialSketchGeometry::Point {
+                            SpatialSketchGeometryDefinition::Point {
                                 position: second_position,
                             },
-                        ) = (&first.geometry, &second.geometry)
+                        ) = (first.geometry.definition(), second.geometry.definition())
                         else {
                             return None;
                         };
@@ -829,11 +870,11 @@ pub fn project_spatial_sketch_constraints(
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
                         matches!(
-                            geometry,
-                            SpatialSketchGeometry::Line { .. }
-                                | SpatialSketchGeometry::Circle { .. }
-                                | SpatialSketchGeometry::Arc { .. }
-                                | SpatialSketchGeometry::Nurbs { .. }
+                            (geometry).definition(),
+                            SpatialSketchGeometryDefinition::Line { .. }
+                                | SpatialSketchGeometryDefinition::Circle { .. }
+                                | SpatialSketchGeometryDefinition::Arc { .. }
+                                | SpatialSketchGeometryDefinition::Nurbs { .. }
                         )
                     };
                     if !curve(&first.geometry) || !curve(&second.geometry) {
@@ -849,14 +890,14 @@ pub fn project_spatial_sketch_constraints(
                         return None;
                     };
                     let (point, line, position, start, end) =
-                        match (&first.geometry, &second.geometry) {
+                        match (first.geometry.definition(), second.geometry.definition()) {
                             (
-                                SpatialSketchGeometry::Point { position },
-                                SpatialSketchGeometry::Line { start, end },
+                                SpatialSketchGeometryDefinition::Point { position },
+                                SpatialSketchGeometryDefinition::Line { start, end },
                             ) => (first, second, position, start, end),
                             (
-                                SpatialSketchGeometry::Line { start, end },
-                                SpatialSketchGeometry::Point { position },
+                                SpatialSketchGeometryDefinition::Line { start, end },
+                                SpatialSketchGeometryDefinition::Point { position },
                             ) => (second, first, position, start, end),
                             _ => return None,
                         };
@@ -884,7 +925,9 @@ pub fn project_spatial_sketch_constraints(
                     let [entity] = semantic_entities.as_slice() else {
                         return None;
                     };
-                    let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                    let SpatialSketchGeometryDefinition::Line { start, end } =
+                        *entity.geometry.definition()
+                    else {
                         return None;
                     };
                     let direction = match relation.constraint_kinds()[0] {
@@ -916,9 +959,12 @@ pub fn project_spatial_sketch_constraints(
                 _ => return None,
             };
             Some(SpatialSketchConstraint {
-                id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
+                id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
                 sketch: sketch.clone(),
-                definition,
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                    definition,
+                )
+                .ok()?,
                 native_ref: Some(relation.id.clone()),
             })
         })

@@ -142,7 +142,7 @@ pub(crate) fn try_decode_e5(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations.derived(&vertex_id, "point").ok()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -200,7 +200,7 @@ pub(crate) fn try_decode_e5(
             "rolling_ball_jet_carrier",
             Exactness::ByteExact,
         );
-        annotations.derived(&surface_id, "geometry");
+        annotations.derived(&surface_id, "geometry").ok()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -219,7 +219,9 @@ pub(crate) fn try_decode_e5(
         );
         annotations
             .derived(&procedural_id, "surface")
-            .derived(&procedural_id, "definition");
+            .ok()?
+            .derived(&procedural_id, "definition")
+            .ok()?;
         ir.model
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, jet.definition()?, None).ok()?);
@@ -256,12 +258,12 @@ pub(crate) fn try_decode_e5(
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
     let annotations = annotations.build();
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            geometry_transferred: true,
+            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes: Vec::new(),
@@ -1090,14 +1092,16 @@ pub(crate) fn transfer_e5_topology(
         &intersection_plan,
         &surface_curve_plan,
     )
-    .is_none()
+    .is_err()
     {
         return false;
     }
-    if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_none() {
+    if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_err() {
         return false;
     }
-    emit_e5_bodies(ir, annotations, &bodies);
+    if emit_e5_bodies(ir, annotations, &bodies).is_err() {
+        return false;
+    }
     if !emit_e5_faces_loops_coedges(
         ir,
         annotations,
@@ -1513,7 +1517,7 @@ fn emit_e5_curves_and_edges(
     edge_curve_plan: &BTreeMap<u32, (CurveGeometry, [f64; 2])>,
     intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
     surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-) -> Option<()> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let edge_curve_ids: HashMap<u32, CurveId> = edge_curve_plan
         .keys()
         .map(|&record_id| {
@@ -1533,7 +1537,9 @@ fn emit_e5_curves_and_edges(
             "lifted_boundary_curve",
             Exactness::Derived,
         );
-        annotations.derived(&id, "geometry");
+        annotations
+            .derived(&id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: geometry.clone(),
@@ -1552,7 +1558,11 @@ fn emit_e5_curves_and_edges(
             "c1_surface_intersection",
             Exactness::Derived,
         );
-        annotations.derived(&id, "curve").derived(&id, "definition");
+        annotations
+            .derived(&id, "curve")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "definition")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         let _attached = ir.model.add_procedural_curve(
             curve,
             ProceduralCurve::new(
@@ -1562,7 +1572,7 @@ fn emit_e5_curves_and_edges(
                     discontinuity_flag: false,
                 },
             )
-            .ok()?,
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
@@ -1580,7 +1590,11 @@ fn emit_e5_curves_and_edges(
             "parametric_surface_curve",
             Exactness::Derived,
         );
-        annotations.derived(&id, "curve").derived(&id, "definition");
+        annotations
+            .derived(&id, "curve")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "definition")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         let _attached = ir.model.add_procedural_curve(
             curve,
             ProceduralCurve::new(
@@ -1601,12 +1615,12 @@ fn emit_e5_curves_and_edges(
                             *range,
                             std::array::from_fn(|_| Vec::new()),
                         )
-                        .ok()?,
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                         tail: None,
                     },
                 },
             )
-            .ok()?,
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
     for (&record_id, edge) in &topology.edges {
@@ -1620,12 +1634,16 @@ fn emit_e5_curves_and_edges(
             Exactness::ByteExact,
         );
         for field in ["start", "end"] {
-            annotations.derived(&id, field);
+            annotations
+                .derived(&id, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if edge_curve_ids.contains_key(&record_id) {
             annotations
                 .derived(&id, "curve")
-                .derived(&id, "param_range");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.edges.push(Edge {
             id,
@@ -1636,7 +1654,7 @@ fn emit_e5_curves_and_edges(
             tolerance: None,
         });
     }
-    Some(())
+    Ok(())
 }
 
 /// Emits the surface pcurve layer.
@@ -1644,7 +1662,7 @@ fn emit_e5_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
-) -> Option<()> {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (&record_id, (geometry, range)) in pcurve_plan {
         let id = PcurveId::mint(format!("catia:e5:pcurve#{record_id}")).expect("identity grammar");
         annotate(
@@ -1655,20 +1673,25 @@ fn emit_e5_pcurves(
             "surface_parameter_curve",
             Exactness::ByteExact,
         );
-        annotations.derived(&id, "geometry");
+        annotations
+            .derived(&id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
             metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some(*range), None)
-                .ok()?,
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         });
     }
-
-    Some(())
+    Ok(())
 }
 
 /// Emits the body/region/shell layer.
-fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &[E5BodyPlan]) {
+fn emit_e5_bodies(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    bodies: &[E5BodyPlan],
+) -> Result<(), cadmpeg_core::CodecError> {
     for (body_index, plan) in bodies.iter().enumerate() {
         let body_id = BodyId::mint(plan.record_id.map_or_else(
             || format!("catia:e5:body#inferred-{body_index}"),
@@ -1695,7 +1718,9 @@ fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &
         );
         annotations
             .derived(&body_id, "kind")
-            .derived(&body_id, "regions");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&body_id, "regions")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind: plan.kind,
@@ -1719,7 +1744,9 @@ fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &
             );
             annotations
                 .derived(&region_id, "body")
-                .derived(&region_id, "shells");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&region_id, "shells")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.regions.push(Region {
                 id: region_id.clone(),
                 body: body_id.clone(),
@@ -1735,7 +1762,9 @@ fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &
             );
             annotations
                 .derived(&shell_id, "region")
-                .derived(&shell_id, "faces");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&shell_id, "faces")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             ir.model.shells.push(Shell {
                 id: shell_id,
                 region: region_id,
@@ -1750,6 +1779,7 @@ fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &
             });
         }
     }
+    Ok(())
 }
 
 /// Emits the face/loop/coedge layer and the radial-next fixup.
@@ -1789,7 +1819,9 @@ fn emit_e5_faces_loops_coedges(
             Exactness::ByteExact,
         );
         for field in ["shell", "surface", "sense", "loops"] {
-            annotations.derived(&face_id, field);
+            if annotations.derived(&face_id, field).is_err() {
+                return false;
+            }
         }
         ir.model.faces.push(Face {
             id: face_id.clone(),
@@ -1855,10 +1887,14 @@ fn emit_e5_faces_loops_coedges(
                 "09_loop",
                 Exactness::ByteExact,
             );
-            annotations
+            if annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges")
-                .derived(&loop_id, "vertex_uses");
+                .and_then(|builder| builder.derived(&loop_id, "coedges"))
+                .and_then(|builder| builder.derived(&loop_id, "vertex_uses"))
+                .is_err()
+            {
+                return false;
+            }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
             else {
                 return false;
@@ -1891,7 +1927,9 @@ fn emit_e5_faces_loops_coedges(
                     Exactness::ByteExact,
                 );
                 for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
-                    annotations.derived(&id, field);
+                    if annotations.derived(&id, field).is_err() {
+                        return false;
+                    }
                 }
                 let arena_index = ir.model.coedges.len();
                 coedges_by_edge
@@ -2910,7 +2948,6 @@ mod route_tests {
             edges.insert(
                 edge_ref,
                 E5Edge {
-                    record_id: edge_ref,
                     support: 0,
                     start_vertex,
                     end_vertex,
@@ -2989,7 +3026,6 @@ mod route_tests {
                 (
                     10,
                     E5Edge {
-                        record_id: 10,
                         support: 0,
                         start_vertex: 1,
                         end_vertex: 2,
@@ -3001,7 +3037,6 @@ mod route_tests {
                 (
                     11,
                     E5Edge {
-                        record_id: 11,
                         support: 0,
                         start_vertex: 1,
                         end_vertex: 3,
@@ -3135,7 +3170,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 1,
                 E5Edge {
-                    record_id: 1,
                     support: 0,
                     start_vertex: 0,
                     end_vertex: 0,
@@ -3149,7 +3183,6 @@ mod route_tests {
                 (
                     10,
                     E5Bounds {
-                        record_id: 10,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 1.0,
@@ -3160,7 +3193,6 @@ mod route_tests {
                 (
                     11,
                     E5Bounds {
-                        record_id: 11,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 1.0,
@@ -3215,7 +3247,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3237,7 +3268,6 @@ mod route_tests {
                 (
                     500,
                     E5Bounds {
-                        record_id: 500,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 0.0,
@@ -3248,7 +3278,6 @@ mod route_tests {
                 (
                     501,
                     E5Bounds {
-                        record_id: 501,
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: 0.0,
@@ -3260,7 +3289,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Boundary(20),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3312,7 +3340,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3326,7 +3353,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3407,7 +3433,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 200,
                 E5Edge {
-                    record_id: 200,
                     support: 300,
                     start_vertex: 400,
                     end_vertex: 401,
@@ -3442,7 +3467,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    record_id: 300,
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3493,7 +3517,6 @@ mod route_tests {
             edges: BTreeMap::from([(
                 20,
                 E5Edge {
-                    record_id: 20,
                     support: 40,
                     start_vertex: 10,
                     end_vertex: 11,
@@ -3515,7 +3538,6 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 40,
                 E5CurveSupport {
-                    record_id: 40,
                     kind: E5CurveSupportKind::Boundary(30),
                     mode: 0,
                     range: [0.0, 1.0],
@@ -3607,8 +3629,7 @@ mod route_tests {
                 orientation_hint: None,
             }],
         };
-        let edge = |record_id| E5Edge {
-            record_id,
+        let edge = || E5Edge {
             support: 20,
             start_vertex: 30,
             end_vertex: 31,
@@ -3621,7 +3642,7 @@ mod route_tests {
             faces,
             edges: edges
                 .into_iter()
-                .map(|record_id| (record_id, edge(record_id)))
+                .map(|record_id| (record_id, edge()))
                 .collect(),
             pcurves: BTreeMap::new(),
             bounds: BTreeMap::new(),

@@ -5,7 +5,7 @@ use sha2::Sha256;
 use std::fmt::Write as _;
 
 /// Stable hash of neutral sketch records.
-pub fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
+pub(crate) fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
     hash_debug(&(
         &ir.model.sketches,
         &ir.model.sketch_entities,
@@ -16,12 +16,12 @@ pub fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
 }
 
 /// Stable hash of neutral sketch constraints.
-pub fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> String {
+pub(crate) fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> String {
     hash_debug(&ir.model.sketch_constraints)
 }
 
 /// Stable hash of retained native feature-input lanes.
-pub fn lane_hash(native: &crate::native::SldprtNative) -> String {
+pub(crate) fn lane_hash(native: &crate::native::SldprtNative) -> String {
     hash_debug(&native.feature_input_lanes)
 }
 

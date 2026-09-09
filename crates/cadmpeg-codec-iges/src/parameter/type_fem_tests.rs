@@ -22,7 +22,7 @@ fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntr
         view: 0,
         transform: 0,
         label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
+        status: SourceStatus::from_codes([0, 0, 0, 0]),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -163,13 +163,16 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end
                     && groups_for_candidate(&record, &directory, *candidate)
-                        .is_some_and(|groups| groups.fully_valid())
+                        .is_some_and(|groups| groups.fully_valid().is_some())
             }),
             "Type {entity_type} Form {form}"
         );
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count(), 1);
+        assert_eq!(
+            analysis.candidate_count(&record, super::entity_primary_end(&record, &directory)),
+            1
+        );
         assert_eq!(analysis.valid_candidate_count(), 1);
         let groups = analysis.groups().expect("FEM table boundary");
         assert_eq!(groups.token_start, expected_end);

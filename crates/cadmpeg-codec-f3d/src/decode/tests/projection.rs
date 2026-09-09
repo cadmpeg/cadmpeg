@@ -23,8 +23,8 @@ use crate::native::F3dNative;
 use crate::records::feature::DesignParameterScope;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignFeatureTimeline, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
-    DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+    DesignFeatureTimeline, DesignParameterCompanion, DesignParameterOwner, DesignSketchPlacement,
+    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 
 #[test]
@@ -59,7 +59,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .expect("active face operand"),
     );
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
@@ -129,8 +129,8 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     use cadmpeg_ir::assets::AssetId;
     use cadmpeg_ir::tessellation::TessellationTextureAssignment;
 
-    let first = AssetId::mint("asset:first").expect("identity grammar");
-    let second = AssetId::mint("asset:second").expect("identity grammar");
+    let first = AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar");
+    let second = AssetId::mint("synthetic:test:id#asset:second").expect("identity grammar");
     let textures = [
         ("resource:first".into(), first.clone()),
         ("resource:second".into(), second.clone()),
@@ -152,7 +152,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             },
             TessellationTextureAssignment {
                 source_id: Some("resource:third".into()),
-                texture: AssetId::mint("asset:first").expect("identity grammar"),
+                texture: AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar"),
                 triangles: vec![3],
             },
         ]
@@ -162,7 +162,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             Some(&[2]),
             &[(
                 "resource:only".into(),
-                AssetId::mint("asset:only").expect("identity grammar")
+                AssetId::mint("synthetic:test:id#asset:only").expect("identity grammar")
             )],
             1,
         ),
@@ -270,7 +270,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
         };
     let sketch_profile = serde_json::json!({
         "kind": "sketch_profiles",
-        "value": {"sketch": "sketch:1", "profiles": [0]}
+        "value": {"sketch": "test:model:sketch#1", "profiles": [0]}
     });
     let profile_start = serde_json::json!({"kind": "profile_plane"});
     let blind = serde_json::json!({"kind": "blind", "length": 10.0});
@@ -449,7 +449,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     };
 
     assert!(!feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "sketch", "value": "sketch:1"}),
+        serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
     )));
     assert!(feature_definition_is_incomplete(&base_flange(
         serde_json::json!({"kind": "native", "value": "native:profile"}),
@@ -590,7 +590,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         "definition": "sweep",
         "section": {
             "kind": "profile",
-            "value": {"kind": "sketch", "value": "sketch:section"}
+            "value": {"kind": "sketch", "value": "test:model:sketch#section"}
         },
         "path": {"kind": "edges", "value": ["test:model:edge#path"]},
         "mode": {"mode": "solid", "op": "join"}
@@ -645,7 +645,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let revolve = definition(serde_json::json!({
         "definition": "revolve",
         "construction": {
-            "profile": {"kind": "sketch", "value": "sketch:profile"},
+            "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
@@ -756,7 +756,7 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_offset_plane",
-            "reference": "feature:plane",
+            "reference": "test:model:feature#plane",
             "distance": 5.0
         }),
     )));
@@ -885,16 +885,16 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         "sections": [
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [2, 3]}
             },
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{
             "kind": "spatial_sketch_curves",
-            "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
+            "value": {"sketch": "test:model:spatial-sketch#1", "curves": ["test:model:spatial-entity#curve"]}
         }]},
         "op": "join"
     }))
@@ -907,7 +907,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
             {"kind": "native", "value": "native:profile"},
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{"kind": "native", "value": "native:guide"}]},
@@ -960,16 +960,24 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         },
         native_ref: None,
     };
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:1",
+        Some("EdgeFlange"),
+        "native-a",
+    ));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:2",
+        Some("EdgeFlange"),
+        "native-b",
+    ));
     ir.model
         .features
-        .push(feature("feature:1", Some("EdgeFlange"), "native-a"));
-    ir.model
-        .features
-        .push(feature("feature:2", Some("EdgeFlange"), "native-b"));
-    ir.model.features.push(feature("feature:3", None, "Hem"));
-    ir.model
-        .features
-        .push(feature("feature:4", Some("Canvas"), "Canvas"));
+        .push(feature("synthetic:test:id#feature:3", None, "Hem"));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:4",
+        Some("Canvas"),
+        "Canvas",
+    ));
 
     assert_eq!(
         incomplete_feature_families(&ir),
@@ -1041,19 +1049,22 @@ fn split_body_requires_resolved_target_and_tool_selections() {
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
-    native.design_body_bindings.push(DesignBodyBinding {
-        id: "f3d:design:body-binding#0".into(),
-        stream: "Design/BulkStream.dat".into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 0,
-        asm_body_key_offset: 0,
-        entity_suffix: 1,
-        entity_suffix_offset: 8,
-        blob_name: "BREP.snapshot.smb".into(),
-        blob_name_offset: 16,
-        body: None,
-    });
+    native.design_body_bindings.push(
+        DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+            id: "f3d:design:body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap(),
+    );
 
     assert_eq!(
         design_projection_gaps(&ir, &native).unresolved_body_bindings,
@@ -1103,23 +1114,26 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
 fn design_projection_gaps_count_each_retained_selection_family() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("constraint".into()),
-        sketch: SketchId("sketch".into()),
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "dimension".into(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: None,
-            operands: Vec::new(),
-        },
+        id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(),
+        sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "dimension".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: vec![SketchEntityId::mint("synthetic:test:id#entity").unwrap()],
+                parameter: None,
+                operands: Vec::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -1132,18 +1146,18 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         native_ref: Some("native:sketch-relation".into()),
     });
     let mut native_dimension = ir.model.sketch_constraints[0].clone();
-    native_dimension.id = SketchConstraintId("dimension".into());
+    native_dimension.id = SketchConstraintId::mint("synthetic:test:id#dimension").unwrap();
     native_dimension.native_ref = Some("native:dimension-companion".into());
     ir.model.sketch_constraints.push(native_dimension);
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "extrude",
+            "id": "synthetic:test:id#extrude",
             "ordinal": 0,
             "definition": {
                 "definition": "extrude",
                 "profile": {
                     "kind": "sketch_selection",
-                    "value": {"sketch": "sketch", "selections": ["native:profile"]}
+                    "value": {"sketch": "synthetic:test:id#sketch", "selections": ["native:profile"]}
                 },
                 "start": {"kind": "profile_plane"},
                 "extent": {
@@ -1162,7 +1176,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "sweep",
+            "id": "synthetic:test:id#sweep",
             "ordinal": 1,
             "definition": {
                 "definition": "sweep",
@@ -1178,7 +1192,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "fillet",
+            "id": "synthetic:test:id#fillet",
             "ordinal": 2,
             "definition": {
                 "definition": "fillet",
@@ -1213,7 +1227,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "suppressed-fillet",
+            "id": "synthetic:test:id#suppressed-fillet",
             "ordinal": 2,
             "suppressed": true,
             "definition": {
@@ -1228,7 +1242,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "native-feature",
+            "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
             "definition": {
                 "definition": "native",
@@ -1241,7 +1255,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "unresolved-pattern",
+            "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
             "definition": {
                 "definition": "pattern",
@@ -1275,23 +1289,29 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
     });
-    native.sketch_points.push(SketchPoint {
-        id: "native:sketch-point".into(),
-        record_index: 11,
-        owner_reference: Some(1),
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            1,
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, 0.0),
-    });
+    native.sketch_points.push(
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: "native:sketch-point".into(),
+            record_index: 11,
+            owner_reference: Some(1),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                1,
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap(),
+    );
     native.sketch_curve_identities.push(SketchCurveIdentity {
         id: "native:sketch-curve".into(),
         record_index: 12,
@@ -1300,7 +1320,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 1,
+        primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
         geometry: None,
     });
@@ -1333,34 +1353,37 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     });
-    native.design_parameters.push(DesignParameter {
-        id: "f3d:test:design-parameter#2".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        record_index: 2,
-        source_ordinal: 2,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(3),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "1 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:test:design-parameter#2".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            record_index: 2,
+            source_ordinal: 2,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(3),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "1 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "native-unit".into(),
-            offset: Some(0),
-        }),
-        name: "d2".into(),
-        name_offset: 0,
-        evaluated_value: 0.1,
-        evaluated_value_offset: 0,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "native-unit".into(),
+                offset: Some(70),
+            }),
+            name: "d2".into(),
+            name_offset: 80,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 90,
+        })
+        .unwrap(),
+    );
     native.design_parameter_scopes.push(DesignParameterScope {
         id: "native:unprojected-scope".into(),
         byte_offset: 0,
@@ -1437,9 +1460,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "frame": {
                 "member_count_offset": 0,
                 "opaque_index": 1,
-                "opaque_index_offset": 0,
+                "opaque_index_offset": 18,
                 "opaque_scalar": 1.0,
-                "opaque_scalar_offset": 0,
+                "opaque_scalar_offset": 22,
                 "variant": false
             },
             "role": 0x10_0000_0000u64,
@@ -1478,29 +1501,31 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.sketch_curve_identities[0].owner_reference = Some(1);
 
     ir.model.sketches.push(Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("native:sketch-placement".into()),
     });
     for (id, native_ref) in [
-        ("point", "native:sketch-point"),
-        ("curve", "native:sketch-curve"),
+        ("synthetic:test:id#point", "native:sketch-point"),
+        ("synthetic:test:id#curve", "native:sketch-curve"),
     ] {
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId(id.into()),
-                SketchId("sketch".into()),
-                SketchGeometry::Point {
+                SketchEntityId::mint(id).unwrap(),
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(native_ref.into())),
         );
@@ -1512,7 +1537,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     ir.model.parameters.push(
         serde_json::from_value(serde_json::json!({
-            "id": "parameter-2",
+            "id": "synthetic:test:id#parameter-2",
             "ordinal": 2,
             "name": "d2",
             "expression": "1 mm",
@@ -1568,7 +1593,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .iter()
         .map(|scope| {
             serde_json::from_value(serde_json::json!({
-                "id": format!("feature-{}", scope.record_index),
+                "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
                 "definition": {
                     "definition": "native",
@@ -1618,8 +1643,9 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     successor.history_state_id = Some(9);
     successor.previous_history_state_id = Some(8);
     let scopes = vec![successor, internal, predecessor];
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -1632,12 +1658,12 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(2).unwrap(),
+    )
+    .unwrap();
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -1679,49 +1705,55 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let stream = "f3d:test/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let mut native = F3dNative::default();
-    native.design_parameters.push(DesignParameter {
-        id: format!("{stream}:design-parameter#10"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 10,
-        source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(20),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 22,
-            }),
-        )
-        .unwrap(),
-        expression: "5 mm".into(),
-        expression_offset: 40,
-        source_kind_offset: 60,
+    native.design_parameters.push(
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#28"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 28,
+            source_ordinal: 0,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(29),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "5 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(90),
-        }),
-        name: "d1".into(),
-        name_offset: 100,
-        evaluated_value: 0.5,
-        evaluated_value_offset: 110,
-    });
-    native.design_parameter_owners.push(DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#20"),
-        byte_offset: 120,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 20,
-        scope_record_index: 1,
-        local_ordinal: 0,
-        evaluated_value: 0.5,
-        evaluated_value_offset: 160,
-        parameter_record_index: 10,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 30,
-    });
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(90),
+            }),
+            name: "d1".into(),
+            name_offset: 100,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 110,
+        })
+        .unwrap(),
+    );
+    native.design_parameter_owners.push(
+        DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#29"),
+            byte_offset: 120,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 29,
+            scope_record_index: 1,
+            local_ordinal: 0,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 160,
+            parameter_record_index: 28,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 30,
+        })
+        .unwrap(),
+    );
     native
         .design_parameter_companions
         .push(DesignParameterCompanion {
@@ -1729,7 +1761,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             byte_offset: 220,
             class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
             record_index: 30,
-            owner_record_index: 20,
+            owner_record_index: 29,
             timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
             timestamp_micros_offset: 262,
             payload_byte_offset: 278,
@@ -1743,7 +1775,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             "sketch": "f3d:model:sketch#1",
             "definition": {
                 "kind": "distance",
-                "entities": [],
+                "entities": ["f3d:model:sketch-entity#first", "f3d:model:sketch-entity#second"],
                 "parameter": "f3d:model:parameter#1"
             },
             "native_ref": format!("{stream}:design-parameter-companion#30")
@@ -1862,18 +1894,8 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     let body = ir.model.bodies[0].id.clone();
     let first_face = ir.model.faces[0].id.clone();
     let second_face = ir.model.faces[1].id.clone();
-    let direct = Color {
-        r: 0.9,
-        g: 0.8,
-        b: 0.7,
-        a: 1.0,
-    };
-    let material = Color {
-        r: 0.1,
-        g: 0.2,
-        b: 0.3,
-        a: 1.0,
-    };
+    let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
+    let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     ir.model.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),

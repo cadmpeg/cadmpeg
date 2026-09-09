@@ -711,6 +711,7 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
 #[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
+        .into_events()
         .records
         .remove(0);
     let mut expected = crate::test_support::record(29, 40);
@@ -738,7 +739,12 @@ fn deltas_intersection_normalizes_during_full_record_merge() {
     let intersections = crate::topology::composite_curves(&merged);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
-    assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
+    assert_eq!(
+        intersections[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 7, 20, 21, 22, 23]
+    );
 }
 
 #[test]
@@ -817,7 +823,12 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     );
     let curves = crate::topology::intersection_data_curves(&stream);
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].references, [6, 6, 1, 1, 1, 1]);
+    assert_eq!(
+        curves[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 6, 1, 1, 1, 1]
+    );
 
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[record_offset..record_end]
@@ -1368,7 +1379,7 @@ fn deltas_walks_complete_type_70_records() {
 #[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
-    let record = crate::deltas::walk(&stream).records.remove(0);
+    let record = crate::deltas::walk(&stream).into_events().records.remove(0);
     assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
         crate::topology::offset_surfaces(&record.canonical_bytes)[0]
@@ -1834,3 +1845,50 @@ fn merged_result_preserves_tombstone_accounting() {
     }
 }
 mod reference_and_tombstone_packets;
+
+#[test]
+fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
+    let stream = [0, 29, 0, 11, 0, 1, 0, 1];
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
+    assert_eq!(census.bytes_decoded(), 6 + 4);
+    assert_eq!(census.covered_spans(), vec![(0, stream.len())]);
+}
+
+#[test]
+fn census_accumulator_differs_from_coverage_on_overlapping_events() {
+    let stream = deltas_intersection_curve_stream();
+    let census = crate::deltas::walk(&stream);
+    let record = census
+        .records
+        .iter()
+        .find(|record| record.offset == 145)
+        .unwrap();
+    let trailer = census.terminal_null_references.unwrap();
+    assert_eq!(record.end, 175);
+    assert_eq!((trailer.offset(), trailer.end()), (167, 175));
+    assert_eq!(census.covered_spans(), vec![(67, 175)]);
+    assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
+    assert_ne!(census.bytes_decoded(), 175 - 67);
+
+    for stream in [
+        two_support_ext11_charted_intersection_curve_stream(false),
+        two_support_ext11_charted_intersection_curve_stream(true),
+        partial_ext11_charted_intersection_curve_stream(),
+    ] {
+        let deltas = ext11_intersection_deltas(&stream);
+        let census = crate::deltas::walk(&deltas);
+        let record = census
+            .records
+            .iter()
+            .find(|record| record.offset == 371)
+            .unwrap();
+        let tail = &census.term_use_numeric_tails[0];
+        assert_eq!(record.end, 444);
+        assert_eq!((tail.offset(), tail.end()), (371, 435));
+        assert_eq!(census.covered_spans(), vec![(67, 444)]);
+        assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
+        assert_ne!(census.bytes_decoded(), 444 - 67);
+    }
+}

@@ -2,7 +2,6 @@
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
 use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
-use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
 };
@@ -10,6 +9,7 @@ use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
@@ -37,14 +37,18 @@ pub(in super::super) fn blind_extrusion_from_carriers(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let first = carriers.first()?;
     let first_start = *first.starts.first()?;
-    let direction = normalized(first.vector)?;
+    let direction = normalize(first.vector)?;
     let length = first.vector.into_iter().fold(0.0_f64, f64::hypot);
     (length.is_finite() && length > 0.0).then_some(())?;
     let coordinate_scale = carriers
         .iter()
         .flat_map(|carrier| carrier.starts.iter().flatten().copied())
         .chain(planes.iter().flat_map(|(origin, _)| *origin))
-        .chain(transform.into_iter().flat_map(|transform| transform.origin))
+        .chain(
+            transform
+                .into_iter()
+                .flat_map(crate::placement::FeatureSectionTransform::origin),
+        )
         .map(f64::abs)
         .fold(length.max(1.0), f64::max);
     let tolerance = EPS_COORDINATE_AGREEMENT * coordinate_scale;
@@ -84,7 +88,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     let cap_stations = planes
         .iter()
         .map(|(origin, normal)| {
-            let normal = normalized(*normal)?;
+            let normal = normalize(*normal)?;
             let alignment = dot(normal, direction).abs();
             if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
                 Some(Some(dot(*origin, direction)))
@@ -109,7 +113,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     }
     let reverse = if has_opposed_carrier {
         if let Some(transform) = transform {
-            let transform_station = dot(transform.origin, direction);
+            let transform_station = dot(transform.origin(), direction);
             if (transform_station - start_station).abs() <= tolerance {
                 false
             } else if (transform_station - end_station).abs() <= tolerance {
@@ -142,9 +146,9 @@ pub(in super::super) fn blind_extrusion_from_carriers(
         (direction, start_station, end_station)
     };
     if let Some(transform) = transform {
-        let normal = normalized(transform.normal)?;
+        let normal = transform.normal();
         ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT
-            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
+            && (dot(transform.origin(), direction) - start_station).abs() <= tolerance)
             .then_some(())?;
     }
     let unique_stations = unique_stations
@@ -182,25 +186,30 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
+    enum CylinderExtentSurface {
+        Plane,
+        Carrier,
+    }
     let rows = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()
-        && rows.iter().all(|row| {
-            matches!(
-                row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Cylinder
-            )
-        }))
-    .then_some(())?;
+        .map(|row| {
+            let kind = match row.kind {
+                crate::surface::SurfaceKind::Plane => CylinderExtentSurface::Plane,
+                crate::surface::SurfaceKind::Cylinder => CylinderExtentSurface::Carrier,
+                _ => return None,
+            };
+            Some((row, kind))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!rows.is_empty()).then_some(())?;
 
     let local_planes = placed_planes(scan);
     let mut frames = Vec::new();
     let mut planes = Vec::new();
-    for row in rows {
+    for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -211,8 +220,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        match row.kind {
-            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+        match kind {
+            CylinderExtentSurface::Plane => match surfaces.as_slice() {
                 [] => {
                     if let Some(plane) = local_planes.get(&row.id) {
                         planes.push((plane.origin, plane.normal));
@@ -235,7 +244,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                 }
                 _ => return None,
             },
-            crate::surface::SurfaceKind::Cylinder => {
+            CylinderExtentSurface::Carrier => {
                 match surfaces.as_slice() {
                     [Surface {
                         geometry: SurfaceGeometry::Unknown { .. },
@@ -252,29 +261,29 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         )?;
                         let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
-                        let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                        let frame_axis = normalized(frame.axis)?;
+                        let transferred_axis = normalize([axis.x, axis.y, axis.z])?;
+                        let frame_axis = normalize(frame.axis())?;
                         let scale = transferred_origin
                             .into_iter()
-                            .chain(frame.origin)
+                            .chain(frame.origin())
                             .map(f64::abs)
                             .fold(1.0, f64::max);
-                        (transferred_origin
-                            .into_iter()
-                            .zip(frame.origin)
-                            .all(|(left, right)| {
+                        (transferred_origin.into_iter().zip(frame.origin()).all(
+                            |(left, right)| {
                                 (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale
-                            })
-                            && transferred_axis.into_iter().zip(frame_axis).all(
-                                |(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE,
-                            ))
+                            },
+                        ) && transferred_axis
+                            .into_iter()
+                            .zip(frame_axis)
+                            .all(|(left, right)| {
+                                (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
+                            }))
                         .then_some(())?;
                         frames.push(frame);
                     }
                     _ => return None,
                 }
             }
-            _ => unreachable!("surface family checked above"),
         }
     }
     let carriers = frames
@@ -288,24 +297,21 @@ pub(in super::super) fn bounded_cylinder_span(
     frame: crate::surface::PositionalCylinderFrame,
     planes: &[([f64; 3], [f64; 3])],
 ) -> Option<ExtrusionCarrierSpan> {
-    let axis = normalized(frame.axis)?;
-    let vector = match frame.length {
-        Some(length) => {
-            (length.is_finite() && length > 0.0).then_some(())?;
-            axis.map(|component| component * length)
-        }
+    let axis = normalize(frame.axis())?;
+    let vector = match frame.length() {
+        Some(length) => axis.map(|component| component * length),
         None => {
             let scale = planes
                 .iter()
                 .flat_map(|(origin, _)| *origin)
-                .chain(frame.origin)
+                .chain(frame.origin())
                 .map(f64::abs)
                 .fold(1.0, f64::max);
             let tolerance = EPS_COORDINATE_AGREEMENT * scale;
-            let start_station = dot(frame.origin, axis);
+            let start_station = dot(frame.origin(), axis);
             let mut terminal_offsets = Vec::new();
             for (origin, normal) in planes {
-                let normal = normalized(*normal)?;
+                let normal = normalize(*normal)?;
                 let alignment = dot(normal, axis).abs();
                 if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
                     let offset = dot(*origin, axis) - start_station;
@@ -327,7 +333,7 @@ pub(in super::super) fn bounded_cylinder_span(
         }
     };
     Some(ExtrusionCarrierSpan {
-        starts: vec![frame.origin],
+        starts: vec![frame.origin()],
         vector,
     })
 }
@@ -431,24 +437,30 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
+    enum TranslationExtentSurface {
+        Plane,
+        Carrier,
+    }
     let rows = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()
-        && rows.iter().all(|row| {
-            matches!(
-                row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion(_)
-            )
-        }))
-    .then_some(())?;
+        .map(|row| {
+            let kind = match row.kind {
+                crate::surface::SurfaceKind::Plane => TranslationExtentSurface::Plane,
+                crate::surface::SurfaceKind::Extrusion(_) => TranslationExtentSurface::Carrier,
+                _ => return None,
+            };
+            Some((row, kind))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!rows.is_empty()).then_some(())?;
+
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
     let local_planes = placed_planes(scan);
-    for row in rows {
+    for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -459,8 +471,8 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        match row.kind {
-            crate::surface::SurfaceKind::Plane => {
+        match kind {
+            TranslationExtentSurface::Plane => {
                 let plane = match surfaces.as_slice() {
                     []
                     | [Surface {
@@ -477,7 +489,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     planes.push((plane.origin, plane.normal));
                 }
             }
-            crate::surface::SurfaceKind::Extrusion(_) => match surfaces.as_slice() {
+            TranslationExtentSurface::Carrier => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
                     geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -489,7 +501,6 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                 }] => {}
                 _ => return None,
             },
-            _ => unreachable!("surface family checked above"),
         }
     }
     blind_extrusion_from_carriers(&carriers, &planes, transform)
@@ -633,7 +644,7 @@ pub(in super::super) fn rectilinear_extent_from_section_plane(
     station_tolerance: f64,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
-    let section_normal = normalized(section_normal)?;
+    let section_normal = normalize(section_normal)?;
     (dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL).then_some(())?;
     let planes = family.stations.iter().map(|station| {
         (
@@ -809,7 +820,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     let [(vector, length)] = candidates.as_slice() else {
         return None;
     };
-    let direction = normalized(*vector)?;
+    let direction = normalize(*vector)?;
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
@@ -829,8 +840,8 @@ pub(in super::super) fn directed_blind_extrusion_span(
     length: f64,
 ) -> Option<ExtrusionSpan> {
     (length.is_finite() && length > 0.0).then_some(())?;
-    let profile_direction = normalized(profile_direction)?;
-    let extrusion_direction = normalized(extrusion_direction)?;
+    let profile_direction = normalize(profile_direction)?;
+    let extrusion_direction = normalize(extrusion_direction)?;
     let alignment = dot(profile_direction, extrusion_direction);
     (alignment.abs() >= 1.0 - EPS_COORDINATE_AGREEMENT).then_some(())?;
     Some(if alignment.is_sign_positive() {
@@ -876,7 +887,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
     else {
         return None;
     };
-    directed_blind_extrusion_span(transform.normal, direction, length.0)
+    directed_blind_extrusion_span(transform.normal(), direction, length.0)
 }
 
 pub(in super::super) fn resolved_feature_extrusion_span(
@@ -890,7 +901,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
             feature_plane_equations(scan, ir, feature_id)
-                .and_then(|planes| extrusion_span(transform.origin, transform.normal, planes))
+                .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes))
         })
         .or_else(|| {
             generated_cap_plane_extent(scan, ir, feature_id).and_then(|(extent, direction)| {

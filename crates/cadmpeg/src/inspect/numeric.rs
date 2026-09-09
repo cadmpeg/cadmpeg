@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset argument parsing and fixed-width scalar reads.
 
-use clap::{Args, ValueEnum};
+use clap::ValueEnum;
 
 use cadmpeg_core::bytes::assemble_u64_le;
 
@@ -53,21 +53,6 @@ impl Endian {
             Self::Le => "le",
             Self::Be => "be",
         }
-    }
-}
-
-/// Byte-order selection.
-#[derive(Debug, Clone, Args)]
-pub struct EndianArgs {
-    /// Byte order; defaults to little-endian.
-    #[arg(long = "endian", value_enum)]
-    endian: Option<Endian>,
-}
-
-impl EndianArgs {
-    /// Returns the selected byte order, defaulting to little-endian.
-    pub fn mode(&self) -> Endian {
-        self.endian.unwrap_or(Endian::Le)
     }
 }
 

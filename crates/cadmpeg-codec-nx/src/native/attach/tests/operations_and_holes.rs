@@ -787,25 +787,26 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let annotation = super::text_semantic_annotation("nx:text#1", 7, &["plate label", "Arial"])
-        .expect("valid text annotation");
-    assert_eq!(annotation.object, "nx:text#1");
+    let annotation =
+        super::text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
+            .expect("valid text annotation");
+    assert_eq!(annotation.object, "nx:test:text#1");
     assert_eq!(
         annotation.kind,
         cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
     );
     assert_eq!(annotation.text, ["plate label"]);
     assert_eq!(annotation.parameters["font_family"], "Arial");
-    assert_eq!(annotation.native_ref, "nx:text#1");
+    assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
-    let empty = super::text_semantic_annotation("nx:text#empty", 8, &["", ""])
+    let empty = super::text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
         .expect("empty text fields remain a valid annotation");
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
     assert!(
-        super::text_semantic_annotation("nx:text#2", 0, &["ambiguous", "Arial", "extra"],)
+        super::text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
             .is_none()
     );
 }
@@ -1362,7 +1363,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let provisional = FeatureId::mint("initial-bodies").expect("identity grammar");
+    let provisional =
+        FeatureId::mint("synthetic:test:id#initial-bodies").expect("identity grammar");
     let mut history = BodyWriterHistory::default();
     history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
@@ -1380,7 +1382,8 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::NewBody
     );
 
-    let fallback_prior = FeatureId::mint("fallback-prior-feature").expect("identity grammar");
+    let fallback_prior =
+        FeatureId::mint("synthetic:test:id#fallback-prior-feature").expect("identity grammar");
     let mut fallback_history = BodyWriterHistory::default();
     fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
     assert_eq!(
@@ -1397,7 +1400,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::Unresolved
     );
 
-    let prior = FeatureId::mint("prior-feature").expect("identity grammar");
+    let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
     history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
     assert_eq!(
         super::new_body_boolean_op(&super::NewBodyEvidence {
@@ -1426,7 +1429,8 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::Unresolved
     );
 
-    let offset_prior = FeatureId::mint("offset-prior-feature").expect("identity grammar");
+    let offset_prior =
+        FeatureId::mint("synthetic:test:id#offset-prior-feature").expect("identity grammar");
     let mut offset_history = BodyWriterHistory::default();
     offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
     assert_eq!(

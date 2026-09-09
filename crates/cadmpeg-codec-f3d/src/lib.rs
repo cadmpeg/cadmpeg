@@ -147,6 +147,7 @@ impl F3dCodec {
         ir: &CadIr,
         data: &[u8],
         writer: &mut dyn Write,
+        notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
         let expected = ir
             .source
@@ -154,7 +155,7 @@ impl F3dCodec {
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
         if decode::document_local_sha256(ir) != *expected {
-            writer::patch::write_semantic(ir, data, writer)?;
+            writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;

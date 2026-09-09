@@ -2,6 +2,7 @@
 //! Simple drilled-hole recipes, envelopes, and dimension matching.
 
 use crate::decode::axis::Axis;
+use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::HoleForm;
@@ -12,7 +13,7 @@ use crate::container::ContainerScan;
 use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
-use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch::approximately_equal;
 use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
@@ -435,27 +436,22 @@ pub fn simple_drilled_axis_placement_from_frames(
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
     let first = *frames.first()?;
-    let axis = normalized(first.axis)?;
+    let axis = normalize(first.axis())?;
     let coordinate_scale = frames
         .iter()
-        .flat_map(|frame| frame.origin)
+        .flat_map(crate::surface::PositionalCylinderFrame::origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    (diameter.is_finite() && diameter > 0.0 && first.origin.into_iter().all(f64::is_finite))
-        .then_some(())?;
+    (diameter.is_finite() && diameter > 0.0).then_some(())?;
     let radius = 0.5 * diameter;
     frames
         .iter()
         .all(|frame| {
-            let Some(candidate_axis) = normalized(frame.axis) else {
+            let Some(candidate_axis) = normalize(frame.axis()) else {
                 return false;
             };
-            let radius_scale = frame.radius.abs().max(radius.abs()).max(1.0);
-            if !frame.origin.into_iter().all(f64::is_finite)
-                || !frame.radius.is_finite()
-                || frame.radius <= 0.0
-                || (frame.radius - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale
-            {
+            let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);
+            if (frame.radius() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
                 return false;
             }
             let alignment = axis
@@ -466,8 +462,9 @@ pub fn simple_drilled_axis_placement_from_frames(
             if alignment.abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                 return false;
             }
-            let delta =
-                std::array::from_fn::<_, 3, _>(|index| frame.origin[index] - first.origin[index]);
+            let delta = std::array::from_fn::<_, 3, _>(|index| {
+                frame.origin()[index] - first.origin()[index]
+            });
             let axial_delta = delta
                 .into_iter()
                 .zip(axis)
@@ -483,7 +480,7 @@ pub fn simple_drilled_axis_placement_from_frames(
                 <= EPS_COORDINATE_AGREEMENT * coordinate_scale
         })
         .then_some(cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(first.origin[0], first.origin[1], first.origin[2]),
+            origin: Point3::new(first.origin()[0], first.origin()[1], first.origin()[2]),
             axis: Vector3::new(axis[0], axis[1], axis[2]),
         })
 }
@@ -491,10 +488,44 @@ pub fn simple_drilled_axis_placement_from_frames(
 #[derive(Debug, Clone, Copy)]
 pub struct DrilledHoleEnvelopeLayout {
     pub corners: [[[f64; 3]; 2]; 2],
-    pub intervals: [[[f64; 2]; 3]; 2],
     pub axis: Axis,
-    pub axial_delta: f64,
-    pub scale: f64,
+    diameter: f64,
+    depth: f64,
+}
+
+impl DrilledHoleEnvelopeLayout {
+    fn intervals(&self) -> [[[f64; 2]; 3]; 2] {
+        envelope_intervals(self.corners)
+    }
+
+    fn scale(&self) -> f64 {
+        envelope_scale(&self.corners, self.diameter, self.depth)
+    }
+
+    fn axial_delta(&self) -> f64 {
+        self.corners[0][1][self.axis.index()] - self.corners[0][0][self.axis.index()]
+    }
+}
+
+fn envelope_intervals(corners: [[[f64; 3]; 2]; 2]) -> [[[f64; 2]; 3]; 2] {
+    corners.map(|patch| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            [
+                patch[0][axis].min(patch[1][axis]),
+                patch[0][axis].max(patch[1][axis]),
+            ]
+        })
+    })
+}
+
+fn envelope_scale(corners: &[[[f64; 3]; 2]; 2], diameter: f64, depth: f64) -> f64 {
+    corners
+        .iter()
+        .flatten()
+        .flatten()
+        .chain([&diameter, &depth])
+        .map(|value| value.abs())
+        .fold(1.0, f64::max)
 }
 
 pub fn drilled_hole_envelope_layout(
@@ -508,24 +539,11 @@ pub fn drilled_hole_envelope_layout(
         .flatten()
         .all(|value| value.is_finite())
         .then_some(())?;
-    let scale = corners
-        .iter()
-        .flatten()
-        .flatten()
-        .chain([&diameter, &depth])
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
+    let scale = envelope_scale(&corners, diameter, depth);
     (diameter > EPS_DIAMETER_NONZERO * scale && depth > EPS_DIAMETER_NONZERO * scale)
         .then_some(())?;
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
-    let intervals = corners.map(|patch| {
-        std::array::from_fn::<_, 3, _>(|axis| {
-            [
-                patch[0][axis].min(patch[1][axis]),
-                patch[0][axis].max(patch[1][axis]),
-            ]
-        })
-    });
+    let intervals = envelope_intervals(corners);
     let shared = |axis: Axis| {
         close(intervals[0][axis.index()][0], intervals[1][axis.index()][0])
             && close(intervals[0][axis.index()][1], intervals[1][axis.index()][1])
@@ -546,10 +564,9 @@ pub fn drilled_hole_envelope_layout(
         .then_some(())?;
     Some(DrilledHoleEnvelopeLayout {
         corners,
-        intervals,
         axis: *axis,
-        axial_delta: axial_deltas[0],
-        scale,
+        diameter,
+        depth,
     })
 }
 
@@ -558,36 +575,36 @@ pub fn drilled_hole_layout_close(
     left: f64,
     right: f64,
 ) -> bool {
-    (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * layout.scale
+    (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * layout.scale()
 }
 
 pub fn drilled_hole_layout_shared(layout: &DrilledHoleEnvelopeLayout, axis: Axis) -> bool {
     drilled_hole_layout_close(
         layout,
-        layout.intervals[0][axis.index()][0],
-        layout.intervals[1][axis.index()][0],
+        layout.intervals()[0][axis.index()][0],
+        layout.intervals()[1][axis.index()][0],
     ) && drilled_hole_layout_close(
         layout,
-        layout.intervals[0][axis.index()][1],
-        layout.intervals[1][axis.index()][1],
+        layout.intervals()[0][axis.index()][1],
+        layout.intervals()[1][axis.index()][1],
     )
 }
 
 pub fn drilled_hole_layout_adjacent(layout: &DrilledHoleEnvelopeLayout, axis: Axis) -> bool {
     drilled_hole_layout_close(
         layout,
-        layout.intervals[0][axis.index()][1],
-        layout.intervals[1][axis.index()][0],
+        layout.intervals()[0][axis.index()][1],
+        layout.intervals()[1][axis.index()][0],
     ) || drilled_hole_layout_close(
         layout,
-        layout.intervals[1][axis.index()][1],
-        layout.intervals[0][axis.index()][0],
+        layout.intervals()[1][axis.index()][1],
+        layout.intervals()[0][axis.index()][0],
     )
 }
 
 pub fn drilled_hole_layout_span(layout: &DrilledHoleEnvelopeLayout, axis: Axis) -> f64 {
-    layout.intervals[0][axis.index()][1].max(layout.intervals[1][axis.index()][1])
-        - layout.intervals[0][axis.index()][0].min(layout.intervals[1][axis.index()][0])
+    layout.intervals()[0][axis.index()][1].max(layout.intervals()[1][axis.index()][1])
+        - layout.intervals()[0][axis.index()][0].min(layout.intervals()[1][axis.index()][0])
 }
 
 pub fn drilled_hole_layout_placement(
@@ -603,7 +620,7 @@ pub fn drilled_hole_layout_placement(
         position[radial_axis.index()] = coordinate;
     }
     let mut direction = [0.0; 3];
-    direction[layout.axis.index()] = layout.axial_delta.signum();
+    direction[layout.axis.index()] = layout.axial_delta().signum();
     (
         Point3::new(position[0], position[1], position[2]),
         Vector3::new(direction[0], direction[1], direction[2]),
@@ -632,17 +649,17 @@ pub fn drilled_hole_placement_from_corner_envelopes(
     {
         let radial_coordinates = layout.axis.complement().map(|radial_axis| {
             f64::midpoint(
-                layout.intervals[0][radial_axis.index()][0]
-                    .min(layout.intervals[1][radial_axis.index()][0]),
-                layout.intervals[0][radial_axis.index()][1]
-                    .max(layout.intervals[1][radial_axis.index()][1]),
+                layout.intervals()[0][radial_axis.index()][0]
+                    .min(layout.intervals()[1][radial_axis.index()][0]),
+                layout.intervals()[0][radial_axis.index()][1]
+                    .max(layout.intervals()[1][radial_axis.index()][1]),
             )
         });
         return Some(drilled_hole_layout_placement(&layout, radial_coordinates));
     }
 
     let nonshared_bounds = layout.axis.complement().map(|radial_axis| {
-        let intervals = layout.intervals.map(|patch| patch[radial_axis.index()]);
+        let intervals = layout.intervals().map(|patch| patch[radial_axis.index()]);
         match (
             drilled_hole_layout_close(&layout, intervals[0][0], intervals[1][0]),
             drilled_hole_layout_close(&layout, intervals[0][1], intervals[1][1]),
@@ -672,8 +689,8 @@ pub fn drilled_hole_placement_from_corner_envelopes(
             f64::midpoint(first, second)
         } else {
             f64::midpoint(
-                layout.intervals[0][radial_axis.index()][0],
-                layout.intervals[0][radial_axis.index()][1],
+                layout.intervals()[0][radial_axis.index()][0],
+                layout.intervals()[0][radial_axis.index()][1],
             )
         }
     });
@@ -749,8 +766,8 @@ pub fn clipped_drilled_hole_placement_from_cone_points(
             f64::midpoint(cone_points[0][axis.index()], cone_points[1][axis.index()])
         } else {
             f64::midpoint(
-                layout.intervals[0][axis.index()][0].min(layout.intervals[1][axis.index()][0]),
-                layout.intervals[0][axis.index()][1].max(layout.intervals[1][axis.index()][1]),
+                layout.intervals()[0][axis.index()][0].min(layout.intervals()[1][axis.index()][0]),
+                layout.intervals()[0][axis.index()][1].max(layout.intervals()[1][axis.index()][1]),
             )
         }
     });

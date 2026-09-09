@@ -15,6 +15,20 @@ pub fn stored_unit_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
     (length.is_finite() && (length - 1.0).abs() <= EPS_ORTHO).then_some(vector)
 }
 
+enum RevolutionRadii {
+    Cylinder(f64),
+    Cone {
+        radius: f64,
+        ratio: f64,
+        half_angle: f64,
+    },
+    Sphere(f64),
+    Torus {
+        major_radius: f64,
+        minor_radius: f64,
+    },
+}
+
 pub fn surface_of_revolution_parallel_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
@@ -48,46 +62,50 @@ pub fn surface_of_revolution_parallel_pcurve(
         }
         _ => return None,
     };
-    let (origin, axis, ref_direction) = match surface {
-        SurfaceGeometry::Cylinder(cylinder_surface)
-            if {
-                let (_, _, _, radius) = cylinder_surface.parts();
-                radius.is_finite() && *radius > 0.0
-            } =>
-        {
-            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
-            (*origin, *axis, *ref_direction)
+    let (origin, axis, ref_direction, radial) = match surface {
+        SurfaceGeometry::Cylinder(cylinder) if *cylinder.parts().3 > 0.0 => {
+            let (origin, axis, ref_direction, radius) = cylinder.parts();
+            (
+                *origin,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Cylinder(*radius),
+            )
         }
-        SurfaceGeometry::Cone(cone_surface)
-            if {
-                let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
-                radius.is_finite() && ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite()
-            } =>
-        {
-            let (origin, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
+        SurfaceGeometry::Cone(cone) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone.parts();
             half_angle.tan().is_finite().then_some(())?;
-            (*origin, *axis, *ref_direction)
+            (
+                *origin,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Cone {
+                    radius: *radius,
+                    ratio: *ratio,
+                    half_angle: *half_angle,
+                },
+            )
         }
-        SurfaceGeometry::Sphere(sphere_surface)
-            if {
-                let (_, _, _, radius) = sphere_surface.parts();
-                radius.is_finite() && *radius > 0.0
-            } =>
-        {
-            let (center, axis, ref_direction, _) = sphere_surface.parts();
-            (*center, *axis, *ref_direction)
+        SurfaceGeometry::Sphere(sphere) if *sphere.parts().3 > 0.0 => {
+            let (center, axis, ref_direction, radius) = sphere.parts();
+            (
+                *center,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Sphere(*radius),
+            )
         }
-        SurfaceGeometry::Torus(torus_surface)
-            if {
-                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
-                major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
-            } =>
-        {
-            let (center, axis, ref_direction, _, _) = torus_surface.parts();
-            (*center, *axis, *ref_direction)
+        SurfaceGeometry::Torus(torus) if *torus.parts().3 > 0.0 && *torus.parts().4 > 0.0 => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus.parts();
+            (
+                *center,
+                *axis,
+                *ref_direction,
+                RevolutionRadii::Torus {
+                    major_radius: *major_radius,
+                    minor_radius: *minor_radius,
+                },
+            )
         }
         _ => return None,
     };
@@ -110,18 +128,17 @@ pub fn surface_of_revolution_parallel_pcurve(
     let center_radial = std::array::from_fn::<_, 3, _>(|index| {
         center_relative[index] - axial * surface_axis[index]
     });
-    let (v, surface_radii) = match surface {
-        SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (_, _, _, radius) = cylinder_surface.parts();
-            (axial, [*radius, *radius])
-        }
-        SurfaceGeometry::Cone(cone_surface) => {
-            let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
+    let (v, surface_radii) = match radial {
+        RevolutionRadii::Cylinder(radius) => (axial, [radius, radius]),
+        RevolutionRadii::Cone {
+            radius,
+            ratio,
+            half_angle,
+        } => {
             let local_radius = radius + axial * half_angle.tan();
             (axial, [local_radius, local_radius * ratio])
         }
-        SurfaceGeometry::Sphere(sphere_surface) => {
-            let (_, _, _, radius) = sphere_surface.parts();
+        RevolutionRadii::Sphere(radius) => {
             ((conic_radii[0] - conic_radii[1]).abs()
                 <= EPS_AGREE * conic_radii.into_iter().fold(1.0, f64::max))
             .then_some(())?;
@@ -133,8 +150,10 @@ pub fn surface_of_revolution_parallel_pcurve(
             let ring = radius * polar.cos();
             (polar, [ring, ring])
         }
-        SurfaceGeometry::Torus(torus_surface) => {
-            let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+        RevolutionRadii::Torus {
+            major_radius,
+            minor_radius,
+        } => {
             ((conic_radii[0] - conic_radii[1]).abs()
                 <= EPS_AGREE * conic_radii.into_iter().fold(1.0, f64::max))
             .then_some(())?;
@@ -152,7 +171,6 @@ pub fn surface_of_revolution_parallel_pcurve(
             };
             (candidate.0, [candidate.1, candidate.1])
         }
-        _ => unreachable!(),
     };
     let scale = surface_radii
         .into_iter()

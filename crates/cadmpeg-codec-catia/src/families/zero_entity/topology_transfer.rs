@@ -20,7 +20,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::assemble::annotate;
 use crate::nurbs::canonical_model_curve_range;
 
-use super::records::{ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
+use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
 use super::topology::{
     endpoint_locus_candidates_with_budget, zero_entity_endpoint_pair_candidates_with_budget,
 };
@@ -236,19 +236,19 @@ pub(crate) fn transfer_closed_face_topology(
                                 canonical_model_curve_range(&geometry, parameter_range)
                             {
                                 curve.geometry = geometry;
-                                annotations.derived(&occurrence.curve, "geometry");
+                                annotations.derived(&occurrence.curve, "geometry").ok()?;
                                 (occurrence.curve.clone(), parameter_range)
                             } else {
                                 curve.geometry =
                                     cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
-                                annotations.derived(&occurrence.curve, "geometry");
+                                annotations.derived(&occurrence.curve, "geometry").ok()?;
                                 (occurrence.curve.clone(), parameter_range)
                             }
                         }
                         None => {
                             curve.geometry =
                                 cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
-                            annotations.derived(&occurrence.curve, "geometry");
+                            annotations.derived(&occurrence.curve, "geometry").ok()?;
                             (occurrence.curve.clone(), parameter_range)
                         }
                     }
@@ -273,7 +273,7 @@ pub(crate) fn transfer_closed_face_topology(
                 ) {
                     curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None };
                 }
-                annotations.derived(&occurrence.curve, "geometry");
+                annotations.derived(&occurrence.curve, "geometry").ok()?;
                 (occurrence.curve.clone(), parameter_range)
             };
         occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
@@ -312,9 +312,9 @@ pub(crate) fn transfer_closed_face_topology(
     let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
     for (vertex_index, locus) in endpoint_loci.iter().enumerate() {
         for &(edge_index, endpoint_index) in &locus.incident_endpoint_pair_endpoints {
-            let endpoint_index = usize::from(endpoint_index);
+            let edge_index = edge_index.ordinal();
+            let endpoint_index = usize::from(u8::from(endpoint_index));
             if edge_index >= edge_candidates.len()
-                || endpoint_index >= 2
                 || vertex_for_endpoint
                     .insert((edge_index, endpoint_index), vertex_index)
                     .is_some()
@@ -377,7 +377,7 @@ pub(crate) fn transfer_closed_face_topology(
             "endpoint_locus_point",
             Exactness::Inferred,
         );
-        annotations.derived(&point_ids[index], "position");
+        annotations.derived(&point_ids[index], "position").ok()?;
         ir.model.points.push(Point {
             id: point_ids[index].clone(),
             position: locus.representative_point,
@@ -391,11 +391,16 @@ pub(crate) fn transfer_closed_face_topology(
             "endpoint_locus_vertex",
             Exactness::Inferred,
         );
-        annotations.derived(&vertex_ids[index], "point");
+        annotations.derived(&vertex_ids[index], "point").ok()?;
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
-            tolerance: Some(MODEL_POINT_TOLERANCE),
+            tolerance: Some(
+                const {
+                    cadmpeg_ir::units::PositiveScalar::new(MODEL_POINT_TOLERANCE)
+                        .expect("positive finite tolerance")
+                },
+            ),
         });
     }
 
@@ -411,7 +416,7 @@ pub(crate) fn transfer_closed_face_topology(
             "topology_pcurve",
             Exactness::Derived,
         );
-        annotations.derived(&pcurve.id, "geometry");
+        annotations.derived(&pcurve.id, "geometry").ok()?;
         ir.model.pcurves.push(Pcurve {
             id: pcurve.id.clone(),
             geometry: pcurve.geometry.clone(),
@@ -476,10 +481,13 @@ pub(crate) fn transfer_closed_face_topology(
         );
         annotations
             .derived(&edge_id, "curve")
+            .ok()?
             .derived(&edge_id, "start")
-            .derived(&edge_id, "end");
+            .ok()?
+            .derived(&edge_id, "end")
+            .ok()?;
         if param_range.is_some() {
-            annotations.derived(&edge_id, "param_range");
+            annotations.derived(&edge_id, "param_range").ok()?;
         }
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
@@ -487,7 +495,12 @@ pub(crate) fn transfer_closed_face_topology(
             start: oriented_vertices[0].clone(),
             end: oriented_vertices[1].clone(),
             param_range,
-            tolerance: Some(MODEL_POINT_TOLERANCE),
+            tolerance: Some(
+                const {
+                    cadmpeg_ir::units::PositiveScalar::new(MODEL_POINT_TOLERANCE)
+                        .expect("positive finite tolerance")
+                },
+            ),
         });
         edge_ids.push(edge_id);
         debug_assert_eq!(edge_index, edge_ids.len() - 1);
@@ -514,9 +527,9 @@ pub(crate) fn transfer_closed_face_topology(
             .and_then(|loops| loops.first())?
             .loop_class
         {
-            0x41 => Sense::Forward,
-            0xc1 => Sense::Reversed,
-            _ => return None,
+            ZeroEntityLoopClass::Outer41 => Sense::Forward,
+            ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
+            ZeroEntityLoopClass::Bound50 => return None,
         };
         annotate(
             annotations,
@@ -528,9 +541,13 @@ pub(crate) fn transfer_closed_face_topology(
         );
         annotations
             .derived(face_id, "shell")
+            .ok()?
             .derived(face_id, "surface")
+            .ok()?
             .derived(face_id, "sense")
-            .derived(face_id, "loops");
+            .ok()?
+            .derived(face_id, "loops")
+            .ok()?;
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -582,8 +599,11 @@ pub(crate) fn transfer_closed_face_topology(
             );
             annotations
                 .derived(loop_id, "face")
+                .ok()?
                 .derived(loop_id, "coedges")
-                .derived(loop_id, "vertex_uses");
+                .ok()?
+                .derived(loop_id, "vertex_uses")
+                .ok()?;
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses).ok()?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -651,16 +671,25 @@ pub(crate) fn transfer_closed_face_topology(
                 );
                 annotations
                     .derived(&coedge_id, "owner_loop")
+                    .ok()?
                     .derived(&coedge_id, "edge")
+                    .ok()?
                     .derived(&coedge_id, "next")
+                    .ok()?
                     .derived(&coedge_id, "previous")
+                    .ok()?
                     .derived(&coedge_id, "radial_next")
+                    .ok()?
                     .derived(&coedge_id, "sense")
-                    .derived(&coedge_id, "pcurves");
+                    .ok()?
+                    .derived(&coedge_id, "pcurves")
+                    .ok()?;
                 if use_curve.is_some() {
                     annotations
                         .derived(&coedge_id, "use_curve")
-                        .derived(&coedge_id, "use_curve_parameter_range");
+                        .ok()?
+                        .derived(&coedge_id, "use_curve_parameter_range")
+                        .ok()?;
                 }
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
@@ -701,7 +730,9 @@ pub(crate) fn transfer_closed_face_topology(
     );
     annotations
         .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
+        .ok()?
+        .derived(&body_id, "regions")
+        .ok()?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Solid,
@@ -721,7 +752,9 @@ pub(crate) fn transfer_closed_face_topology(
     );
     annotations
         .derived(&region_id, "body")
-        .derived(&region_id, "shells");
+        .ok()?
+        .derived(&region_id, "shells")
+        .ok()?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
@@ -737,7 +770,9 @@ pub(crate) fn transfer_closed_face_topology(
     );
     annotations
         .derived(&shell_id, "region")
-        .derived(&shell_id, "faces");
+        .ok()?
+        .derived(&shell_id, "faces")
+        .ok()?;
     ir.model.shells.push(Shell {
         id: shell_id,
         region: region_id,
@@ -907,12 +942,16 @@ mod tests {
                     pos: face_ordinal as usize + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
-                    member_ids: vec![6, 5, 4],
+                    members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(
+                        7,
+                        1,
+                        std::num::NonZeroUsize::new(3).expect("nonzero loop member count"),
+                    )
+                    .expect("admitted loop member run"),
                     typed_references: vec![1, 2, 3],
                     support_record_ordinals,
-                    terminal_id: 7,
-                    gap: 1,
-                    loop_class: 0x41,
+
+                    loop_class: ZeroEntityLoopClass::Outer41,
                     forward_senses: vec![true, true, true],
                     oriented_model_endpoints: order
                         .into_iter()

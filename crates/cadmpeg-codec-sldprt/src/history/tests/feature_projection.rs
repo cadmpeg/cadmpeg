@@ -29,7 +29,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId::mint("configuration")
+            id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
                 .expect("identity grammar"),
             ordinal: 0,
             active: true,
@@ -1686,12 +1686,12 @@ fn profile_consumers_require_a_regeneration_profile() {
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
 
     assert!(!bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId::mint("sketch-feature").expect("identity grammar"),
+        &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
     ));
@@ -1705,7 +1705,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId::mint("sketch-feature").expect("identity grammar"),
+        &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
     ));

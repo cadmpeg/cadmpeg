@@ -5,29 +5,31 @@ use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 #[test]
 fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, offset: u64, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(format!("native:{offset}")))
     };
     let mut entities = vec![
-        point("start", 100, Point2::new(1.0, 0.0)),
-        point("center", 200, Point2::new(0.0, 0.0)),
-        point("end", 300, Point2::new(0.0, 1.0)),
+        point("synthetic:test:id#start", 100, Point2::new(1.0, 0.0)),
+        point("synthetic:test:id#center", 200, Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#end", 300, Point2::new(0.0, 1.0)),
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId("arc".into()),
+            SketchEntityId::mint("synthetic:test:id#arc").unwrap(),
             sketch,
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("native:400".into()))
         .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
@@ -37,12 +39,13 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
 
     assert_eq!(
         entities[3].geometry,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        }
+        })
+        .unwrap()
     );
 }
 
@@ -78,18 +81,18 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         payload[start + 4..start + 8].fill(0xff);
     }
 
-    let input = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let input = |id: &str, offset, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let inputs = [
         input("center-left", 100, SketchInputKind::Point, Some([0.0, 0.0])),
@@ -120,18 +123,18 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         input("slot", slot_offset as u64, SketchInputKind::Point, None),
     ];
     let markers = inputs.iter().collect::<Vec<_>>();
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#model:{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
     let curve = |id: &str, geometry, endpoint_refs: &[&str]| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(format!("model:{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#model:{id}")).unwrap(),
             sketch.clone(),
             geometry,
         )
@@ -147,35 +150,40 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         point("right-bottom", Point2::new(2.0, -1.0)),
         curve(
             "top",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(2.0, 1.0),
-            },
+            })
+            .unwrap(),
             &["left-top", "right-top"],
         ),
         curve(
             "bottom",
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, -1.0),
                 end: Point2::new(2.0, -1.0),
-            },
+            })
+            .unwrap(),
             &["left-bottom", "right-bottom"],
         ),
         curve(
             "right",
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(2.0, 0.0),
                 radius: Length(1.0),
                 start_angle: Angle(std::f64::consts::FRAC_PI_2),
                 end_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            },
+            })
+            .unwrap(),
             &["right-top", "right-bottom"],
         ),
         curve(
             "left",
-            SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:2".into(),
-            },
+            SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
             &[],
         ),
     ];
@@ -186,9 +194,8 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         entities[9].endpoint_refs,
         ["left-top".to_string(), "left-bottom".to_string()]
     );
-    assert!(matches!(
-        entities[9].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[9].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
             radius: Length(radius),
             ..
