@@ -27,11 +27,14 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 subset.clone(),
                 ProceduralCurve::try_new(
                     ProceduralCurveId::mint("test:model:procedural-curve#subset").unwrap(),
-                    ProceduralCurveDefinition::Subset {
-                        source: source.clone(),
-                        parameter_range: [2.0, 5.0],
-                        sense,
-                    },
+                    ProceduralCurveDefinition::Subset(
+                        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                            source.clone(),
+                            [2.0, 5.0],
+                            sense,
+                        )
+                        .unwrap(),
+                    ),
                     None,
                 )
                 .unwrap(),

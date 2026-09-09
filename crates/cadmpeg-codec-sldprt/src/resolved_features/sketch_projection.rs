@@ -123,7 +123,9 @@ fn project_brep(
         else {
             continue;
         };
-        let (origin, normal, u_axis) = plane_surface.parts();
+        let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
         let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
         )) else {

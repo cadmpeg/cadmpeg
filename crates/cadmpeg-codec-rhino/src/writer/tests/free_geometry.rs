@@ -362,7 +362,10 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         let actual = &decoded.ir().model.tessellations[0];
         assert_eq!(actual.vertices(), ir.model.tessellations[0].vertices());
         assert_eq!(actual.triangles(), ir.model.tessellations[0].triangles());
-        assert_eq!(actual.normals(), ir.model.tessellations[0].normals());
+        assert_eq!(
+            actual.vertex_normals(),
+            ir.model.tessellations[0].vertex_normals()
+        );
     }
 
     ir.model.tessellations[0] = ir.model.tessellations[0]

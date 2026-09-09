@@ -21,7 +21,13 @@ fn curve(radius: f64) -> HelixCurveConstruction {
 #[test]
 fn helix_curve_admission_rejects_the_validator_numeric_states() {
     let valid = curve(1.0);
-    let (&range, &center, &major, &minor, &pitch, &apex, &axis) = valid.parts();
+    let range = *valid.angle_range();
+    let center = *valid.center();
+    let major = *valid.major();
+    let minor = *valid.minor();
+    let pitch = *valid.pitch();
+    let apex = valid.apex_factor();
+    let axis = *valid.axis();
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(
             HelixCurveConstruction::try_new(range, center, major, minor, pitch, apex, axis)
@@ -80,11 +86,11 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
         assert_eq!(value, old);
     }
     value.reverse_parameterization();
-    assert_eq!(*value.parts().0, [-1.0, 0.0]);
+    assert_eq!(*value.angle_range(), [-1.0, 0.0]);
     value.reverse_parameterization();
     assert_eq!(value, old);
     value.try_scale_lengths(2.0).unwrap();
-    assert_eq!(*value.parts().2, Vector3::new(2.0, 0.0, 0.0));
+    assert_eq!(*value.major(), Vector3::new(2.0, 0.0, 0.0));
     let mut huge = curve(1.0e200);
     let old = huge;
     assert!(huge.try_scale_lengths(1.0e200).is_err());

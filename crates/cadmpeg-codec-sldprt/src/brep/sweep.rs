@@ -141,18 +141,19 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
         CurveGeometry::Nurbs(curve) => return Some(curve.clone()),
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            (*center, *axis, *ref_direction, *radius, *radius)
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
+            (*center, *axis, *ref_direction, radius, radius)
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
-            (
-                *center,
-                *axis,
-                *major_direction,
-                *major_radius,
-                *minor_radius,
-            )
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
+            (*center, *axis, *major_direction, major_radius, minor_radius)
         }
         _ => return None,
     };

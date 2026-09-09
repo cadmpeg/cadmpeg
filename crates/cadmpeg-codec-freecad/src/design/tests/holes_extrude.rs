@@ -3,9 +3,12 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
-    InnerWireTaper, Length, LinearTermination, PathRef,
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
+        InnerWireTaper, LinearTermination, PathRef,
+    },
+    scalar::Length,
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;

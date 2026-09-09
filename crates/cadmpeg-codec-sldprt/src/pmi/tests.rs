@@ -8,9 +8,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
-use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
-    PmiDimensionSubtype,
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue,
+        PmiDimensionSubtype,
+    },
+    scalar::Length,
 };
 
 use super::*;
@@ -75,8 +78,9 @@ fn empty_subtype_requires_established_count_semantics() {
 fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, Length, PatternKind, PatternTransform,
+    use cadmpeg_ir::{
+        features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternTransform},
+        scalar::Length,
     };
 
     let feature = Feature {
@@ -566,7 +570,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(25.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
@@ -592,7 +596,7 @@ fn decode_extracts_pmi_semantic_dimension() {
             .expect("editable PMI-backed parameter");
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(50.0).unwrap(),
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
         let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
         semantic.precision = 4;
@@ -789,7 +793,7 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         let parameter = &mut ir.model.parameters[0];
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(50.0).unwrap(),
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
 
@@ -841,7 +845,10 @@ fn semantically_distinct_pmi_records_remain_unbound() {
 
 #[test]
 fn ordinate_pmi_dimensions_round_trip_typed_values() {
-    use cadmpeg_ir::features::{Length, ParameterValue, PmiDimensionSubtype};
+    use cadmpeg_ir::{
+        features::{ParameterValue, PmiDimensionSubtype},
+        scalar::Length,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

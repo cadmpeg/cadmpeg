@@ -89,12 +89,15 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
 #[test]
 fn cacheless_sum_surface_adds_independent_curve_parameters() {
     let (ir, surface_id) = direct_surface_fixture(
-        ProceduralSurfaceDefinition::Sum {
-            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
-            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
-            basepoint: Vector3::new(0.5, 1.0, 2.0),
-            revision_form: None,
-        },
+        ProceduralSurfaceDefinition::Sum(
+            crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                CurveId::mint("test:model:entity#first").expect("valid identity"),
+                CurveId::mint("test:model:entity#second").expect("valid identity"),
+                Vector3::new(0.5, 1.0, 2.0),
+                None,
+            )
+            .expect("valid sum"),
+        ),
         "sum",
     );
     let index = crate::index::ModelIndex::new(&ir);

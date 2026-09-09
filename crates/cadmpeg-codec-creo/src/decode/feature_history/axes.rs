@@ -104,23 +104,26 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         };
         match surface.geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (&origin, &axis, _, _) = cylinder_surface.parts();
+                let origin = *cylinder_surface.origin();
+                let axis = *cylinder_surface.axis();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (&origin, &axis, _, _, _, _) = cone_surface.parts();
+                let origin = *cone_surface.origin();
+                let axis = *cone_surface.axis();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let (&center, &axis, _, _, _) = torus_surface.parts();
+                let center = *torus_surface.center();
+                let axis = *torus_surface.axis();
                 axes.push((center, axis));
             }
             SurfaceGeometry::Plane(plane_surface) => {
-                let (_, &normal, _) = plane_surface.parts();
+                let normal = *plane_surface.normal();
                 plane_normals.push(normal);
             }
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let (&center, _, _, _) = sphere_surface.parts();
+                let center = *sphere_surface.center();
                 sphere_centers.push(center);
             }
             _ => return None,

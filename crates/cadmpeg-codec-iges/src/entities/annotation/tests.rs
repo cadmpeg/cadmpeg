@@ -591,11 +591,14 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         0.001
     ));
     if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[1].geometry {
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
         *circle_curve =
-            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, *radius)
+            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
                 .unwrap();
     }
     assert!(!sectioned_area_curves_coplanar(
@@ -672,11 +675,14 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         0.001
     ));
     if let CurveGeometry::Circle(circle_curve) = &mut ir.model.curves[0].geometry {
-        let (center, axis, ref_direction, radius) = circle_curve.parts();
+        let center = circle_curve.center();
+        let axis = circle_curve.axis();
+        let ref_direction = circle_curve.ref_direction();
+        let radius = circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
         *circle_curve =
-            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, *radius)
+            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
                 .unwrap();
     }
     let translated_pattern_plane = Transform::from_rows([

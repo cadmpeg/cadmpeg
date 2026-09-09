@@ -36,74 +36,99 @@ pub fn surface_of_revolution_parallel_pcurve(
     let (center, conic_axis, conic_x, conic_radii) = match geometry {
         CurveGeometry::Circle(circle_curve)
             if {
-                let (_, _, _, radius) = circle_curve.parts();
-                radius.is_finite() && *radius > 0.0
+                let radius = circle_curve.radius();
+                radius.is_finite() && radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
-            (*center, *axis, *ref_direction, [*radius, *radius])
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
+            (*center, *axis, *ref_direction, [radius, radius])
         }
         CurveGeometry::Ellipse(ellipse_curve)
             if {
-                let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+                let major_radius = ellipse_curve.major_radius();
+                let minor_radius = ellipse_curve.minor_radius();
                 major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             (
                 *center,
                 *axis,
                 *major_direction,
-                [*major_radius, *minor_radius],
+                [major_radius, minor_radius],
             )
         }
         _ => return None,
     };
     let (origin, axis, ref_direction, radial) = match surface {
-        SurfaceGeometry::Cylinder(cylinder) if *cylinder.parts().3 > 0.0 => {
-            let (origin, axis, ref_direction, radius) = cylinder.parts();
+        SurfaceGeometry::Cylinder(cylinder) if cylinder.radius() > 0.0 => {
+            let origin = cylinder.origin();
+            let axis = cylinder.axis();
+            let ref_direction = cylinder.ref_direction();
+            let radius = cylinder.radius();
             (
                 *origin,
                 *axis,
                 *ref_direction,
-                RevolutionRadii::Cylinder(*radius),
+                RevolutionRadii::Cylinder(radius),
             )
         }
         SurfaceGeometry::Cone(cone) => {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone.parts();
+            let origin = cone.origin();
+            let axis = cone.axis();
+            let ref_direction = cone.ref_direction();
+            let radius = cone.radius();
+            let ratio = cone.ratio();
+            let half_angle = cone.half_angle();
             half_angle.tan().is_finite().then_some(())?;
             (
                 *origin,
                 *axis,
                 *ref_direction,
                 RevolutionRadii::Cone {
-                    radius: *radius,
-                    ratio: *ratio,
-                    half_angle: *half_angle,
+                    radius,
+                    ratio,
+                    half_angle,
                 },
             )
         }
-        SurfaceGeometry::Sphere(sphere) if *sphere.parts().3 > 0.0 => {
-            let (center, axis, ref_direction, radius) = sphere.parts();
+        SurfaceGeometry::Sphere(sphere) if sphere.radius() > 0.0 => {
+            let center = sphere.center();
+            let axis = sphere.axis();
+            let ref_direction = sphere.ref_direction();
+            let radius = sphere.radius();
             (
                 *center,
                 *axis,
                 *ref_direction,
-                RevolutionRadii::Sphere(*radius),
+                RevolutionRadii::Sphere(radius),
             )
         }
-        SurfaceGeometry::Torus(torus) if *torus.parts().3 > 0.0 && *torus.parts().4 > 0.0 => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus.parts();
+        SurfaceGeometry::Torus(torus)
+            if torus.major_radius() > 0.0 && torus.minor_radius() > 0.0 =>
+        {
+            let center = torus.center();
+            let axis = torus.axis();
+            let ref_direction = torus.ref_direction();
+            let major_radius = torus.major_radius();
+            let minor_radius = torus.minor_radius();
             (
                 *center,
                 *axis,
                 *ref_direction,
                 RevolutionRadii::Torus {
-                    major_radius: *major_radius,
-                    minor_radius: *minor_radius,
+                    major_radius,
+                    minor_radius,
                 },
             )
         }
@@ -213,29 +238,37 @@ pub fn meridian_circle_pcurve(
     let (surface_center, surface_axis, surface_x, major_radius, meridian_radius) = match surface {
         SurfaceGeometry::Sphere(sphere_surface)
             if {
-                let (_, _, _, radius) = sphere_surface.parts();
-                radius.is_finite() && *radius > 0.0
+                let radius = sphere_surface.radius();
+                radius.is_finite() && radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
-            (*center, *axis, *ref_direction, None, *radius)
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
+            (*center, *axis, *ref_direction, None, radius)
         }
         SurfaceGeometry::Torus(torus_surface)
             if {
-                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             (
                 *center,
                 *axis,
                 *ref_direction,
-                Some(*major_radius),
-                *minor_radius,
+                Some(major_radius),
+                minor_radius,
             )
         }
         _ => return None,
@@ -243,8 +276,11 @@ pub fn meridian_circle_pcurve(
     let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
-    let (circle_center, circle_axis, circle_x, circle_radius) = circle_curve.parts();
-    (circle_radius.is_finite() && *circle_radius > 0.0).then_some(())?;
+    let circle_center = circle_curve.center();
+    let circle_axis = circle_curve.axis();
+    let circle_x = circle_curve.ref_direction();
+    let circle_radius = circle_curve.radius();
+    (circle_radius.is_finite() && circle_radius > 0.0).then_some(())?;
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
     (dot(surface_axis, surface_x).abs() <= EPS_ORTHO).then_some(())?;
@@ -305,35 +341,43 @@ pub fn ruled_generator_line_pcurve(
     let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
-    let (line_origin, line_direction) = line_curve.parts();
+    let line_origin = line_curve.origin();
+    let line_direction = line_curve.direction();
     let (surface_origin, surface_axis, surface_x, reference_radius, radius_ratio, radius_slope) =
         match surface {
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if {
-                    let (_, _, _, radius) = cylinder_surface.parts();
-                    radius.is_finite() && *radius > 0.0
+                    let radius = cylinder_surface.radius();
+                    radius.is_finite() && radius > 0.0
                 } =>
             {
-                let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
-                (*origin, *axis, *ref_direction, *radius, 1.0, 0.0)
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.axis();
+                let ref_direction = cylinder_surface.ref_direction();
+                let radius = cylinder_surface.radius();
+                (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
             }
             SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
-                    radius.is_finite()
-                        && ratio.is_finite()
-                        && *ratio > 0.0
-                        && half_angle.is_finite()
+                    let radius = cone_surface.radius();
+                    let ratio = cone_surface.ratio();
+                    let half_angle = cone_surface.half_angle();
+                    radius.is_finite() && ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()
                 } =>
             {
-                let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+                let origin = cone_surface.origin();
+                let axis = cone_surface.axis();
+                let ref_direction = cone_surface.ref_direction();
+                let radius = cone_surface.radius();
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
                 let slope = half_angle.tan();
                 slope.is_finite().then_some((
                     *origin,
                     *axis,
                     *ref_direction,
-                    *radius,
-                    *ratio,
+                    radius,
+                    ratio,
                     slope,
                 ))?
             }

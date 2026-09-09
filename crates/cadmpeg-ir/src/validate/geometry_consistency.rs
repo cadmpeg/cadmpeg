@@ -57,7 +57,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             ..
         } = procedural.definition()
         {
-            let (_, endpoints, tolerance) = intersection.parts();
+            let endpoints = intersection.endpoints();
+            let tolerance = intersection.tolerance();
 
             let evaluated = parameterization
                 .parameter_range()
@@ -73,7 +74,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 continue;
             };
             let mismatch = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
-            if !mismatch.is_finite() || mismatch > *tolerance {
+            if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,
@@ -86,14 +87,13 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             }
             continue;
         }
-        if let crate::geometry::ProceduralCurveDefinition::SurfaceOffset {
-            context,
-            base,
-            base_endpoints,
-            distance: offset,
-            ..
-        } = procedural.definition()
+        if let crate::geometry::ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
+            procedural.definition()
         {
+            let context = definition_payload.context();
+            let base = definition_payload.base();
+            let base_endpoints = definition_payload.base_endpoints();
+            let offset = definition_payload.distance();
             let Some(solved) = curves.get(owner.as_str()) else {
                 continue;
             };
@@ -153,12 +153,24 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             continue;
         }
         let (context, third) = match procedural.definition() {
-            crate::geometry::ProceduralCurveDefinition::Law { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Projection { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
+            crate::geometry::ProceduralCurveDefinition::Law { context, .. } => {
                 (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Intersection { context, .. } => {
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Silhouette(definition_payload) => (
+                std::borrow::Cow::Borrowed(definition_payload.context()),
+                None,
+            ),
+            crate::geometry::ProceduralCurveDefinition::Projection { context, .. } => {
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
+                let context = definition_payload.context();
+                {
+                    (std::borrow::Cow::Borrowed(context), None)
+                }
             }
             crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
                 (std::borrow::Cow::Borrowed(family.context()), None)
@@ -435,7 +447,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .filter(|surface| {
             !matches!(
                 surface.definition(),
-                crate::geometry::ProceduralSurfaceDefinition::Subset { .. }
+                crate::geometry::ProceduralSurfaceDefinition::Subset(_)
             )
         })
         .filter_map(|surface| {
@@ -834,9 +846,7 @@ fn pcurve_parameter_seeds_on_surface(
 }
 
 fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[[f64; 2]; 2]> {
-    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset {
-        parameter_ranges, ..
-    }) = context
+    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset(definition_payload)) = context
         .index
         .ir()
         .model
@@ -852,7 +862,8 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         })
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
+        let parameter_ranges = definition_payload.parameter_ranges();
+        let [[u_start, u_end], [v_start, v_end]] = parameter_ranges;
         let u_span = (u_end - u_start).abs();
         let v_span = (v_end - v_start).abs();
         if u_span.is_finite() && u_span > 0.0 && v_span.is_finite() && v_span > 0.0 {
@@ -906,11 +917,11 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2
 fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, _) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
             Some(*parameter_range)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_geometry_trim_range(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_geometry_trim_range(basis),
@@ -937,7 +948,8 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             if parameter_range[0] < parameter_range[1] {
                 Some(*parameter_range)
             } else {
@@ -945,7 +957,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (_, basis) = offset_pcurve.parts();
+            let basis = offset_pcurve.basis();
             pcurve_parameter_domain(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),

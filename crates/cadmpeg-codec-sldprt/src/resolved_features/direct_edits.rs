@@ -352,7 +352,10 @@ mod tests {
         Feature, FeatureHistory, FeatureInputClass, FeatureInputName, FeatureInputScalar,
         FeatureInputScalarRole,
     };
-    use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::{FaceMotion, FaceSelection, FeatureDefinition},
+        scalar::Length,
+    };
     use std::collections::BTreeMap;
 
     fn move_face_history() -> FeatureHistory {

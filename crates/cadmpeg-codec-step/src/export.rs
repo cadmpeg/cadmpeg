@@ -1190,7 +1190,7 @@ impl<'a> Builder<'a> {
                 }
             };
             if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
             {
                 continue;
             }
@@ -1290,7 +1290,7 @@ impl<'a> Builder<'a> {
                     }
                 };
                 if !is_identity(&transform.rows())
-                    || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                    || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
                 {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1349,7 +1349,7 @@ impl<'a> Builder<'a> {
                 }
             };
             if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
             {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
@@ -1878,7 +1878,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !mesh.corner_normals().is_empty() {
+            if !mesh.per_corner_normals().is_empty() {
                 self.loss(
                     StepLossCode::TessellationCornerNormals,
                     format!(
@@ -1912,7 +1912,8 @@ impl<'a> Builder<'a> {
                     .iter()
                     .flatten()
                     .any(|index| *index as usize >= mesh.vertices().len())
-                || (!mesh.normals().is_empty() && mesh.normals().len() != mesh.vertices().len())
+                || (!mesh.vertex_normals().is_empty()
+                    && mesh.vertex_normals().len() != mesh.vertices().len())
             {
                 self.loss(
                     StepLossCode::TessellationInvalidCardinality,
@@ -1937,12 +1938,12 @@ impl<'a> Builder<'a> {
                     mesh.vertices().len()
                 ),
             );
-            let normals = if mesh.normals().is_empty() {
+            let normals = if mesh.vertex_normals().is_empty() {
                 "$".to_string()
             } else {
                 format!(
                     "({})",
-                    mesh.normals()
+                    mesh.vertex_normals()
                         .iter()
                         .map(|normal| format!(
                             "({},{},{})",
@@ -2590,11 +2591,9 @@ impl<'a> Builder<'a> {
             None => ".U.",
         };
         match definition {
-            ProceduralSurfaceDefinition::LinearSweep {
-                directrix,
-                direction,
-            } => {
-                let directrix = self.emit_curve(directrix.as_str())?;
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                let direction = definition_payload.direction();
+                let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, *direction);
                 let vector = self.emitter.emit(
                     "VECTOR",
@@ -2605,14 +2604,11 @@ impl<'a> Builder<'a> {
                     &format!("'',{directrix},{vector}"),
                 ))
             }
-            ProceduralSurfaceDefinition::AxisRevolution {
-                directrix,
-                axis_origin,
-                axis_direction,
-            } => {
-                let directrix = self.emit_curve(directrix.as_str())?;
-                let origin = geometry::point(&mut self.emitter, *axis_origin);
-                let direction = geometry::direction(&mut self.emitter, *axis_direction);
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
+                let origin = geometry::point(&mut self.emitter, *definition_payload.axis_origin());
+                let direction =
+                    geometry::direction(&mut self.emitter, *definition_payload.axis_direction());
                 let axis = self
                     .emitter
                     .emit("AXIS1_PLACEMENT", &format!("'',{origin},{direction}"));
@@ -2621,27 +2617,27 @@ impl<'a> Builder<'a> {
                         .emit("SURFACE_OF_REVOLUTION", &format!("'',{directrix},{axis}")),
                 )
             }
-            ProceduralSurfaceDefinition::ParallelOffset {
-                support,
-                distance,
-                self_intersect,
-            } => {
-                let support = self.emit_surface(support.as_str())?;
-                Some(self.emitter.emit(
-                    "OFFSET_SURFACE",
-                    &format!(
-                        "'',{support},{},{}",
-                        real(*distance),
-                        logical(*self_intersect)
-                    ),
-                ))
+            ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+                let support = definition_payload.support();
+                let distance = definition_payload.distance();
+                let self_intersect = definition_payload.self_intersect();
+                {
+                    let support = self.emit_surface(support.as_str())?;
+                    Some(self.emitter.emit(
+                        "OFFSET_SURFACE",
+                        &format!(
+                            "'',{support},{},{}",
+                            real(*distance),
+                            logical(*self_intersect)
+                        ),
+                    ))
+                }
             }
-            ProceduralSurfaceDefinition::Subset {
-                support,
-                parameter_ranges,
-                u_sense: Some(u_sense),
-                v_sense: Some(v_sense),
-            } => {
+            ProceduralSurfaceDefinition::Subset(payload) => {
+                let support = payload.support();
+                let parameter_ranges = payload.parameter_ranges();
+                let u_sense = payload.u_sense().as_ref()?;
+                let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
                 Some(self.emitter.emit(
                     "RECTANGULAR_TRIMMED_SURFACE",
@@ -2668,8 +2664,11 @@ impl<'a> Builder<'a> {
                 let SurfaceGeometry::Torus(torus_surface) = solved else {
                     return None;
                 };
-                let (center, axis, ref_direction, major_radius, minor_radius) =
-                    torus_surface.parts();
+                let center = torus_surface.center();
+                let axis = torus_surface.axis();
+                let ref_direction = torus_surface.ref_direction();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 let placement =
                     geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
                 Some(self.emitter.emit(
@@ -2766,26 +2765,27 @@ impl<'a> Builder<'a> {
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
         match definition {
-            ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range: [start, end],
-                sense,
-            } => {
-                let source = self.emit_curve(source.as_str())?;
-                let (start, end) = if *sense {
-                    (*start, *end)
-                } else {
-                    (*end, *start)
-                };
-                Some(self.emitter.emit(
-                    "TRIMMED_CURVE",
-                    &format!(
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let [start, end] = definition_payload.parameter_range();
+                let sense = definition_payload.sense();
+                {
+                    let source = self.emit_curve(source.as_str())?;
+                    let (start, end) = if *sense {
+                        (*start, *end)
+                    } else {
+                        (*end, *start)
+                    };
+                    Some(self.emitter.emit(
+                        "TRIMMED_CURVE",
+                        &format!(
                         "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
                         real(start),
                         real(end),
                         if *sense { ".T." } else { ".F." }
                     ),
-                ))
+                    ))
+                }
             }
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
@@ -2795,26 +2795,27 @@ impl<'a> Builder<'a> {
                         .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
                 )
             }
-            ProceduralCurveDefinition::SpatialOffset {
-                source,
-                distance,
-                reference_direction,
-                self_intersect,
-            } => {
-                let source = self.emit_curve(source.as_str())?;
-                let direction = geometry::direction(&mut self.emitter, *reference_direction);
-                let self_intersect = match self_intersect {
-                    Some(true) => ".T.",
-                    Some(false) => ".F.",
-                    None => ".U.",
-                };
-                Some(self.emitter.emit(
-                    "OFFSET_CURVE_3D",
-                    &format!(
-                        "'',{source},{},{self_intersect},{direction}",
-                        real(*distance)
-                    ),
-                ))
+            ProceduralCurveDefinition::SpatialOffset(definition_payload) => {
+                let source = definition_payload.source();
+                let distance = definition_payload.distance();
+                let reference_direction = definition_payload.reference_direction();
+                let self_intersect = definition_payload.self_intersect();
+                {
+                    let source = self.emit_curve(source.as_str())?;
+                    let direction = geometry::direction(&mut self.emitter, *reference_direction);
+                    let self_intersect = match self_intersect {
+                        Some(true) => ".T.",
+                        Some(false) => ".F.",
+                        None => ".U.",
+                    };
+                    Some(self.emitter.emit(
+                        "OFFSET_CURVE_3D",
+                        &format!(
+                            "'',{source},{},{self_intersect},{direction}",
+                            real(*distance)
+                        ),
+                    ))
+                }
             }
             _ => None,
         }
@@ -3733,13 +3734,14 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|surface| match &surface.geometry {
                 SurfaceGeometry::Sphere(sphere_surface) => {
-                    let (_, _, _, radius) = sphere_surface.parts();
-                    *radius < 0.0
+                    let radius = sphere_surface.radius();
+                    radius < 0.0
                 }
                 SurfaceGeometry::Torus(torus_surface) => {
-                    let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
-                    *major_radius < 0.0
-                        || *minor_radius < 0.0
+                    let major_radius = torus_surface.major_radius();
+                    let minor_radius = torus_surface.minor_radius();
+                    major_radius < 0.0
+                        || minor_radius < 0.0
                         || (minor_radius.abs() > major_radius.abs()
                             && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
                                 self.ir.model.procedural_surface_owner(&procedural.id)
@@ -3773,7 +3775,7 @@ impl<'a> Builder<'a> {
             .filter(|surface| {
                 matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
                 if {
-                    let (_, _, _, _, &ratio, _) = cone_surface.parts();
+                    let ratio = cone_surface.ratio();
                     ratio != 1.0
                 })
             })

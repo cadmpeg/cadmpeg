@@ -59,7 +59,8 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
     let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle")
     };
-    let (_, &axis, &ref_direction, _) = circle_curve.parts();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(dot.abs() < 1.0e-12);
     assert!(result
@@ -67,13 +68,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -101,7 +96,7 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
     let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle");
     };
-    let (_, _, &ref_direction, _) = circle_curve.parts();
+    let ref_direction = *circle_curve.ref_direction();
     assert!((ref_direction.x - 0.8).abs() < 1.0e-12);
     assert!((ref_direction.y + 0.6).abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -130,7 +125,8 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle");
     };
-    let (_, &axis, &ref_direction, _) = circle_curve.parts();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
@@ -163,7 +159,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         let CurveGeometry::Circle(circle_curve) = curve.geometry else {
             panic!("witness carrier is not a circle");
         };
-        let (_, _, &ref_direction, _) = circle_curve.parts();
+        let ref_direction = *circle_curve.ref_direction();
         assert!((ref_direction.x - x).abs() < 1.0e-12);
         assert!((ref_direction.y - y).abs() < 1.0e-12);
         assert!((ref_direction.z - z).abs() < 1.0e-12);
@@ -179,7 +175,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
     let CurveGeometry::Circle(circle_curve) = near_axis.geometry else {
         panic!("near-axis witness carrier is not a circle");
     };
-    let (_, _, &ref_direction, _) = circle_curve.parts();
+    let ref_direction = *circle_curve.ref_direction();
     assert!(ref_direction.y > 0.999_999_999);
 
     let parallel_reference = decoded
@@ -192,7 +188,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
     let CurveGeometry::Circle(circle_curve) = parallel_reference.geometry else {
         panic!("parallel-reference witness carrier is not a circle");
     };
-    let (_, _, &ref_direction, _) = circle_curve.parts();
+    let ref_direction = *circle_curve.ref_direction();
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -242,13 +238,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
-                && matches!(
-                    curve.definition(),
-                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                        parameter_range,
-                        ..
-                    } if *parameter_range == expected
-                )
+                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
@@ -408,15 +398,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && matches!(
-                    surface.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
-                        support,
-                        parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
-                        u_sense: Some(true),
-                        v_sense: Some(true),
-                    } if support.as_str() == "step:data:surface#8"
-                )
+                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss

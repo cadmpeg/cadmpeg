@@ -3,9 +3,12 @@
 
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, FeatureDefinition, PathRef, ProfileRef, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
+use cadmpeg_ir::{
+    features::{
+        AngularTermination, BooleanOp, FeatureDefinition, PathRef, ProfileRef, RevolutionAxis,
+        RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
+    },
+    scalar::Angle,
 };
 use std::collections::HashMap;
 
@@ -33,7 +36,7 @@ pub(crate) fn project_rib(
         .and_then(cadmpeg_ir::features::FeatureDirection3::new);
     let draft = match feature.parameters.get("Draft") {
         Some(value) => parse_angle_rad(value)
-            .and_then(cadmpeg_ir::features::SlopeAngle::new)
+            .and_then(cadmpeg_ir::scalar::SlopeAngle::new)
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
         None => RibDraft::None,
     };
@@ -46,7 +49,7 @@ pub(crate) fn project_rib(
                 .get("Thickness")
                 .or_else(|| feature.parameters.get("D1"))
                 .and_then(|value| parse_positive_length_mm(value))
-                .and_then(cadmpeg_ir::features::PositiveLength::new),
+                .and_then(cadmpeg_ir::scalar::PositiveLength::new),
             side: feature
                 .properties
                 .get("BothSides")
@@ -185,7 +188,7 @@ pub(crate) fn project_sweep(
                 .trim()
                 .parse::<f64>()
                 .ok()
-                .and_then(cadmpeg_ir::features::PositiveReal::new)?,
+                .and_then(cadmpeg_ir::scalar::PositiveReal::new)?,
         ),
         None => None,
     };
@@ -279,7 +282,7 @@ pub(crate) fn project_revolve(
             })
             .and_then(|value| parse_positive_angle_rad(value))
             .or_else(|| ordered_angle(ordinal))
-            .and_then(cadmpeg_ir::features::PositiveAngle::new)
+            .and_then(cadmpeg_ir::scalar::PositiveAngle::new)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {

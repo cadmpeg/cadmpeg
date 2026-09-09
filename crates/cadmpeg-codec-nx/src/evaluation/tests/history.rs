@@ -33,7 +33,7 @@ fn complete_sphere_rederives_a_new_body() {
             FeatureDefinition::Sphere {
                 center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .unwrap(),
-                radius: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
+                radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             },
             vec![body.clone()],
@@ -218,9 +218,9 @@ fn boolean_block_preserves_its_existing_output_body() {
         body.clone(),
         FeatureDefinition::Block {
             dimensions: Some([
-                cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
-                cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
-                cadmpeg_ir::features::PositiveLength::new(0.5).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
             ]),
             placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
             op: BooleanOp::Join,
@@ -243,9 +243,9 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
         body.clone(),
         FeatureDefinition::Block {
             dimensions: Some([
-                cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-                cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
             ]),
             placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
             op: BooleanOp::Unresolved,

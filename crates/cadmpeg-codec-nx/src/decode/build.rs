@@ -428,23 +428,26 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let procedural = ProceduralSurface::try_new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Offset {
+            let procedural =
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     support,
-                    distance: offset.state.distance(),
-                    // OFFSET_SURF status fields do not select parameter direction.
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    offset.state.distance(),
+                    None,
+                    None,
+                    Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
                     ),
-                },
-                cache_fit_tolerance,
-                None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+                )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::try_new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Offset(admitted_payload),
+                        cache_fit_tolerance,
+                        None,
+                    )
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
 
             let _attached = ir
                 .model
@@ -1244,8 +1247,11 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
                 continue;
             }
             match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    used_surfaces.insert(support.clone());
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    {
+                        used_surfaces.insert(support.clone());
+                    }
                 }
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..
@@ -1708,8 +1714,11 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
                 continue;
             }
             match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    surfaces.insert(support.clone());
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    {
+                        surfaces.insert(support.clone());
+                    }
                 }
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..

@@ -6,8 +6,8 @@ use super::axis::SectionAxis;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 use super::super::sketch_ids::sketch_entity_id;

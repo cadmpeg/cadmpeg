@@ -49,7 +49,7 @@ pub(crate) fn plan(
         .model
         .tessellations
         .iter()
-        .flat_map(cadmpeg_ir::tessellation::Tessellation::normals)
+        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
         .any(|normal| {
             f64::from(normal.x as f32) != normal.x
                 || f64::from(normal.y as f32) != normal.y

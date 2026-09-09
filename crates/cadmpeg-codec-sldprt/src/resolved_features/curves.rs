@@ -16,11 +16,14 @@ use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
     SketchId,
+};
+use cadmpeg_ir::{
+    features::FeatureDefinition,
+    scalar::{Angle, Length},
 };
 use std::collections::{HashMap, HashSet};
 

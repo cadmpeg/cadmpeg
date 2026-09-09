@@ -517,7 +517,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::All,
                 spec: ChamferSpec::Distance {
-                    distance: cadmpeg_ir::features::PositiveLength::new(0.25).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
                 },
             }),
             flip_direction: false,
@@ -531,9 +531,9 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::All,
                 radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(0.2).unwrap(),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
                 },
-                tangency_weight: Some(cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()),
+                tangency_weight: Some(cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()),
             }),
         },
     ));
@@ -556,7 +556,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::Unresolved,
                 spec: ChamferSpec::Distance {
-                    distance: cadmpeg_ir::features::PositiveLength::new(0.25).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
                 },
             }),
             flip_direction: false,
@@ -588,7 +588,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
                 .unwrap(),
 
             radius: RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::PositiveLength::new(0.2).unwrap(),
+                radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
             },
         },
         FeatureDefinition::OffsetSurface {
@@ -597,7 +597,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
         },
         FeatureDefinition::Thicken {
             faces: first.clone(),
-            thickness: Some(cadmpeg_ir::features::PositiveLength::new(0.3).unwrap()),
+            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(0.3).unwrap()),
             side: Some(ThickenSide::Forward),
         },
         FeatureDefinition::Draft {
@@ -612,7 +612,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
         },
         FeatureDefinition::ReplaceFace {
@@ -675,7 +675,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         2,
         FeatureDefinition::ExtendSurface {
             faces,
-            distance: Some(cadmpeg_ir::features::PositiveLength::new(0.5).unwrap()),
+            distance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
             method: SurfaceExtension::Natural,
         },
     );

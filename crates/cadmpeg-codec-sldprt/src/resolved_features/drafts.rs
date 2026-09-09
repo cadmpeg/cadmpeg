@@ -656,7 +656,7 @@ mod tests {
                         plane: FaceSelection::Unresolved,
                         pull: None,
                     },
-                    angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+                    angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                     outward: None,
                 },
             ),

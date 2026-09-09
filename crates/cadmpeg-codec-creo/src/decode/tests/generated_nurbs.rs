@@ -28,15 +28,16 @@ use crate::decode::uniqueness::{
 };
 use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, ExtrudeExtent, ExtrudeSide, Length, LinearTermination, ParameterId,
-};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
     SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{ExtrudeExtent, ExtrudeSide, LinearTermination, ParameterId},
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -144,7 +145,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,

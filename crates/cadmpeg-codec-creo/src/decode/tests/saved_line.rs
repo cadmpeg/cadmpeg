@@ -29,9 +29,9 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::feature::definitions::ScalarLane;
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
     SketchId,

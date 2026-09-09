@@ -1113,27 +1113,36 @@ pub(super) fn curve_geometry_coplanar(
         |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             point_valid(*origin) && direction_valid(*direction)
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, _) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction)
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, _, _) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, _) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
             point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, _, _) = hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
             point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             point_valid(*point)
         }
         CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),

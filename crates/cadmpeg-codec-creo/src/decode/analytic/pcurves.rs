@@ -486,16 +486,21 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let SurfaceGeometry::Cone(cone_surface) = geometry else {
         return None;
     };
-    let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle();
     let axis_values = [axis.x, axis.y, axis.z];
     let ref_values = [ref_direction.x, ref_direction.y, ref_direction.z];
     let axis_length = dot(axis_values, axis_values).sqrt();
     let ref_length = dot(ref_values, ref_values).sqrt();
-    if *radius != 0.0
+    if radius != 0.0
         || !ratio.is_finite()
-        || (*ratio - 1.0).abs() > EPS_NEAR_ZERO
+        || (ratio - 1.0).abs() > EPS_NEAR_ZERO
         || !half_angle.is_finite()
-        || !(0.0..std::f64::consts::FRAC_PI_2).contains(half_angle)
+        || !(0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
         || !axis_length.is_finite()
         || (axis_length - 1.0).abs() > EPS_ORTHO
         || !ref_length.is_finite()
@@ -512,9 +517,9 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
             Point3::new(-origin.x, -origin.y, -origin.z),
             Vector3::new(-axis.x, -axis.y, -axis.z),
             *ref_direction,
-            *radius,
-            *ratio,
-            *half_angle,
+            radius,
+            ratio,
+            half_angle,
         )
         .ok()?,
     ))
@@ -1069,7 +1074,10 @@ pub fn linear_pcurve_carrier(
             ))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) if { start[0] == end[0] } => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1094,30 +1102,34 @@ pub fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Cylinder(cylinder_surface)
             if {
-                let (_, _, _, radius) = cylinder_surface.parts();
-                start[1] == end[1] && radius.is_finite() && *radius > 0.0
+                let radius = cylinder_surface.radius();
+                start[1] == end[1] && radius.is_finite() && radius > 0.0
             } =>
         {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
                     offset_point(*origin, *axis, start[1]),
                     *axis,
                     *ref_direction,
-                    *radius,
+                    radius,
                 )
                 .ok()?,
             ))
         }
         SurfaceGeometry::Cone(cone_surface) if { start[0] == end[0] } => {
-            let (_, _, _, _, ratio, half_angle) = cone_surface.parts();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
-            (ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite()).then_some(())?;
+            (ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()).then_some(())?;
             Some(CurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
@@ -1128,11 +1140,16 @@ pub fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Cone(cone_surface)
             if {
-                let (_, _, _, _, ratio, _) = cone_surface.parts();
-                start[1] == end[1] && ratio.is_finite() && *ratio > 0.0
+                let ratio = cone_surface.ratio();
+                start[1] == end[1] && ratio.is_finite() && ratio > 0.0
             } =>
         {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             let local_radius = radius + start[1] * half_angle.tan();
             let first_radius = local_radius.abs();
             let second_radius = (local_radius * ratio).abs();
@@ -1186,11 +1203,14 @@ pub fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Sphere(sphere_surface)
             if {
-                let (_, _, _, radius) = sphere_surface.parts();
-                start[1] == end[1] && radius.is_finite() && *radius > 0.0
+                let radius = sphere_surface.radius();
+                start[1] == end[1] && radius.is_finite() && radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -1204,11 +1224,14 @@ pub fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Sphere(sphere_surface)
             if {
-                let (_, _, _, radius) = sphere_surface.parts();
-                start[0] == end[0] && radius.is_finite() && *radius > 0.0
+                let radius = sphere_surface.radius();
+                start[0] == end[0] && radius.is_finite() && radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1224,21 +1247,26 @@ pub fn linear_pcurve_carrier(
                     *center,
                     Vector3::new(normal[0], normal[1], normal[2]),
                     radial,
-                    *radius,
+                    radius,
                 )
                 .ok()?,
             ))
         }
         SurfaceGeometry::Torus(torus_surface)
             if {
-                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 start[1] == end[1]
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *minor_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
@@ -1252,14 +1280,19 @@ pub fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Torus(torus_surface)
             if {
-                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 start[0] == end[0]
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *minor_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1272,10 +1305,10 @@ pub fn linear_pcurve_carrier(
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
             Some(CurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
-                    offset_point(*center, radial, *major_radius),
+                    offset_point(*center, radial, major_radius),
                     Vector3::new(normal[0], normal[1], normal[2]),
                     radial,
-                    *minor_radius,
+                    minor_radius,
                 )
                 .ok()?,
             ))
@@ -1698,7 +1731,9 @@ pub fn planar_curve_pcurve(
     let SurfaceGeometry::Plane(plane_surface) = surface else {
         return None;
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let origin = [origin.x, origin.y, origin.z];
     let normal = normalize([normal.x, normal.y, normal.z])?;
     let u_axis = normalize([u_axis.x, u_axis.y, u_axis.z])?;
@@ -1730,7 +1765,8 @@ pub fn planar_curve_pcurve(
 
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             let direction = [direction.x, direction.y, direction.z];
             Some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(
@@ -1742,96 +1778,110 @@ pub fn planar_curve_pcurve(
         }
         CurveGeometry::Circle(circle_curve)
             if {
-                let (_, _, _, radius) = circle_curve.parts();
-                radius.is_finite() && *radius > 0.0
+                let radius = circle_curve.radius();
+                radius.is_finite() && radius > 0.0
             } =>
         {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
-                *radius,
+                radius,
             )?;
             Some(PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, *radius)
-                    .ok()?,
+                cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius).ok()?,
             ))
         }
         CurveGeometry::Ellipse(ellipse_curve)
             if {
-                let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+                let major_radius = ellipse_curve.major_radius();
+                let minor_radius = ellipse_curve.minor_radius();
                 major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                major_radius.max(*minor_radius),
+                major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipsePcurve::try_new(
                     center,
                     x_axis,
                     y_axis,
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .ok()?,
             ))
         }
         CurveGeometry::Parabola(parabola_curve)
             if {
-                let (_, _, _, focal_distance) = parabola_curve.parts();
-                focal_distance.is_finite() && *focal_distance > 0.0
+                let focal_distance = parabola_curve.focal_distance();
+                focal_distance.is_finite() && focal_distance > 0.0
             } =>
         {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             let (vertex, x_axis, y_axis) = conic_frame(
                 [vertex.x, vertex.y, vertex.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                *focal_distance,
+                focal_distance,
             )?;
             Some(PcurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaPcurve::try_new(
                     vertex,
                     x_axis,
                     y_axis,
-                    *focal_distance,
+                    focal_distance,
                 )
                 .ok()?,
             ))
         }
         CurveGeometry::Hyperbola(hyperbola_curve)
             if {
-                let (_, _, _, major_radius, minor_radius) = hyperbola_curve.parts();
+                let major_radius = hyperbola_curve.major_radius();
+                let minor_radius = hyperbola_curve.minor_radius();
                 major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
             } =>
         {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                major_radius.max(*minor_radius),
+                major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
                     center,
                     x_axis,
                     y_axis,
-                    *major_radius,
-                    *minor_radius,
+                    major_radius,
+                    minor_radius,
                 )
                 .ok()?,
             ))

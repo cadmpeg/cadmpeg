@@ -1136,7 +1136,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns.get() == 2.5 && construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.25)
+        && construction.turns.get() == 2.5 && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
@@ -1146,7 +1146,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
         && construction.pitch.get() == 0.0 && construction.travel.radial_growth().get() == 2.0
         && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-        && construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.1)
+        && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(result.report().losses.is_empty());
@@ -1485,7 +1485,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
             ("AdditiveHelix", "Tolerance") => assert!(matches!(
                 definition(&result, object),
                 FeatureDefinition::HelicalSweep { construction, .. }
-                    if construction.tolerance.map(cadmpeg_ir::features::PositiveReal::get) == Some(0.1)
+                    if construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
             )),
             ("AdditiveHelix", "AllowMultiFace") => assert!(matches!(
                 definition(&result, object),

@@ -12,93 +12,74 @@ fn source() -> CurveId {
 }
 
 fn subset(range: [f64; 2]) -> ProceduralCurveDefinition {
-    ProceduralCurveDefinition::Subset {
-        source: source(),
-        parameter_range: range,
-        sense: false,
-    }
+    ProceduralCurveDefinition::Subset(
+        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(source(), range, false)
+            .unwrap(),
+    )
 }
 
 #[test]
-fn curve_payload_admission_and_edits_require_finite_ordered_subset_ranges() {
-    let mut curve = ProceduralCurve::try_new(id(), subset([1.0, 1.0]), Some(0.5)).unwrap();
-    let before = curve.clone();
+fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
+    use crate::geometry::curve_payloads::SubsetCurveConstruction;
+    let curve = ProceduralCurve::try_new(id(), subset([1.0, 1.0]), Some(0.5)).unwrap();
     let wire = serde_json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["parameter_range"],
         serde_json::json!([1.0, 1.0])
     );
     assert_eq!(
-        serde_json::from_value::<ProceduralCurve>(wire).unwrap(),
+        serde_json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
         curve
     );
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
-        let invalid = subset(range);
-        assert!(ProceduralCurve::new(id(), invalid.clone()).is_err());
-        assert!(ProceduralCurve::try_new(id(), invalid.clone(), None).is_err());
-        assert!(curve.replace_definition(invalid.clone()).is_err());
-        assert_eq!(curve, before);
-        assert!(curve
-            .try_replace_definition(invalid.clone(), Some(2.0))
-            .is_err());
-        assert_eq!(curve, before);
-        assert!(curve
-            .edit_definition(|definition| *definition = invalid)
-            .is_err());
-        assert_eq!(curve, before);
+        assert!(SubsetCurveConstruction::try_new(source(), range, false).is_err());
+        let mut invalid = wire.clone();
+        invalid["definition"]["parameter_range"] = serde_json::json!(range);
+        assert!(
+            serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone())
+                .is_err()
+        );
+        assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
     }
-    let invalid = serde_json::to_value(subset([1.0, 0.0])).unwrap();
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid.clone()).is_err());
-    let mut wire = serde_json::to_value(before).unwrap();
-    wire["definition"] = invalid;
-    assert!(serde_json::from_value::<ProceduralCurve>(wire).is_err());
 }
 
 #[test]
 fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
-    let definition = |side, range| ProceduralCurveDefinition::Offset {
-        source: source(),
-        distance: -2.0,
-        side,
-        range,
+    use crate::geometry::curve_payloads::OffsetCurveConstruction;
+    let definition = |side, range| {
+        OffsetCurveConstruction::try_new(source(), -2.0, side, range)
+            .map(ProceduralCurveDefinition::Offset)
     };
     let direction = OffsetSide::Direction {
         direction: Vector3::new(0.0, 0.0, 2.0),
         support: None,
     };
-    assert!(ProceduralCurve::new(id(), definition(direction.clone(), None)).is_ok());
+    let valid = definition(direction.clone(), None).unwrap();
+    assert!(ProceduralCurve::new(id(), valid.clone()).is_ok());
     for range in [[1.0, 0.0], [0.0, 0.0]] {
-        let invalid = definition(
+        assert!(definition(
             direction.clone(),
             Some(CurveOffsetRange::Uniform {
-                parameter_range: range,
-            }),
-        );
-        assert!(ProceduralCurve::new(id(), invalid.clone()).is_err());
-        assert!(serde_json::from_value::<ProceduralCurveDefinition>(
-            serde_json::to_value(invalid).unwrap()
+                parameter_range: range
+            })
         )
         .is_err());
+        let mut wire = serde_json::to_value(&valid).unwrap();
+        wire["parameter_range"] = serde_json::json!(range);
+        assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
     }
+    assert!(definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 2.0)), None).is_err());
     assert!(ProceduralCurve::new(
         id(),
-        definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 2.0)), None)
-    )
-    .is_err());
-    assert!(ProceduralCurve::new(
-        id(),
-        definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 1.0)), None)
+        definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 1.0)), None).unwrap()
     )
     .is_ok());
-    assert!(ProceduralCurve::new(
-        id(),
-        definition(
-            OffsetSide::Direction {
-                direction: Vector3::new(0.0, 0.0, 0.0),
-                support: None
-            },
-            None
-        )
+    assert!(definition(
+        OffsetSide::Direction {
+            direction: Vector3::new(0.0, 0.0, 0.0),
+            support: None
+        },
+        None
     )
     .is_err());
 }
@@ -136,4 +117,67 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
         .unwrap()
         .intersection_context_mut()
         .is_none());
+}
+
+#[test]
+fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draft() {
+    use crate::geometry::curve_payloads::SilhouetteCurveConstruction;
+    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use crate::ids::SurfaceId;
+    use crate::scalar::FiniteReal;
+
+    let context = || {
+        IntcurveSupportContext::try_new(
+            std::array::from_fn(|_| IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            }),
+            [0.0, 1.0],
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .unwrap()
+    };
+    let cast_surface = SurfaceId::mint("synthetic:test:surface#cast").unwrap();
+    let silhouette = |kind, light_direction| {
+        SilhouetteCurveConstruction::try_new(context(), kind, cast_surface.clone(), light_direction)
+            .map(ProceduralCurveDefinition::Silhouette)
+    };
+    let valid = silhouette(
+        SilhouetteKind::Taper {
+            draft_factor: FiniteReal::new(0.5).unwrap(),
+        },
+        Vector3::new(0.0, 0.0, 2.0),
+    )
+    .unwrap();
+    let curve = ProceduralCurve::new(id(), valid).unwrap();
+    let wire = serde_json::to_value(&curve).unwrap();
+    assert_eq!(
+        wire["definition"]["silhouette"]["draft_factor"],
+        serde_json::json!(0.5)
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
+        curve
+    );
+    for light_direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(0.0, f64::INFINITY, 0.0),
+    ] {
+        assert!(silhouette(SilhouetteKind::Standard, light_direction).is_err());
+        let mut invalid = wire.clone();
+        invalid["definition"]["light_direction"] = serde_json::to_value(light_direction).unwrap();
+        assert!(
+            serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone())
+                .is_err()
+        );
+        assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+    }
+    assert!(FiniteReal::new(f64::NAN).is_none());
+    let mut invalid = wire;
+    invalid["definition"]["silhouette"]["draft_factor"] = serde_json::json!("nan");
+    assert!(
+        serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
+    );
+    assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
 }

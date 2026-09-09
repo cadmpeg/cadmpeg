@@ -575,62 +575,64 @@ impl AsmEditSet {
             ProceduralCurveDefinition::Helix(helix) => {
                 patch_helix_definition(bytes, self.ref_width, record, helix)
             }
-            ProceduralCurveDefinition::VectorOffset {
-                parameter_range,
-                offset,
-                ..
-            } => patch_vector_offset_definition(
-                bytes,
-                self.ref_width,
-                record,
-                *parameter_range,
-                *offset,
-            ),
-            ProceduralCurveDefinition::Subset {
-                parameter_range, ..
-            } => patch_subset_definition(bytes, self.ref_width, record, *parameter_range),
+            ProceduralCurveDefinition::VectorOffset(definition_payload) => {
+                let parameter_range = definition_payload.parameter_range();
+                let offset = definition_payload.offset();
+                patch_vector_offset_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    *parameter_range,
+                    *offset,
+                )
+            }
+            ProceduralCurveDefinition::Subset(definition_payload) => {
+                let parameter_range = definition_payload.parameter_range();
+                patch_subset_definition(bytes, self.ref_width, record, *parameter_range)
+            }
             ProceduralCurveDefinition::Compound(compound) => {
-                let (parameters, components) = compound.parts();
+                let parameters = compound.parameters();
+                let components = compound.components();
                 patch_compound_definition(bytes, self.ref_width, record, parameters, components)
             }
-            ProceduralCurveDefinition::TwoSidedOffset {
-                context,
-                discontinuity_flag,
-                offsets,
-                ..
-            } => patch_two_sided_offset_definition(
-                bytes,
-                self.ref_width,
-                record,
-                context,
-                *discontinuity_flag,
-                *offsets,
-            ),
-            ProceduralCurveDefinition::SurfaceOffset {
-                context,
-                discontinuity_flag,
-                base_u_range,
-                base_v_range,
-                base_range,
-                distance,
-                shift,
-                scale,
-                ..
-            } => patch_surface_offset_definition(
-                bytes,
-                self.ref_width,
-                record,
-                SurfaceOffsetFields {
+            ProceduralCurveDefinition::TwoSidedOffset(definition_payload) => {
+                let context = definition_payload.context();
+                let discontinuity_flag = definition_payload.discontinuity_flag();
+                let offsets = definition_payload.offsets();
+                patch_two_sided_offset_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
                     context,
-                    discontinuity_flag,
-                    base_u_range,
-                    base_v_range,
-                    base_range,
-                    distance,
-                    shift,
-                    scale,
-                },
-            ),
+                    *discontinuity_flag,
+                    *offsets,
+                )
+            }
+            ProceduralCurveDefinition::SurfaceOffset(definition_payload) => {
+                let context = definition_payload.context();
+                let discontinuity_flag = definition_payload.discontinuity_flag();
+                let base_u_range = definition_payload.base_u_range();
+                let base_v_range = definition_payload.base_v_range();
+                let base_range = definition_payload.base_range();
+                let distance = definition_payload.distance();
+                let shift = definition_payload.shift();
+                let scale = definition_payload.scale();
+                patch_surface_offset_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    SurfaceOffsetFields {
+                        context,
+                        discontinuity_flag,
+                        base_u_range,
+                        base_v_range,
+                        base_range,
+                        distance,
+                        shift,
+                        scale,
+                    },
+                )
+            }
             ProceduralCurveDefinition::Spring {
                 layout, direction, ..
             } => patch_spring_definition(bytes, self.ref_width, record, layout, *direction),
@@ -670,26 +672,42 @@ impl AsmEditSet {
             ProceduralCurveDefinition::SurfaceCurve { family, .. } => {
                 patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }
-            ProceduralCurveDefinition::Silhouette {
-                silhouette,
-                light_direction,
-                ..
-            } => patch_silhouette_definition(
-                bytes,
-                self.ref_width,
-                record,
-                silhouette,
-                *light_direction,
-            ),
-            ProceduralCurveDefinition::Exact
-            | ProceduralCurveDefinition::Law { .. }
-            | ProceduralCurveDefinition::TolerantIntersection { .. }
-            | ProceduralCurveDefinition::Deformable { .. }
-            | ProceduralCurveDefinition::Offset { .. }
-            | ProceduralCurveDefinition::SpatialOffset { .. }
-            | ProceduralCurveDefinition::Replica { .. }
-            | ProceduralCurveDefinition::BlendSpine { .. }
-            | ProceduralCurveDefinition::Unknown { .. } => Err(CodecError::NotImplemented(
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                patch_silhouette_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    definition_payload.silhouette(),
+                    *definition_payload.light_direction(),
+                )
+            }
+            ProceduralCurveDefinition::Exact => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::Law { .. } => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::TolerantIntersection { .. } => {
+                Err(CodecError::NotImplemented(
+                    "ASM procedural-curve definition is not writable".into(),
+                ))
+            }
+            ProceduralCurveDefinition::Deformable(_) => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::Offset(_) => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::SpatialOffset(_) => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::Replica { .. } => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::BlendSpine { .. } => Err(CodecError::NotImplemented(
+                "ASM procedural-curve definition is not writable".into(),
+            )),
+            ProceduralCurveDefinition::Unknown { .. } => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
         }
@@ -938,7 +956,13 @@ fn patch_helix_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::HelixCurveConstruction,
 ) -> Result<(), CodecError> {
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = definition.parts();
+    let angle_range = definition.angle_range();
+    let center = definition.center();
+    let major = definition.major();
+    let minor = definition.minor();
+    let pitch = definition.pitch();
+    let apex_factor = definition.apex_factor();
+    let axis = definition.axis();
 
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
@@ -978,7 +1002,7 @@ fn patch_helix_definition(
         AsmEditSet::patch_vector_payload(bytes, record.offset + offset, value)?;
     }
     let apex_at = record.offset + layout.apex_factor;
-    AsmEditSet::patch_f64_payload(bytes, apex_at, *apex_factor)?;
+    AsmEditSet::patch_f64_payload(bytes, apex_at, apex_factor)?;
     AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
     Ok(())
 }
@@ -1439,14 +1463,7 @@ fn patch_silhouette_definition(
     let draft_factor = match silhouette {
         cadmpeg_ir::geometry::SilhouetteKind::Standard
         | cadmpeg_ir::geometry::SilhouetteKind::Parametric => None,
-        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
-            if !draft_factor.is_finite() {
-                return Err(CodecError::Malformed(
-                    "silhouette draft factor must be finite".into(),
-                ));
-            }
-            Some(*draft_factor)
-        }
+        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => Some(draft_factor.get()),
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;
     let layout =

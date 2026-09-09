@@ -25,14 +25,15 @@ use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef, SurfaceBoundary,
-    ThickenSide, UnresolvedFamily,
+    AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
+    ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, LinearTermination, PathRef, ProfileRef, SurfaceBoundary, ThickenSide,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
@@ -352,7 +353,7 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
                             .expect("nonzero length fixture")
                     },
                     draft: None,
@@ -1117,7 +1118,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         length,
-        cadmpeg_ir::features::NonZeroLength::new(6.0).expect("nonzero length fixture")
+        cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
     );
 }
 
@@ -1603,7 +1604,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(1.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,

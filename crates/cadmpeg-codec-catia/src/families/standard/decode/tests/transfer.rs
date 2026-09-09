@@ -144,7 +144,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .contains(&"catia:standard:circle#0".to_string()));
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (_, axis, _, radius) = cylinder_surface.parts();
+            let axis = cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
             assert!((radius - 5.0).abs() < 1.0e-6);
             assert!((axis.z - 1.0).abs() < 1.0e-6);
         }
@@ -152,20 +153,22 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     }
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Plane(plane_surface)
-        if {
-            let (origin, normal, u_axis) = plane_surface.parts();
-            (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
-                && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
-                && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
-                && normal.x.abs() < EPS_TRANSFER_PLANE_FRAME
-                && normal.y.abs() < EPS_TRANSFER_PLANE_FRAME
-                && (normal.z.abs() - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
-                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
-                    .abs()
-                    < EPS_TRANSFER_PLANE_FRAME
-                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
-                    < EPS_TRANSFER_PLANE_FRAME
-        })
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+        let u_axis = plane_surface.u_axis();
+                    (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && normal.x.abs() < EPS_TRANSFER_PLANE_FRAME
+                        && normal.y.abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (normal.z.abs() - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
+                        && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0)
+                            .abs()
+                            < EPS_TRANSFER_PLANE_FRAME
+                        && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs()
+                            < EPS_TRANSFER_PLANE_FRAME
+                })
     ));
 
     // Stored face/carrier rows do not establish a B-rep without a complete
@@ -526,10 +529,11 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .expect("refined standard cylinder");
     assert!(
         matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, _, _) = cylinder_surface.parts();
-            origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-        })
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+                    origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                })
     );
     assert_eq!(
         decoded
@@ -691,12 +695,13 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                     decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
-            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
-            } = construction.definition()
+            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+                construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
+            let support = definition_payload.support();
+            let distance = definition_payload.distance();
             assert!((*distance - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
                 surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
@@ -729,17 +734,16 @@ fn decode_standard_transfers_exact_offset_construction() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-        support,
-        distance,
-        u_sense,
-        v_sense,
-        extension,
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
+        procedural.definition()
     else {
         panic!("offset construction");
     };
+    let support = definition_payload.support();
+    let distance = definition_payload.distance();
+    let u_sense = definition_payload.u_sense();
+    let v_sense = definition_payload.v_sense();
+    let extension = definition_payload.extension();
     assert!(decoded
         .ir()
         .model
@@ -789,11 +793,12 @@ fn decode_standard_transfers_construction_use_offset() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
         procedural.definition()
     else {
         panic!("offset construction");
     };
+    let distance = definition_payload.distance();
     assert_eq!(*distance, -2.0);
     let Some(bounds) = procedural.record_bounds else {
         panic!("offset parameter bounds");

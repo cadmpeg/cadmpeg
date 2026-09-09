@@ -69,7 +69,7 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
                 shape: cadmpeg_ir::features::HoleShape::new(
                     cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
                 .unwrap(),
 

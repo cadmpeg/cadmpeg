@@ -7,16 +7,19 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
-    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature,
-    FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup, HoleKind,
-    HolePlacement, Length, LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
-};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::NonEmptyString;
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup,
+        HoleKind, HolePlacement, LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
+    },
+    scalar::{Angle, Length},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
@@ -1191,10 +1194,10 @@ fn project_extrusion(
         direction = direction.scale(-1.0);
     }
     let length = length_parameter(source, 4, index)?;
-    let taper = cadmpeg_ir::features::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
+    let taper = cadmpeg_ir::scalar::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
         1 if length.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(length.get())?,
         },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
@@ -1298,7 +1301,7 @@ fn project_fillet(
             Some(FilletGroup {
                 edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::features::PositiveLength::new(
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(
                         length_reference(&source.identity.segment_token, radius.index, index)?
                             .get(),
                     )?,
@@ -1371,7 +1374,7 @@ fn project_chamfer(
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                         edges: EdgeSelection::Native(edges.id()),
                         spec: ChamferSpec::Distance {
-                            distance: cadmpeg_ir::features::PositiveLength::new(
+                            distance: cadmpeg_ir::scalar::PositiveLength::new(
                                 length_parameter(source, 2, index)?.get(),
                             )?,
                         },
@@ -1403,26 +1406,26 @@ fn project_hole(
     let kind = match hole_form {
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
+            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(point_angle.get())?,
         },
         1 => HoleKind::Countersink {
-            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
-            angle: cadmpeg_ir::features::InteriorAngle::new(head_angle.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(head_angle.get())?,
         },
         2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
-            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::scalar::PositiveLength::new(head_depth.get())?,
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::features::PositiveLength::new(head_diameter.get())?,
-            depth: cadmpeg_ir::features::PositiveLength::new(head_depth.get())?,
-            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(point_angle.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
+            depth: cadmpeg_ir::scalar::PositiveLength::new(head_depth.get())?,
+            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(point_angle.get())?,
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         1 if depth.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(depth.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(depth.get())?,
         },
         4 => LinearTermination::ThroughNext,
         5 => LinearTermination::ThroughAll,
@@ -1495,7 +1498,7 @@ fn project_hole(
                             specification: None,
                         },
                         None,
-                        Some(cadmpeg_ir::features::PositiveLength::new(diameter.get())?),
+                        Some(cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?),
                     )
                     .ok()?,
 

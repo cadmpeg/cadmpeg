@@ -158,7 +158,9 @@ pub(crate) fn classify_planar_boundary_roles(
     let SurfaceGeometry::Plane(plane_surface) = surface else {
         return unspecified();
     };
-    let (origin, normal, u_axis) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
+    let u_axis = plane_surface.u_axis();
     let Some(normal) = normal.unit() else {
         return unspecified();
     };

@@ -128,15 +128,16 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
     match geometry {
         CurveGeometry::Line(_) => true,
         CurveGeometry::Circle(circle_curve) => {
-            let (_, _, _, radius) = circle_curve.parts();
-            radius.is_finite() && *radius > 0.0
+            let radius = circle_curve.radius();
+            radius.is_finite() && radius > 0.0
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             major_radius.is_finite()
                 && minor_radius.is_finite()
-                && *major_radius > 0.0
-                && *minor_radius > 0.0
+                && major_radius > 0.0
+                && minor_radius > 0.0
                 && major_radius == minor_radius
         }
         CurveGeometry::Nurbs(curve) => {
@@ -992,7 +993,9 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
     match geometry {
         SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             Some(SurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::PlaneSurface::try_new(
                     origin.translated(*normal, distance),
@@ -1003,7 +1006,10 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             ))
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let ref_direction = cylinder_surface.ref_direction();
+            let radius = cylinder_surface.radius();
             Some(SurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     *origin,
@@ -1015,7 +1021,10 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             ))
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
-            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            let center = sphere_surface.center();
+            let axis = sphere_surface.axis();
+            let ref_direction = sphere_surface.ref_direction();
+            let radius = sphere_surface.radius();
             Some(SurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     *center,
@@ -1027,13 +1036,17 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             ))
         }
         SurfaceGeometry::Torus(torus_surface) => {
-            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            let center = torus_surface.center();
+            let axis = torus_surface.axis();
+            let ref_direction = torus_surface.ref_direction();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             Some(SurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     *center,
                     *axis,
                     *ref_direction,
-                    *major_radius,
+                    major_radius,
                     minor_radius + distance,
                 )
                 .ok()?,
@@ -1041,19 +1054,24 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
         }
         SurfaceGeometry::Cone(cone_surface)
             if {
-                let (_, _, _, _, ratio, _) = cone_surface.parts();
-                *ratio == 1.0
+                let ratio = cone_surface.ratio();
+                ratio == 1.0
             } =>
         {
-            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            let origin = cone_surface.origin();
+            let axis = cone_surface.axis();
+            let ref_direction = cone_surface.ref_direction();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             Some(SurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin.translated(*axis, -distance * half_angle.sin()),
                     *axis,
                     *ref_direction,
                     radius + distance * half_angle.cos(),
-                    *ratio,
-                    *half_angle,
+                    ratio,
+                    half_angle,
                 )
                 .ok()?,
             ))
@@ -1533,22 +1551,25 @@ pub(super) fn project(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Extrusion {
-                        directrix: procedural_directrix,
-                        parameter_interval: Some(source_interval),
-                        direction,
-                        native_position: Some(target),
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    Some(source_interval),
+                    direction,
+                    Some(target),
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
@@ -1659,26 +1680,29 @@ pub(super) fn project(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!(
-                    "iges:model:procedural-surface#D{}",
-                    entry.sequence
-                ))
-                .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: procedural_directrix,
-                    parameter_interval: Some(source_interval),
-                    direction,
-                    native_position: Some(target),
-                    revision_form: None,
-                },
-                Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                procedural_directrix,
+                Some(source_interval),
+                direction,
+                Some(target),
+                None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);
@@ -1753,7 +1777,8 @@ pub(super) fn project(
             ));
             continue;
         };
-        let (&axis_origin, &axis_direction) = line_curve.parts();
+        let axis_origin = *line_curve.origin();
+        let axis_direction = *line_curve.direction();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
             losses.push(entity_loss(
                 entry,
@@ -1828,25 +1853,27 @@ pub(super) fn project(
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: procedural_directrix,
-                        axis_origin: procedural_axis_origin,
-                        axis_direction: procedural_axis_direction,
-                        angular_interval: [start_angle, end_angle],
-                        angular_parameter_interval: None,
-                        parameter_interval: Some(source_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    (procedural_axis_origin, procedural_axis_direction),
+                    [start_angle, end_angle],
+                    None,
+                    Some(source_interval),
+                    false,
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        procedural_id,
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             decoded.insert(entry.sequence);
@@ -1988,29 +2015,31 @@ pub(super) fn project(
         if procedural_is_exact {
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!(
-                        "iges:model:procedural-surface#D{}",
-                        entry.sequence
-                    ))
-                    .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Revolution {
-                        directrix: procedural_directrix,
-                        axis_origin: procedural_axis_origin,
-                        axis_direction: procedural_axis_direction,
-                        angular_interval: [start_angle, end_angle],
-                        angular_parameter_interval: None,
-                        parameter_interval: Some(source_interval),
-                        transposed: false,
-                        revision_form: None,
-                    },
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    procedural_directrix,
+                    (procedural_axis_origin, procedural_axis_direction),
+                    [start_angle, end_angle],
+                    None,
+                    Some(source_interval),
+                    false,
+                    None,
                 )
+                .and_then(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::mint(format!(
+                            "iges:model:procedural-surface#D{}",
+                            entry.sequence
+                        ))
+                        .expect("identity grammar"),
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        Some([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ]),
+                    )
+                })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
@@ -2466,20 +2495,21 @@ pub(super) fn project(
         };
         let regular = match &geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let (_, _, _, radius) = cylinder_surface.parts();
-                *radius > 0.0
+                let radius = cylinder_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let (_, _, _, radius) = sphere_surface.parts();
-                *radius > 0.0
+                let radius = sphere_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
-                *major_radius > 0.0 && *minor_radius > 0.0
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
+                major_radius > 0.0 && minor_radius > 0.0
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let (_, _, _, radius, _, _) = cone_surface.parts();
-                *radius > 0.0
+                let radius = cone_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Plane(_) => true,
             SurfaceGeometry::Nurbs(_)
@@ -2504,24 +2534,27 @@ pub(super) fn project(
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!(
-                    "iges:model:procedural-surface#D{}",
-                    entry.sequence
-                ))
-                .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Offset {
-                    support: support_id,
-                    distance: signed_distance,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support_id,
+                signed_distance,
+                Some(0),
+                Some(0),
                 None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         decoded.insert(entry.sequence);

@@ -4,6 +4,11 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+use crate::math::{Point2, Vector3};
+pub use crate::scalar::{
+    FiniteReal as FiniteScalar, NonNegativeReal as NonNegativeScalar,
+    PositiveReal as PositiveScalar,
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,63 +35,8 @@ enum CanonicalLengthUnitWire {
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
-const DEFAULT_LINEAR_TOLERANCE: f64 = 1.0e-6;
-const DEFAULT_ANGULAR_TOLERANCE: f64 = 1.0e-10;
-
-macro_rules! checked_scalar {
-    ($name:ident, $doc:literal, $value:ident, $valid:expr, $error:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
-        pub struct $name(f64);
-
-        impl $name {
-            /// Construct a value that satisfies this scalar's numeric contract.
-            pub const fn new($value: f64) -> Option<Self> {
-                if $valid {
-                    Some(Self($value))
-                } else {
-                    None
-                }
-            }
-
-            /// Return the numeric value.
-            pub const fn get(self) -> f64 {
-                self.0
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                Self::new(f64::deserialize(deserializer)?)
-                    .ok_or_else(|| serde::de::Error::custom($error))
-            }
-        }
-    };
-}
-
-checked_scalar!(
-    FiniteScalar,
-    "A finite signed scalar.",
-    value,
-    value.is_finite(),
-    "value must be finite"
-);
-checked_scalar!(
-    PositiveScalar,
-    "A positive finite scalar.",
-    value,
-    value.is_finite() && value > 0.0,
-    "value must be positive and finite"
-);
-checked_scalar!(
-    NonNegativeScalar,
-    "A nonnegative finite scalar.",
-    value,
-    value.is_finite() && value >= 0.0,
-    "value must be nonnegative and finite"
-);
+const DEFAULT_LINEAR_TOLERANCE: PositiveScalar = PositiveScalar::new(1.0e-6).unwrap();
+const DEFAULT_ANGULAR_TOLERANCE: PositiveScalar = PositiveScalar::new(1.0e-10).unwrap();
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,6 +54,11 @@ impl<const N: usize> FiniteVector<N> {
     /// Return the coordinates.
     pub const fn get(self) -> [f64; N] {
         self.0
+    }
+
+    /// Borrow the coordinates.
+    pub const fn as_raw(&self) -> &[f64; N] {
+        &self.0
     }
 }
 
@@ -169,6 +124,16 @@ vector_wire!(
     "coordinates must be finite with squared norm greater than epsilon"
 );
 
+/// Define the concrete shim required by serde's field deserializer path.
+macro_rules! named_field {
+    ($name:ident, $value:ty, $field:literal) => {
+        fn $name<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<$value, D::Error> {
+            $crate::units::deserialize_named(deserializer, $field)
+        }
+    };
+}
+pub(crate) use named_field;
+
 pub(crate) fn deserialize_named<'de, D, T>(deserializer: D, field: &str) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -178,17 +143,9 @@ where
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 
-fn deserialize_linear<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<PositiveScalar, D::Error> {
-    deserialize_named(deserializer, "linear")
-}
+crate::units::named_field!(deserialize_linear, PositiveScalar, "linear");
 
-fn deserialize_angular<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<PositiveScalar, D::Error> {
-    deserialize_named(deserializer, "angular")
-}
+crate::units::named_field!(deserialize_angular, PositiveScalar, "angular");
 
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -205,8 +162,8 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: PositiveScalar(DEFAULT_LINEAR_TOLERANCE),
-            angular: PositiveScalar(DEFAULT_ANGULAR_TOLERANCE),
+            linear: DEFAULT_LINEAR_TOLERANCE,
+            angular: DEFAULT_ANGULAR_TOLERANCE,
         }
     }
 }
@@ -220,6 +177,138 @@ impl Tolerances {
             angular: PositiveScalar::new(angular)
                 .ok_or_else(|| "angular tolerance must be positive and finite".to_owned())?,
         })
+    }
+}
+
+const EPS_UNIT_FRAME: f64 = 1.0e-9;
+
+/// A direction with unit length within the analytic frame tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vector3", into = "Vector3")]
+pub struct UnitVector3(Vector3);
+
+impl UnitVector3 {
+    /// Admit a unit direction.
+    pub fn new(value: Vector3) -> Option<Self> {
+        ((value.norm() - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
+    }
+    /// Borrow the direction.
+    pub const fn as_raw(&self) -> &Vector3 {
+        &self.0
+    }
+    /// Reverse the direction.
+    #[must_use]
+    pub fn reversed(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+impl TryFrom<Vector3> for UnitVector3 {
+    type Error = &'static str;
+    fn try_from(value: Vector3) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("direction must have unit length")
+    }
+}
+impl From<UnitVector3> for Vector3 {
+    fn from(value: UnitVector3) -> Self {
+        value.0
+    }
+}
+
+/// Two perpendicular unit directions within the analytic frame tolerance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrthonormalFrame3 {
+    axis: UnitVector3,
+    reference: UnitVector3,
+}
+impl OrthonormalFrame3 {
+    /// Admit two perpendicular unit directions.
+    pub fn new(axis: Vector3, reference: Vector3) -> Option<Self> {
+        let axis = UnitVector3::new(axis)?;
+        let reference = UnitVector3::new(reference)?;
+        (axis.0.dot(reference.0).abs() <= EPS_UNIT_FRAME).then_some(Self { axis, reference })
+    }
+    /// Borrow the first direction.
+    pub const fn axis(&self) -> &Vector3 {
+        self.axis.as_raw()
+    }
+    /// Borrow the second direction.
+    pub const fn reference(&self) -> &Vector3 {
+        self.reference.as_raw()
+    }
+    /// Reverse the first direction.
+    pub fn reverse_axis(&mut self) {
+        self.axis = self.axis.reversed();
+    }
+    /// Reverse the second direction.
+    pub fn reverse_reference(&mut self) {
+        self.reference = self.reference.reversed();
+    }
+}
+
+/// A parameter-space point with finite coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Point2", into = "Point2")]
+pub struct FinitePoint2(Point2);
+impl FinitePoint2 {
+    /// The parameter-space origin.
+    pub const ZERO: Self = Self(Point2 { u: 0.0, v: 0.0 });
+    /// Admit finite coordinates.
+    pub fn new(value: Point2) -> Option<Self> {
+        FiniteVector::new([value.u, value.v]).map(|_| Self(value))
+    }
+    /// Borrow the point.
+    pub const fn as_raw(&self) -> &Point2 {
+        &self.0
+    }
+}
+impl TryFrom<Point2> for FinitePoint2 {
+    type Error = &'static str;
+    fn try_from(value: Point2) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("coordinates must be finite")
+    }
+}
+impl From<FinitePoint2> for Point2 {
+    fn from(value: FinitePoint2) -> Self {
+        value.0
+    }
+}
+
+/// A finite parameter-space direction whose squared norm exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Point2", into = "Point2")]
+pub struct NonzeroPoint2(Point2);
+impl NonzeroPoint2 {
+    /// The unit-u direction.
+    pub const U_AXIS: Self = Self(Point2 { u: 1.0, v: 0.0 });
+    /// Admit the shared nonzero-vector contract.
+    pub fn new(value: Point2) -> Option<Self> {
+        NonzeroVector::new([value.u, value.v]).map(|_| Self(value))
+    }
+    /// Borrow the direction.
+    pub const fn as_raw(&self) -> &Point2 {
+        &self.0
+    }
+}
+impl TryFrom<Point2> for NonzeroPoint2 {
+    type Error = &'static str;
+    fn try_from(value: Point2) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("direction must be finite with squared norm greater than epsilon")
+    }
+}
+impl From<NonzeroPoint2> for Point2 {
+    fn from(value: NonzeroPoint2) -> Self {
+        value.0
+    }
+}
+
+impl FiniteVector<2> {
+    /// Reverse coordinate order and signs.
+    #[must_use]
+    pub const fn reversed_negated(self) -> Self {
+        Self([-self.0[1], -self.0[0]])
     }
 }
 

@@ -320,10 +320,10 @@ pub(crate) fn project_assembly_joints(
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
         let second_frame = super::components::neutral_transform(frames[1].transform)?;
-        let angle = cadmpeg_ir::features::FiniteReal::new(alignment.angle())
+        let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
             .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
         let [x, y, z] = alignment.offset().map(|value| {
-            cadmpeg_ir::features::FiniteReal::new(value * 10.0).ok_or_else(|| {
+            cadmpeg_ir::scalar::FiniteReal::new(value * 10.0).ok_or_else(|| {
                 CodecError::Malformed("joint translation_offset must be finite".into())
             })
         });

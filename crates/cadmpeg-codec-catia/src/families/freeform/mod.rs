@@ -188,24 +188,28 @@ pub(crate) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::mint(format!("catia:consolidated:surface-revolution#{index}"))
-                    .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix,
-                    axis_origin: origin,
-                    axis_direction: axis,
-                    angular_interval: [
-                        revolution.angular_range[0] / revolution.angular_scale,
-                        revolution.angular_range[1] / revolution.angular_scale,
-                    ],
-                    angular_parameter_interval: Some(revolution.angular_range),
-                    parameter_interval: Some(revolution.profile_range),
-                    transposed: false,
-                    revision_form: None,
-                },
+            cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                directrix,
+                (origin, axis),
+                [
+                    revolution.angular_range[0] / revolution.angular_scale,
+                    revolution.angular_range[1] / revolution.angular_scale,
+                ],
+                Some(revolution.angular_range),
+                Some(revolution.profile_range),
+                false,
                 None,
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!(
+                        "catia:consolidated:surface-revolution#{index}"
+                    ))
+                    .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                    None,
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         if let Some(geometry) = torus_geometry {
@@ -1267,25 +1271,28 @@ pub(crate) fn append_freeform_surface_pools(
         );
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::Offset {
-                    support: carrier_ids[carrier].clone(),
-                    distance: offset.distance,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                    ),
-                },
-                Some([
-                    Some(offset.domain[0]),
-                    Some(offset.domain[1]),
-                    Some(offset.domain[2]),
-                    Some(offset.domain[3]),
-                ]),
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                carrier_ids[carrier].clone(),
+                offset.distance,
+                None,
+                None,
+                None,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             )
+            .and_then(|admitted_payload| {
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    Some([
+                        Some(offset.domain[0]),
+                        Some(offset.domain[1]),
+                        Some(offset.domain[2]),
+                        Some(offset.domain[3]),
+                    ]),
+                )
+            })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
@@ -1845,20 +1852,13 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            ProceduralSurface::new(
-                                procedural_id,
-                                ProceduralSurfaceDefinition::Offset {
-                                    support,
-                                    distance: *offset,
-                                    u_sense: None,
-                                    v_sense: None,
-                                    support_extension: None,
-                                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, None, cadmpeg_ir::geometry::OffsetExtension::Legacy(
                                         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                                    ),
-                                },
+                                    )).and_then(|admitted_payload| ProceduralSurface::new(
+                                procedural_id,
+                                ProceduralSurfaceDefinition::Offset(admitted_payload),
                                 None,
-                            )
+                            ))
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                         );
                         surface_ids.insert(key, id.clone());
@@ -1884,15 +1884,15 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let SurfaceGeometry::Cylinder(cylinder_surface) = carrier else {
                         continue;
                     };
- let (_, _, _, radius,) = cylinder_surface.parts();
-                    if *radius <= 0.0 || !radius.is_finite() {
+ let radius = cylinder_surface.radius();
+                    if radius <= 0.0 || !radius.is_finite() {
                         continue;
                     }
                     (
                         (*pos, None),
                         carrier,
                         None,
-                        ConsolidatedCarrierChart::Cylinder { radius: *radius },
+                        ConsolidatedCarrierChart::Cylinder { radius },
                         "consolidated_b2_03_28_cylinder",
                         "cylinder",
                     )
@@ -1905,7 +1905,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 let SurfaceGeometry::Cylinder(cylinder) = carrier else {
                     continue;
                 };
-                let radius = *cylinder.parts().3;
+                let radius = cylinder.radius();
                 if radius <= 0.0 || !radius.is_finite() {
                     continue;
                 }
@@ -2681,10 +2681,18 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     else {
         return false;
     };
-    let (left_origin, left_axis, left_reference, left_radius, left_ratio, left_angle) =
-        cone_surface.parts();
-    let (right_origin, right_axis, right_reference, right_radius, right_ratio, right_angle) =
-        cone_surface_2.parts();
+    let left_origin = cone_surface.origin();
+    let left_axis = cone_surface.axis();
+    let left_reference = cone_surface.ref_direction();
+    let left_radius = cone_surface.radius();
+    let left_ratio = cone_surface.ratio();
+    let left_angle = cone_surface.half_angle();
+    let right_origin = cone_surface_2.origin();
+    let right_axis = cone_surface_2.axis();
+    let right_reference = cone_surface_2.ref_direction();
+    let right_radius = cone_surface_2.radius();
+    let right_ratio = cone_surface_2.ratio();
+    let right_angle = cone_surface_2.half_angle();
     if left_axis != right_axis
         || left_reference != right_reference
         || left_ratio.to_bits() != right_ratio.to_bits()
@@ -2703,8 +2711,8 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
             origin.z - axis.z * radius / tangent,
         )
     };
-    let left_apex = apex(*left_origin, *left_axis, *left_radius);
-    let right_apex = apex(*right_origin, *right_axis, *right_radius);
+    let left_apex = apex(*left_origin, *left_axis, left_radius);
+    let right_apex = apex(*right_origin, *right_axis, right_radius);
     let scale = [
         left_apex.x,
         left_apex.y,
@@ -2740,8 +2748,9 @@ fn rechart_equivalent_surface_pcurve(
     else {
         return Ok(None);
     };
-    let (source_origin, source_axis, _, _, _, _) = cone_surface.parts();
-    let (target_origin, _, _, _, _, _) = cone_surface_2.parts();
+    let source_origin = cone_surface.origin();
+    let source_axis = cone_surface.axis();
+    let target_origin = cone_surface_2.origin();
     if !same_surface_locus(source, target) {
         return Ok(None);
     }
@@ -2753,7 +2762,8 @@ fn rechart_equivalent_surface_pcurve(
     }
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             let shifted_v = origin.v + v_shift;
             if !shifted_v.is_finite() {
                 return Err(RechartFailure::NonFinite);
@@ -3885,14 +3895,16 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
-        if {
-            let (center, axis, ref_direction, _) = sphere_surface.parts();
-            (*sphere_surface.parts().3 == 5.0)
-                && (*center == Point3::new(1.0, 2.0, 3.0)
-                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Sphere(sphere_surface)
+                if {
+                    let center = sphere_surface.center();
+        let axis = sphere_surface.axis();
+        let ref_direction = sphere_surface.ref_direction();
+                    (sphere_surface.radius() == 5.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                })));
     }
 
     #[test]
@@ -3902,15 +3914,17 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
-        if {
-            let (center, axis, ref_direction, _, _) = torus_surface.parts();
-            (*torus_surface.parts().3 == 7.0)
-                && (*torus_surface.parts().4 == 2.0)
-                && (*center == Point3::new(1.0, 2.0, 3.0)
-                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Torus(torus_surface)
+                if {
+                    let center = torus_surface.center();
+        let axis = torus_surface.axis();
+        let ref_direction = torus_surface.ref_direction();
+                    (torus_surface.major_radius() == 7.0)
+                        && (torus_surface.minor_radius() == 2.0)
+                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                            && *axis == Vector3::new(0.0, 0.0, 1.0)
+                            && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
+                })));
     }
 
     #[test]
@@ -3920,13 +3934,15 @@ mod tests {
         let carriers =
             freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
-        if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
-        if {
-            let (origin, axis, ref_direction, _) = cylinder_surface.parts();
-            (*cylinder_surface.parts().3 == 4.0)
-                && (*origin == Point3::new(0.0, 0.0, 0.0)
-                    && *axis == Vector3::new(0.0, 1.0, 0.0)
-                    && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
-        })));
+                if matches!(carrier.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
+                    (cylinder_surface.radius() == 4.0)
+                        && (*origin == Point3::new(0.0, 0.0, 0.0)
+                            && *axis == Vector3::new(0.0, 1.0, 0.0)
+                            && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
+                })));
     }
 }

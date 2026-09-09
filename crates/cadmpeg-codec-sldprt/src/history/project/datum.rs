@@ -2,9 +2,12 @@
 //! Datum, curve, helix, and wrap projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    Angle, CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
-    FaceSelection, FeatureDefinition, FeatureId, Length, PathRef, ProfileRef, WrapMode,
+use cadmpeg_ir::{
+    features::{
+        CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
+        FaceSelection, FeatureDefinition, FeatureId, PathRef, ProfileRef, WrapMode,
+    },
+    scalar::{Angle, Length},
 };
 use std::collections::HashMap;
 
@@ -189,11 +192,11 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction)?,
-        radius: cadmpeg_ir::features::PositiveLength::new(radius)?,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-            pitch: cadmpeg_ir::features::NonZeroLength::new(pitch)?,
+            pitch: cadmpeg_ir::scalar::NonZeroLength::new(pitch)?,
         },
-        revolutions: cadmpeg_ir::features::PositiveReal::new(revolutions)?,
+        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
         start_angle: Angle::new(start_angle)?,
         clockwise,
         segment_turns: None,
@@ -221,7 +224,7 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         axis_native_ref: cadmpeg_ir::NonEmptyString::new(feature.id.clone())?,
         axial_rise: Length::new(axial_rise)?,
         pitch: Length::new(pitch)?,
-        revolutions: cadmpeg_ir::features::PositiveReal::new(revolutions)?,
+        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
         start_angle,
         clockwise,
     })

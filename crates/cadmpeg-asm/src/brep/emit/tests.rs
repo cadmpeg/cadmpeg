@@ -452,7 +452,8 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
 #[test]
 fn procedural_curve_admission_failures_keep_the_carrier() {
     use super::super::ProceduralCurveSource;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     for (source, cause) in [
         (
@@ -464,11 +465,21 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             "invalid procedural curve cache tolerance",
         ),
         (
-            ProceduralCurveSource::Cacheless(Box::new(ProceduralCurveDefinition::Subset {
-                source: CurveId::mint("f3d:brep:entity#source").unwrap(),
-                parameter_range: [2.0, 1.0],
-                sense: true,
-            })),
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Subset((
+                    NurbsCurve::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                    [2.0, 1.0],
+                ))),
+                cache_fit_tolerance: None,
+                parsed_domain: Some([0.0, 1.0]),
+            },
             "subset-curve range is not finite and ordered",
         ),
     ] {
@@ -491,6 +502,25 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
         assert!(out.procedural_curves.is_empty());
         assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
     }
+    assert!(matches!(
+        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+            IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                }),
+                [0.0, 1.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap(),
+            SilhouetteKind::Standard,
+            SurfaceId::mint("f3d:brep:entity#support").unwrap(),
+            Vector3::new(0.0, 0.0, 0.0),
+        ),
+        Err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+            "silhouette fields are not finite or the light direction is degenerate"
+        ))
+    ));
 }
 
 #[test]
@@ -600,3 +630,5 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
         assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
     }
 }
+
+mod tspline;

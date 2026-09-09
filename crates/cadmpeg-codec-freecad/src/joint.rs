@@ -302,7 +302,7 @@ fn joint_kind(
     linear_limits: Option<JointLimits>,
 ) -> Result<PairedJointKind, CodecError> {
     let finite = |value: f64| {
-        cadmpeg_ir::features::FiniteReal::new(value)
+        cadmpeg_ir::scalar::FiniteReal::new(value)
             .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
     };
     let angle = angle.map(finite).transpose()?;

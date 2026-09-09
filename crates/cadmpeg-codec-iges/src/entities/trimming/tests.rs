@@ -1578,11 +1578,11 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|procedural| procedural.id == *construction)
         .unwrap();
-    let ProceduralSurfaceDefinition::Revolution {
-        parameter_interval: Some(parameter_interval),
-        ..
-    } = procedural.definition()
+    let ProceduralSurfaceDefinition::Revolution(definition_payload_0) = procedural.definition()
     else {
+        panic!("expected a bounded procedural revolution");
+    };
+    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
         panic!("expected a bounded procedural revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);

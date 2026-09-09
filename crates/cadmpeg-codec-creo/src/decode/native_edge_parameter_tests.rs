@@ -387,7 +387,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
     let CurveGeometry::Hyperbola(hyperbola_curve) = selected.0 else {
         panic!("hyperbola branch");
     };
-    let (_, _, &major_direction, _, _) = hyperbola_curve.parts();
+    let major_direction = *hyperbola_curve.major_direction();
     assert_eq!(major_direction, Vector3::new(-1.0, 0.0, 0.0));
 }
 

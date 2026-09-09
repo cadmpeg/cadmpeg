@@ -98,7 +98,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(
         result.ir().model.parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
     assert_eq!(result.ir().model.parameters[2].name, "theta");
@@ -266,19 +266,19 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
             .collect::<Vec<_>>(),
         [
             Some(&cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(100.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(100.0).unwrap()
             )),
             Some(&cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
             )),
             Some(&cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(11.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap()
             )),
             Some(&cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
             )),
             Some(&cadmpeg_ir::features::ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(101.0).unwrap()
+                cadmpeg_ir::scalar::FiniteReal::new(101.0).unwrap()
             )),
         ]
     );
@@ -390,25 +390,25 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(
         values["x"],
         Some(&cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
         Some(&cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(4.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(4.0).unwrap()
         ))
     );
     assert_eq!(
         values["sum"],
         Some(&cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(10.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
         ))
     );
     assert_eq!(
         values["product"],
         Some(&cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(24.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(24.0).unwrap()
         ))
     );
 
@@ -455,13 +455,13 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(
         values["x"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(6.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
         Some(&cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(4.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap()
         ))
     );
 
@@ -570,14 +570,14 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     assert_eq!(
         copy.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
     assert_eq!(present.name, "present");
     assert_eq!(
         present.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
         ))
     );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
@@ -622,7 +622,7 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(6.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
     assert_eq!(parameter.properties["external_dependencies"], "d42");
@@ -814,7 +814,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
+            cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -934,7 +934,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(
         parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(50.8).unwrap()
+            cadmpeg_ir::scalar::Length::new(50.8).unwrap()
         ))
     );
     let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
@@ -1156,14 +1156,20 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     else {
         panic!("placed helix");
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, -2.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, -5.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 10.0));
-    assert_eq!(*apex_factor, 0.0);
+    assert_eq!(apex_factor, 0.0);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
 }
 
@@ -1183,7 +1189,11 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     else {
         panic!("placed helix");
     };
-    let (_, center, major, minor, pitch, _, axis) = helix_payload.parts();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let axis = helix_payload.axis();
 
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(0.0, 5.0, 0.0));

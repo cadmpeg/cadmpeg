@@ -321,36 +321,35 @@ pub struct PresentationLayer {
     pub items: Vec<PresentationItem>,
 }
 
-fn deserialize_position<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::FiniteVector<3>>, D::Error> {
-    crate::units::deserialize_named(deserializer, "position")
-}
+crate::units::named_field!(
+    deserialize_position,
+    Option<crate::units::FiniteVector<3>>,
+    "position"
+);
 
-fn deserialize_orientation<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::NonzeroVector<4>>, D::Error> {
-    crate::units::deserialize_named(deserializer, "orientation")
-}
+crate::units::named_field!(
+    deserialize_orientation,
+    Option<crate::units::NonzeroVector<4>>,
+    "orientation"
+);
 
-fn deserialize_line_width<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "line_width")
-}
+crate::units::named_field!(
+    deserialize_line_width,
+    Option<crate::units::NonNegativeScalar>,
+    "line_width"
+);
 
-fn deserialize_point_size<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::NonNegativeScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "point_size")
-}
+crate::units::named_field!(
+    deserialize_point_size,
+    Option<crate::units::NonNegativeScalar>,
+    "point_size"
+);
 
-fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
-}
+crate::units::named_field!(
+    deserialize_source_id,
+    crate::products::NonEmptyString,
+    "source_id"
+);
 
 #[cfg(test)]
 mod tests {
@@ -419,8 +418,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::new("#42")
-                    .expect("nonempty source identity"),
+                source_id: crate::products::NonEmptyString::prefixed('#', 42),
             }],
         });
 
@@ -436,8 +434,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::new("#42")
-                    .expect("nonempty source identity"),
+                source_id: crate::products::NonEmptyString::prefixed('#', 42),
             }],
         });
 

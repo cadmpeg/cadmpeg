@@ -73,7 +73,8 @@ pub(crate) fn reverse_pcurve_geometry(
     }
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             if !finite_point2(*origin) || !finite_point2(*direction) {
                 return None;
             }
@@ -142,7 +143,8 @@ pub(crate) fn reverse_curve_geometry(
     }
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             if !finite_point3(*origin)
                 || ![direction.x, direction.y, direction.z]
                     .into_iter()
@@ -168,7 +170,10 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             if !finite_point3(*center)
                 || ![
                     axis.x,
@@ -200,7 +205,7 @@ pub(crate) fn reverse_curve_geometry(
                         *center,
                         (*axis).scale(-1.0),
                         ref_direction,
-                        *radius,
+                        radius,
                     )
                     .ok()?,
                 ),
@@ -285,7 +290,13 @@ pub(crate) fn reverse_helix_definition(
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     if range != *angle_range
         || !range.into_iter().all(f64::is_finite)
@@ -297,13 +308,13 @@ pub(crate) fn reverse_helix_definition(
                     .into_iter()
                     .flat_map(|vector| [vector.x, vector.y, vector.z]),
             )
-            .chain([*apex_factor])
+            .chain([apex_factor])
             .all(f64::is_finite)
     {
         return None;
     }
     let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-    let radial_scale_at_end = 1.0 + *apex_factor * revolutions;
+    let radial_scale_at_end = 1.0 + apex_factor * revolutions;
     if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
         return None;
     }
@@ -317,7 +328,7 @@ pub(crate) fn reverse_helix_definition(
     let minor = minor_at_end.scale(radial_scale_at_end);
     let center = center.translated(*pitch, revolutions);
     let pitch = pitch.scale(-1.0);
-    let apex_factor = -*apex_factor / radial_scale_at_end;
+    let apex_factor = -apex_factor / radial_scale_at_end;
     let axis = axis.scale(-1.0);
     if ![center.x, center.y, center.z, apex_factor]
         .into_iter()
@@ -377,7 +388,13 @@ pub(crate) fn circular_helix_cache(
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
-    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
+    let apex_factor = helix_payload.apex_factor();
+    let axis = helix_payload.axis();
 
     let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
     let radius = major.x.hypot(major.y).hypot(major.z);
@@ -409,7 +426,7 @@ pub(crate) fn circular_helix_cache(
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
         || !angle_range.iter().copied().all(f64::is_finite)
         || angle_range[0] >= angle_range[1]
-        || *apex_factor != 0.0
+        || apex_factor != 0.0
     {
         return None;
     }
@@ -499,7 +516,11 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
-    let (angle_range, center, major, minor, pitch, _, _) = helix_payload.parts();
+    let angle_range = helix_payload.angle_range();
+    let center = helix_payload.center();
+    let major = helix_payload.major();
+    let minor = helix_payload.minor();
+    let pitch = helix_payload.pitch();
 
     if !angle.is_finite()
         || !angle_range.iter().copied().all(f64::is_finite)
@@ -890,7 +911,12 @@ mod tests {
             let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")
             };
-            let (angle_range, center, major, minor, pitch, apex_factor, _) = helix_payload.parts();
+            let angle_range = helix_payload.angle_range();
+            let center = helix_payload.center();
+            let major = helix_payload.major();
+            let minor = helix_payload.minor();
+            let pitch = helix_payload.pitch();
+            let apex_factor = helix_payload.apex_factor();
 
             let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
             let scale = 1.0 + apex_factor * fraction;
@@ -1046,8 +1072,12 @@ mod tests {
         );
         let mut non_axial_pitch = definition.clone();
         if let ProceduralCurveDefinition::Helix(helix_payload) = &mut non_axial_pitch {
-            let (&angle_range, &center, &major, &minor, _, &apex_factor, &axis) =
-                helix_payload.parts();
+            let angle_range = *helix_payload.angle_range();
+            let center = *helix_payload.center();
+            let major = *helix_payload.major();
+            let minor = *helix_payload.minor();
+            let apex_factor = helix_payload.apex_factor();
+            let axis = *helix_payload.axis();
             *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 angle_range,
                 center,

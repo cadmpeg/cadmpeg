@@ -171,15 +171,16 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     }));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
-        if {
-            let (origin, direction) = line_curve.parts();
-            origin.x == 1.0
-                && origin.y == 2.0
-                && origin.z == 3.0
-                && direction.x == 0.0
-                && direction.y == 0.0
-                && direction.z == 1.0
-        })
+                if {
+                    let origin = line_curve.origin();
+        let direction = line_curve.direction();
+                    origin.x == 1.0
+                        && origin.y == 2.0
+                        && origin.z == 3.0
+                        && direction.x == 0.0
+                        && direction.y == 0.0
+                        && direction.z == 1.0
+                })
     ));
     assert!(!result.report().losses.iter().any(|loss| loss
         .message
@@ -189,19 +190,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                parameter_range: [start, end],
-                ..
-            } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Ellipse(ellipse_curve)
-        if {
-            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
-            *major_radius == 6.0 && *minor_radius == 2.0
-        })
+                if {
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
+                    major_radius == 6.0 && minor_radius == 2.0
+                })
     ));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
@@ -276,10 +272,11 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     )));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
-        if {
-            let (origin, normal, _) = plane_surface.parts();
-            origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
-        })
+                if {
+                    let origin = plane_surface.origin();
+        let normal = plane_surface.normal();
+                    origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
+                })
     ));
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
@@ -295,37 +292,41 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, _, _, radius) = cylinder_surface.parts();
-            *radius == 5.0
+            let radius = cylinder_surface.radius();
+            radius == 5.0
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
-        if {
-            let (_, _, _, radius, ratio, half_angle) = cone_surface.parts();
-            *radius == 5.0 && *ratio == 1.0 && *half_angle == 0.25
-        })
+                if {
+                    let radius = cone_surface.radius();
+        let ratio = cone_surface.ratio();
+        let half_angle = cone_surface.half_angle();
+                    radius == 5.0 && ratio == 1.0 && half_angle == 0.25
+                })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Sphere(sphere_surface)
         if {
-            let (_, _, _, radius) = sphere_surface.parts();
-            *radius == 5.0
+            let radius = sphere_surface.radius();
+            radius == 5.0
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Torus(torus_surface)
-        if {
-            let (_, _, _, major_radius, minor_radius) = torus_surface.parts();
-            *major_radius == 8.0 && *minor_radius == 2.0
-        })
+                if {
+                    let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
+                    major_radius == 8.0 && minor_radius == 2.0
+                })
     ));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Circle(circle_curve)
-        if {
-            let (center, _, _, radius) = circle_curve.parts();
-            center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && *radius == 4.0
-        })
+                if {
+                    let center = circle_curve.center();
+        let radius = circle_curve.radius();
+                    center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
+                })
     ));
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
@@ -336,24 +337,22 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
         .expect("Cartesian trimmed curve");
-    assert!(matches!(
-        cartesian_trim.definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-            parameter_range: [start, end],
-            ..
-        } if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
+    assert!(match cartesian_trim.definition() {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+            matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
+        _ => false,
+    });
     let (source, parameter_range) = result
         .ir()
         .model
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-                source,
-                parameter_range,
-                ..
-            } => Some((source, *parameter_range)),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+                let source = definition_payload.source();
+                let parameter_range = definition_payload.parameter_range();
+                Some((source, *parameter_range))
+            }
             _ => None,
         })
         .expect("trimmed curve was not retained as a subset construction");
@@ -364,14 +363,14 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
-                distance: 1.0,
-                self_intersect: None,
-                ..
-            }
-        )));
+        .any(|curve| match curve.definition() {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(matched_payload) =>
+                matches!(
+                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (1.0, None,)
+                ),
+            _ => false,
+        }));
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(result
         .ir()
@@ -391,8 +390,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { direction, .. }
-                if direction.z == 2.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
+                if definition_payload.direction().z == 2.0
         )));
     assert!(result
         .ir()
@@ -401,22 +400,20 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
-                if axis_direction.z == 1.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
+                if definition_payload.axis_direction().z == 1.0
         )));
-    assert!(result
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .any(|surface| matches!(
-            surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
-                distance: 0.5,
-                self_intersect: Some(false),
-                ..
+    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
+        match surface.definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
+                matches!(
+                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (0.5, Some(false),)
+                )
             }
-        )));
+            _ => false,
+        }
+    }));
 }
 
 #[test]
@@ -429,8 +426,9 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cone(cone_surface)
         if {
-            let (_, _, _, radius, _, half_angle) = cone_surface.parts();
-            *radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
+            radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

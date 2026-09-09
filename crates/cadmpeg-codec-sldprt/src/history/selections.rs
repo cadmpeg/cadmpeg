@@ -4,13 +4,16 @@
 use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{
-    BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, Length, LinearTermination, PathRef, ProfileRef,
-};
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
+use cadmpeg_ir::{
+    features::{
+        BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+        FaceSelection, FeatureDefinition, LinearTermination, PathRef, ProfileRef,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
@@ -484,7 +487,8 @@ pub(crate) fn resolve_planar_face_selection(
             else {
                 return None;
             };
-            let (candidate_origin, candidate_normal, _) = plane_surface.parts();
+            let candidate_origin = plane_surface.origin();
+            let candidate_normal = plane_surface.normal();
             let candidate_length = candidate_normal.norm();
             if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
                 return None;

@@ -3,9 +3,12 @@
 
 use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
-use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
-    ParameterId, ParameterValue,
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
+        ParameterId, ParameterValue,
+    },
+    scalar::Length,
 };
 use std::collections::{HashMap, HashSet};
 

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
-use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::NonEmptyString;
 use crate::transform::Transform;
+use crate::{
+    features::ParameterId,
+    scalar::{Angle, Length},
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -555,7 +558,14 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                     return Err("sketch text anchor and rotation must be finite");
                 }
             }
-            _ => {}
+            SketchGeometryDefinition::Point { .. }
+            | SketchGeometryDefinition::Line { .. }
+            | SketchGeometryDefinition::ReferenceLine { .. }
+            | SketchGeometryDefinition::Circle { .. }
+            | SketchGeometryDefinition::Arc { .. }
+            | SketchGeometryDefinition::Nurbs { .. }
+            | SketchGeometryDefinition::ExternalReference { .. }
+            | SketchGeometryDefinition::Native { .. } => {}
         }
         Ok(Self(definition))
     }
@@ -1109,7 +1119,8 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
             norm.is_finite() && (norm - 1.0).abs() <= EPS_SPATIAL_CONSTRAINT_UNIT
         };
         let valid = match &kind {
-            Kind::Native { .. } | Kind::LineLength { .. } => true,
+            Kind::Native { operands, .. } => !operands.is_empty(),
+            Kind::LineLength { .. } => true,
             Kind::Coincident { first, second }
             | Kind::Tangent { first, second }
             | Kind::PointDistance { first, second, .. }
@@ -1183,7 +1194,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
-        native_kind: String,
+        native_kind: NonEmptyString,
         /// Source relation state or subtype discriminator, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,
@@ -1300,7 +1311,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// Unit normal of the result curve set's common plane.
         normal: Vector3,
         /// Strictly positive operation-level offset magnitude.
-        distance: crate::features::Length,
+        distance: crate::scalar::Length,
         /// Signed driving offset-distance parameter, when dimensional.
         #[serde(flatten, with = "offset_parameter_wire")]
         #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]
@@ -1457,7 +1468,10 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
                     }
                 }
             }
-            _ => {}
+            SpatialSketchGeometryDefinition::Point { .. }
+            | SpatialSketchGeometryDefinition::Nurbs { .. }
+            | SpatialSketchGeometryDefinition::NurbsSurface { .. }
+            | SpatialSketchGeometryDefinition::Native { .. } => {}
         }
         Ok(Self(definition))
     }
@@ -2646,7 +2660,43 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
             Kind::Native {
                 entities, operands, ..
             } => !entities.is_empty() || !operands.is_empty(),
-            _ => true,
+            Kind::Disabled => true,
+            Kind::Polygon { .. } => true,
+            Kind::RectangularPattern { .. } => true,
+            Kind::CircularPattern { .. } => true,
+            Kind::SameCoordinate { .. } => true,
+            Kind::PointOnObject { .. } => true,
+            Kind::Midpoint { .. } => true,
+            Kind::PointCoordinateValues { .. } => true,
+            Kind::MidpointCoordinate { .. } => true,
+            Kind::AtIntersection { .. } => true,
+            Kind::Concentric { .. } => true,
+            Kind::Coradial { .. } => true,
+            Kind::Collinear { .. } => true,
+            Kind::Symmetric { .. } => true,
+            Kind::PointSymmetric { .. } => true,
+            Kind::Horizontal { .. } => true,
+            Kind::Vertical { .. } => true,
+            Kind::Parallel { .. } => true,
+            Kind::Perpendicular { .. } => true,
+            Kind::Tangent { .. } => true,
+            Kind::TangentLoci { .. } => true,
+            Kind::Curvature { .. } => true,
+            Kind::Equal { .. } => true,
+            Kind::Fixed { .. } => true,
+            Kind::ArcAngle { .. } => true,
+            Kind::EllipseAngle { .. } => true,
+            Kind::DistanceLoci { .. } => true,
+            Kind::EqualDistance { .. } => true,
+            Kind::HorizontalDistance { .. } => true,
+            Kind::VerticalDistance { .. } => true,
+            Kind::Angle { .. } => true,
+            Kind::AngleToAxis { .. } => true,
+            Kind::Radius { .. } => true,
+            Kind::Diameter { .. } => true,
+            Kind::SnellsLaw { .. } => true,
+            Kind::Weight { .. } => true,
+            Kind::InternalAlignment { .. } => true,
         };
         if !valid {
             return Err("invalid sketch constraint local arity or scalar value");
@@ -3141,18 +3191,16 @@ pub enum SketchConstraintDefinitionInput {
     },
 }
 
-fn deserialize_object<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("object: {error}")))
-}
-fn deserialize_native_kind<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("native_kind: {error}")))
-}
+crate::units::named_field!(
+    deserialize_object,
+    crate::products::NonEmptyString,
+    "object"
+);
+crate::units::named_field!(
+    deserialize_native_kind,
+    crate::products::NonEmptyString,
+    "native_kind"
+);
 
 #[cfg(test)]
 mod tests;

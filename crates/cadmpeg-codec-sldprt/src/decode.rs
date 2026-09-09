@@ -1233,9 +1233,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 orientation,
                 ..
             } => {
-let section = shape.section();
-let sections = shape.sections();
-let mode = shape.mode();
+                let section = shape.section();
+                let sections = shape.sections();
+                let mode = shape.mode();
                 matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
                     || section.referenced_profile().is_some_and(incomplete_profile)
                     || sections.iter().any(|section| {
@@ -1365,8 +1365,8 @@ let mode = shape.mode();
 
                 radius,
             } => {
-let first_faces = operands.first_faces();
-let second_faces = operands.second_faces();
+                let first_faces = operands.first_faces();
+                let second_faces = operands.second_faces();
                 incomplete_face_selection(first_faces)
                     || incomplete_face_selection(second_faces)
                     || radius.is_unresolved()
@@ -1402,8 +1402,8 @@ let second_faces = operands.second_faces();
 
                 approximate,
             } => {
-let first = operands.first();
-let second = operands.second();
+                let first = operands.first();
+                let second = operands.second();
                 incomplete_body_selection(first)
                     || incomplete_body_selection(second)
                     || approximate.is_none()
@@ -1512,8 +1512,8 @@ let second = operands.second();
                     ) && outward.is_none())
             }
             FeatureDefinition::Combine { operands,  .. } => {
-let target = operands.target();
-let tools = operands.tools();
+                let target = operands.target();
+                let tools = operands.tools();
                 incomplete_body_selection(target) || incomplete_body_selection(tools)
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
@@ -1528,8 +1528,8 @@ let tools = operands.tools();
 
                 keep,
             } => {
-let targets = operands.targets();
-let tools = operands.tools();
+                let targets = operands.targets();
+                let tools = operands.tools();
                 incomplete_body_selection(targets)
                     || incomplete_body_selection(tools)
                     || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
@@ -1556,8 +1556,8 @@ let tools = operands.tools();
                 operands,
 
             } => {
-let targets = operands.targets();
-let replacements = operands.replacements();
+            let targets = operands.targets();
+            let replacements = operands.replacements();
 incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
             FeatureDefinition::MoveFace { faces, .. } => incomplete_face_selection(faces),
             FeatureDefinition::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
@@ -1592,14 +1592,12 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
                 face,
                 placements,
                 shape,
-
-
                 extent,
                 ..
             } => {
-let construction = shape.construction();
-let exit_kind = shape.exit_kind();
-let diameter = &shape.diameter();
+                let construction = shape.construction();
+                let exit_kind = shape.exit_kind();
+                let diameter = shape.diameter();
                 let exit_kind_is_unresolved = exit_kind
                     .as_ref()
                     .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
@@ -3867,12 +3865,12 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 return None;
             };
             let construction = shape.construction();
-            let diameter = &shape.diameter();
+            let diameter = shape.diameter();
             Some((
                 feature.id.clone(),
                 placements.clone(),
                 construction.clone(),
-                *diameter,
+                diameter,
                 extent.clone(),
                 *bottom,
                 *taper_angle,

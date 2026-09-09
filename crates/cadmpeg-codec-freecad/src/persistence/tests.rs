@@ -294,7 +294,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }
@@ -311,21 +312,22 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
     match result.ir().model.procedural_curves[0].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-            parameter_range, ..
-        } => assert_eq!(*parameter_range, [0.0, 5.0]),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+            let parameter_range = definition_payload.parameter_range();
+            assert_eq!(*parameter_range, [0.0, 5.0]);
+        }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
     match result.ir().model.procedural_curves[1].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-            distance,
-            side:
-                cadmpeg_ir::geometry::OffsetSide::Direction {
-                    direction,
-                    support: None,
-                },
-            ..
-        } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
+            let distance = payload.distance();
+            let cadmpeg_ir::geometry::OffsetSide::Direction {
+                direction,
+                support: None,
+            } = payload.side()
+            else {
+                panic!("unexpected offset construction {payload:?}");
+            };
             assert_eq!(*distance, 2.0);
             assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
         }
@@ -334,7 +336,9 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().model.surfaces.len(), 7);
     match &result.ir().model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) => {
-            let (origin, normal, u_axis) = plane_surface.parts();
+            let origin = plane_surface.origin();
+            let normal = plane_surface.normal();
+            let u_axis = plane_surface.u_axis();
             assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
             assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
             assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);
@@ -344,26 +348,27 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(matches!(
         result.ir().model.procedural_surfaces[0].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
     ));
-    assert!(matches!(
-        result.ir().model.procedural_surfaces[1].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
-            parameter_interval: None,
-            ..
+    assert!(
+        match result.ir().model.procedural_surfaces[1].definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
+                matches!((&matched_payload.parameter_interval(),), (None,)),
+            _ => false,
         }
-    ));
-    assert!(matches!(
-        result.ir().model.procedural_surfaces[2].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
-            u_sense: None,
-            v_sense: None,
-            ..
+    );
+    assert!(
+        match result.ir().model.procedural_surfaces[2].definition() {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+                (matched_payload.u_sense(), matched_payload.v_sense(),),
+                (None, None,)
+            ),
+            _ => false,
         }
-    ));
+    );
     assert!(matches!(
         result.ir().model.procedural_surfaces[3].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
     ));
     match &result.ir().model.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {

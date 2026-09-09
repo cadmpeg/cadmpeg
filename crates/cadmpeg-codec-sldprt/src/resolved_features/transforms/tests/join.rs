@@ -6,14 +6,17 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue,
-};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
+};
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
+        ParameterValue,
+    },
+    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -420,7 +423,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-                angle: cadmpeg_ir::features::Angle::new(angle).unwrap(),
+                angle: cadmpeg_ir::scalar::Angle::new(angle).unwrap(),
             })
         );
         arc_angle.links.as_mut().unwrap().entries_mut()[0]

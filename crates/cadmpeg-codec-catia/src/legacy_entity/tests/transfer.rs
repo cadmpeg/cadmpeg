@@ -361,7 +361,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(12.5).unwrap()
+            cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
     assert_eq!(parameter.expression, "12.5 mm");
@@ -787,7 +787,7 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
     assert_eq!(
         decoded.ir().model.parameters[0].value,
         Some(cadmpeg_ir::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(8.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(8.0).unwrap()
         ))
     );
     assert_eq!(
@@ -970,7 +970,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
     assert_eq!(

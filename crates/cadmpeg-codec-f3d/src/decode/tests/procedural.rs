@@ -723,14 +723,13 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
             )
             .unwrap();
         let procedural = &decoded.ir().model.procedural_surfaces[0];
-        let ProceduralSurfaceDefinition::SubSurface {
-            support,
-            parameter_ranges,
-        } = procedural.definition()
+        let ProceduralSurfaceDefinition::SubSurface(definition_payload) = procedural.definition()
         else {
             panic!("expected sub-surface")
         };
-        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        let support = definition_payload.support();
+        let parameter_ranges = definition_payload.parameter_ranges();
+        assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
         assert!(matches!(decoded
         .ir()
         .model
@@ -739,7 +738,7 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         .find(|surface| surface.id == *support)
         .map(|surface| &surface.geometry), Some(SurfaceGeometry::Plane(plane_surface))
             if {
-                let (origin, _, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
                 *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
             }));
         assert!(matches!(
@@ -766,13 +765,15 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
-        assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::SubSurface {
-                parameter_ranges: [[-1.0, 2.0], [-3.0, 4.0]],
-                ..
+        assert!(
+            match round_trip.ir().model.procedural_surfaces[0].definition() {
+                ProceduralSurfaceDefinition::SubSurface(matched_payload) => matches!(
+                    (&matched_payload.parameter_ranges(),),
+                    ([[-1.0, 2.0], [-3.0, 4.0]],)
+                ),
+                _ => false,
             }
-        ));
+        );
     }
 }
 

@@ -137,11 +137,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
-        matches!(
-            surface.definition(),
-            ProceduralSurfaceDefinition::Offset { distance, .. }
-                if (distance - 2.0).abs() < f64::EPSILON
-        )
+        match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance - 2.0).abs() < f64::EPSILON), _ => false }
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane(_))
@@ -465,8 +461,9 @@ fn compact_carrier_shapes_decode() {
             geometry: SurfaceGeometry::Cylinder(cylinder_surface),
             ..
         }) => {
-            let (_, axis, _, radius) = cylinder_surface.parts();
-            assert_eq!(*radius, 50.0); // 0.05 m ×1000
+            let axis = cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
+            assert_eq!(radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
@@ -488,8 +485,8 @@ fn compact_carrier_shapes_decode() {
             geometry: CurveGeometry::Circle(circle_curve),
             ..
         }) => {
-            let (_, _, _, radius) = circle_curve.parts();
-            assert_eq!(*radius, 3.0);
+            let radius = circle_curve.radius();
+            assert_eq!(radius, 3.0);
         }
         other => panic!("expected circle, got {other:?}"),
     }

@@ -3,9 +3,9 @@
 
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, Length, PathRef, PatternKind, PatternSeed,
-    PatternTransform,
+use cadmpeg_ir::{
+    features::{FeatureDefinition, FeatureId, PathRef, PatternKind, PatternSeed, PatternTransform},
+    scalar::{Angle, Length},
 };
 use std::collections::HashMap;
 

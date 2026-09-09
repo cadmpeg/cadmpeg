@@ -328,7 +328,7 @@ pub(crate) fn pattern_hole_nominal_context(
                 else {
                     return None;
                 };
-                let diameter = &shape.diameter();
+                let diameter = shape.diameter();
                 Some(diameter.as_ref().and_then(|diameter| {
                     let diameter = diameter.get();
 

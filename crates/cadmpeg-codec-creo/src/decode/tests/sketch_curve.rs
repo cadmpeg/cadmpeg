@@ -15,7 +15,6 @@ use crate::decode::sketch_transfer::constraints::{
 use crate::decode::sketch_transfer::loci::section_skamp_active;
 use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -24,6 +23,10 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use cadmpeg_ir::topology::{Body, BodyKind};
+use cadmpeg_ir::{
+    features::{DimensionDisplay, ParameterId},
+    scalar::Length,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]

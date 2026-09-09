@@ -54,7 +54,7 @@ pub fn hole_extent_and_direction(
     Some((
         first_normal.map(|value| value * signed_length.signum()),
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(signed_length.abs())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(signed_length.abs())?,
         },
     ))
 }
@@ -187,7 +187,8 @@ pub fn cylinder_from_complementary_outline_bounds(
     let SurfaceGeometry::Plane(plane_surface) = plane else {
         return None;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let axis = normalize([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT

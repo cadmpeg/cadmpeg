@@ -13,7 +13,10 @@ const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
 #[test]
 fn decode_projects_every_dimension_as_a_neutral_parameter() {
-    use cadmpeg_ir::features::{Angle, DimensionDisplay, Length, ParameterValue};
+    use cadmpeg_ir::{
+        features::{DimensionDisplay, ParameterValue},
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     let keywords = format!(
@@ -116,7 +119,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert_eq!(
         value("Ratio"),
         Some(&ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.25).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(1.25).unwrap()
         ))
     );
     assert!(parameters
@@ -299,7 +302,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
 
 #[test]
 fn decode_evaluates_parameter_dependency_expressions() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -356,7 +359,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     assert_eq!(
         values["Root"],
         Some(ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(3.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap()
         ))
     );
     assert_eq!(values["Sign negative"], Some(ParameterValue::Integer(-1)));
@@ -365,7 +368,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     assert_eq!(
         values["Pi"],
         Some(ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(std::f64::consts::PI).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::PI).unwrap()
         ))
     );
     assert_eq!(
@@ -397,8 +400,9 @@ fn decode_evaluates_parameter_dependency_expressions() {
 
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+    use cadmpeg_ir::{
+        features::{BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination},
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -477,9 +481,12 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 
 #[test]
 fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length,
-        LinearTermination, ParameterValue,
+    use cadmpeg_ir::{
+        features::{
+            ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, LinearTermination,
+            ParameterValue,
+        },
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -546,7 +553,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
                 *extent = ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -700,7 +707,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(25.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     assert!(parameter.native_ref.is_some());
@@ -708,7 +715,10 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 
 #[test]
 fn decode_preserves_configuration_local_parameter_values() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, RadiusSpec};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, ParameterValue, RadiusSpec},
+        scalar::Length,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -834,7 +844,7 @@ fn decode_preserves_configuration_local_parameter_values() {
         panic!("configuration fillet state");
     };
     groups[0].radius = RadiusSpec::Constant {
-        radius: cadmpeg_ir::features::PositiveLength::new(75.0).unwrap(),
+        radius: cadmpeg_ir::scalar::PositiveLength::new(75.0).unwrap(),
     };
 
     let mut conflicting = edited.clone();
@@ -900,9 +910,12 @@ fn decode_preserves_configuration_local_parameter_values() {
 
 #[test]
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
-        ParameterValue,
+    use cadmpeg_ir::{
+        features::{
+            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+            ParameterValue,
+        },
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());

@@ -1308,7 +1308,9 @@ fn legacy_decoded_curve_endpoints(
             ])
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, _, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             let endpoint = Point3([
                 center.x + ref_direction.x * radius,
                 center.y + ref_direction.y * radius,
@@ -1317,7 +1319,7 @@ fn legacy_decoded_curve_endpoints(
             Ok([endpoint, endpoint])
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             let point = Point3([point.x, point.y, point.z]);
             Ok([point, point])
         }

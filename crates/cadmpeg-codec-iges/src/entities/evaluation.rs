@@ -46,21 +46,29 @@ fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<V
 pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2> {
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let (origin, direction) = line_pcurve.parts();
+            let origin = line_pcurve.origin();
+            let direction = line_pcurve.direction();
             Some(Point2::new(
                 origin.u + parameter * direction.u,
                 origin.v + parameter * direction.v,
             ))
         }
         PcurveGeometry::Circle(circle_pcurve) => {
-            let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
+            let center = circle_pcurve.center();
+            let x_axis = circle_pcurve.x_axis();
+            let y_axis = circle_pcurve.y_axis();
+            let radius = circle_pcurve.radius();
             Some(Point2::new(
                 center.u + radius * (x_axis.u * parameter.cos() + y_axis.u * parameter.sin()),
                 center.v + radius * (x_axis.v * parameter.cos() + y_axis.v * parameter.sin()),
             ))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
-            let (center, x_axis, y_axis, major_radius, minor_radius) = ellipse_pcurve.parts();
+            let center = ellipse_pcurve.center();
+            let x_axis = ellipse_pcurve.x_axis();
+            let y_axis = ellipse_pcurve.y_axis();
+            let major_radius = ellipse_pcurve.major_radius();
+            let minor_radius = ellipse_pcurve.minor_radius();
             Some(Point2::new(
                 center.u
                     + major_radius * x_axis.u * parameter.cos()
@@ -71,14 +79,19 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             ))
         }
         PcurveGeometry::Harmonic(harmonic_pcurve) => {
-            let (center, cosine, sine) = harmonic_pcurve.parts();
+            let center = harmonic_pcurve.center();
+            let cosine = harmonic_pcurve.cosine();
+            let sine = harmonic_pcurve.sine();
             Some(Point2::new(
                 center.u + cosine.u * parameter.cos() + sine.u * parameter.sin(),
                 center.v + cosine.v * parameter.cos() + sine.v * parameter.sin(),
             ))
         }
         PcurveGeometry::Parabola(parabola_pcurve) => {
-            let (vertex, x_axis, y_axis, focal_distance) = parabola_pcurve.parts();
+            let vertex = parabola_pcurve.vertex();
+            let x_axis = parabola_pcurve.x_axis();
+            let y_axis = parabola_pcurve.y_axis();
+            let focal_distance = parabola_pcurve.focal_distance();
             Some(Point2::new(
                 vertex.u
                     + focal_distance * x_axis.u * parameter * parameter
@@ -89,7 +102,11 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             ))
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
-            let (center, x_axis, y_axis, major_radius, minor_radius) = hyperbola_pcurve.parts();
+            let center = hyperbola_pcurve.center();
+            let x_axis = hyperbola_pcurve.x_axis();
+            let y_axis = hyperbola_pcurve.y_axis();
+            let major_radius = hyperbola_pcurve.major_radius();
+            let minor_radius = hyperbola_pcurve.minor_radius();
             Some(Point2::new(
                 center.u
                     + major_radius * x_axis.u * parameter.cosh()
@@ -100,7 +117,9 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             ))
         }
         PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
-            let (center, cosine, sine) = hyperbolic_pcurve.parts();
+            let center = hyperbolic_pcurve.center();
+            let cosine = hyperbolic_pcurve.cosine();
+            let sine = hyperbolic_pcurve.sine();
             Some(Point2::new(
                 center.u + cosine.u * parameter.cosh() + sine.u * parameter.sinh(),
                 center.v + cosine.v * parameter.cosh() + sine.v * parameter.sinh(),
@@ -126,7 +145,8 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             (denominator != 0.0).then(|| Point2::new(u / denominator, v / denominator))
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let (parameter_range, _, basis) = trimmed_pcurve.parts();
+            let parameter_range = trimmed_pcurve.parameter_range();
+            let basis = trimmed_pcurve.basis();
             let parameter = parameter.clamp(
                 parameter_range[0].min(parameter_range[1]),
                 parameter_range[0].max(parameter_range[1]),
@@ -134,7 +154,8 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             pcurve(basis, parameter)
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let (distance, basis) = offset_pcurve.parts();
+            let distance = offset_pcurve.distance();
+            let basis = offset_pcurve.basis();
             let delta = f64::EPSILON.sqrt() * parameter.abs().max(1.0);
             let point = pcurve(basis, parameter)?;
             let before = pcurve(basis, parameter - delta)?;
@@ -161,36 +182,50 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
 pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             Some(origin.translated(*direction, parameter))
         }
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
+            let ref_direction = circle_curve.ref_direction();
+            let radius = circle_curve.radius();
             let side = axis.cross(*ref_direction);
             let point = center.translated(*ref_direction, radius * parameter.cos());
             Some(point.translated(side, radius * parameter.sin()))
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             let point = center.translated(*major_direction, major_radius * parameter.cos());
             Some(point.translated(minor_direction, minor_radius * parameter.sin()))
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            let vertex = parabola_curve.vertex();
+            let axis = parabola_curve.axis();
+            let major_direction = parabola_curve.major_direction();
+            let focal_distance = parabola_curve.focal_distance();
             let minor_direction = axis.cross(*major_direction);
             let point = vertex.translated(*major_direction, focal_distance * parameter * parameter);
             Some(point.translated(minor_direction, 2.0 * focal_distance * parameter))
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
-            let (center, axis, major_direction, major_radius, minor_radius) =
-                hyperbola_curve.parts();
+            let center = hyperbola_curve.center();
+            let axis = hyperbola_curve.axis();
+            let major_direction = hyperbola_curve.major_direction();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             let point = center.translated(*major_direction, major_radius * parameter.cosh());
             Some(point.translated(minor_direction, minor_radius * parameter.sinh()))
         }
         CurveGeometry::Degenerate(degenerate_curve) => {
-            let (point,) = degenerate_curve.parts();
+            let point = degenerate_curve.point();
             Some(*point)
         }
         CurveGeometry::Nurbs(nurbs) => {

@@ -779,12 +779,15 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
 
 #[test]
 fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
-    use cadmpeg_ir::features::{
-        Angle, BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-        CoilSectionPlacement, FeatureDefinition, Length,
-    };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{
+            BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
+            CoilSectionPlacement, FeatureDefinition,
+        },
+        scalar::{Angle, Length},
+    };
 
     let construction = CoilConstruction {
         placement: CoilPlacement::Explicit {
@@ -795,13 +798,13 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
             )
             .unwrap(),
         },
-        diameter: cadmpeg_ir::features::PositiveLength::new(10.0).unwrap(),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
         extent: CoilExtent::RevolutionsHeight {
-            revolutions: cadmpeg_ir::features::PositiveReal::new(2.0).unwrap(),
+            revolutions: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
             height: Length::new(5.0).unwrap(),
         },
         section: CoilSection::Circular {
-            diameter: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
         },
         section_placement: CoilSectionPlacement::Center,
         clockwise: false,

@@ -40,7 +40,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.vertices().len(), 3);
     assert!((mesh.vertices()[1].x - 10.0).abs() < EPS_SAME_POINT);
     assert_eq!(mesh.triangles(), [[0, 1, 2]]);
-    assert_eq!(mesh.normals().len(), 3);
+    assert_eq!(mesh.vertex_normals().len(), 3);
     assert_eq!(
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
@@ -54,8 +54,8 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .unwrap();
     assert_eq!(complex.triangles(), [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
     assert_point3_close(complex.vertices()[0], Point3::new(10.0, 10.0, 0.0));
-    assert_eq!(complex.normals().len(), 4);
-    assert!((complex.normals()[0].x - 1.0).abs() < EPS_SAME_POINT);
+    assert_eq!(complex.vertex_normals().len(), 4);
+    assert!((complex.vertex_normals()[0].x - 1.0).abs() < EPS_SAME_POINT);
     assert!(result
         .ir()
         .model
@@ -148,7 +148,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
     assert_eq!(mesh.vertices().len(), 3);
     assert_point3_close(mesh.vertices()[1], Point3::new(10.0, 0.0, 0.0));
     assert_eq!(mesh.triangles(), [[0, 1, 2]]);
-    assert_eq!(mesh.normals().len(), 3);
+    assert_eq!(mesh.vertex_normals().len(), 3);
     assert_eq!(
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
@@ -362,7 +362,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("repositioned annotation mesh");
     assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
-    assert_vector3_close(mesh.normals()[0], Vector3::new(1.0, 0.0, 0.0));
+    assert_vector3_close(mesh.vertex_normals()[0], Vector3::new(1.0, 0.0, 0.0));
     assert!(mesh.body.is_none());
     let exact_mesh = decoded
         .ir()

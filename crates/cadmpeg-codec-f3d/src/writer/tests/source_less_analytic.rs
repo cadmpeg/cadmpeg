@@ -278,7 +278,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     else {
         panic!("generated carrier must be a plane")
     };
-    let (origin, _, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
     let mut origin = *origin;
 
     origin.z += 25.0;
@@ -759,7 +759,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             expression: "60 mm".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(60.0).unwrap(),
+                cadmpeg_ir::scalar::Length::new(60.0).unwrap(),
             )),
             dependencies: Default::default(),
             properties: std::collections::BTreeMap::new(),
@@ -1240,8 +1240,10 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         else {
             panic!("expected line carriers")
         };
-        let (actual_origin, actual_direction) = line_curve.parts();
-        let (expected_origin, expected_direction) = line_curve_2.parts();
+        let actual_origin = line_curve.origin();
+        let actual_direction = line_curve.direction();
+        let expected_origin = line_curve_2.origin();
+        let expected_direction = line_curve_2.direction();
         assert_eq!(*actual_origin, *expected_origin);
         assert!((actual_direction.x - expected_direction.x).abs() < 1e-14);
         assert!((actual_direction.y - expected_direction.y).abs() < 1e-14);
@@ -1703,7 +1705,10 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     let SurfaceGeometry::Cone(cone_surface) = &mut retained.model.surfaces[0].geometry else {
         panic!("expected cone")
     };
-    let (origin, axis, ref_direction, radius, _, _) = cone_surface.parts();
+    let origin = cone_surface.origin();
+    let axis = cone_surface.axis();
+    let ref_direction = cone_surface.ref_direction();
+    let radius = cone_surface.radius();
 
     let ratio = 0.4;
     let half_angle = 0.35;
@@ -1711,7 +1716,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         *origin,
         *axis,
         *ref_direction,
-        *radius,
+        radius,
         ratio,
         half_angle,
     )
@@ -1726,8 +1731,8 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     assert!(
         matches!(round_trip.ir().model.surfaces[0].geometry, SurfaceGeometry::Cone(cone_surface)
         if {
-            let (_, _, _, _, _, half_angle) = cone_surface.parts();
-            (*cone_surface.parts().4 == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
+            let half_angle = cone_surface.half_angle();
+            (cone_surface.ratio() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
         })
     );
 }

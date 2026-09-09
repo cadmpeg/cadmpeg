@@ -449,7 +449,7 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         cadmpeg_ir::features::FeatureDefinition::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
             ..
-        } if factors.map(cadmpeg_ir::features::NonZeroReal::get) == [2.0, 3.0, 4.0]
+        } if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [2.0, 3.0, 4.0]
     ));
 }
 
@@ -520,7 +520,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
         FeatureDefinition::Scale {
             factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
             ..
-        } if factors.map(cadmpeg_ir::features::NonZeroReal::get) == [3.0, 4.0, 5.0]
+        } if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [3.0, 4.0, 5.0]
     ));
     assert_valid_document(valid.ir());
 

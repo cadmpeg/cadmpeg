@@ -14,8 +14,11 @@ const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn semantic_writer_round_trips_all_pattern_forms() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PatternKind, PatternTransform};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PatternKind, PatternTransform},
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -179,8 +182,9 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, Length, ParameterValue, PatternKind, PatternTransform,
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, ParameterValue, PatternKind, PatternTransform},
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -266,8 +270,9 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, Length, ParameterValue, PatternKind, PatternTransform,
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, ParameterValue, PatternKind, PatternTransform},
+        scalar::Length,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -520,7 +525,10 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
 
 #[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind, PatternTransform};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PatternKind, PatternTransform},
+        scalar::Length,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -570,7 +578,10 @@ fn semantic_writer_round_trips_generic_pattern_type() {
 
 #[test]
 fn semantic_writer_round_trips_typed_sweep() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PathRef, ProfileRef},
+        scalar::Angle,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -628,7 +639,7 @@ fn semantic_writer_round_trips_typed_sweep() {
                     })
                     .unwrap();
                 *twist = Some(Angle::new(std::f64::consts::PI).unwrap());
-                *scale = Some(cadmpeg_ir::features::PositiveReal::new(2.0).unwrap());
+                *scale = Some(cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap());
             })
             .unwrap();
         ir_edit.model.features[3]
@@ -679,7 +690,7 @@ fn semantic_writer_round_trips_typed_sweep() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_surface_sweep() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition};
+    use cadmpeg_ir::{features::FeatureDefinition, scalar::Angle};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1135,7 +1146,7 @@ fn semantic_writer_round_trips_typed_rib() {
                         .unwrap(),
                 );
                 construction.thickness =
-                    Some(cadmpeg_ir::features::PositiveLength::new(3.0).unwrap());
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap());
                 construction.side = Some(RibSide::Centered);
                 construction.draft = RibDraft::None;
                 *op = BooleanOp::NewBody;
@@ -1222,7 +1233,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
                 *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
                     side: cadmpeg_ir::features::ExtrudeSide {
                         termination: cadmpeg_ir::features::LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(18.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(18.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1283,7 +1294,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
                 *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
                     side: cadmpeg_ir::features::ExtrudeSide {
                         termination: cadmpeg_ir::features::LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(18.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(18.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1335,7 +1346,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
                 *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
                     side: cadmpeg_ir::features::ExtrudeSide {
                         termination: cadmpeg_ir::features::LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(50.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1662,7 +1673,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
             .expect("projected D1 parameter");
         parameter.expression = "50mm".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(50.0).unwrap(),
+            cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
 
@@ -1724,7 +1735,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
                 *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
                     side: cadmpeg_ir::features::ExtrudeSide {
                         termination: cadmpeg_ir::features::LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(50.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1790,7 +1801,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
             .expect("projected D1 parameter");
         parameter.expression = "0.5".into();
         parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(0.5).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
         ));
     }
 
@@ -1815,7 +1826,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(500.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(500.0).unwrap()
         ))
     );
     let native_ref = parameter.native_ref.as_deref().expect("linked scalar");

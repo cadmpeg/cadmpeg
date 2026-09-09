@@ -365,16 +365,19 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             offset_construction,
-            ProceduralSurfaceDefinition::Offset {
-                support,
-                distance: 0.75,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
-                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
-                ),
-            },
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support,
+                    0.75,
+                    None,
+                    None,
+                    None,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

@@ -391,7 +391,8 @@ pub fn reconciled_model_plane(
         [] => None,
         [surface] => match &surface.geometry {
             SurfaceGeometry::Plane(plane_surface) => {
-                let (origin, normal, _) = plane_surface.parts();
+                let origin = plane_surface.origin();
+                let normal = plane_surface.normal();
                 Some(PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -1759,14 +1760,16 @@ pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Optio
 pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     let (origin, normal) = match geometry {
         CurveGeometry::Circle(circle_curve) => {
-            let (center, axis, _, _) = circle_curve.parts();
+            let center = circle_curve.center();
+            let axis = circle_curve.axis();
             (
                 [center.x, center.y, center.z],
                 normalize([axis.x, axis.y, axis.z])?,
             )
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let (center, axis, _, _, _) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let axis = ellipse_curve.axis();
             (
                 [center.x, center.y, center.z],
                 normalize([axis.x, axis.y, axis.z])?,
@@ -1796,7 +1799,8 @@ pub struct BoundaryLine {
 pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
         CurveGeometry::Line(line_curve) => {
-            let (origin, direction) = line_curve.parts();
+            let origin = line_curve.origin();
+            let direction = line_curve.direction();
             (
                 [origin.x, origin.y, origin.z],
                 normalize([direction.x, direction.y, direction.z])?,

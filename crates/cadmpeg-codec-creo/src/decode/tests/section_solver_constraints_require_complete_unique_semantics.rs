@@ -3,11 +3,14 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
     SketchId, SketchLocus, SketchNativeOperand,
+};
+use cadmpeg_ir::{
+    features::ParameterId,
+    scalar::{Angle, Length},
 };
 
 use super::{

@@ -78,11 +78,7 @@ pub struct PmiValue {
     pub quantity: PmiQuantity,
 }
 
-fn deserialize_pmi_value<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::units::FiniteScalar, D::Error> {
-    crate::units::deserialize_named(deserializer, "value")
-}
+crate::units::named_field!(deserialize_pmi_value, crate::units::FiniteScalar, "value");
 
 impl PmiValue {
     /// Construct a finite semantic quantity.
@@ -641,12 +637,11 @@ pub struct PmiAnnotation {
     pub definition: PmiDefinition,
 }
 
-fn deserialize_source_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("source_id: {error}")))
-}
+crate::units::named_field!(
+    deserialize_source_id,
+    crate::products::NonEmptyString,
+    "source_id"
+);
 
 #[cfg(test)]
 mod tests {

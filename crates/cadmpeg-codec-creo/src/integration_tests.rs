@@ -97,8 +97,8 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (_, _, _, radius) = cylinder_surface.parts();
-            *radius == 1.0
+            let radius = cylinder_surface.radius();
+            radius == 1.0
         })
     }));
     assert_valid(&result);

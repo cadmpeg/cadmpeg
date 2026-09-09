@@ -269,7 +269,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
     else {
         panic!("expected an exact circular offset carrier");
     };
-    let (_, _, _, &radius) = circle_curve.parts();
+    let radius = circle_curve.radius();
     assert_eq!(radius, 1.5);
     let edge = result
         .ir()
@@ -310,18 +310,22 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     else {
         panic!("expected an exact placed circular offset carrier");
     };
-    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+    let center = *circle_curve.center();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
+    let radius = circle_curve.radius();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().model.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-        source,
-        side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
-        ..
-    } = procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+        procedural.definition()
     else {
+        panic!("expected an offset construction");
+    };
+    let source = definition_payload_0.source();
+    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal) = definition_payload_0.side() else {
         panic!("expected an offset construction");
     };
     assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
@@ -356,7 +360,8 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
     else {
         panic!("expected an exact placed line offset carrier");
     };
-    let (&origin, &direction) = line_curve.parts();
+    let origin = *line_curve.origin();
+    let direction = *line_curve.direction();
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     let end = result
@@ -397,7 +402,10 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
     else {
         panic!("expected an exact reflected circular offset carrier");
     };
-    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
+    let center = *circle_curve.center();
+    let axis = *circle_curve.axis();
+    let ref_direction = *circle_curve.ref_direction();
+    let radius = circle_curve.radius();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(-1.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -542,19 +550,20 @@ fn decode_solves_a_parameter_linear_line_offset() {
                 cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
             ]
         );
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-            range:
-                Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                    distance_law:
-                        cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
-                            basis,
-                            distances,
-                            control_range,
-                        },
-                    ..
-                }),
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+            &result.ir().model.procedural_curves[0].definition()
+        else {
+            panic!("expected a retained linear offset law");
+        };
+        let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+            distance_law:
+                cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                    basis,
+                    distances,
+                    control_range,
+                },
             ..
-        } = &result.ir().model.procedural_curves[0].definition()
+        }) = definition_payload_0.range()
         else {
             panic!("expected a retained linear offset law");
         };
@@ -596,21 +605,22 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
             cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
         ]
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-        range:
-            Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                distance_law:
-                    cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
-                        function,
-                        coordinate,
-                        basis,
-                        function_parameter_offset,
-                        function_parameter_scale,
-                    },
-                ..
-            }),
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
+        &result.ir().model.procedural_curves[0].definition()
+    else {
+        panic!("expected a retained coordinate-function offset law");
+    };
+    let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+        distance_law:
+            cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+                function,
+                coordinate,
+                basis,
+                function_parameter_offset,
+                function_parameter_scale,
+            },
         ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    }) = definition_payload_0.range()
     else {
         panic!("expected a retained coordinate-function offset law");
     };

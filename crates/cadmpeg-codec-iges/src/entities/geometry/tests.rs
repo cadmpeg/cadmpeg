@@ -20,6 +20,8 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+const EPS_RADIUS_COMPARISON: f64 = 1.0e-12;
+
 #[test]
 fn point_display_symbol_targets_follow_the_declared_dialect() {
     assert!(super::point_display_symbol_type_allowed(
@@ -950,14 +952,17 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     else {
         panic!("expected a circle carrier");
     };
-    let (center, axis, ref_direction, radius) = circle_curve.parts();
+    let center = circle_curve.center();
+    let axis = circle_curve.axis();
+    let ref_direction = circle_curve.ref_direction();
+    let radius = circle_curve.radius();
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         *ref_direction,
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     );
-    assert_eq!(*radius, 1.0);
+    assert_eq!(radius, 1.0);
     assert_eq!(
         result.ir().model.edges[0].param_range(),
         Some([0.0, std::f64::consts::FRAC_PI_2])
@@ -990,8 +995,8 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
     else {
         panic!("expected a circle carrier");
     };
-    let (_, _, _, radius) = circle_curve.parts();
-    assert!((*radius - 1.0).abs() < 1.0e-12);
+    let radius = circle_curve.radius();
+    assert!((radius - 1.0).abs() < EPS_RADIUS_COMPARISON);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1057,9 +1062,10 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
     else {
         panic!("expected a circle carrier");
     };
-    let (_, axis, _, radius) = circle_curve.parts();
+    let axis = circle_curve.axis();
+    let radius = circle_curve.radius();
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
-    assert_eq!(*radius, 1.0);
+    assert_eq!(radius, 1.0);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1082,8 +1088,8 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
     else {
         panic!("expected a circle carrier");
     };
-    let (_, _, _, radius) = circle_curve.parts();
-    assert!((*radius - 16.0).abs() < 1.0e-12);
+    let radius = circle_curve.radius();
+    assert!((radius - 16.0).abs() < EPS_RADIUS_COMPARISON);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1126,7 +1132,8 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     else {
         panic!("expected a line carrier");
     };
-    let (origin, direction) = line_curve.parts();
+    let origin = line_curve.origin();
+    let direction = line_curve.direction();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
     assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 5.0]));

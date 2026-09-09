@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
-use crate::features::FiniteReal;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -95,6 +95,11 @@ impl NonEmptyString {
     pub fn new(value: impl Into<String>) -> Option<Self> {
         let value = value.into();
         (!value.is_empty()).then_some(Self(value))
+    }
+
+    /// Constructs a non-empty string from a leading character and a suffix.
+    pub fn prefixed(prefix: char, suffix: impl std::fmt::Display) -> Self {
+        Self(format!("{prefix}{suffix}"))
     }
 
     /// Returns the source string.
@@ -423,12 +428,7 @@ pub struct CopyOnChange {
     pub touched: Option<bool>,
 }
 
-fn deserialize_occurrence_scale<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<[FiniteReal; 3], D::Error> {
-    <[FiniteReal; 3]>::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("scale: {error}")))
-}
+crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
 
 impl Occurrence {
     /// Placement after applying the linked prototype contribution, when present.
@@ -635,6 +635,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn prefixes_preserve_nonempty_strings_and_wire_values() {
+        for (prefix, suffix, expected) in [('#', "42", "#42"), ('λ', "", "λ"), ('\0', "", "\0")] {
+            let value = NonEmptyString::prefixed(prefix, suffix);
+            assert_eq!(value.as_str(), expected);
+            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
+        }
+        assert_eq!(NonEmptyString::prefixed('#', 42).as_str(), "#42");
+    }
+
+    #[test]
     fn external_document_wire_preserves_legacy_fields_and_rejects_split_states() {
         let path = ExternalDocument::path("parts/widget.FCStd");
         let path_wire = serde_json::to_value(&path).unwrap();
@@ -702,7 +712,7 @@ mod tests {
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [crate::features::FiniteReal::ONE; 3],
+            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

@@ -31,10 +31,13 @@ use crate::decode::sketch_transfer::loci::{
     section_point_locus, section_skamp_active, section_skamp_locus,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchDistancePair, SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
+};
+use cadmpeg_ir::{
+    features::ParameterId,
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -2244,7 +2247,7 @@ mod tests {
                 first: 10,
                 second: 11,
                 difference: 20,
-                value: cadmpeg_ir::features::Angle::new(1.5).expect("finite angle fixture"),
+                value: cadmpeg_ir::scalar::Angle::new(1.5).expect("finite angle fixture"),
             }
         );
     }

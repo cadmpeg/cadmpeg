@@ -147,6 +147,7 @@ impl DecodedProceduralSurface {
             &'static str,
             DecodedCurve,
         ) -> Result<cadmpeg_ir::ids::CurveId, E>,
+        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> E,
     ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
@@ -160,28 +161,32 @@ impl DecodedProceduralSurface {
                 transposed,
             } => {
                 let [directrix] = *children;
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: commit_child(0, "directrix", directrix)?,
-                    axis_origin,
-                    axis_direction,
-                    angular_interval,
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(parameter_interval),
-                    transposed,
-                    revision_form: None,
-                }
+                ProceduralSurfaceDefinition::Revolution(
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        commit_child(0, "directrix", directrix)?,
+                        (axis_origin, axis_direction),
+                        angular_interval,
+                        None,
+                        Some(parameter_interval),
+                        transposed,
+                        None,
+                    )
+                    .map_err(reject_payload)?,
+                )
             }
             Self::Sum {
                 children,
                 basepoint,
             } => {
                 let [first, second] = *children;
-                ProceduralSurfaceDefinition::Sum {
-                    first: commit_child(0, "first", first)?,
-                    second: commit_child(1, "second", second)?,
-                    basepoint,
-                    revision_form: None,
-                }
+                let first = commit_child(0, "first", first)?;
+                let second = commit_child(1, "second", second)?;
+                ProceduralSurfaceDefinition::Sum(
+                    cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                        first, second, basepoint, None,
+                    )
+                    .map_err(reject_payload)?,
+                )
             }
         })
     }

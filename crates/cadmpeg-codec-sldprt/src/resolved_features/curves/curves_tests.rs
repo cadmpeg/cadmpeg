@@ -8,8 +8,8 @@ use super::super::{
 };
 use super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };

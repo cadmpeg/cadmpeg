@@ -32,10 +32,11 @@ use crate::decode::sweep::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, LinearTermination,
+    FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, LinearTermination,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
@@ -1144,7 +1145,9 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     else {
         unreachable!()
     };
-    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+    let origin = cylinder_surface.origin();
+    let axis = cylinder_surface.axis();
+    let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 0.25;
     *cylinder_surface =
@@ -1264,7 +1267,7 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(1.0)
+                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
                     .expect("nonzero length fixture"),
             },
         ))
@@ -1298,7 +1301,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(57.0).expect("nonzero length fixture"),
+            length: cadmpeg_ir::scalar::NonZeroLength::new(57.0).expect("nonzero length fixture"),
         },
     ));
     assert_eq!(
@@ -1329,7 +1332,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(40.0)
+                length: cadmpeg_ir::scalar::NonZeroLength::new(40.0)
                     .expect("nonzero length fixture"),
             },
         ))

@@ -7,8 +7,11 @@ use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::history::classify::is_offset_plane;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DatumPlaneReference, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{DatumPlaneReference, PrincipalPlane},
+    scalar::Length,
+};
 
 #[allow(
     clippy::too_many_arguments,

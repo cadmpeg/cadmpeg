@@ -628,8 +628,10 @@ fn analytic_rolling_ball_surface(
     if let (SurfaceGeometry::Plane(plane_surface), SurfaceGeometry::Plane(plane_surface_2)) =
         (first, second)
     {
-        let (first_origin, first_normal, _) = plane_surface.parts();
-        let (second_origin, second_normal, _) = plane_surface_2.parts();
+        let first_origin = plane_surface.origin();
+        let first_normal = plane_surface.normal();
+        let second_origin = plane_surface_2.origin();
+        let second_normal = plane_surface_2.normal();
         let (origin, axis) = linear_nurbs_spine(spine)?;
         let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             * radius
@@ -676,8 +678,11 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Plane(plane_surface),
                 SurfaceGeometry::Cylinder(cylinder_surface),
             ) => {
-                let (plane_origin, plane_normal, _) = plane_surface.parts();
-                let (cylinder_origin, cylinder_axis, _, cylinder_radius) = cylinder_surface.parts();
+                let plane_origin = plane_surface.origin();
+                let plane_normal = plane_surface.normal();
+                let cylinder_origin = cylinder_surface.origin();
+                let cylinder_axis = cylinder_surface.axis();
+                let cylinder_radius = cylinder_surface.radius();
                 (
                     plane_origin,
                     plane_normal,
@@ -690,9 +695,11 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Cylinder(cylinder_surface_2),
                 SurfaceGeometry::Plane(plane_surface_2),
             ) => {
-                let (cylinder_origin, cylinder_axis, _, cylinder_radius) =
-                    cylinder_surface_2.parts();
-                let (plane_origin, plane_normal, _) = plane_surface_2.parts();
+                let cylinder_origin = cylinder_surface_2.origin();
+                let cylinder_axis = cylinder_surface_2.axis();
+                let cylinder_radius = cylinder_surface_2.radius();
+                let plane_origin = plane_surface_2.origin();
+                let plane_normal = plane_surface_2.normal();
                 (
                     plane_origin,
                     plane_normal,

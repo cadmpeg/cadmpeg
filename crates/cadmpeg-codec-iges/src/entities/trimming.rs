@@ -272,8 +272,7 @@ fn procedural_source_parameter_map(
     if let Some(procedural) = procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
-            ProceduralSurfaceDefinition::Extrusion { .. }
-                | ProceduralSurfaceDefinition::Revolution { .. }
+            ProceduralSurfaceDefinition::Extrusion(_) | ProceduralSurfaceDefinition::Revolution(_)
         )
     }) {
         return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
@@ -464,44 +463,44 @@ fn procedural_pcurve_parameter_map(
     let mut u_map = (1.0, 0.0);
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            parameter_interval,
-            ..
-        } => {
-            if line_directrix(ir, directrix) {
-                u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
-            } else if let Some(parameter_interval) = parameter_interval {
-                u_map = affine_parameter_map(*parameter_interval, carrier_interval)?;
+        ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let parameter_interval = definition_payload.parameter_interval();
+            {
+                if line_directrix(ir, directrix) {
+                    u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
+                } else if let Some(parameter_interval) = parameter_interval {
+                    u_map = affine_parameter_map(parameter_interval, carrier_interval)?;
+                }
             }
         }
-        ProceduralSurfaceDefinition::Revolution {
-            directrix,
-            angular_interval,
-            angular_parameter_interval,
-            parameter_interval,
-            transposed,
-            ..
-        } => {
-            let directrix_map = if line_directrix(ir, directrix) {
-                affine_parameter_map([0.0, 1.0], carrier_interval)?
-            } else if let Some(parameter_interval) = parameter_interval {
-                affine_parameter_map(*parameter_interval, carrier_interval)?
-            } else {
-                (1.0, 0.0)
-            };
-            let angular_map = match angular_parameter_interval {
-                Some(parameter_interval) => {
-                    affine_parameter_map(*parameter_interval, *angular_interval)?
+        ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+            let directrix = definition_payload.directrix();
+            let angular_interval = definition_payload.angular_interval();
+            let angular_parameter_interval = definition_payload.angular_parameter_interval();
+            let parameter_interval = definition_payload.parameter_interval();
+            let transposed = definition_payload.transposed();
+            {
+                let directrix_map = if line_directrix(ir, directrix) {
+                    affine_parameter_map([0.0, 1.0], carrier_interval)?
+                } else if let Some(parameter_interval) = parameter_interval {
+                    affine_parameter_map(parameter_interval, carrier_interval)?
+                } else {
+                    (1.0, 0.0)
+                };
+                let angular_map = match angular_parameter_interval {
+                    Some(parameter_interval) => {
+                        affine_parameter_map(parameter_interval, *angular_interval)?
+                    }
+                    None => (1.0, 0.0),
+                };
+                if *transposed {
+                    u_map = angular_map;
+                    v_map = directrix_map;
+                } else {
+                    u_map = directrix_map;
+                    v_map = angular_map;
                 }
-                None => (1.0, 0.0),
-            };
-            if *transposed {
-                u_map = angular_map;
-                v_map = directrix_map;
-            } else {
-                u_map = directrix_map;
-                v_map = angular_map;
             }
         }
         _ => return None,
@@ -881,7 +880,8 @@ fn linear_boundary_geometry(
     let SurfaceGeometry::Plane(plane_surface) = support else {
         return None;
     };
-    let (origin, normal, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
+    let normal = plane_surface.normal();
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
     let model_plane = (*origin, *normal);
     if items.iter().any(|item| {
@@ -1374,28 +1374,37 @@ fn surface_parameter_bounds(
         }
         let procedural = index.procedural_surface_for_surface(surface_id.as_str())?;
         let bounds = match procedural.definition() {
-            ProceduralSurfaceDefinition::Ruled { .. }
-            | ProceduralSurfaceDefinition::Extrusion { .. } => procedural
+            ProceduralSurfaceDefinition::Ruled { .. } => procedural
                 .record_bounds
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
-            ProceduralSurfaceDefinition::Revolution {
-                angular_interval, ..
-            } => procedural.record_bounds.map(|bounds| {
-                [
-                    bounds[0],
-                    bounds[1],
-                    Some(angular_interval[0]),
-                    Some(angular_interval[1]),
-                ]
-            }),
+            ProceduralSurfaceDefinition::Extrusion(_) => procedural
+                .record_bounds
+                .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
+            ProceduralSurfaceDefinition::Revolution(definition_payload) => {
+                let angular_interval = definition_payload.angular_interval();
+                procedural.record_bounds.map(|bounds| {
+                    [
+                        bounds[0],
+                        bounds[1],
+                        Some(angular_interval[0]),
+                        Some(angular_interval[1]),
+                    ]
+                })
+            }
             _ => procedural.record_bounds,
         };
         if let Some(bounds) = bounds {
             return Some(bounds);
         }
         let support = match procedural.definition() {
-            ProceduralSurfaceDefinition::Offset { support, .. }
-            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => support,
+            ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                let support = definition_payload.support();
+                support
+            }
+            ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
+                let support = definition_payload.support();
+                support
+            }
             ProceduralSurfaceDefinition::Replica { source, .. } => source,
             _ => return None,
         };

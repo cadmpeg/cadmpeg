@@ -284,7 +284,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
                         .expect("nonzero length fixture"),
                 },
                 draft: None,
@@ -294,10 +294,12 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     assert!(
         matches!(SurfaceGeometry::try_from(sweep.geometry).expect("valid hole cylinder"), SurfaceGeometry::Cylinder(cylinder_surface)
         if {
-            let (origin, axis, _, radius) = cylinder_surface.parts();
+            let origin = cylinder_surface.origin();
+            let axis = cylinder_surface.axis();
+            let radius = cylinder_surface.radius();
             *origin == Point3::new(-12.5, -4.0, 0.0)
                 && *axis == Vector3::new(0.0, -1.0, 0.0)
-                && *radius == 0.75
+                && radius == 0.75
         })
     );
 
@@ -754,7 +756,9 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         ..
     }) = ir.model.surfaces.first_mut()
     {
-        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+        let origin = cylinder_surface.origin();
+        let axis = cylinder_surface.axis();
+        let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 0.75;
         *cylinder_surface =
@@ -1199,14 +1203,14 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(3.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -1229,7 +1233,7 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(48.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -1255,7 +1259,7 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(48.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -1282,7 +1286,7 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(38.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(38.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -1321,7 +1325,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(34.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
                             .expect("nonzero length fixture")
                     },
                     draft: None,
@@ -1517,7 +1521,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
                         .expect("nonzero length fixture"),
                 },
                 draft: None,
@@ -1603,7 +1607,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -1725,7 +1729,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let SurfaceGeometry::Plane(plane_surface) = &mut oblique.model.surfaces[0].geometry else {
         panic!("plane");
     };
-    let (origin, _, _) = plane_surface.parts();
+    let origin = plane_surface.origin();
 
     let normal = Vector3::new(
         0.0,

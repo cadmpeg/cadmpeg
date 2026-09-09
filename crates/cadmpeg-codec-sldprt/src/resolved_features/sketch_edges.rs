@@ -120,10 +120,11 @@ pub(super) fn project_edge(
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle(circle_curve)) => {
-            let (center, _, _, radius) = circle_curve.parts();
+            let center = circle_curve.center();
+            let radius = circle_curve.radius();
             let center = project_point(*center, origin, u_axis, v_axis);
-            if !circle_contains_point(center, *radius, start, tolerance)
-                || !circle_contains_point(center, *radius, end, tolerance)
+            if !circle_contains_point(center, radius, start, tolerance)
+                || !circle_contains_point(center, radius, end, tolerance)
             {
                 return line();
             }
@@ -131,7 +132,7 @@ pub(super) fn project_edge(
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center,
-                        radius: cadmpeg_ir::features::Length::new(*radius)?,
+                        radius: cadmpeg_ir::scalar::Length::new(radius)?,
                     })
                     .ok()?,
                 )
@@ -140,12 +141,12 @@ pub(super) fn project_edge(
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center,
-                        radius: cadmpeg_ir::features::Length::new(*radius)?,
-                        start_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                        radius: cadmpeg_ir::scalar::Length::new(radius)?,
+                        start_angle: cadmpeg_ir::scalar::Angle::new(parameters.map_or_else(
                             || (start.v - center.v).atan2(start.u - center.u),
                             |range| range[0],
                         ))?,
-                        end_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                        end_angle: cadmpeg_ir::scalar::Angle::new(parameters.map_or_else(
                             || (end.v - center.v).atan2(end.u - center.u),
                             |range| range[1],
                         ))?,
@@ -155,7 +156,10 @@ pub(super) fn project_edge(
             }
         }
         Some(CurveGeometry::Ellipse(ellipse_curve)) => {
-            let (center, _, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            let center = ellipse_curve.center();
+            let major_direction = ellipse_curve.major_direction();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let center = project_point(*center, origin, u_axis, v_axis);
             let major_u = major_direction.dot(u_axis);
             let major_v = major_direction.dot(v_axis);
@@ -163,15 +167,15 @@ pub(super) fn project_edge(
             if !ellipse_contains_point(
                 center,
                 major_angle,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 start,
                 tolerance,
             ) || !ellipse_contains_point(
                 center,
                 major_angle,
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 end,
                 tolerance,
             ) {
@@ -183,23 +187,23 @@ pub(super) fn project_edge(
                 let dv = point.v - center.v;
                 let major_component = du * major_angle.cos() + dv * major_angle.sin();
                 let minor_component = -du * major_angle.sin() + dv * major_angle.cos();
-                (minor_component / *minor_radius).atan2(major_component / *major_radius)
+                (minor_component / minor_radius).atan2(major_component / major_radius)
             };
             let parameters = edge.param_range().filter(|[start, end]| start != end);
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center,
-                    major_angle: cadmpeg_ir::features::Angle::new(major_angle)?,
-                    major_radius: cadmpeg_ir::features::Length::new(*major_radius)?,
-                    minor_radius: cadmpeg_ir::features::Length::new(*minor_radius)?,
+                    major_angle: cadmpeg_ir::scalar::Angle::new(major_angle)?,
+                    major_radius: cadmpeg_ir::scalar::Length::new(major_radius)?,
+                    minor_radius: cadmpeg_ir::scalar::Length::new(minor_radius)?,
                     bounds: if full {
                         None
                     } else {
                         Some([
-                            cadmpeg_ir::features::Angle::new(
+                            cadmpeg_ir::scalar::Angle::new(
                                 parameters.map_or_else(|| parameter(start), |range| range[0]),
                             )?,
-                            cadmpeg_ir::features::Angle::new(
+                            cadmpeg_ir::scalar::Angle::new(
                                 parameters.map_or_else(|| parameter(end), |range| range[1]),
                             )?,
                         ])
