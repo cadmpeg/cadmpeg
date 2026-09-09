@@ -3436,17 +3436,20 @@ impl<'a> Builder<'a> {
         ];
         enum Modifier {
             Simple(String),
-            WithValue { kind: String, value: f64 },
+            WithValue {
+                kind: String,
+                value: cadmpeg_ir::PmiValue,
+            },
         }
         let parsed = source
             .iter()
             .map(|modifier| {
                 if let Some((kind, value)) = modifier.split_once(':') {
                     let kind = kind.to_ascii_lowercase();
-                    let value = value.parse::<f64>().ok()?;
-                    if !value.is_finite() {
-                        return None;
-                    }
+                    let value = cadmpeg_ir::PmiValue::new(
+                        value.parse::<f64>().ok()?,
+                        cadmpeg_ir::PmiQuantity::Length,
+                    )?;
                     WITH_VALUE
                         .contains(&kind.as_str())
                         .then_some(Modifier::WithValue { kind, value })
@@ -3462,10 +3465,7 @@ impl<'a> Builder<'a> {
         for modifier in parsed {
             match modifier {
                 Modifier::WithValue { kind, value } => {
-                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue::new(
-                        value,
-                        cadmpeg_ir::PmiQuantity::Length,
-                    )?);
+                    let measure = self.emit_pmi_measure(value);
                     modifiers.push(
                         self.emitter
                             .emit(
