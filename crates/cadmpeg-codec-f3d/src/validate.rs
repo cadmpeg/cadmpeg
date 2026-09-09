@@ -7152,8 +7152,8 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             Some(record_index) => companions_by_index
                 .get(&(native_stream, record_index))
                 .is_some_and(|companion| {
-                    frame.byte_offset >= companion.byte_offset.saturating_add(58)
-                        && frame.paired_byte_offset
+                    frame.byte_offset() >= companion.byte_offset.saturating_add(58)
+                        && frame.paired_byte_offset()
                             < companion
                                 .byte_offset
                                 .saturating_add(58)
@@ -7162,7 +7162,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             None => governing_owner.is_some_and(|owner| {
                 scopes_by_index
                     .get(&(native_stream, owner.scope_record_index()))
-                    .is_some_and(|scope| frame.byte_offset >= scope.byte_offset())
+                    .is_some_and(|scope| frame.byte_offset() >= scope.byte_offset())
                     && native
                         .design_parameter_owners
                         .iter()
@@ -7176,7 +7176,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 .map(|companion| companion.byte_offset)
                         })
                         .min()
-                        .is_some_and(|end| frame.paired_byte_offset < end)
+                        .is_some_and(|end| frame.paired_byte_offset() < end)
             }),
         };
         let governing_link_valid = governing_owner.is_some_and(|owner| {
@@ -7187,37 +7187,11 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         parameter.kind() == records::DesignParameterKind::Dimension
                     })
         });
-        let operand_start = frame.byte_offset.saturating_add(24);
-        let operands_valid = !frame.operands.is_empty()
-            && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
-                let start = operand_start.saturating_add((ordinal as u64).saturating_mul(15));
-                operand.geometry_reference_offset == start.saturating_add(1)
-                    && operand.role_offset == start.saturating_add(11)
-                    && operand.geometry_record_index.is_none_or(|index| {
-                        sketch_geometry_indices.contains(&(native_stream, index.get()))
-                    })
-            });
-        let returns_start = frame.governing_owner_reference_offset.saturating_add(15);
-        let returns_valid = frame
-            .return_members
-            .iter()
-            .enumerate()
-            .all(|(ordinal, member)| {
-                member.offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11))
-                    && sketch_geometry_indices.contains(&(native_stream, member.value.get()))
-            });
-        let mut operand_members = frame
-            .operands
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
-            .collect::<Vec<_>>();
-        let mut return_members = frame
-            .return_members
-            .iter()
-            .map(|member| member.value.get())
-            .collect::<Vec<_>>();
-        operand_members.sort_unstable();
-        return_members.sort_unstable();
+        let operands_valid = frame.operands().iter().all(|operand| {
+            operand
+                .geometry_record_index
+                .is_none_or(|index| sketch_geometry_indices.contains(&(native_stream, index.get())))
+        });
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(frame.owner_reference)))
             .is_some_and(|entity| entity.in_sketch_module());
@@ -7225,19 +7199,6 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && physical_interval_valid
             && governing_link_valid
             && operands_valid
-            && frame.annotation_byte_offset
-                == operand_start
-                    .saturating_add((frame.operands.len() as u64).saturating_mul(15))
-                    .saturating_add(57)
-            && frame.governing_owner_reference_offset
-                == frame
-                    .annotation_byte_offset
-                    .saturating_add(frame.annotation_bytes.len() as u64)
-                    .saturating_add(1)
-            && returns_valid
-            && operand_members == return_members
-            && frame.paired_byte_offset == frame.byte_offset.saturating_add(frame.frame_length)
-            && frame.owner_reference_offset == frame.paired_byte_offset.saturating_add(20)
             && owner_is_sketch;
         if !valid {
             findings.push(Finding {

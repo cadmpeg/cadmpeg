@@ -965,18 +965,23 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_companion_record_index, 391);
     assert_eq!(frame.entity_genesis, 0x202);
-    assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
-    assert_eq!(frame.annotation_bytes, [0xaa, 0xbb, 0xcc]);
-    assert_eq!(frame.operands[0].geometry_record_index, None);
+    assert_eq!(
+        frame.annotation_byte_offset(),
+        annotation_byte_offset as u64
+    );
+    assert_eq!(frame.annotation_bytes(), [0xaa, 0xbb, 0xcc]);
+    assert_eq!(frame.operands()[0].geometry_record_index, None);
     assert_eq!(
         frame
+            .clone()
+            .into_draft()
             .return_members
             .iter()
             .map(|member| member.value.get())
             .collect::<Vec<_>>(),
         [376, 354]
     );
-    assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
+    assert_eq!(frame.paired_byte_offset(), paired_byte_offset as u64);
     assert_eq!(frame.owner_reference, 201);
 
     let leading = parse_dimension_annotation_frame(

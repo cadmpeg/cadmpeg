@@ -1172,16 +1172,16 @@ pub fn decode_dimension_annotation_frames(
                     &geometry_indices,
                     &sketch_entities,
                 )
-                .filter(|frame| frame.paired_byte_offset < end as u64)
+                .filter(|frame| frame.paired_byte_offset() < end as u64)
                 {
                     frame.id = ids::native_design_dimension_annotation_frame_id(
                         &entry.name,
-                        frame.byte_offset,
+                        frame.byte_offset(),
                     );
-                    position = usize::try_from(frame.paired_byte_offset)
+                    position = usize::try_from(frame.paired_byte_offset())
                         .unwrap_or(at)
                         .saturating_add(1);
-                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset)) {
+                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset())) {
                         out.push(frame);
                     }
                 } else {
@@ -1344,7 +1344,7 @@ pub(crate) fn parse_dimension_annotation_frame(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    Some(DesignDimensionAnnotationFrame {
+    DesignDimensionAnnotationFrame::try_new(crate::records::DesignDimensionAnnotationFrameDraft {
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: *governing_companion_record_index,
@@ -1364,6 +1364,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         owner_reference,
         owner_reference_offset: (paired_byte_offset + 20) as u64,
     })
+    .ok()
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension

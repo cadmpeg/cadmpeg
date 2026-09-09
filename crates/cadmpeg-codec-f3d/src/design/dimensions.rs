@@ -811,7 +811,7 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) =
                 parameter_for(scope, frame.governing_companion_record_index)?;
             let indices = frame
-                .operands
+                .operands()
                 .iter()
                 .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
@@ -831,7 +831,7 @@ fn project_all_dimension_constraints(
                 })
                 .unwrap_or_else(|| {
                     let operands = frame
-                        .operands
+                        .operands()
                         .iter()
                         .map(|operand| match operand.geometry_record_index {
                             None => SketchNativeOperand {
@@ -3495,23 +3495,21 @@ pub(crate) fn annotation_offset_dimension_definition(
         matches.next().is_none().then_some(curve)
     };
     let non_null_indices = frame
-        .operands
+        .operands()
         .iter()
         .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         .collect::<Vec<_>>();
     let null_locus_count = frame
-        .operands
+        .operands()
         .iter()
         .filter(|operand| operand.geometry_record_index.is_none())
         .count();
 
-    let explicit_pair = match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
-        ([first_index, second_index], [first_return, second_return])
-            if frame.operands.len() == 3
+    let explicit_pair = match non_null_indices.as_slice() {
+        [first_index, second_index]
+            if frame.operands().len() == 3
                 && null_locus_count == 1
-                && first_return.value != second_return.value
-                && non_null_indices.contains(&first_return.value.get())
-                && non_null_indices.contains(&second_return.value.get()) =>
+                && first_index != second_index =>
         {
             let first_curve = curve_for_index(*first_index)?;
             let second_curve = curve_for_index(*second_index)?;
@@ -3530,12 +3528,8 @@ pub(crate) fn annotation_offset_dimension_definition(
     let (source_record_index, explicit_result_record_index) = if let Some(pair) = explicit_pair {
         pair
     } else {
-        match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
-            ([source_record_index], [returned_record_index])
-                if frame.operands.len() == 2
-                    && null_locus_count == 1
-                    && *source_record_index == returned_record_index.value.get() =>
-            {
+        match non_null_indices.as_slice() {
+            [source_record_index] if frame.operands().len() == 2 && null_locus_count == 1 => {
                 let source_curve = curve_for_index(*source_record_index)?;
                 (source_curve.secondary_id == 0).then_some((*source_record_index, None))?
             }
@@ -3838,7 +3832,7 @@ pub fn bind_dimension_loci(
             continue;
         };
         for record_index in frame
-            .operands
+            .operands()
             .iter()
             .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         {

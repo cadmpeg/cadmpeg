@@ -540,42 +540,45 @@ fn single_curve_annotation_projects_parameterized_offset() {
             evaluated_value_offset: 90,
         })
         .unwrap();
-    let frame = DesignDimensionAnnotationFrame {
-        id: format!("{stream}:design-dimension-annotation-frame#14"),
-        companion_record_index: Some(15),
-        governing_companion_record_index: 15,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: 14,
-        frame_length: 100,
-        operands: vec![
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(0),
-                geometry_reference_offset: 0,
-                role: 3,
-                role_offset: 0,
-            },
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(10),
-                geometry_reference_offset: 0,
-                role: 2,
-                role_offset: 0,
-            },
-        ],
-        entity_genesis: 0x80,
-        annotation_bytes: Vec::new(),
-        annotation_byte_offset: 0,
-        governing_owner_record_index: 13,
-        governing_owner_reference_offset: 0,
-        return_members: vec![crate::records::Located {
-            value: std::num::NonZeroU32::new(10).unwrap(),
-            offset: 0,
-        }],
-        paired_class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        owner_reference: 100,
-        owner_reference_offset: 0,
-    };
+    let frame = DesignDimensionAnnotationFrame::try_new(
+        crate::records::DesignDimensionAnnotationFrameDraft {
+            id: format!("{stream}:design-dimension-annotation-frame#14"),
+            companion_record_index: Some(15),
+            governing_companion_record_index: 15,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            record_index: 14,
+            frame_length: 100,
+            operands: vec![
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(0),
+                    geometry_reference_offset: 25,
+                    role: 3,
+                    role_offset: 35,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(10),
+                    geometry_reference_offset: 40,
+                    role: 2,
+                    role_offset: 50,
+                },
+            ],
+            entity_genesis: 0x80,
+            annotation_bytes: Vec::new(),
+            annotation_byte_offset: 111,
+            governing_owner_record_index: 13,
+            governing_owner_reference_offset: 112,
+            return_members: vec![crate::records::Located {
+                value: std::num::NonZeroU32::new(10).unwrap(),
+                offset: 127,
+            }],
+            paired_class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            paired_byte_offset: 100,
+            owner_reference: 100,
+            owner_reference_offset: 120,
+        },
+    )
+    .unwrap();
     let parameter_id = ParameterId::mint("generated:parameter#offset").expect("identity grammar");
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
@@ -606,39 +609,44 @@ fn single_curve_annotation_projects_parameterized_offset() {
             && actual_parameter == parameter_id
     ));
 
-    let explicit_frame = DesignDimensionAnnotationFrame {
-        operands: vec![
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(0),
-                geometry_reference_offset: 0,
-                role: 3,
-                role_offset: 0,
-            },
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(11),
-                geometry_reference_offset: 0,
-                role: 1,
-                role_offset: 0,
-            },
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(10),
-                geometry_reference_offset: 0,
-                role: 2,
-                role_offset: 0,
-            },
-        ],
-        return_members: vec![
-            crate::records::Located {
-                value: std::num::NonZeroU32::new(10).unwrap(),
-                offset: 0,
-            },
-            crate::records::Located {
-                value: std::num::NonZeroU32::new(11).unwrap(),
-                offset: 0,
-            },
-        ],
-        ..frame.clone()
-    };
+    let explicit_frame = DesignDimensionAnnotationFrame::try_new(
+        crate::records::DesignDimensionAnnotationFrameDraft {
+            operands: vec![
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(0),
+                    geometry_reference_offset: 25,
+                    role: 3,
+                    role_offset: 35,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(11),
+                    geometry_reference_offset: 40,
+                    role: 1,
+                    role_offset: 50,
+                },
+                DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(10),
+                    geometry_reference_offset: 55,
+                    role: 2,
+                    role_offset: 65,
+                },
+            ],
+            return_members: vec![
+                crate::records::Located {
+                    value: std::num::NonZeroU32::new(10).unwrap(),
+                    offset: 142,
+                },
+                crate::records::Located {
+                    value: std::num::NonZeroU32::new(11).unwrap(),
+                    offset: 153,
+                },
+            ],
+            annotation_byte_offset: 126,
+            governing_owner_reference_offset: 127,
+            ..frame.clone().into_draft()
+        },
+    )
+    .unwrap();
     let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
         &explicit_frame,
         &parameter,
