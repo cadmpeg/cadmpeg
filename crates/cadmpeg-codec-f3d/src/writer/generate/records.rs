@@ -295,7 +295,10 @@ pub(crate) fn encode_design_bulkstream(
             .iter()
             .enumerate()
             .filter(|(_, design_type)| {
-                design_type.type_guid.eq_ignore_ascii_case(expected.0)
+                design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(expected.0)
                     && design_type.version == expected.1
                     && design_type.module == expected.2
                     && design_type
@@ -885,12 +888,10 @@ pub(crate) fn encode_design_metastream(
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
     for design_type in &registry.types {
-        validate_guid(&design_type.type_guid, "Design type GUID")?;
-        native_lp_ascii(&mut out, &design_type.type_guid)?;
+        native_lp_ascii(&mut out, design_type.type_guid.as_str())?;
         match &design_type.base_type_guid {
             Some(base) => {
-                validate_guid(base, "Design base type GUID")?;
-                native_lp_ascii(&mut out, base)?;
+                native_lp_ascii(&mut out, base.as_str())?;
             }
             None => out.extend_from_slice(&0u32.to_le_bytes()),
         }
@@ -1001,14 +1002,4 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
         out.extend_from_slice(&unit.to_le_bytes());
     }
     Ok(())
-}
-
-fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
-    if crate::bytes::is_guid_hyphenated(value) {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "{field} is not a canonical GUID: {value}"
-        )))
-    }
 }
