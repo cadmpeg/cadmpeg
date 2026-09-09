@@ -620,3 +620,23 @@ fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     assert_eq!(empty.document(), None);
     assert_eq!(empty.document_attribute(), None);
 }
+
+#[test]
+fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
+    for type_name in ["App::PropertyXLinkList", "App::PropertyXLinkSubList"] {
+        let markup = format!(
+            r#"<Property name="References" type="{type_name}"><XLinkSubList count="2"><XLink name="Local"/><XLink file="parts.FCStd" name="Remote" sub="Face1"/></XLinkSubList></Property>"#
+        );
+        let xml = roxmltree::Document::parse(&markup).unwrap();
+        let links = super::parse_link_targets(xml.root_element(), type_name).unwrap();
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].object(), Some("Local"));
+        assert_eq!(links[0].document_name(), None);
+        assert_eq!(links[1].object(), Some("Remote"));
+        assert_eq!(links[1].document_name(), Some("parts.FCStd"));
+        assert_eq!(links[1].subelements(), ["Face1"]);
+        let invalid = markup.replace("XLinkSubList", "XLinkList");
+        let xml = roxmltree::Document::parse(&invalid).unwrap();
+        assert!(super::parse_link_targets(xml.root_element(), type_name).is_err());
+    }
+}
