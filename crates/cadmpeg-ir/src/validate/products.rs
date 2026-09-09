@@ -78,9 +78,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .flatten()
             .all(|definition| definitions.contains_key(definition.as_str()))
         });
-        let affine = occurrence.scale.iter().all(|value| value.is_finite());
-        if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
-        {
+        if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
             invalid(
                 findings,
                 occurrence.id.as_str(),
@@ -172,7 +170,7 @@ mod tests {
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [crate::features::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

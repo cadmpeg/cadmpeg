@@ -141,8 +141,18 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .rows()[0][3],
         118.0
     );
-    assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
-    assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
+    assert_eq!(
+        link_occurrences[0]
+            .scale
+            .map(cadmpeg_ir::features::FiniteReal::get),
+        [2.0, 3.0, 4.0]
+    );
+    assert_eq!(
+        link_occurrences[1]
+            .scale
+            .map(cadmpeg_ir::features::FiniteReal::get),
+        [4.0, 6.0, 8.0]
+    );
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);

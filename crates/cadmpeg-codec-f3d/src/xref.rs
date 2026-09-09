@@ -307,7 +307,7 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 transform: cadmpeg_ir::transform::Transform::from_rows(transform)
                     .expect("affine transform"),
                 linked_prototype: None,
-                scale: [1.0; 3],
+                scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
                 name: None,
                 visible: None,
                 link: None,
