@@ -597,9 +597,12 @@ pub fn project_parameter_design_with_edge_identities(
     ),
     CodecError,
 > {
-    use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, PatternKind,
+    use cadmpeg_ir::{
+        features::{
+            DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
+            ParameterId, ParameterValue, PatternKind,
+        },
+        scalar::{Angle, Length},
     };
     use std::collections::BTreeMap;
 
@@ -844,7 +847,7 @@ pub fn project_parameter_design_with_edge_identities(
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
                     scope.surface_extend_operation().and_then(|operation| {
-                        cadmpeg_ir::features::PositiveLength::new(operation.distance * 10.0).map(|distance| (operation, distance))
+                        cadmpeg_ir::scalar::PositiveLength::new(operation.distance * 10.0).map(|distance| (operation, distance))
                     }).map_or_else(
                         || FeatureDefinition::Native {
                             kind: scope.kind_name().into(),
@@ -1019,7 +1022,7 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                     },
                     |operation| {
-                        let Some(factor) = cadmpeg_ir::features::NonZeroReal::new(operation.uniform_factor) else {
+                        let Some(factor) = cadmpeg_ir::scalar::NonZeroReal::new(operation.uniform_factor) else {
                             return FeatureDefinition::Native { kind: scope.kind_name().into(), parameters: BTreeMap::new() };
                         };
                         let body_group = construction_groups.iter().find(|group| {
@@ -1051,7 +1054,7 @@ pub fn project_parameter_design_with_edge_identities(
                             .nominal_size
                             .value()
                             .ok()
-                            .and_then(cadmpeg_ir::features::PositiveLength::new)
+                            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                             .map(|size| (construction, size))
                     })
                     .map_or_else(
@@ -1546,7 +1549,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(unit) if design_angle_unit(unit) => {
                     Angle::new(parameter.evaluated_value()).map(ParameterValue::Angle)
                 }
-                None => cadmpeg_ir::features::FiniteReal::new(parameter.evaluated_value())
+                None => cadmpeg_ir::scalar::FiniteReal::new(parameter.evaluated_value())
                     .map(ParameterValue::Real),
                 Some(unit) => {
                     properties.insert("unit".into(), unit.into());
@@ -1704,10 +1707,11 @@ pub fn project_parameter_design_with_edge_identities(
 fn project_solid_primitive(
     scope: &DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, Length, PrimitiveSolid, PrimitiveSolidKind,
-    };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PrimitiveSolid, PrimitiveSolidKind},
+        scalar::{Angle, Length},
+    };
     let operation = |operation| match operation {
         DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
         DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
@@ -1733,9 +1737,9 @@ fn project_solid_primitive(
             ])?;
             FeatureDefinition::Block {
                 dimensions: Some([
-                    cadmpeg_ir::features::PositiveLength::new(*length * 10.0)?,
-                    cadmpeg_ir::features::PositiveLength::new(*width * 10.0)?,
-                    cadmpeg_ir::features::PositiveLength::new(*height * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(*length * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(*width * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(*height * 10.0)?,
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
@@ -1770,7 +1774,7 @@ fn project_solid_primitive(
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,
             ))?,
-            radius: cadmpeg_ir::features::PositiveLength::new(*diameter * 5.0)?,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(*diameter * 5.0)?,
             op: operation(*result),
         },
         crate::records::feature::DesignScopePayload::TorusPrimitive(Some(
@@ -1792,8 +1796,8 @@ fn project_solid_primitive(
                 transform[1][2],
                 transform[2][2],
             ))?,
-            major_radius: cadmpeg_ir::features::PositiveLength::new(*major_diameter * 5.0)?,
-            minor_radius: cadmpeg_ir::features::PositiveLength::new(*minor_diameter * 5.0)?,
+            major_radius: cadmpeg_ir::scalar::PositiveLength::new(*major_diameter * 5.0)?,
+            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(*minor_diameter * 5.0)?,
             op: operation(*result),
         },
         _ => return None,
@@ -1968,7 +1972,7 @@ fn project_work_point_construction(
             }
             DatumPointConstruction::DistanceOnEdge {
                 edge: edge(input)?,
-                fraction: cadmpeg_ir::features::Fraction::new(distance.evaluated_value())?,
+                fraction: cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value())?,
             }
         }
         DesignWorkPointRuleForm::Native { .. } => return None,
@@ -2223,7 +2227,7 @@ fn project_fillet_arm(
 struct ResolvedFilletAssignment<'a> {
     assignment: &'a DesignFilletRadiusGroup,
     radius: cadmpeg_ir::features::RadiusSpec,
-    tangency_weight: Option<cadmpeg_ir::features::FiniteReal>,
+    tangency_weight: Option<cadmpeg_ir::scalar::FiniteReal>,
 }
 
 fn resolved_fillet_assignments<'a>(
@@ -2265,7 +2269,7 @@ fn resolved_fillet_assignments<'a>(
                 .map(|record| {
                     parameter(record, "TangencyWeight")
                         .map(crate::records::DesignParameter::evaluated_value)
-                        .and_then(cadmpeg_ir::features::FiniteReal::new)
+                        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 })
                 .map_or(Some(None), |value| value.map(Some))?;
             let radius = match &assignment.law {
@@ -2850,7 +2854,7 @@ fn project_surface_offset(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
     let stream = native_stream(&scope.id)?;
-    let distance = cadmpeg_ir::features::Length::new(operation.distance * 10.0)?;
+    let distance = cadmpeg_ir::scalar::Length::new(operation.distance * 10.0)?;
     let DesignSurfaceOffsetSupport::FaceGroups {
         group_record_indices,
     } = &operation.support
@@ -2974,7 +2978,7 @@ fn project_draft(
                             plane: Some(neutral_feature_id(neutral_plane)),
                         }),
                     },
-                    angle: Some(cadmpeg_ir::features::SlopeAngle::new(
+                    angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
                         construction.angle.get(),
                     )?),
                     outward: Some(draft_outward(construction.angle.get())),
@@ -2992,7 +2996,7 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(cadmpeg_ir::features::SlopeAngle::new(
+                angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
                 )?),
                 outward: Some(draft_outward(construction.angle.get())),
@@ -3004,7 +3008,7 @@ fn project_draft(
                 plane: project_draft_face_selection(scope, neutral_plane, face_operands, histories),
                 pull: None,
             },
-            angle: Some(cadmpeg_ir::features::SlopeAngle::new(
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
                 construction.angle.get(),
             )?),
             outward: Some(draft_outward(construction.angle.get())),
@@ -3043,7 +3047,7 @@ fn project_draft(
                         plane: Some(neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(cadmpeg_ir::features::SlopeAngle::new(
+                angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
                     construction.angle.get(),
                 )?),
                 outward: Some(draft_outward(construction.angle.get())),
@@ -3335,7 +3339,10 @@ pub(crate) fn project_offset_faces(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::{FaceMotion, FeatureDefinition},
+        scalar::Length,
+    };
 
     let parameter_distance = match parameters {
         [] => None,
@@ -3407,7 +3414,7 @@ pub(crate) fn project_thicken(
     })?;
     Some(FeatureDefinition::Thicken {
         faces,
-        thickness: Some(cadmpeg_ir::features::PositiveLength::new(
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
             signed_thickness.abs() * 10.0,
         )?),
         side: Some(if *signed_thickness > 0.0 {
@@ -3449,9 +3456,7 @@ pub(crate) fn project_shell(
     Some(FeatureDefinition::Shell {
         bodies,
         removed_faces,
-        thickness: Some(cadmpeg_ir::features::PositiveLength::new(
-            *thickness * 10.0,
-        )?),
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(*thickness * 10.0)?),
         outward: Some(*outward),
         mode: None,
         join: None,
@@ -3536,7 +3541,7 @@ fn project_base_flange(
         profile: (ProfileRef::Sketch(neutral_sketch_id(placement)?))
             .try_into()
             .ok()?,
-        thickness: cadmpeg_ir::features::PositiveLength::new(operation.thickness.get() * 10.0)?,
+        thickness: cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?,
         side: SheetMetalThicknessSide::Forward,
     })
 }
@@ -3555,10 +3560,13 @@ pub(crate) fn project_edge_flange(
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
         DesignSheetMetalHeightDatum,
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, PositiveLength, SheetMetalBendPosition, SheetMetalFlangeHeight,
-        SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-        SheetMetalHeightDatum,
+    use cadmpeg_ir::{
+        features::{
+            FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeHeight,
+            SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+            SheetMetalHeightDatum,
+        },
+        scalar::PositiveLength,
     };
 
     let ProjectInputs {
@@ -3778,7 +3786,7 @@ pub(crate) fn project_edge_flange(
         height_datum,
         bend_position,
         width,
-        bend_radius: cadmpeg_ir::features::PositiveLength::new(operation.bend_radius.get() * 10.0)?,
+        bend_radius: cadmpeg_ir::scalar::PositiveLength::new(operation.bend_radius.get() * 10.0)?,
     })
 }
 
@@ -3830,7 +3838,7 @@ pub(crate) fn project_hem(
             gap_owner_record_index,
             length_owner_record_index,
         } => SheetMetalHemForm::GapLength {
-            gap: cadmpeg_ir::features::NonNegativeLength::new(
+            gap: cadmpeg_ir::scalar::NonNegativeLength::new(
                 design_length(parameter(*gap_owner_record_index, "HemGap")?)?.get(),
             )?,
             length: design_positive_length(parameter(*length_owner_record_index, "HemLength")?)?,
@@ -3847,7 +3855,7 @@ pub(crate) fn project_hem(
             length_owner_record_index,
             radius_owner_record_index,
         } => SheetMetalHemForm::Teardrop {
-            gap: cadmpeg_ir::features::NonNegativeLength::new(
+            gap: cadmpeg_ir::scalar::NonNegativeLength::new(
                 design_length(parameter(*gap_owner_record_index, "HemGap")?)?.get(),
             )?,
             length: design_positive_length(parameter(*length_owner_record_index, "HemLength")?)?,
@@ -3937,7 +3945,7 @@ pub(crate) fn project_hem(
         edges,
         form,
         direction,
-        bend_radius: cadmpeg_ir::features::PositiveLength::new(operation.bend_radius.get() * 10.0)?,
+        bend_radius: cadmpeg_ir::scalar::PositiveLength::new(operation.bend_radius.get() * 10.0)?,
     })
 }
 
@@ -3985,7 +3993,7 @@ pub(crate) fn project_surface_stitch(
         faces: FaceSelection::Native(scope.id.clone()),
         merge_entities: Some(true),
         create_solid: Some(true),
-        gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(
+        gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(
             operation.gap_tolerance.get() * 10.0,
         )?),
     })
@@ -4147,7 +4155,7 @@ fn merge_edge_selections(
 pub(crate) fn matrix_axis_angle(
     transform: &[[f64; 4]; 4],
 ) -> Option<cadmpeg_ir::features::AxisAngle> {
-    use cadmpeg_ir::features::{Angle, AxisAngle};
+    use cadmpeg_ir::{features::AxisAngle, scalar::Angle};
 
     let trace = transform[0][0] + transform[1][1] + transform[2][2];
     let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
@@ -5247,17 +5255,17 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
 
 fn design_positive_length(
     parameter: &DesignParameter,
-) -> Option<cadmpeg_ir::features::PositiveLength> {
-    cadmpeg_ir::features::PositiveLength::new(design_length(parameter)?.get())
+) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    cadmpeg_ir::scalar::PositiveLength::new(design_length(parameter)?.get())
 }
 
-pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
+pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
     let value = parameter.evaluated_value() * 10.0;
     (parameter
         .unit()
         .map(|field| field.value.as_str())
         .is_some_and(design_length_unit))
-    .then_some(cadmpeg_ir::features::Length::new(value)?)
+    .then_some(cadmpeg_ir::scalar::Length::new(value)?)
 }
 
 pub(crate) fn design_length_unit(unit: &str) -> bool {
@@ -5333,7 +5341,7 @@ pub(crate) fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<(
     cadmpeg_ir::features::VariableRadii,
-    Option<cadmpeg_ir::features::FiniteReal>,
+    Option<cadmpeg_ir::scalar::FiniteReal>,
 )> {
     use cadmpeg_ir::features::VariableRadius;
 
@@ -5352,7 +5360,7 @@ pub(crate) fn variable_fillet_law(
         });
         match (matches.next(), matches.next()) {
             (None, None) => None,
-            (Some(parameter), None) => Some(cadmpeg_ir::features::FiniteReal::new(
+            (Some(parameter), None) => Some(cadmpeg_ir::scalar::FiniteReal::new(
                 parameter.evaluated_value(),
             )?),
             (None, Some(_)) => return None,
@@ -5527,7 +5535,7 @@ fn project_chamfer(
                     .map(|(distance, angle)| {
                         design_positive_length(distance)
                             .zip(design_angle(angle).and_then(|value| {
-                                cadmpeg_ir::features::InteriorAngle::new(value.get())
+                                cadmpeg_ir::scalar::InteriorAngle::new(value.get())
                             }))
                             .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
                     })
@@ -5586,19 +5594,20 @@ fn project_chamfer(
         if distances.len() != group_count || angles.len() != group_count {
             return None;
         }
-        let candidates = Some({
-            distances
-                .iter()
-                .zip(&angles)
-                .map(|(distance, angle)| {
-                    design_positive_length(distance)
-                        .zip(design_angle(angle).and_then(|value| {
-                            cadmpeg_ir::features::InteriorAngle::new(value.get())
-                        }))
-                        .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
-                })
-                .collect::<Vec<_>>()
-        });
+        let candidates =
+            Some({
+                distances
+                    .iter()
+                    .zip(&angles)
+                    .map(|(distance, angle)| {
+                        design_positive_length(distance)
+                            .zip(design_angle(angle).and_then(|value| {
+                                cadmpeg_ir::scalar::InteriorAngle::new(value.get())
+                            }))
+                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
+                    })
+                    .collect::<Vec<_>>()
+            });
         candidates
     } else if !distances.is_empty() {
         if distances.len() != group_count {
@@ -5674,13 +5683,13 @@ fn project_fixed_chamfer(
     let spec = match fixed {
         crate::records::feature::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
-                distance: cadmpeg_ir::features::PositiveLength::new(distance.value * 10.0)?,
+                distance: cadmpeg_ir::scalar::PositiveLength::new(distance.value * 10.0)?,
             }
         }
         crate::records::feature::DesignFixedChamferParameters::TwoDistances { first, second } => {
             ChamferSpec::TwoDistances {
-                first: cadmpeg_ir::features::PositiveLength::new(first.value * 10.0)?,
-                second: cadmpeg_ir::features::PositiveLength::new(second.value * 10.0)?,
+                first: cadmpeg_ir::scalar::PositiveLength::new(first.value * 10.0)?,
+                second: cadmpeg_ir::scalar::PositiveLength::new(second.value * 10.0)?,
             }
         }
     };
@@ -5821,7 +5830,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
             axis,
             Some(RevolveExtent::OneSided {
                 termination: AngularTermination::Angle {
-                    angle: cadmpeg_ir::features::PositiveAngle::new(angle.get())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.get())?,
                 },
             }),
             None,
@@ -6506,8 +6515,9 @@ pub(crate) fn project_circular_pattern(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, PatternKind, PatternSeed, PatternTransform,
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PatternKind, PatternSeed, PatternTransform},
+        scalar::Angle,
     };
 
     let construction = scope.circular_pattern_construction()?;
@@ -6580,8 +6590,9 @@ fn project_rectangular_pattern_scalars(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, Length, PatternKind, PatternSeed, PatternTransform,
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, PatternKind, PatternSeed, PatternTransform},
+        scalar::Length,
     };
 
     let construction = scope.rectangular_pattern_construction()?;
@@ -6798,9 +6809,12 @@ pub(crate) fn project_fixed_sweep(
     entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        Angle, FaceSelection, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode,
-        SweepOrientation, SweepPathExtent,
+    use cadmpeg_ir::{
+        features::{
+            FaceSelection, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode,
+            SweepOrientation, SweepPathExtent,
+        },
+        scalar::Angle,
     };
 
     let crate::records::feature::DesignScopePayload::Sweep(Some(
@@ -6916,8 +6930,8 @@ pub(crate) fn project_fixed_sweep(
         scope,
     );
     let guide_extent = SweepPathExtent {
-        along_fraction: cadmpeg_ir::features::Fraction::new(values[2])?,
-        against_fraction: cadmpeg_ir::features::Fraction::new(values[3])?,
+        along_fraction: cadmpeg_ir::scalar::Fraction::new(values[2])?,
+        against_fraction: cadmpeg_ir::scalar::Fraction::new(values[3])?,
     };
     let guide_rail = paths.get(1).map(|rail| SweepGuideRail {
         path: resolved_loft_path(
@@ -6965,8 +6979,8 @@ pub(crate) fn project_fixed_sweep(
         linearize: false,
         twist: (values[4] != 0.0).then_some(Angle::new(values[4])?),
         path_extent: Some(SweepPathExtent {
-            along_fraction: cadmpeg_ir::features::Fraction::new(values[0])?,
-            against_fraction: cadmpeg_ir::features::Fraction::new(values[1])?,
+            along_fraction: cadmpeg_ir::scalar::Fraction::new(values[0])?,
+            against_fraction: cadmpeg_ir::scalar::Fraction::new(values[1])?,
         }),
         guide_rail,
         taper: (values[5] != 0.0).then_some(Angle::new(values[5])?),
@@ -7037,7 +7051,7 @@ fn project_fixed_pipe(
     let wall_thickness = if *filled {
         None
     } else if section_thickness.get() < section_size.get() / 2.0 {
-        Some(cadmpeg_ir::features::PositiveLength::new(
+        Some(cadmpeg_ir::scalar::PositiveLength::new(
             section_thickness.get(),
         )?)
     } else {
@@ -7128,7 +7142,7 @@ fn project_fixed_pipe(
         shape: cadmpeg_ir::features::SweepShape::new(
             SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: cadmpeg_ir::features::SweepCircularRegion::new(
-                    cadmpeg_ir::features::PositiveLength::new(section_size.get() / 2.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(section_size.get() / 2.0)?,
                     wall_thickness,
                 )
                 .ok()?,
@@ -7453,7 +7467,7 @@ fn project_hole(
         (None, true) => (HoleKind::Simple, Some(HoleBottom::Flat)),
         (None, false) => (
             HoleKind::SimpleDrilled {
-                drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(tip_angle.get())?,
+                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(tip_angle.get())?,
             },
             None,
         ),
@@ -7465,7 +7479,7 @@ fn project_hole(
             HoleKind::CounterboreDrilled {
                 diameter,
                 depth,
-                drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(tip_angle.get())?,
+                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(tip_angle.get())?,
             },
             None,
         ),
@@ -7505,7 +7519,7 @@ fn project_hole(
         .ok()?,
 
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(depth.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(depth.get())?,
         }),
         bottom,
         taper_angle: None,
@@ -7977,9 +7991,12 @@ pub(crate) fn project_extrude(
     placements: &[DesignSketchPlacement],
     body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FaceSelection, FeatureDefinition, Length, LinearTermination, ProfileRef,
+    use cadmpeg_ir::{
+        features::{
+            BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
+            FeatureDefinition, LinearTermination, ProfileRef,
+        },
+        scalar::{Angle, Length},
     };
 
     // Per-side terminations without side-local modifiers; drafts and offsets
@@ -8261,7 +8278,7 @@ pub(crate) fn project_extrude(
         {
             (
                 ExtentShape::OneSided(LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(along.get().abs())?,
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
                 }),
                 match along_direction {
                     AlongDirection::SignedDistance => along.get() < 0.0,
@@ -8282,10 +8299,10 @@ pub(crate) fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(along.get().abs())?,
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
                     },
                     second: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(against.get().abs())?,
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(against.get().abs())?,
                     },
                 },
                 along.get() < 0.0,
@@ -8308,7 +8325,7 @@ pub(crate) fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(along.get().abs())?,
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
                     },
                     second: LinearTermination::ToFace {
                         face: resolved_historical_face_group(
@@ -8373,7 +8390,7 @@ pub(crate) fn project_extrude(
         {
             (
                 ExtentShape::Symmetric(LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(along.get().abs())?,
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
                 }),
                 along.get() < 0.0,
             )
@@ -8465,12 +8482,12 @@ pub(crate) fn project_extrude(
         _ => return None,
     }
     .filter(|angle| angle.get() != 0.0)
-    .map(cadmpeg_ir::features::SlopeAngle::try_from)
+    .map(cadmpeg_ir::scalar::SlopeAngle::try_from)
     .transpose()
     .ok()?;
     let second_draft = side_two_draft
         .filter(|angle| angle.get() != 0.0)
-        .map(cadmpeg_ir::features::SlopeAngle::try_from)
+        .map(cadmpeg_ir::scalar::SlopeAngle::try_from)
         .transpose()
         .ok()?;
     // A side-two draft requires a two-sided extent. Other extents have no neutral
@@ -8723,7 +8740,7 @@ fn project_coil(
     let dimensionless = |kind: &str| {
         let parameter = unique(kind)?;
         parameter.unit().is_none().then_some(())?;
-        cadmpeg_ir::features::PositiveReal::new(parameter.evaluated_value())
+        cadmpeg_ir::scalar::PositiveReal::new(parameter.evaluated_value())
     };
     let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent()? {
         DesignCoilExtent::RevolutionsHeight => (
@@ -8743,7 +8760,7 @@ fn project_coil(
         DesignCoilExtent::RevolutionsPitch => (
             CoilExtent::RevolutionsPitch {
                 revolutions: dimensionless("Revolutions")?,
-                pitch: cadmpeg_ir::features::NonZeroLength::new(
+                pitch: cadmpeg_ir::scalar::NonZeroLength::new(
                     design_length(unique("Pitch")?)?.get(),
                 )?,
             },
@@ -8758,10 +8775,10 @@ fn project_coil(
         ),
         DesignCoilExtent::HeightPitch => (
             CoilExtent::HeightPitch {
-                height: cadmpeg_ir::features::NonZeroLength::new(
+                height: cadmpeg_ir::scalar::NonZeroLength::new(
                     design_length(unique("Height")?)?.get(),
                 )?,
-                pitch: cadmpeg_ir::features::NonZeroLength::new(
+                pitch: cadmpeg_ir::scalar::NonZeroLength::new(
                     design_length(unique("Pitch")?)?.get(),
                 )?,
             },
@@ -8771,11 +8788,11 @@ fn project_coil(
         DesignCoilExtent::Spiral => (
             CoilExtent::Spiral {
                 revolutions: dimensionless("Revolutions")?,
-                radial_pitch: cadmpeg_ir::features::NonZeroLength::new(
+                radial_pitch: cadmpeg_ir::scalar::NonZeroLength::new(
                     design_length(unique("Pitch")?)?.get(),
                 )?,
             },
-            cadmpeg_ir::features::Angle::new(0.0)?,
+            cadmpeg_ir::scalar::Angle::new(0.0)?,
             &["Diameter", "SectionSize", "Revolutions", "Pitch"],
         ),
     };

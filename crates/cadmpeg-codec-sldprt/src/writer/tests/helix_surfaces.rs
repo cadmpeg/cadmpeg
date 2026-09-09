@@ -191,8 +191,11 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 
 #[test]
 fn semantic_writer_round_trips_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, HelixShape, NonZeroLength};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HelixShape},
+        scalar::NonZeroLength,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -249,9 +252,9 @@ fn semantic_writer_round_trips_helix() {
                 *axis_direction =
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
                         .unwrap();
-                *radius = cadmpeg_ir::features::PositiveLength::new(7.0).unwrap();
+                *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
                 *pitch = NonZeroLength::new(8.0).unwrap();
-                *revolutions = cadmpeg_ir::features::PositiveReal::new(9.25).unwrap();
+                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
                 *clockwise = false;
             })
             .unwrap();
@@ -301,8 +304,11 @@ fn semantic_writer_round_trips_helix() {
 
 #[test]
 fn semantic_writer_round_trips_slash_named_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, HelixShape, NonZeroLength};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HelixShape},
+        scalar::NonZeroLength,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -351,9 +357,9 @@ fn semantic_writer_round_trips_slash_named_helix() {
                 *axis_direction =
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
                         .unwrap();
-                *radius = cadmpeg_ir::features::PositiveLength::new(7.0).unwrap();
+                *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
                 *pitch = NonZeroLength::new(8.0).unwrap();
-                *revolutions = cadmpeg_ir::features::PositiveReal::new(9.25).unwrap();
+                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
                 *clockwise = true;
             })
             .unwrap();
@@ -381,7 +387,10 @@ fn semantic_writer_round_trips_slash_named_helix() {
 
 #[test]
 fn semantic_writer_round_trips_native_axis_helix() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::FeatureDefinition,
+        scalar::{Angle, Length},
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -437,7 +446,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
                 };
                 *axial_rise = Length::new(4000.0).unwrap();
                 *pitch = Length::new(16000.0).unwrap();
-                *revolutions = cadmpeg_ir::features::PositiveReal::new(0.5).unwrap();
+                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap();
                 *start_angle = Angle::new(std::f64::consts::FRAC_PI_2).unwrap();
                 *clockwise = true;
             })
@@ -533,7 +542,7 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
                 let FeatureDefinition::Helix { radius, .. } = definition else {
                     panic!("embedded helix geometry");
                 };
-                *radius = cadmpeg_ir::features::PositiveLength::new(9.0).unwrap();
+                *radius = cadmpeg_ir::scalar::PositiveLength::new(9.0).unwrap();
             })
             .unwrap();
     }
@@ -554,7 +563,10 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
 
 #[test]
 fn semantic_writer_round_trips_wrap() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
+    use cadmpeg_ir::{
+        features::{FaceSelection, FeatureDefinition, ProfileRef, WrapMode},
+        scalar::Length,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -667,8 +679,11 @@ fn semantic_writer_round_trips_wrap() {
 
 #[test]
 fn semantic_writer_round_trips_move_copy_body() {
-    use cadmpeg_ir::features::{Angle, AxisAngle, BodySelection, FeatureDefinition};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{AxisAngle, BodySelection, FeatureDefinition},
+        scalar::Angle,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -798,7 +813,10 @@ fn semantic_writer_round_trips_move_copy_body() {
 
 #[test]
 fn semantic_writer_round_trips_offset_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::{
+        features::{FaceSelection, FeatureDefinition},
+        scalar::Length,
+    };
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1300,7 +1318,7 @@ fn semantic_writer_round_trips_extend_surface() {
                     panic!("typed extended surface");
                 };
                 *faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *distance = Some(cadmpeg_ir::features::PositiveLength::new(4.5).unwrap());
+                *distance = Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap());
                 *method = SurfaceExtension::Linear;
             })
             .unwrap();
@@ -1387,7 +1405,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                 *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
                 *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
                 *mode = RuledSurfaceMode::Normal {
-                    distance: cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
                 };
             })
             .unwrap();
@@ -1419,7 +1437,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                     panic!("typed ruled surface");
                 };
                 *mode = RuledSurfaceMode::Tangent {
-                    distance: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 };
             })
             .unwrap();
@@ -1659,8 +1677,7 @@ fn semantic_writer_round_trips_typed_revolution() {
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
         construction.set_extent(Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::features::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
-                    .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
         }));
         *op = BooleanOp::Cut;
@@ -1828,7 +1845,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         };
         construction.set_extent(Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::features::PositiveAngle::new(0.75).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(0.75).unwrap(),
             },
         }));
         *op = BooleanOp::Intersect;

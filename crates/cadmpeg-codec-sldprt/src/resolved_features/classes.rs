@@ -790,7 +790,7 @@ mod idless_history_binding_tests {
                         extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                             side: cadmpeg_ir::features::ExtrudeSide {
                                 termination: LinearTermination::Blind {
-                                    length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                                    length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
                                 },
                                 draft: None,
                             },

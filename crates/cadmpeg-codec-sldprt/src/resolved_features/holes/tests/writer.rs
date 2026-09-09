@@ -48,11 +48,11 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 };
                 shape
                     .try_edit(|_, _, diameter| {
-                        *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+                        *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
                     })
                     .unwrap();
                 *extent = Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(16.0).unwrap(),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(16.0).unwrap(),
                 });
             })
             .unwrap();
@@ -340,8 +340,8 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
-            diameter: cadmpeg_ir::features::PositiveLength::new(12.0).unwrap(),
-            depth: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         };
         *extent = Some(LinearTermination::ThroughAll);
 
@@ -365,11 +365,11 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
-            diameter: cadmpeg_ir::features::PositiveLength::new(11.0).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(90f64.to_radians()).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(11.0).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(90f64.to_radians()).unwrap(),
         };
         *extent = Some(LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(25.0).unwrap(),
+            length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
         });
 
         *shape = cadmpeg_ir::features::HoleShape::new(

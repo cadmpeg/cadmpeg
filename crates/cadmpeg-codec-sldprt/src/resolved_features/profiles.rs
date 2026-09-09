@@ -56,7 +56,6 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
@@ -64,6 +63,10 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::{
+    features::FeatureDefinition,
+    scalar::{Angle, Length},
+};
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]

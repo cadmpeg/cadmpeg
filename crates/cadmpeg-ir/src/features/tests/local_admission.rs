@@ -1,5 +1,6 @@
 use crate::features::*;
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
+use crate::scalar::{InteriorAngle, PositiveLength};
 
 fn feature_id(suffix: &str) -> FeatureId {
     FeatureId::mint(format!("test:model:feature#{suffix}")).unwrap()

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
 
-use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, Length,
-    ParameterValue, PatternTransform,
-};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, ParameterValue,
+        PatternTransform,
+    },
+    scalar::{Angle, Length},
+};
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
@@ -193,7 +196,7 @@ pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .trim()
         .parse::<f64>()
         .ok()
-        .and_then(cadmpeg_ir::features::FiniteReal::new)
+        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
         .map(ParameterValue::Real)
 }
 

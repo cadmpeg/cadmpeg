@@ -38,15 +38,18 @@ use crate::decode::sweep::{
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
-    RevolutionAxis, RevolveExtent,
-};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
+use cadmpeg_ir::{
+    features::{
+        AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, RevolutionAxis,
+        RevolveExtent,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FILLET_CIRCLE: f64 = 1.0e-12;
@@ -471,7 +474,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::features::PositiveAngle::new(std::f64::consts::TAU)
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
                 .expect("valid test fixture"),
         },
     };
@@ -533,7 +536,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     );
     let partial = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::features::PositiveAngle::new(1.0).expect("valid test fixture"),
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
         },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());

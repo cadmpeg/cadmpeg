@@ -39,9 +39,6 @@ use crate::decode::sweep::{
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, LinearTermination,
-};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -54,6 +51,10 @@ use cadmpeg_ir::sketches::{
     SketchLocus,
 };
 use cadmpeg_ir::SourceObjectAssociation;
+use cadmpeg_ir::{
+    features::{FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, LinearTermination},
+    scalar::{Angle, Length},
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
@@ -1280,7 +1281,7 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(1.0)
+                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
                     .expect("nonzero length fixture"),
             },
         ))
@@ -1314,7 +1315,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(57.0).expect("nonzero length fixture"),
+            length: cadmpeg_ir::scalar::NonZeroLength::new(57.0).expect("nonzero length fixture"),
         },
     ));
     assert_eq!(
@@ -1345,7 +1346,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(40.0)
+                length: cadmpeg_ir::scalar::NonZeroLength::new(40.0)
                     .expect("nonzero length fixture"),
             },
         ))

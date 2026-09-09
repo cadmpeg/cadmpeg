@@ -667,7 +667,7 @@ pub fn counterbore_placement_from_corner_envelopes(
         assignment.position,
         assignment.direction,
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(assignment.length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(assignment.length)?,
         },
     ))
 }
@@ -814,7 +814,7 @@ pub fn counterbore_directed_span(
         counterbore.1,
         Vector3::new(direction[0], direction[1], direction[2]),
         LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
     ))
 }

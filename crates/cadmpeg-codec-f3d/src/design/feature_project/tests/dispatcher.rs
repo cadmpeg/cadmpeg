@@ -800,7 +800,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             profile: (ProfileRef::Sketch(neutral_sketch_id(&placement).unwrap()))
                 .try_into()
                 .unwrap(),
-            thickness: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         }
     );
@@ -817,7 +817,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             faces: FaceSelection::Native(scopes[2].id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
         }
     );
     assert_eq!(
@@ -844,7 +844,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::features::PositiveLength::new(3.5).unwrap()),
+            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
             extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
         }
     );

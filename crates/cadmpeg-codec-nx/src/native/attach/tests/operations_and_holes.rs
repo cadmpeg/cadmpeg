@@ -977,7 +977,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             &[],
             None,
             None,
-            Some(cadmpeg_ir::features::Length::new(8.0).unwrap()),
+            Some(cadmpeg_ir::scalar::Length::new(8.0).unwrap()),
         ), FeatureDefinition::Hole {
             shape,
 

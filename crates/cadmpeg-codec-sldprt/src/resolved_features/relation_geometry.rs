@@ -2837,10 +2837,11 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_point_relation_projects_graph_resolved_operands() {
-        use cadmpeg_ir::features::{
-            Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
-        };
         use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
+        use cadmpeg_ir::{
+            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            scalar::Length,
+        };
         use std::collections::BTreeMap;
 
         let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
@@ -3021,11 +3022,12 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_line_relation_prefers_marker_endpoint_join() {
-        use cadmpeg_ir::features::{
-            Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
-        };
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
+        use cadmpeg_ir::{
+            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            scalar::Length,
+        };
         use std::collections::BTreeMap;
 
         const FEATURE: &str = "feature-native";
@@ -3354,12 +3356,13 @@ mod relation_geometry_tests {
 
     #[test]
     fn spatial_point_line_relation_uses_unique_tagged_marker_roster() {
-        use cadmpeg_ir::features::{
-            Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
-        };
         use cadmpeg_ir::sketches::{
             SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchGeometryDefinition,
             SpatialSketchId,
+        };
+        use cadmpeg_ir::{
+            features::{Feature, FeatureDefinition, FeatureId, ParameterId, ParameterValue},
+            scalar::Length,
         };
         use std::collections::BTreeMap;
 

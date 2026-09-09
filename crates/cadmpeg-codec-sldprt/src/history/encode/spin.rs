@@ -8,10 +8,13 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolveConstruction,
-    RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
-    SweepTransformation, SweepTransition,
+use cadmpeg_ir::{
+    features::{
+        AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolveConstruction,
+        RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
+        SweepTransformation, SweepTransition,
+    },
+    scalar::Angle,
 };
 
 #[allow(
@@ -144,7 +147,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         path_extent: &Option<SweepPathExtent>,
         guide_rail: &Option<SweepGuideRail>,
         taper: &Option<Angle>,
-        scale: &Option<cadmpeg_ir::features::PositiveReal>,
+        scale: &Option<cadmpeg_ir::scalar::PositiveReal>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

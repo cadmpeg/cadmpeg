@@ -2,11 +2,14 @@
 //! Operand and selection completeness predicates.
 
 use super::{positive_feature_length, unit_feature_direction};
-use cadmpeg_ir::features::{
-    AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
-    FaceSelection, FeatureId, HoleKind, Length, LinearTermination, LoftPointSection, LoftSection,
-    PathRef, PatternKind, PatternTransform, ProfileRef, RevolveConstruction, RevolveExtent,
-    RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
+use cadmpeg_ir::{
+    features::{
+        AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
+        FaceSelection, FeatureId, HoleKind, LinearTermination, LoftPointSection, LoftSection,
+        PathRef, PatternKind, PatternTransform, ProfileRef, RevolveConstruction, RevolveExtent,
+        RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
+    },
+    scalar::Length,
 };
 use std::collections::BTreeSet;
 
@@ -60,7 +63,7 @@ pub(crate) fn hole_feature_is_incomplete(
 }
 
 pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bool {
-    let treatment_diameter_is_incomplete = |diameter: cadmpeg_ir::features::PositiveLength| {
+    let treatment_diameter_is_incomplete = |diameter: cadmpeg_ir::scalar::PositiveLength| {
         bore_diameter.is_none_or(|bore| diameter.get() <= bore.get())
     };
     match kind {

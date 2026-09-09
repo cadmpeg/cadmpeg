@@ -170,7 +170,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -197,15 +197,18 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
 #[test]
 fn encoder_writes_source_less_line_sketches() {
-    use cadmpeg_ir::features::{
-        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureId, LinearTermination, PathRef, ProfileRef, RevolveExtent,
-    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
         SketchId, SketchLocus,
+    };
+    use cadmpeg_ir::{
+        features::{
+            AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition,
+            FeatureId, LinearTermination, PathRef, ProfileRef, RevolveExtent,
+        },
+        scalar::Angle,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -367,7 +370,7 @@ fn encoder_writes_source_less_line_sketches() {
                 }),
                 Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle {
-                        angle: cadmpeg_ir::features::PositiveAngle::new(1.2).unwrap(),
+                        angle: cadmpeg_ir::scalar::PositiveAngle::new(1.2).unwrap(),
                     },
                 }),
                 Some(true),
@@ -398,7 +401,7 @@ fn encoder_writes_source_less_line_sketches() {
             path_extent: None,
             guide_rail: None,
             taper: None,
-            scale: Some(cadmpeg_ir::features::PositiveReal::new(1.5).unwrap()),
+            scale: Some(cadmpeg_ir::scalar::PositiveReal::new(1.5).unwrap()),
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Loft {
@@ -422,10 +425,10 @@ fn encoder_writes_source_less_line_sketches() {
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                         .unwrap(),
                 ),
-                thickness: Some(cadmpeg_ir::features::PositiveLength::new(2.5).unwrap()),
+                thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()),
                 side: Some(cadmpeg_ir::features::RibSide::Centered),
                 draft: cadmpeg_ir::features::RibDraft::Angle(
-                    cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap(),
+                    cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
                 ),
             },
             op: BooleanOp::Join,
@@ -475,7 +478,7 @@ fn encoder_writes_source_less_line_sketches() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                         },
                         draft: None,
                     },

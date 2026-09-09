@@ -9,16 +9,6 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-    ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
-    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
-    FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
-    HoleForm, HoleKind, HolePlacement, Length, LinearTermination, ParameterId, ParameterValue,
-    PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension,
-    ThickenSide, TreeChildren, TrimRegion, UnresolvedFamily,
-};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
@@ -38,6 +28,19 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
+        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
+        CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
+        EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent,
+        FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, LinearTermination, ParameterId,
+        ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft,
+        SurfaceExtension, ThickenSide, TreeChildren, TrimRegion, UnresolvedFamily,
+    },
+    scalar::{Angle, Length},
+};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -3398,7 +3401,7 @@ fn attach_feature_operations(
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
                 center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
-                radius: cadmpeg_ir::features::PositiveLength::new(radius.get())?,
+                radius: cadmpeg_ir::scalar::PositiveLength::new(radius.get())?,
                 op: sphere_op,
             })
         });
@@ -5328,7 +5331,7 @@ fn blend_feature_definition(
                     RadiusSpec::Unresolved
                 }
             },
-            |radii| match cadmpeg_ir::features::PositiveLength::new(radii[0]) {
+            |radii| match cadmpeg_ir::scalar::PositiveLength::new(radii[0]) {
                 Some(radius) => RadiusSpec::Constant { radius },
                 None => RadiusSpec::UnresolvedConstant,
             },
@@ -5546,7 +5549,7 @@ fn thicken_feature_definition(
     Some((
         FeatureDefinition::Thicken {
             faces,
-            thickness: Some(cadmpeg_ir::features::PositiveLength::new(thickness)?),
+            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(thickness)?),
             side,
         },
         supports,
@@ -6138,8 +6141,8 @@ struct HoleProjection {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CounterboreDimensions {
-    diameter: cadmpeg_ir::features::PositiveLength,
-    depth: cadmpeg_ir::features::PositiveLength,
+    diameter: cadmpeg_ir::scalar::PositiveLength,
+    depth: cadmpeg_ir::scalar::PositiveLength,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -6159,8 +6162,7 @@ fn non_boolean_feature_definition_with_parameters(
     }
     if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
         kind,
-        block_dimensions
-            .map(|dimensions| dimensions.map(cadmpeg_ir::features::PositiveLength::new)),
+        block_dimensions.map(|dimensions| dimensions.map(cadmpeg_ir::scalar::PositiveLength::new)),
     ) {
         return Ok(FeatureDefinition::Block {
             dimensions: Some([length, width, height]),
@@ -6375,7 +6377,7 @@ fn non_boolean_feature_definition_with_parameters(
                         _ => template_exit_kind,
                     },
                     hole.diameter.and_then(|diameter| {
-                        cadmpeg_ir::features::PositiveLength::new(diameter.get())
+                        cadmpeg_ir::scalar::PositiveLength::new(diameter.get())
                     }),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -6405,7 +6407,7 @@ fn non_boolean_feature_definition_with_parameters(
                     .then_some(hole.chamfer)
                     .flatten(),
                 hole.diameter
-                    .and_then(|diameter| cadmpeg_ir::features::PositiveLength::new(diameter.get())),
+                    .and_then(|diameter| cadmpeg_ir::scalar::PositiveLength::new(diameter.get())),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -6935,7 +6937,7 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
-    blind_depths: BTreeMap<String, cadmpeg_ir::features::NonZeroLength>,
+    blind_depths: BTreeMap<String, cadmpeg_ir::scalar::NonZeroLength>,
     counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
@@ -7010,10 +7012,10 @@ fn counterbore_body_projection(
         counterbores.insert(
             operation.clone(),
             CounterboreDimensions {
-                diameter: cadmpeg_ir::features::PositiveLength::new(
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(
                     witness.counterbore_radius * 2.0,
                 )?,
-                depth: cadmpeg_ir::features::PositiveLength::new(witness.depth)?,
+                depth: cadmpeg_ir::scalar::PositiveLength::new(witness.depth)?,
             },
         );
     }
@@ -7051,7 +7053,7 @@ fn blind_hole_body_projection(
         diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
         blind_depths.insert(
             operation.clone(),
-            cadmpeg_ir::features::NonZeroLength::new(witness.depth)?,
+            cadmpeg_ir::scalar::NonZeroLength::new(witness.depth)?,
         );
     }
     Some(HoleBodyProjection {
@@ -8014,10 +8016,10 @@ fn simple_hole_chamfers(
             return BTreeMap::new();
         }
         let (Some(diameter), Some(angle)) = (
-            cadmpeg_ir::features::PositiveLength::new(
+            cadmpeg_ir::scalar::PositiveLength::new(
                 2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64,
             ),
-            cadmpeg_ir::features::InteriorAngle::new(
+            cadmpeg_ir::scalar::InteriorAngle::new(
                 included_angles.iter().sum::<f64>() / included_angles.len() as f64,
             ),
         ) else {

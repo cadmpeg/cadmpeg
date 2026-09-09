@@ -4,13 +4,16 @@
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::features::{
-    ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
-    FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
-    SplitFaceTool, UnresolvedFamily,
-};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
+        FeatureDefinition, FeatureId, FeatureSourceContent, ParameterId, PathRef, ProfileRef,
+        SplitFaceTool, UnresolvedFamily,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::classify::{

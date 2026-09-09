@@ -683,7 +683,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_dome(
         &self,
         faces: &FaceSelection,
-        height: &Option<cadmpeg_ir::features::PositiveLength>,
+        height: &Option<cadmpeg_ir::scalar::PositiveLength>,
         elliptical: &Option<bool>,
         reverse: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {

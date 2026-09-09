@@ -1574,7 +1574,7 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
 
 #[test]
 fn semantic_writer_applies_neutral_parameter_edits() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let decoded = SldprtCodec
         .decode(
@@ -1624,7 +1624,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 
 #[test]
 fn semantic_writer_preserves_dimension_attributes() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1666,7 +1666,7 @@ fn semantic_writer_preserves_dimension_attributes() {
 
 #[test]
 fn semantic_writer_preserves_evaluated_equation_values() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

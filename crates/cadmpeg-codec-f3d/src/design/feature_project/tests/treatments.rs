@@ -865,7 +865,7 @@ fn draft_outward_is_derived_from_the_signed_angle() {
 
 #[test]
 fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
 
     let parameter = |record_index, source_kind: &str, unit, value| {
         let mut parameter = parse_design_parameter(&parameter_record(
@@ -911,14 +911,14 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
         ]
     );
     assert_eq!(
-        tangency_weight.map(cadmpeg_ir::features::FiniteReal::get),
+        tangency_weight.map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.75)
     );
 }
 
 #[test]
 fn variable_fillet_law_accepts_omitted_tangency_weight() {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
 
     let parameter = |record_index, source_kind: &str, unit, value| {
         let mut parameter = parse_design_parameter(&parameter_record(
@@ -1227,7 +1227,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert_eq!(
         groups[0]
             .tangency_weight
-            .map(cadmpeg_ir::features::FiniteReal::get),
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.75)
     );
     assert!(matches!(

@@ -2,12 +2,15 @@
 //! Feature-completeness predicates for NX decode.
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
-    CurveProjectionDirectionState, Feature, FeatureDefinition, Length, LoftSection, ParameterId,
-    TrimRegion,
-};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
+        CurveProjectionDirectionState, Feature, FeatureDefinition, LoftSection, ParameterId,
+        TrimRegion,
+    },
+    scalar::Length,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;

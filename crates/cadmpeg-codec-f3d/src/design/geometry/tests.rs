@@ -3,11 +3,14 @@
 use super::*;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{Angle, Length, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
+};
+use cadmpeg_ir::{
+    features::SketchProfileRegion,
+    scalar::{Angle, Length},
 };
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
@@ -796,8 +799,8 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(2.0).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
         .unwrap(),
     );
@@ -811,8 +814,8 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(2.0).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
         })
         .unwrap(),
     );
@@ -828,12 +831,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(1.0, -1.0),
-            major_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            major_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             major_radius: Length::new(4.0).unwrap(),
             minor_radius: Length::new(2.0).unwrap(),
             bounds: Some([
-                cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-                cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+                cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             ]),
         })
         .unwrap(),

@@ -11,13 +11,14 @@ use crate::records::{
     SketchRelationKind,
 };
 use crate::resolved_features::transforms::ProfileAxis;
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
-};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue},
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;

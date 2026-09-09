@@ -1638,7 +1638,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
             profile: (ProfileRef::Sketch(planar_sketch.clone()))
                 .try_into()
                 .unwrap(),
-            thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             side: SheetMetalThicknessSide::Forward,
         },
     );

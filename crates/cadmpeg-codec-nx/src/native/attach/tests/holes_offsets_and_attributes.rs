@@ -55,14 +55,15 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{
-        FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
-    };
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HoleKind, HolePlacement, LinearTermination},
+        scalar::Length,
+    };
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
@@ -241,7 +242,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         projection.blind_depths,
         BTreeMap::from([(
             operation.clone(),
-            cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap()
+            cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap()
         )])
     );
     assert_eq!(
@@ -278,7 +279,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             }],
             diameter: Some(Length::new(4.0).unwrap()),
             extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap(),
             }),
             ..super::HoleProjection::default()
         },
@@ -362,12 +363,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, HoleKind, HolePlacement},
+        scalar::Length,
+    };
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
@@ -604,8 +608,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         BTreeMap::from([(
             operation.clone(),
             super::CounterboreDimensions {
-                diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
-                depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             },
         )])
     );

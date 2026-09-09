@@ -36,7 +36,7 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(30.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(30.0).unwrap()
         ))
     );
 }
@@ -92,7 +92,7 @@ fn decode_converts_degree_literals_to_radians() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
+            cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap()
         ))
     );
 }
@@ -124,7 +124,7 @@ fn decode_evaluates_the_dimensionless_pi_constant_in_an_angle_expression() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(output_value).unwrap()
+            cadmpeg_ir::scalar::Angle::new(output_value).unwrap()
         ))
     );
 }
@@ -151,7 +151,7 @@ fn decode_evaluates_dimensionless_trigonometric_arguments_as_radians() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(0.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(0.0).unwrap()
         ))
     );
 }
@@ -188,7 +188,7 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(1.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
         ))
     );
 }
@@ -223,7 +223,7 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(output_value).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(output_value).unwrap()
         ))
     );
 }
@@ -250,7 +250,7 @@ fn decode_distinguishes_common_and_natural_logarithms() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(3.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap()
         ))
     );
 }
@@ -278,7 +278,7 @@ fn decode_normalizes_every_admitted_formula_length_unit_to_millimetres() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(expected).unwrap()
+            cadmpeg_ir::scalar::Length::new(expected).unwrap()
         ))
     );
 }
@@ -306,7 +306,7 @@ fn decode_normalizes_every_admitted_formula_angle_unit_to_radians() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(expected).unwrap()
+            cadmpeg_ir::scalar::Angle::new(expected).unwrap()
         ))
     );
 }
@@ -333,7 +333,7 @@ fn decode_evaluates_exponential_and_hyperbolic_functions() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap()
         ))
     );
 }
@@ -360,7 +360,7 @@ fn decode_evaluates_scalar_rounding_functions() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(8.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(8.0).unwrap()
         ))
     );
 }
@@ -387,7 +387,7 @@ fn decode_evaluates_dimensioned_rounding_in_the_selected_unit() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(1_230.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(1_230.0).unwrap()
         ))
     );
 }
@@ -439,7 +439,7 @@ fn decode_evaluates_variadic_extrema_and_integer_part_remainder() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(9.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(9.0).unwrap()
         ))
     );
 }
@@ -466,7 +466,7 @@ fn decode_evaluates_remainder_of_a_negative_real_dividend_integer_part() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(-1.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap()
         ))
     );
 }
@@ -500,7 +500,7 @@ fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(5.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(5.0).unwrap()
         ))
     );
 }
@@ -527,7 +527,7 @@ fn decode_evaluates_right_associative_exponentiation_above_unary_signs() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(-512.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(-512.0).unwrap()
         ))
     );
 }
@@ -558,7 +558,7 @@ fn decode_evaluates_an_integral_power_of_a_dimensioned_value() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(3.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(3.0).unwrap()
         ))
     );
 }
@@ -586,7 +586,7 @@ fn decode_evaluates_inverse_trigonometric_calls_as_angles() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(output_value).unwrap()
+            cadmpeg_ir::scalar::Angle::new(output_value).unwrap()
         ))
     );
 }
@@ -620,7 +620,7 @@ fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(2.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
 }
@@ -882,7 +882,7 @@ fn decode_converts_metric_length_literals_to_millimetres() {
     assert_eq!(
         output.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(1_023.0).unwrap()
+            cadmpeg_ir::scalar::Length::new(1_023.0).unwrap()
         ))
     );
 }

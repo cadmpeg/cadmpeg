@@ -511,7 +511,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,
-        scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: Some("Cube root".into()),
         visible: None,
         link: None,

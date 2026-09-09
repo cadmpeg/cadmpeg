@@ -1376,7 +1376,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::features::NonNegativeLength::new(0.1).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
         })
     );
 }

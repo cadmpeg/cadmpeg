@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -20,6 +19,10 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::{
+    features::{FeatureDefinition, ParameterValue, WrapMode},
+    scalar::Length,
+};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
 pub(super) fn normalize_model_lengths(
@@ -262,37 +265,37 @@ fn scale_length(length: &mut Length, scale: f64) -> Result<(), CodecError> {
 }
 
 fn scale_positive_length(
-    length: &mut cadmpeg_ir::features::PositiveLength,
+    length: &mut cadmpeg_ir::scalar::PositiveLength,
     scale: f64,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::features::PositiveLength::new(length.get() * scale).ok_or_else(|| {
+    *length = cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale).ok_or_else(|| {
         CodecError::Malformed("Creo scaled length must be positive and finite".into())
     })?;
     Ok(())
 }
 
 fn scale_nonzero_length(
-    length: &mut cadmpeg_ir::features::NonZeroLength,
+    length: &mut cadmpeg_ir::scalar::NonZeroLength,
     scale: f64,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::features::NonZeroLength::new(length.get() * scale)
+    *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale)
         .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite and nonzero"))?;
     Ok(())
 }
 
 fn scale_nonnegative_length(
-    length: &mut cadmpeg_ir::features::NonNegativeLength,
+    length: &mut cadmpeg_ir::scalar::NonNegativeLength,
     scale: f64,
 ) -> Result<(), CodecError> {
     *length =
-        cadmpeg_ir::features::NonNegativeLength::new(length.get() * scale).ok_or_else(|| {
+        cadmpeg_ir::scalar::NonNegativeLength::new(length.get() * scale).ok_or_else(|| {
             CodecError::malformed("Creo scaled length must be nonnegative and finite")
         })?;
     Ok(())
 }
 
 fn scale_optional_positive_length(
-    length: &mut Option<cadmpeg_ir::features::PositiveLength>,
+    length: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
     scale: f64,
 ) -> Result<(), CodecError> {
     if let Some(length) = length {
@@ -1903,7 +1906,7 @@ mod tests {
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(3.0)
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
                                 .expect("nonzero length fixture"),
                         },
                         draft: None,
@@ -2028,7 +2031,7 @@ mod tests {
                 0.0, 0.0, 1.0,
             ))
             .expect("valid direction fixture"),
-            angle: cadmpeg_ir::features::Angle::new(0.5).expect("finite angle fixture"),
+            angle: cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture"),
         };
         scale_face_motion(&mut rotate, 25.4).expect("valid test fixture");
         let FaceMotion::Rotate {
@@ -2080,7 +2083,7 @@ mod tests {
             .expect("valid test fixture"),
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(
-                cadmpeg_ir::features::PositiveLength::new(2.0).expect("positive length fixture"),
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),
             ),
         };
 

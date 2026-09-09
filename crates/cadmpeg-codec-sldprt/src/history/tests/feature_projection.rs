@@ -314,7 +314,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&counterbore).expect("required invariant");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::features::PositiveLength::new(5.5).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
     );
     assert_eq!(construction.depth, Some(Length::new(12.0).unwrap()));
     assert!(matches!(
@@ -339,7 +339,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&threaded).expect("required invariant");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::features::PositiveLength::new(4.2).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
     );
     assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert!(matches!(
@@ -363,7 +363,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::features::PositiveLength::new(8.43).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
     );
     assert_eq!(construction.depth, Some(Length::new(11.62).unwrap()));
     assert!(matches!(
@@ -378,13 +378,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: cadmpeg_ir::features::InteriorAngle::new(118_f64.to_radians()).unwrap(),
+            included_angle: cadmpeg_ir::scalar::InteriorAngle::new(118_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
     assert_eq!(
         construction.taper_angle,
-        Some(cadmpeg_ir::features::InteriorAngle::new(3.43_f64.to_radians()).unwrap())
+        Some(cadmpeg_ir::scalar::InteriorAngle::new(3.43_f64.to_radians()).unwrap())
     );
 
     let counterbore_with_exit_countersink = profile(&[
@@ -399,21 +399,21 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         hole_sketch_construction(&counterbore_with_exit_countersink).expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::features::PositiveLength::new(4.5).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
     );
     assert_eq!(construction.depth, Some(Length::new(10.0).unwrap()));
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
-            diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
-            depth: cadmpeg_ir::features::PositiveLength::new(4.6).unwrap()
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(4.6).unwrap()
         })
     );
     assert_eq!(
         construction.exit_kind,
         Some(HoleKind::Countersink {
-            diameter: cadmpeg_ir::features::PositiveLength::new(4.55).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.55).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 
@@ -429,26 +429,26 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
     assert_eq!(
         construction.diameter,
-        cadmpeg_ir::features::PositiveLength::new(5.5).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
     );
     assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
-                cadmpeg_ir::features::PositiveLength::new(9.95).unwrap(),
-                Some(cadmpeg_ir::features::PositiveLength::new(10.05).unwrap())
+                cadmpeg_ir::scalar::PositiveLength::new(9.95).unwrap(),
+                Some(cadmpeg_ir::scalar::PositiveLength::new(10.05).unwrap())
             )
             .unwrap(),
 
-            depth: cadmpeg_ir::features::PositiveLength::new(5.4).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(5.4).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: cadmpeg_ir::features::InteriorAngle::new(118_f64.to_radians()).unwrap(),
+            included_angle: cadmpeg_ir::scalar::InteriorAngle::new(118_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
@@ -1232,12 +1232,12 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     let diameter = &shape.diameter();
     assert_eq!(
         *diameter,
-        Some(cadmpeg_ir::features::PositiveLength::new(4.5).unwrap())
+        Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap())
     );
     assert_eq!(
         *extent,
         Some(LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(13.2).unwrap()
+            length: cadmpeg_ir::scalar::NonZeroLength::new(13.2).unwrap()
         })
     );
 
@@ -1551,9 +1551,9 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         *projected[0].evaluation.definition(),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap()),
+            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Blind {
-                length: cadmpeg_ir::features::PositiveLength::new(16.0).unwrap(),
+                length: cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap(),
             }),
         }
     );
@@ -1578,7 +1578,7 @@ fn cosmetic_thread_without_blind_length_is_through() {
         *projected[0].evaluation.definition(),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap()),
+            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Through),
         }
     );
@@ -1607,7 +1607,7 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             *projected[0].evaluation.definition(),
             FeatureDefinition::CosmeticThread {
                 face: FaceSelection::Unresolved,
-                diameter: Some(cadmpeg_ir::features::PositiveLength::new(4.9).unwrap()),
+                diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()),
                 extent: Some(CosmeticThreadExtent::Through),
             }
         );

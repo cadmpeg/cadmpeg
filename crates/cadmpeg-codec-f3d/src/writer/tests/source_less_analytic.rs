@@ -759,7 +759,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             expression: "60 mm".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(60.0).unwrap(),
+                cadmpeg_ir::scalar::Length::new(60.0).unwrap(),
             )),
             dependencies: Default::default(),
             properties: std::collections::BTreeMap::new(),

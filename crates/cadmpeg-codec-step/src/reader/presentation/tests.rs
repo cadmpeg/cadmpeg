@@ -1728,7 +1728,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,
-            scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some("Root assembly".into()),
             visible: None,
             link: None,
@@ -1749,7 +1749,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             ])
             .expect("affine transform"),
             linked_prototype: None,
-            scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some("Child occurrence".into()),
             visible: None,
             link: None,

@@ -8,8 +8,11 @@ use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{FeatureDefinition, FeatureId, PrincipalPlane},
+    scalar::Length,
+};
 use std::collections::BTreeMap;
 
 const REFERENCE_POINT_NAME_END: usize = NAME_MARKER.len() + 1 + 12;

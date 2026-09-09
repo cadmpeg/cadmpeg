@@ -7,8 +7,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,

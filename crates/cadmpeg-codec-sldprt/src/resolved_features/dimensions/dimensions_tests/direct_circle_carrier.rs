@@ -4,11 +4,14 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement,
+};
+use cadmpeg_ir::{
+    features::{Feature, FeatureDefinition, FeatureId},
+    scalar::Length,
 };
 
 fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {

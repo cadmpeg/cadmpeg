@@ -7,7 +7,10 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::{
+    features::{DesignParameter, ParameterId, ParameterValue},
+    scalar::{Angle, Length},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
@@ -429,8 +432,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
                 Angle::new(parameter.model_value).map(ParameterValue::Angle)
             }
             PmDcUnitDimension::Dimensionless => {
-                cadmpeg_ir::features::FiniteReal::new(parameter.model_value)
-                    .map(ParameterValue::Real)
+                cadmpeg_ir::scalar::FiniteReal::new(parameter.model_value).map(ParameterValue::Real)
             }
         };
         let Some(value) = value else {
@@ -1241,7 +1243,7 @@ mod tests {
             expression: name.into(),
             display: None,
             value: Some(ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(1.0).expect("finite scalar fixture"),
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
             dependencies: (dependencies).try_into().expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),

@@ -6,8 +6,8 @@ use super::axis::SectionAxis;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 use super::super::feature_history::{

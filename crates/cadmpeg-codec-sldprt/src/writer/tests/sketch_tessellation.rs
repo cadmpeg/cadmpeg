@@ -291,7 +291,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
 
 #[test]
 fn semantic_writer_applies_circle_sketch_edits() {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
@@ -336,7 +336,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
 
 #[test]
 fn semantic_writer_applies_ellipse_sketch_edits() {
-    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
@@ -393,7 +393,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
 
 #[test]
 fn semantic_writer_applies_bounded_arc_sketch_edits() {
-    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
