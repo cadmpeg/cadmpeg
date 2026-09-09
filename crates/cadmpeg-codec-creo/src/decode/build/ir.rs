@@ -39,6 +39,7 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) unknowns: Vec<UnknownRecord>,
     pub(in super::super) coverage: cadmpeg_ir::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
+    pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::LossNote>,
 }
 
 pub(in super::super) fn build_container_ir(
@@ -57,6 +58,7 @@ pub(in super::super) fn build_container_ir(
         unknowns,
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
+        transfer_losses: Vec::new(),
     })
 }
 
@@ -554,6 +556,7 @@ pub(in super::super) fn build_ir(
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
+    let mut transfer_losses = Vec::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
@@ -570,6 +573,7 @@ pub(in super::super) fn build_ir(
         &mut annotations,
         &mut coverage,
         &mut brep_diagnostics,
+        &mut transfer_losses,
     )?;
     let geometry_generator_feature_count = emit_model_features(scan, &mut ir, &mut annotations)?;
     let (feature_result_topology_count, feature_result_edge_count) =
@@ -597,5 +601,6 @@ pub(in super::super) fn build_ir(
         unknowns,
         coverage,
         brep_diagnostics,
+        transfer_losses,
     })
 }

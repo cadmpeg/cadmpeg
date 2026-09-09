@@ -49,6 +49,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::Coverage,
     brep_diagnostics: &mut BrepTransferDiagnostics,
+    transfer_losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(), CodecError> {
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations)?;
     let first_instance_prototype_surface_count =
@@ -138,7 +139,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     )?;
     diagnostics.record_coverage(coverage);
     *brep_diagnostics = diagnostics;
-    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations)?;
+    let feature_revolution_brep_count =
+        transfer_resolved_revolution_breps(scan, ir, annotations, transfer_losses)?;
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations)?;
     let feature_extrusion_brep_count =
@@ -775,6 +777,7 @@ mod tests {
             &mut annotations,
             &mut coverage,
             &mut brep_diagnostics,
+            &mut Vec::new(),
         )
         .expect("synthetic geometry transfer");
 
