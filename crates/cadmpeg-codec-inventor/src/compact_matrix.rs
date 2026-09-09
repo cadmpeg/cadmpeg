@@ -62,7 +62,7 @@ impl CompactMatrix {
                 "compact matrix disagrees with value_mask or zero_mask".into(),
             ));
         }
-        Ok(Self { matrix, ..expected })
+        Ok(expected)
     }
 
     /// The admitted matrix rows.
