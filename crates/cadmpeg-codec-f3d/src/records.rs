@@ -2916,7 +2916,6 @@ impl NativeRecordId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub struct DesignConfiguration {
-    id: String,
     entry_name: String,
     kind: DesignConfigurationKind,
     variant_order: Vec<String>,
@@ -2953,8 +2952,16 @@ impl DesignConfiguration {
                 "configuration.id must identify entry_name"
             )));
         }
+        let extension = match kind {
+            DesignConfigurationKind::Table => ".dsgcfg",
+            DesignConfigurationKind::Rule => ".dsgcfgrule",
+        };
+        if !entry_name.ends_with(extension) {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "configuration.entry_name must end with {extension} for {kind:?}"
+            )));
+        }
         let value = Self {
-            id,
             entry_name,
             kind,
             variant_order,
@@ -2969,8 +2976,8 @@ impl DesignConfiguration {
         Ok(value)
     }
     /// Returns the admitted native identity.
-    pub(crate) fn id(&self) -> &String {
-        &self.id
+    pub(crate) fn id(&self) -> String {
+        crate::ids::configuration_entry_id(&self.entry_name)
     }
     /// Returns the configuration entry name.
     pub(crate) fn entry_name(&self) -> &String {
@@ -3009,7 +3016,7 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
 impl From<DesignConfiguration> for DesignConfigurationWire {
     fn from(value: DesignConfiguration) -> Self {
         Self {
-            id: value.id,
+            id: value.id(),
             entry_name: value.entry_name,
             kind: value.kind,
             variant_order: value.variant_order,

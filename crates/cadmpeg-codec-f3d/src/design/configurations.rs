@@ -114,11 +114,8 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();
-    let mut ids = HashSet::new();
     for configuration in &configurations {
-        if !names.insert(configuration.entry_name().as_str())
-            || !ids.insert(configuration.id().as_str())
-        {
+        if !names.insert(configuration.entry_name().as_str()) {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D configuration identity: {}",
                 configuration.entry_name()
@@ -416,7 +413,7 @@ pub fn project_configurations(
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
-                native_ref: Some(table.id().clone()),
+                native_ref: Some(table.id()),
             });
         }
     }
