@@ -76,7 +76,6 @@ fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BoundaryVertexClusterError {
-    InvalidTolerance,
     NonTransitive,
 }
 
@@ -146,11 +145,9 @@ fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
 
 fn cluster_boundary_positions(
     positions: &[Point3],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::units::PositiveScalar,
 ) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexClusterError> {
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return Err(BoundaryVertexClusterError::InvalidTolerance);
-    }
+    let tolerance = tolerance.get();
     let mut parents = (0..positions.len()).collect::<Vec<_>>();
     for (left_index, left) in positions.iter().enumerate() {
         for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
@@ -202,15 +199,13 @@ fn create_boundary_vertices(
     source_entity: &str,
     boundary: usize,
     source_endpoints: &[BoundaryVertexSourceEndpoint],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::units::PositiveScalar,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
     let positions = source_endpoints
         .iter()
         .map(|endpoint| endpoint.position)
         .collect::<Vec<_>>();
     let clusters = cluster_boundary_positions(&positions, tolerance)?;
-    let checked_tolerance = cadmpeg_ir::units::PositiveScalar::new(tolerance)
-        .ok_or(BoundaryVertexClusterError::InvalidTolerance)?;
     let mut vertex_ids = (0..positions.len())
         .map(|_| None)
         .collect::<Vec<Option<VertexId>>>();
@@ -228,7 +223,7 @@ fn create_boundary_vertices(
         candidate.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: Some(checked_tolerance),
+            tolerance: Some(tolerance),
         });
         let source_endpoints = cluster
             .members
@@ -239,7 +234,7 @@ fn create_boundary_vertices(
             source_entity: source_entity.into(),
             vertex: vertex_id.clone(),
             representative: cluster.representative,
-            tolerance,
+            tolerance: tolerance.get(),
             source_endpoints,
         });
         for member in cluster.members {
@@ -2178,20 +2173,22 @@ pub(super) fn project(
                     ]
                 })
                 .collect::<Vec<_>>();
+            let Some(checked_sewing_tolerance) =
+                cadmpeg_ir::units::PositiveScalar::new(sewing_tolerance)
+            else {
+                losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
+                valid = false;
+                break;
+            };
             let (vertex_ids, derivations) = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
                 &format!("iges:entity:directory#{}", entry.sequence),
                 boundary_index,
                 &source_endpoints,
-                sewing_tolerance,
+                checked_sewing_tolerance,
             ) {
                 Ok(result) => result,
-                Err(BoundaryVertexClusterError::InvalidTolerance) => {
-                    losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
-                    valid = false;
-                    break;
-                }
                 Err(BoundaryVertexClusterError::NonTransitive) => {
                     losses.push(entity_loss(
                         entry,
@@ -2200,13 +2197,6 @@ pub(super) fn project(
                     valid = false;
                     break;
                 }
-            };
-            let Some(checked_sewing_tolerance) =
-                cadmpeg_ir::units::PositiveScalar::new(sewing_tolerance)
-            else {
-                losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
-                valid = false;
-                break;
             };
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {

@@ -318,7 +318,7 @@ fn decode_with_occurrence_limits(
             None => invalid_resolution = true,
         }
     }
-    let projection = match length_context.filter(|_| !ctx.container_only()) {
+    let mut projection = match length_context.filter(|_| !ctx.container_only()) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
             entities::geometry::project_geometry(
@@ -332,7 +332,17 @@ fn decode_with_occurrence_limits(
         }
         None => entities::geometry::Projection::default(),
     };
-    let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection.decoded);
+    for entry in parse.directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 408 | 420)
+            && entry.form == 0
+            && quarantined_parameter_sequences.contains(&entry.sequence)
+    }) {
+        projection.placement_rejections.insert(
+            entry.sequence,
+            entities::structure::PlacementRejection::MissingRecord,
+        );
+    }
+    let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,

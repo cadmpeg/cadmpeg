@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome};
+use super::geometry::{
+    admit, entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -226,15 +228,14 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Plane(
-                    match cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Plane(payload)
             }
             192 => {
                 let axis = match transformed_direction(
@@ -251,15 +252,8 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(radius) = record
-                    .number(3)
-                    .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    losses.push(entity_loss(
-                        entry,
-                        "cylinder radius is not positive and finite",
-                    ));
+                let Some(radius) = record.number(3).map(|radius| radius * factor) else {
+                    losses.push(entity_loss(entry, "cylinder radius is not numeric"));
                     continue;
                 };
                 let candidate = match form_reference_direction(
@@ -284,20 +278,19 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cylinder(
-                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::CylinderSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Cylinder(payload)
             }
             194 => {
                 let axis = match transformed_direction(
@@ -314,12 +307,8 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(radius) = record
-                    .number(3)
-                    .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius >= 0.0)
-                else {
-                    losses.push(entity_loss(entry, "cone radius is negative or non-finite"));
+                let Some(radius) = record.number(3).map(|radius| radius * factor) else {
+                    losses.push(entity_loss(entry, "cone radius is not numeric"));
                     continue;
                 };
                 let Some(half_angle) = record.number(4).map(f64::to_radians).filter(|angle| {
@@ -353,28 +342,27 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Cone(
-                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::ConeSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         radius,
                         1.0,
                         half_angle,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Cone(payload)
             }
             196 => {
                 let Some(radius) = record
                     .number(2)
                     .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
+                    .and_then(cadmpeg_ir::units::PositiveScalar::new)
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -421,20 +409,19 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Sphere(
-                    match cadmpeg_ir::geometry::SphereSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::SphereSurface::try_new(
                         location,
                         axis,
                         ref_direction,
-                        radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                        radius.get(),
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Sphere(payload)
             }
             198 => {
                 let axis = match transformed_direction(
@@ -457,11 +444,7 @@ pub(super) fn project(
                     continue;
                 };
                 let (major_radius, minor_radius) = (major_radius * factor, minor_radius * factor);
-                if !major_radius.is_finite()
-                    || !minor_radius.is_finite()
-                    || minor_radius <= 0.0
-                    || minor_radius >= major_radius
-                {
+                if minor_radius <= 0.0 || minor_radius >= major_radius {
                     losses.push(entity_loss(
                         entry,
                         "torus radii do not satisfy 0 < minor < major",
@@ -490,21 +473,20 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                SurfaceGeometry::Torus(
-                    match cadmpeg_ir::geometry::TorusSurface::try_new(
+                let Some(payload) = admit(
+                    cadmpeg_ir::geometry::TorusSurface::try_new(
                         location,
                         axis,
                         ref_direction,
                         major_radius,
                         minor_radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(message) => {
-                            losses.push(entity_loss(entry, message));
-                            continue;
-                        }
-                    },
-                )
+                    ),
+                    entry,
+                    &mut losses,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Torus(payload)
             }
             _ => {
                 losses.push(entity_loss(entry, "analytic surface type is unsupported"));

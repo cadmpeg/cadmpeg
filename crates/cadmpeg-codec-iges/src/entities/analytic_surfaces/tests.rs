@@ -186,3 +186,30 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
             && loss.message.contains("prohibited transformation")
     }));
 }
+
+#[test]
+fn iges_sphere_radius_remains_positive_when_the_ir_carrier_accepts_signed_radii() {
+    let source = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "196,1,-2;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("sphere radius is not positive and finite")));
+}

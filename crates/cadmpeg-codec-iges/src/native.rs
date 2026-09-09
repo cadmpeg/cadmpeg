@@ -8,15 +8,16 @@ use crate::entities::geometry::{
     resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
 };
 use crate::entities::structure::{
-    array_base_type, flow_join_target_valid, signal_string_geometry_target,
+    array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
+    PlacementRejection,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, TextNodeLayout, Token,
-    TokenValue, TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
+    Token, TokenValue, TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -1349,14 +1350,14 @@ impl ViewGeometry {
 impl Serialize for NativeView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Wire<'a> {
-            id: &'a String,
-            source_entity: &'a String,
+        struct OrthographicWire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
             form: i64,
             projection: ViewProjection,
             view_number: Option<i64>,
             scale: Option<f64>,
-            model_to_view: Option<&'a str>,
+            model_to_view: &'a Option<String>,
             clipping_planes: &'a [Option<String>],
             view_plane_normal: Option<[Option<f64>; 3]>,
             view_reference_point: Option<[Option<f64>; 3]>,
@@ -1367,45 +1368,69 @@ impl Serialize for NativeView {
             depth_clipping: Option<i64>,
             depth_range: Option<[Option<f64>; 2]>,
         }
+        #[derive(Serialize)]
+        struct PerspectiveWire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
+            form: i64,
+            projection: ViewProjection,
+            view_number: Option<i64>,
+            scale: Option<f64>,
+            model_to_view: Option<&'a str>,
+            clipping_planes: &'a [Option<String>],
+            view_plane_normal: [Option<f64>; 3],
+            view_reference_point: [Option<f64>; 3],
+            center_of_projection: [Option<f64>; 3],
+            view_up: [Option<f64>; 3],
+            view_plane_distance: Option<f64>,
+            clipping_window: [Option<f64>; 4],
+            depth_clipping: Option<i64>,
+            depth_range: [Option<f64>; 2],
+        }
         let projection = self.geometry.projection();
-        let mut wire = Wire {
-            id: &self.id,
-            source_entity: &self.source_entity,
-            form: projection.form(),
-            projection,
-            view_number: self.view_number,
-            scale: self.scale,
-            model_to_view: None,
-            clipping_planes: &[],
-            view_plane_normal: None,
-            view_reference_point: None,
-            center_of_projection: None,
-            view_up: None,
-            view_plane_distance: None,
-            clipping_window: None,
-            depth_clipping: None,
-            depth_range: None,
-        };
         match &self.geometry {
             ViewGeometry::Orthographic {
                 model_to_view,
                 clipping_planes,
-            } => {
-                wire.model_to_view = model_to_view.as_deref();
-                wire.clipping_planes = clipping_planes;
+            } => OrthographicWire {
+                id: &self.id,
+                source_entity: &self.source_entity,
+                form: projection.form(),
+                projection,
+                view_number: self.view_number,
+                scale: self.scale,
+                model_to_view,
+                clipping_planes,
+                view_plane_normal: None,
+                view_reference_point: None,
+                center_of_projection: None,
+                view_up: None,
+                view_plane_distance: None,
+                clipping_window: None,
+                depth_clipping: None,
+                depth_range: None,
             }
-            ViewGeometry::Perspective(geometry) => {
-                wire.view_plane_normal = Some(geometry.view_plane_normal);
-                wire.view_reference_point = Some(geometry.view_reference_point);
-                wire.center_of_projection = Some(geometry.center_of_projection);
-                wire.view_up = Some(geometry.view_up);
-                wire.view_plane_distance = geometry.view_plane_distance;
-                wire.clipping_window = Some(geometry.clipping_window);
-                wire.depth_clipping = geometry.depth_clipping;
-                wire.depth_range = Some(geometry.depth_range);
+            .serialize(serializer),
+            ViewGeometry::Perspective(geometry) => PerspectiveWire {
+                id: &self.id,
+                source_entity: &self.source_entity,
+                form: projection.form(),
+                projection,
+                view_number: self.view_number,
+                scale: self.scale,
+                model_to_view: None,
+                clipping_planes: &[],
+                view_plane_normal: geometry.view_plane_normal,
+                view_reference_point: geometry.view_reference_point,
+                center_of_projection: geometry.center_of_projection,
+                view_up: geometry.view_up,
+                view_plane_distance: geometry.view_plane_distance,
+                clipping_window: geometry.clipping_window,
+                depth_clipping: geometry.depth_clipping,
+                depth_range: geometry.depth_range,
             }
+            .serialize(serializer),
         }
-        wire.serialize(serializer)
     }
 }
 
@@ -1514,13 +1539,13 @@ struct NativeDrawing {
 }
 
 fn drawing_property_candidates(
-    trailing: Option<&crate::parameter::TrailingPointerGroups>,
+    trailing: Option<&crate::parameter::ResolvedGroups>,
     form: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Vec<u32> {
     trailing
         .into_iter()
-        .flat_map(|groups| groups.properties().copied())
+        .flat_map(|groups| groups.properties().iter().copied())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .filter(|sequence| {
@@ -1661,72 +1686,6 @@ fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
         .flatten()
 }
 
-fn placement_affine(
-    instance: &DirectoryEntry,
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: f64,
-    precision: RealPrecision,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(u32, Affine), ()> {
-    let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
-    let translation_component = |index| {
-        record
-            .number_or(index, 0.0)
-            .filter(|value| value.is_finite())
-            .ok_or(())
-    };
-    let scale_component = |index, default| {
-        record
-            .number_or(index, default)
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .ok_or(())
-    };
-    let x_scale = scale_component(5, 1.0)?;
-    let scales = if instance.entity_type == 420 {
-        [
-            x_scale,
-            scale_component(6, x_scale)?,
-            scale_component(7, x_scale)?,
-        ]
-    } else {
-        [x_scale; 3]
-    };
-    let translation = Affine::new([
-        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
-    ])
-    .ok_or(())?;
-    let scale = Affine::new([
-        [scales[0], 0.0, 0.0, 0.0],
-        [0.0, scales[1], 0.0, 0.0],
-        [0.0, 0.0, scales[2], 0.0],
-    ])
-    .ok_or(())?;
-    let directory = if instance.transform == 0 {
-        Affine::identity()
-    } else {
-        resolve_transform(
-            instance.transform,
-            entries,
-            records,
-            length_factor,
-            precision,
-            &mut std::collections::BTreeSet::new(),
-            ctx,
-        )
-        .map_err(|_| ())?
-    };
-    Ok((
-        definition,
-        directory
-            .compose(translation.compose(scale).ok_or(())?)
-            .ok_or(())?,
-    ))
-}
-
 fn member_affine(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -1792,6 +1751,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
+            malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
         let Ok((definition_sequence, local)) = placement_affine(
@@ -1807,6 +1767,7 @@ impl OccurrenceExpansion<'_, '_> {
             return Ok(None);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
+            malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
         let Some(definition_world) = parent
@@ -1865,6 +1826,7 @@ impl OccurrenceExpansion<'_, '_> {
                 continue;
             }
             let Some(member_entry) = self.entries.get(member).copied() else {
+                malformed_placement_sequences.insert(instance_sequence);
                 continue;
             };
             let Ok(member_local) = member_affine(
@@ -1916,7 +1878,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     quarantine: QuarantinedRecords<'_>,
-    structure_admitted: Option<&BTreeSet<u32>>,
+    structure_admitted: Option<&crate::entities::geometry::Projection>,
     boundary_vertex_derivations: &[BoundaryVertexDerivation],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
@@ -2016,7 +1978,7 @@ pub(crate) fn store(
         trailing_pointer_analysis
             .get(&sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                 _ => None,
             })
             .map_or(record.parameter_end(), |groups| groups.token_start)
@@ -2080,7 +2042,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                     _ => None,
                 });
             let invalid_trailing = (trailing.is_none()
@@ -2094,55 +2056,79 @@ pub(crate) fn store(
                     })
             })
             .flatten();
-            let edge_trailing = trailing.or(invalid_trailing);
-            let resolved_associations = edge_trailing
-                .as_ref()
+            for (token_index, raw_pointer) in trailing
                 .into_iter()
-                .flat_map(|groups| groups.association_pointers.iter())
-                .filter_map(|pointer| {
-                    parameter_resolver.resolve(
-                        entry.sequence,
-                        pointer.token_index,
-                        pointer.raw_pointer,
-                        ReferenceExpectation::AnyOf {
-                            first: 212,
-                            second: 312,
-                            rest: vec![402],
-                        },
-                        |target| matches!(target.entity_type, 212 | 312 | 402),
-                    )
+                .flat_map(|groups| {
+                    groups
+                        .associations()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, sequence)| {
+                            (groups.token_start + 1 + index, i64::from(*sequence))
+                        })
                 })
-                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect::<Vec<_>>();
-            let resolved_properties = edge_trailing
-                .as_ref()
+                .chain(invalid_trailing.into_iter().flat_map(|groups| {
+                    groups
+                        .association_pointers
+                        .iter()
+                        .map(|pointer| (pointer.token_index, pointer.raw_pointer))
+                }))
+            {
+                parameter_resolver.resolve(
+                    entry.sequence,
+                    token_index,
+                    raw_pointer,
+                    ReferenceExpectation::AnyOf {
+                        first: 212,
+                        second: 312,
+                        rest: vec![402],
+                    },
+                    |target| matches!(target.entity_type, 212 | 312 | 402),
+                );
+            }
+            for (token_index, raw_pointer) in trailing
                 .into_iter()
-                .flat_map(|groups| groups.property_pointers.iter())
-                .filter_map(|pointer| {
-                    parameter_resolver.resolve(
-                        entry.sequence,
-                        pointer.token_index,
-                        pointer.raw_pointer,
-                        ReferenceExpectation::AnyOf {
-                            first: 316,
-                            second: 322,
-                            rest: vec![406, 422],
-                        },
-                        |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
-                    )
+                .flat_map(|groups| {
+                    groups
+                        .properties()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, sequence)| {
+                            (
+                                groups.token_start + groups.associations().len() + 2 + index,
+                                i64::from(*sequence),
+                            )
+                        })
                 })
+                .chain(invalid_trailing.into_iter().flat_map(|groups| {
+                    groups
+                        .property_pointers
+                        .iter()
+                        .map(|pointer| (pointer.token_index, pointer.raw_pointer))
+                }))
+            {
+                parameter_resolver.resolve(
+                    entry.sequence,
+                    token_index,
+                    raw_pointer,
+                    ReferenceExpectation::AnyOf {
+                        first: 316,
+                        second: 322,
+                        rest: vec![406, 422],
+                    },
+                    |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
+                );
+            }
+            let association_links = trailing
+                .into_iter()
+                .flat_map(ResolvedGroups::associations)
                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect::<Vec<_>>();
-            let association_links = if trailing.is_some() {
-                resolved_associations
-            } else {
-                Vec::new()
-            };
-            let property_links = if trailing.is_some() {
-                resolved_properties
-            } else {
-                Vec::new()
-            };
+                .collect();
+            let property_links = trailing
+                .into_iter()
+                .flat_map(ResolvedGroups::properties)
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect();
             NativeEntity {
                 id: format!("iges:entity:directory#{}", entry.sequence),
                 directory_sequence: entry.sequence,
@@ -2174,7 +2160,8 @@ pub(crate) fn store(
                     .get(&entry.sequence)
                     .into_iter()
                     .flatten()
-                    .filter_map(ReferenceEdge::target)
+                    .filter_map(ReferenceEdge::target_sequence)
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     .collect(),
                 references: references.get(&entry.sequence).cloned().unwrap_or_default(),
             }
@@ -4290,16 +4277,10 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous(groups) => {
-                                        Some(groups.as_groups())
-                                    }
+                                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                     _ => None,
                                 })
-                                .is_some_and(|groups| {
-                                    groups
-                                        .properties()
-                                        .any(|sequence| sequence == &entry.sequence)
-                                })
+                                .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4641,16 +4622,10 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous(groups) => {
-                                        Some(groups.as_groups())
-                                    }
+                                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                     _ => None,
                                 })
-                                .is_some_and(|groups| {
-                                    groups
-                                        .properties()
-                                        .any(|sequence| sequence == &entry.sequence)
-                                })
+                                .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4671,16 +4646,10 @@ pub(crate) fn store(
                     trailing_pointer_analysis
                         .get(sequence)
                         .and_then(|analysis| match analysis {
-                            TrailingPointerAnalysis::Unambiguous(groups) => {
-                                Some(groups.as_groups())
-                            }
+                            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                             _ => None,
                         })
-                        .is_some_and(|groups| {
-                            groups
-                                .properties()
-                                .any(|sequence| sequence == &entry.sequence)
-                        })
+                        .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                 .collect();
@@ -4984,7 +4953,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                     _ => None,
                 });
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);
@@ -5164,7 +5133,7 @@ pub(crate) fn store(
     let occurrence_definitions = all_occurrence_definitions
         .into_iter()
         .filter(|(sequence, _)| {
-            structure_admitted.is_none_or(|admitted| admitted.contains(sequence))
+            structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
         })
         .collect::<BTreeMap<_, _>>();
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
@@ -5218,29 +5187,17 @@ pub(crate) fn store(
     let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = occurrence_length_factor {
-        // Structure admission excludes malformed placement records. Inspect
-        // those records here so the existing placement loss remains visible.
-        for entry in directory.iter().filter(|entry| {
-            matches!(entry.entity_type, 408 | 420)
-                && entry.form == 0
-                && structure_admitted.is_some_and(|admitted| !admitted.contains(&entry.sequence))
-        }) {
-            let Some(record) = by_directory.get(&entry.sequence).copied() else {
-                continue;
-            };
-            if placement_affine(
-                entry,
-                record,
-                &entries,
-                &by_directory,
-                length_factor,
-                global.real_precision(),
-                ctx,
-            )
-            .is_err()
-            {
-                malformed_placement_sequences.insert(entry.sequence);
-            }
+        if let Some(admission) = structure_admitted {
+            malformed_placement_sequences.extend(admission.placement_rejections.iter().filter_map(
+                |(sequence, reason)| match reason {
+                    PlacementRejection::MissingRecord
+                    | PlacementRejection::InvalidDefinition
+                    | PlacementRejection::InvalidPlacement => Some(*sequence),
+                    PlacementRejection::InvalidMetadata { definition } => {
+                        (!occurrence_definitions.contains_key(definition)).then_some(*sequence)
+                    }
+                },
+            ));
         }
         let expansion = OccurrenceExpansion {
             entries: &entries,
@@ -5257,7 +5214,8 @@ pub(crate) fn store(
             for root in directory.iter().filter(|entry| {
                 matches!(entry.entity_type, 408 | 420)
                     && entry.form == 0
-                    && structure_admitted.is_none_or(|admitted| admitted.contains(&entry.sequence))
+                    && structure_admitted
+                        .is_none_or(|admitted| admitted.decoded.contains(&entry.sequence))
                     && !contained_instances.contains(&entry.sequence)
             }) {
                 if let Some(source_sequence) = expansion.expand(
@@ -5341,7 +5299,8 @@ pub(crate) fn store(
             .get(&entity.directory_sequence)
             .into_iter()
             .flatten()
-            .filter_map(ReferenceEdge::target)
+            .filter_map(ReferenceEdge::target_sequence)
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
             .collect();
         entity.references = references
             .get(&entity.directory_sequence)

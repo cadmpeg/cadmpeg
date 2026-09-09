@@ -15,6 +15,7 @@ mod annotations;
 mod counted_lists;
 mod fem;
 mod macros;
+mod occurrences;
 
 fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
     report
