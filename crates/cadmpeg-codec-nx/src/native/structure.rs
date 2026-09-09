@@ -316,37 +316,40 @@ fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> 
 /// unique and every counted lane is complete.
 pub fn fast_load_component_roster(
     container: &Container<'_>,
-) -> (
-    Vec<FastLoadComponentPrototype>,
-    Vec<FastLoadComponentUuid>,
-    FastLoadOccurrences,
-) {
+) -> Result<
+    (
+        Vec<FastLoadComponentPrototype>,
+        Vec<FastLoadComponentUuid>,
+        FastLoadOccurrences,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut entries = container
         .entries
         .iter()
         .filter(|entry| entry.name == ENTRY_NAME && entry.file_span().is_some());
     let Some(entry) = entries.next() else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     if entries.next().is_some() {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     }
     let Some((entry_offset, entry_size)) = entry.file_span() else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
         (usize::try_from(entry_offset), usize::try_from(entry_size))
     else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(end) = entry_offset_usize.checked_add(entry_size) else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(bytes) = container.data.get(entry_offset_usize..end) else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
     let Some(payload) = framed_payload(bytes) else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
     // Every admitted roster has one of two structural anchors before the
@@ -374,7 +377,7 @@ pub fn fast_load_component_roster(
         .filter_map(|start| parse_candidate(payload, start))
         .collect::<Vec<_>>();
     let Some(candidate) = select_roster_candidate(candidates) else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
+        return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
     let prototypes: Vec<_> = candidate
@@ -428,10 +431,9 @@ pub fn fast_load_component_roster(
                 + ordinal as u64,
         })
         .collect::<Vec<_>>();
-    let Ok(occurrences) = FastLoadOccurrences::try_from(occurrences) else {
-        return (Vec::new(), Vec::new(), FastLoadOccurrences::default());
-    };
-    (prototypes, uuids, occurrences)
+    let occurrences =
+        FastLoadOccurrences::try_from(occurrences).map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok((prototypes, uuids, occurrences))
 }
 
 fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
@@ -705,7 +707,7 @@ mod tests {
     #[test]
     fn extracts_repeated_component_occurrences() {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
-        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(uuids.len(), 1);
         assert_eq!(
             u8::from(
@@ -743,7 +745,8 @@ mod tests {
     fn extracts_roster_with_none_metadata() {
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
             payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),
-        ));
+        ))
+        .unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -767,7 +770,8 @@ mod tests {
                 &[1, 2],
                 0,
                 b"99",
-            )));
+            )))
+            .unwrap();
         assert_eq!(
             prototypes
                 .iter()
@@ -788,7 +792,7 @@ mod tests {
             1,
             b"919",
         ));
-        let (_, _, occurrences) = fast_load_component_roster(&container);
+        let (_, _, occurrences) = fast_load_component_roster(&container).unwrap();
         assert_eq!(
             occurrences
                 .wire_records()
@@ -814,7 +818,7 @@ mod tests {
     fn rejects_unknown_occurrence_lane_form_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
+            fast_load_component_roster(&container(bytes)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -823,7 +827,7 @@ mod tests {
     fn rejects_unknown_occurrence_marker_atomically() {
         let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
+            fast_load_component_roster(&container(bytes)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -831,7 +835,7 @@ mod tests {
     #[test]
     fn groups_equal_uuid_multiplicity_without_pairing_instances() {
         let container = container(payload(&["plate", "bolt"], &[1, 2, 2]));
-        let (_, uuids, occurrences) = fast_load_component_roster(&container);
+        let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
         let values = (0..3)
             .map(|ordinal| ObjectUuidValue {
                 id: format!("nx:test:object-uuid#{ordinal}"),
@@ -862,7 +866,7 @@ mod tests {
     fn rejects_out_of_range_prototype_index_atomically() {
         let container = container(payload(&["plate"], &[1, 2]));
         assert_eq!(
-            fast_load_component_roster(&container),
+            fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -872,7 +876,7 @@ mod tests {
         let mut container = container(payload(&["plate"], &[1]));
         container.data.to_mut()[11] += 1;
         assert_eq!(
-            fast_load_component_roster(&container),
+            fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -887,7 +891,7 @@ mod tests {
             .expect("fixture contains terminal occurrence count");
         bytes[offset + 1] = 2;
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
+            fast_load_component_roster(&container(bytes)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -902,7 +906,7 @@ mod tests {
             + 5;
         bytes[terminator] = b'X';
         assert_eq!(
-            fast_load_component_roster(&container(bytes)),
+            fast_load_component_roster(&container(bytes)).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
@@ -913,7 +917,7 @@ mod tests {
         first.extend(payload(&["bolt"], &[1]));
         let container = container(first);
         assert_eq!(
-            fast_load_component_roster(&container),
+            fast_load_component_roster(&container).unwrap(),
             (Vec::new(), Vec::new(), FastLoadOccurrences::default())
         );
     }
