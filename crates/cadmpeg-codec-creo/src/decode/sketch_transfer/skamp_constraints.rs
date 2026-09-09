@@ -97,7 +97,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .expect("source field name is nonempty"),
                             role: Some(item.sense),
                         }),
-                        object_index: item.entity_id,
+                        object_index: Some(item.entity_id),
                         native_ref: Some(native_ref.clone()),
                     })
                     .collect::<Vec<_>>();
@@ -110,7 +110,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .expect("source field name is nonempty"),
                             role: None,
                         }),
-                        object_index: equation_id,
+                        object_index: Some(equation_id),
                         native_ref: Some(native_ref),
                     });
                 }

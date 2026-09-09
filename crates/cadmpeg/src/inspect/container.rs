@@ -23,11 +23,12 @@ fn detect(bytes: &[u8]) -> ContainerKind {
     }
 }
 
-fn allocation_label(allocation: Option<CompoundAllocation>) -> &'static str {
-    match allocation {
-        Some(CompoundAllocation::Regular) => "fat",
-        Some(CompoundAllocation::Mini) | None => "mini-fat",
-    }
+/// An empty stream owns no sectors, so it has no allocation.
+fn allocation_label(allocation: Option<CompoundAllocation>) -> Option<&'static str> {
+    allocation.map(|allocation| match allocation {
+        CompoundAllocation::Regular => "fat",
+        CompoundAllocation::Mini => "mini-fat",
+    })
 }
 
 /// Container members listed from a ZIP archive or a CFB file.
@@ -294,7 +295,7 @@ pub fn render(listing: &Listing) -> String {
                     CompoundEntry::Stream(stream) => (
                         "stream",
                         stream.logical_size().to_string(),
-                        allocation_label(stream.allocation()),
+                        allocation_label(stream.allocation()).unwrap_or(""),
                     ),
                 };
                 let _ = writeln!(

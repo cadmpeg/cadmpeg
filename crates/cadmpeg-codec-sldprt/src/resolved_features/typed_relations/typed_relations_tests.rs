@@ -426,7 +426,7 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
 }
 
 #[test]
-fn native_owner_operand_requires_a_source_index() {
+fn native_owner_operand_keeps_a_missing_source_index() {
     let relation = SketchInputEntity::new(
         "relation",
         "lane",
@@ -458,7 +458,7 @@ fn native_owner_operand_requires_a_source_index() {
                 .iter()
                 .map(|operand| operand.object_index)
                 .collect::<Vec<_>>(),
-            index.into_iter().collect::<Vec<_>>()
+            vec![index]
         );
     }
 }

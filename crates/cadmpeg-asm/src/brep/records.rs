@@ -10,12 +10,6 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, SurfaceId, Vert
 /// Source namespaces used to derive native record ids.
 pub mod identity;
 
-// Serde requires a borrowed skip predicate.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
 macro_rules! native_record {
     (
         $(#[doc = $record_doc:literal])*
@@ -322,6 +316,19 @@ native_record! {
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
 }
 
+/// Shape of the evaluated tolerance slot of one tolerant ASM vertex record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluatedToleranceSlot {
+    /// The record ends before the slot; the vertex carries no tolerance.
+    Absent,
+    /// The slot holds the `-1` unset sentinel; the vertex carries no tolerance.
+    Unset,
+    /// The slot holds a tolerance, stored on the vertex.
+    Evaluated,
+}
+
 native_record! {
     /// Native leading tolerance slots retained from one tolerant ASM vertex
     /// record. The record's three f64 tolerance slots are three independent
@@ -340,10 +347,10 @@ native_record! {
     /// retained verbatim; absent in older streams, a small non-negative
     /// per-entity change counter when present.
     trailing_field: Option<i64> [serde(default, skip_serializing_if = "Option::is_none")],
-    /// Whether the evaluated tolerance slot holds the `-1` unset sentinel.
-    /// The sentinel is a marker rather than a length, so the neutral vertex
-    /// carries no tolerance and this record keeps the fact.
-    evaluated_unset: bool [serde(default, skip_serializing_if = "is_false")],
+    /// Shape of the evaluated tolerance slot. The unset sentinel is a marker
+    /// rather than a length, so the neutral vertex carries no tolerance and
+    /// this record keeps whether the slot was unset or absent.
+    evaluated_slot: EvaluatedToleranceSlot,
 }
 
 native_record! {

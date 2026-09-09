@@ -167,7 +167,18 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
         crate::kernel_header::RefWidth::Four,
         crate::kernel_header::RefWidth::Eight,
     ] {
-        for (evaluated, tolerance, unset) in [(0.125f64, Some(1.25), false), (-1.0, None, true)] {
+        for (evaluated, tolerance, slot) in [
+            (
+                0.125f64,
+                Some(1.25),
+                crate::brep::records::EvaluatedToleranceSlot::Evaluated,
+            ),
+            (
+                -1.0,
+                None,
+                crate::brep::records::EvaluatedToleranceSlot::Unset,
+            ),
+        ] {
             let mut bytes = b"\x0d\x07tvertex".to_vec();
             for (tag, value) in [
                 (0x0c, -1i64),
@@ -212,7 +223,7 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
                 out.tolerant_vertex_tails[0].leading_tolerances,
                 [0.03, 0.07]
             );
-            assert_eq!(out.tolerant_vertex_tails[0].evaluated_unset, unset);
+            assert_eq!(out.tolerant_vertex_tails[0].evaluated_slot, slot);
         }
     }
 }
@@ -328,7 +339,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
 }
 
 #[test]
-fn evaluated_and_absent_vertex_slots_have_the_same_native_tail_wire() {
+fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     let decode = |slot: Option<f64>| {
         let mut tokens = vec![
             Token::Ref(-1),
@@ -371,7 +382,11 @@ fn evaluated_and_absent_vertex_slots_have_the_same_native_tail_wire() {
         Some(1.25)
     );
     assert_eq!(absent_tolerance, None);
-    assert_eq!(evaluated_wire, absent_wire);
+    assert_ne!(evaluated_wire, absent_wire);
+    assert_eq!(
+        serde_value::to_value(crate::brep::records::EvaluatedToleranceSlot::Absent).unwrap(),
+        serde_value::to_value("absent").unwrap()
+    );
 }
 
 #[test]

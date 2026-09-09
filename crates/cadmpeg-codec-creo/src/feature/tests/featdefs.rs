@@ -475,7 +475,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
             operands[1].field.as_ref().map(|field| field.name.as_str()),
             Some(field)
         );
-        assert_eq!(operands[1].object_index, ordinal);
+        assert_eq!(operands[1].object_index, Some(ordinal));
     }
     let point_verhor = constraints
         .iter()
@@ -501,7 +501,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
     );
-    assert_eq!(operands[0].object_index, 4);
+    assert_eq!(operands[0].object_index, Some(4));
 }
 
 #[test]

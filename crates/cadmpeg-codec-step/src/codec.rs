@@ -162,7 +162,7 @@ fn inspect_exchange(
         );
         entries.push(ContainerEntry {
             name: "REFERENCE".into(),
-            role: ContainerRole::StepExternalReferences,
+            role: ContainerRole::ExternalReferences,
             compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
@@ -214,7 +214,7 @@ fn inspect_exchange(
         attributes.insert("dependencies".into(), external_dependencies.join(","));
         entries.push(ContainerEntry {
             name: "EXTERNAL_DEPENDENCIES".into(),
-            role: ContainerRole::StepExternalReferences,
+            role: ContainerRole::ExternalReferences,
             compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,

@@ -352,7 +352,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
             trailing_field: Some(0),
-            evaluated_unset: false,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated,
         }];
         native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
             source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -625,7 +625,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
                 trailing_field: vertex_trailing,
-                evaluated_unset: false,
+                evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated,
             }];
             native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -683,7 +683,7 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
             trailing_field: Some(0),
-            evaluated_unset: true,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset,
         }];
     }
     let mut encoded = Vec::new();
@@ -707,7 +707,65 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
         .expect("tolerant vertex survives");
     assert_eq!(vertex.tolerance, None);
     let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
-    assert!(tail.evaluated_unset);
+    assert_eq!(
+        tail.evaluated_slot,
+        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset
+    );
+    assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
+}
+#[test]
+fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
+    // A tvertex record that ends before the evaluated slot has no neutral
+    // tolerance; the native tail keeps the absent fact and generation writes
+    // only the leading slots back.
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated planar triangle decode");
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    assert_eq!(source_less.model.vertices[0].tolerance, None);
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
+            vertex: tolerant_vertex,
+            record_index: 0,
+            leading_tolerances: [-1.0, -1.0],
+            trailing_field: None,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent,
+        }];
+    }
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("absent tolerant vertex encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("absent tolerant vertex round trip");
+    let vertex = round_trip
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| {
+            f3d_native(round_trip.ir())
+                .tolerant_vertex_tails
+                .iter()
+                .any(|tail| tail.vertex == vertex.id)
+        })
+        .expect("tolerant vertex survives");
+    assert_eq!(vertex.tolerance, None);
+    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
+    assert_eq!(
+        tail.evaluated_slot,
+        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent
+    );
+    assert_eq!(tail.trailing_field, None);
     assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
 

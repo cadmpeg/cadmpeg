@@ -129,7 +129,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             panic!("reference-line verhor must remain native");
         };
         assert_eq!(native_properties["verhor"], "0");
-        assert_eq!(operands[0].object_index, 42);
+        assert_eq!(operands[0].object_index, Some(42));
         assert_eq!(
             operands[0].native_ref.as_deref(),
             sketch.native_ref.as_deref()
