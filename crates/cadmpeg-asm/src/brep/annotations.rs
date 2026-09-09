@@ -3,7 +3,7 @@
 
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
-use super::{id, AsmBrep};
+use super::{id, AsmBrep, Carriers};
 use crate::ids::IdFormat;
 use crate::sab::Record;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -57,6 +57,7 @@ pub(crate) fn emit_annotation_records(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
+    carriers: &Carriers,
     stream: &str,
     format: IdFormat<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -189,12 +190,13 @@ pub(crate) fn emit_annotation_records(
             }
         }
     }
-    for (index, entity_id, tag) in out
+    for (index, entity_id, tag) in carriers
         .procedural_support_sources
         .iter()
         .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralSupport))
         .chain(
-            out.procedural_curve_child_sources
+            carriers
+                .procedural_curve_child_sources
                 .iter()
                 .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralCurveChild)),
         )

@@ -16,12 +16,21 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         .iter()
         .map(|record| (record.index as i64, record))
         .collect();
-    let mut out = AsmBrep {
+    let mut out = AsmBrep::default();
+    let carriers = Carriers {
         procedural_support_sources: vec![(37, SurfaceId::mint("f3d:child:support#named").unwrap())],
         procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
-        ..AsmBrep::default()
+        ..Carriers::default()
     };
-    emit_annotation_records(&mut out, &records, &by_index, "source", IdFormat("f3d")).unwrap();
+    emit_annotation_records(
+        &mut out,
+        &records,
+        &by_index,
+        &carriers,
+        "source",
+        IdFormat("f3d"),
+    )
+    .unwrap();
     let annotations: Vec<_> = out
         .annotation_records
         .iter()

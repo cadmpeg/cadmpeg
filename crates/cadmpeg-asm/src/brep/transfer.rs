@@ -89,8 +89,6 @@ pub fn transfer_into_ir(
         unknowns,
         stats,
         annotation_records,
-        procedural_support_sources: _,
-        procedural_curve_child_sources: _,
     } = brep;
 
     let before = ir.model.entity_count();
