@@ -74,26 +74,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
     }
-    for procedural in &ir.model.procedural_surfaces {
-        if let ProceduralSurfaceDefinition::TSpline { construction } = procedural.definition() {
-            if construction.subtransform.inline().is_none() {
-                bounds_err(
-                    findings,
-                    procedural.id.as_str(),
-                    "T-spline surface subtransform is unresolved",
-                );
-            }
-        }
-    }
-}
-
-pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
-    findings.push(Finding {
-        check: Check::Bounds,
-        severity: Severity::Error,
-        message: msg.to_string(),
-        entity: Some(id.to_string()),
-    });
 }
 
 #[cfg(test)]

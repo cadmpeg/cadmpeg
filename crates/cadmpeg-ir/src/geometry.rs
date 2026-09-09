@@ -4963,20 +4963,7 @@ impl ProceduralSurfaceDefinition {
                 Ok(())
             }
             Self::Sweep { native: None, .. } => Ok(()),
-            Self::TSpline { construction } => {
-                let ranges_valid = construction
-                    .parameter_ranges
-                    .iter()
-                    .flatten()
-                    .chain(construction.discontinuities.iter().flatten())
-                    .all(|value| value.is_finite());
-                if !ranges_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "T-spline surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
+            Self::TSpline { .. } => Ok(()),
             Self::Deformable { construction } => {
                 let vector_finite = |vector: &Vector3| {
                     vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
@@ -6670,25 +6657,102 @@ impl TSplineSubtransform {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TSplineSurfaceConstruction {
     /// Ordered U and V native parameter intervals.
-    pub parameter_ranges: [[f64; 2]; 2],
+    parameter_ranges: [crate::topology::ParameterInterval; 2],
     /// Native T-spline type integer.
-    pub type_code: i64,
+    type_code: i64,
     /// Inline or referenced shared subtransform object.
-    pub subtransform: TSplineSubtransform,
+    subtransform: TSplineSubtransform,
     /// Native trailing integer.
-    pub trailing_value: i64,
+    trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 6],
+    discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
-    pub discontinuity_flag: bool,
+    discontinuity_flag: bool,
     /// Revision-gated form fields; absent from the pre-revision layout. The
     /// revision layout stores the shared tail first, then four optional
     /// parameter values (`support_bounds`), the type code as an enum, the
     /// nested subtransform scope, and the trailing integer.
-    pub revision_form: Option<RevisionSurfaceForm>,
+    revision_form: Option<RevisionSurfaceForm>,
 }
 
 impl TSplineSurfaceConstruction {
+    /// Admit finite ordered ranges, finite discontinuities, and a resolved subtransform.
+    pub fn try_new(
+        parameter_ranges: [[f64; 2]; 2],
+        type_code: i64,
+        subtransform: TSplineSubtransform,
+        trailing_value: i64,
+        discontinuities: [Vec<f64>; 6],
+        discontinuity_flag: bool,
+        revision_form: Option<RevisionSurfaceForm>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let parameter_ranges = [
+            crate::topology::ParameterInterval::new(parameter_ranges[0])
+                .map_err(ProceduralGeometryError::Payload)?,
+            crate::topology::ParameterInterval::new(parameter_ranges[1])
+                .map_err(ProceduralGeometryError::Payload)?,
+        ];
+        if subtransform.inline().is_none() {
+            return Err(ProceduralGeometryError::Payload(
+                "T-spline subtransform is unresolved",
+            ));
+        }
+        if !discontinuities
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "T-spline discontinuities must be finite",
+            ));
+        }
+        Ok(Self {
+            parameter_ranges,
+            type_code,
+            subtransform,
+            trailing_value,
+            discontinuities,
+            discontinuity_flag,
+            revision_form,
+        })
+    }
+
+    /// Return ordered U and V intervals.
+    pub fn parameter_ranges(&self) -> [[f64; 2]; 2] {
+        self.parameter_ranges
+            .map(crate::topology::ParameterInterval::endpoints)
+    }
+
+    /// Return the native type code value.
+    pub const fn type_code(&self) -> i64 {
+        self.type_code
+    }
+
+    /// Return the native subtransform value.
+    pub const fn subtransform(&self) -> &TSplineSubtransform {
+        &self.subtransform
+    }
+
+    /// Return the native trailing integer.
+    pub const fn trailing_value(&self) -> i64 {
+        self.trailing_value
+    }
+
+    /// Return the native discontinuities value.
+    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the native discontinuity flag value.
+    pub const fn discontinuity_flag(&self) -> bool {
+        self.discontinuity_flag
+    }
+
+    /// Return the native revision form value.
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.revision_form.as_ref()
+    }
+
     /// Parse the semantic index of the effective topology program.
     #[must_use]
     pub fn program_graph(&self) -> Option<TSplineProgram> {
@@ -6747,7 +6811,7 @@ impl Serialize for TSplineSurfaceConstruction {
         let program_graph = self.program_graph();
         let values_graph = self.values_graph();
         TSplineSurfaceConstructionWriteWire {
-            parameter_ranges: &self.parameter_ranges,
+            parameter_ranges: &self.parameter_ranges(),
             type_code: self.type_code,
             subtransform: &self.subtransform,
             program_graph: program_graph.as_ref(),
@@ -6767,15 +6831,16 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         D: serde::Deserializer<'de>,
     {
         let wire = TSplineSurfaceConstructionReadWire::deserialize(deserializer)?;
-        let construction = Self {
-            parameter_ranges: wire.parameter_ranges,
-            type_code: wire.type_code,
-            subtransform: wire.subtransform,
-            trailing_value: wire.trailing_value,
-            discontinuities: wire.discontinuities,
-            discontinuity_flag: wire.discontinuity_flag,
-            revision_form: wire.revision_form,
-        };
+        let construction = Self::try_new(
+            wire.parameter_ranges,
+            wire.type_code,
+            wire.subtransform,
+            wire.trailing_value,
+            wire.discontinuities,
+            wire.discontinuity_flag,
+            wire.revision_form,
+        )
+        .map_err(serde::de::Error::custom)?;
         if wire
             .program_graph
             .as_ref()
