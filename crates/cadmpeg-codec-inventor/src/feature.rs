@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
 
+use crate::pmdc::unique_by;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -234,6 +236,35 @@ pub(crate) struct PmDcLinkedHeader {
     pub(crate) next: crate::pmdc::PmDcReference,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) struct ClassId([u8; 16]);
+
+impl TryFrom<String> for ClassId {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("class_id must contain 32 hexadecimal digits".into());
+        }
+        let mut bytes = [0; 16];
+        for (byte, digits) in bytes.iter_mut().zip(value.as_bytes().chunks_exact(2)) {
+            let digit = |value: u8| match value {
+                b'0'..=b'9' => value - b'0',
+                _ => value.to_ascii_lowercase() - b'a' + 10,
+            };
+            *byte = digit(digits[0]) * 16 + digit(digits[1]);
+        }
+        Ok(Self(bytes))
+    }
+}
+
+impl From<ClassId> for String {
+    fn from(value: ClassId) -> Self {
+        type_id_string(value.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "PmDcFeatureLabelPayloadWire",
@@ -245,7 +276,7 @@ pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) index: u32,
     pub(crate) participants: PmDcReferenceList,
     name: NonEmptyString,
-    class_id: String,
+    class_id: ClassId,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -261,16 +292,13 @@ pub(crate) struct PmDcFeatureLabelPayloadWire {
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
     type Error = String;
     fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
-        if wire.class_id.len() != 32 {
-            return Err("class_id must contain 32 bytes".into());
-        }
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
             name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
-            class_id: wire.class_id,
+            class_id: ClassId::try_from(wire.class_id)?,
         })
     }
 }
@@ -283,14 +311,14 @@ impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
             index: value.index,
             participants: value.participants,
             name: value.name.as_str().to_owned(),
-            class_id: value.class_id,
+            class_id: value.class_id.into(),
         }
     }
 }
 
 impl PmDcFeatureLabelPayload {
-    pub(crate) fn class_id(&self) -> &str {
-        &self.class_id
+    pub(crate) fn class_id(&self) -> ClassId {
+        self.class_id
     }
 }
 
@@ -451,41 +479,36 @@ fn parse_pattern_feature(
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("pattern-feature state")? as i32;
-    let outline_value = cursor.u32("pattern-feature outline value")?;
+    let state = cursor.u32()? as i32;
+    let outline_value = cursor.u32()?;
     let properties = reference_list(ctx, &mut cursor, 2, "pattern-feature properties")?;
-    let value = cursor.u32("pattern-feature value")?;
+    let value = cursor.u32()?;
     let participants = reference_list(ctx, &mut cursor, 2, "pattern-feature participants")?;
     let mut property_slots = Vec::new();
-    for index in 0..6 {
-        property_slots.push(cursor.reference(&format!("pattern-feature property {index}"))?);
+    for _ in 0..6 {
+        property_slots.push(cursor.reference()?);
     }
-    let control = cursor.u8("pattern-feature control")?;
+    let control = cursor.u8()?;
     let mut extension_values = Vec::new();
     match family {
         PmDcPatternFamily::Rectangular => {
             let remaining = if version > 20 { 26 } else { 20 };
-            for index in 0..remaining {
-                property_slots.push(
-                    cursor.reference(&format!("rectangular-pattern property {}", index + 6))?,
-                );
+            for _ in 0..remaining {
+                property_slots.push(cursor.reference()?);
             }
         }
         PmDcPatternFamily::Mirror => {
-            for index in 0..5 {
-                property_slots
-                    .push(cursor.reference(&format!("mirror-feature property {}", index + 6))?);
+            for _ in 0..5 {
+                property_slots.push(cursor.reference()?);
             }
             if version > 20 {
                 extension_values.reserve(6);
-                for index in 0..6 {
-                    extension_values
-                        .push(cursor.u32(&format!("mirror-feature extension {index}"))?);
+                for _ in 0..6 {
+                    extension_values.push(cursor.u32()?);
                 }
             }
-            for index in 0..2 {
-                property_slots
-                    .push(cursor.reference(&format!("mirror-feature property {}", index + 11))?);
+            for _ in 0..2 {
+                property_slots.push(cursor.reference()?);
             }
         }
     }
@@ -512,10 +535,10 @@ fn parse_feature(
 ) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("feature state")? as i32;
-    let outline_value = cursor.u32("feature outline value")?;
+    let state = cursor.u32()? as i32;
+    let outline_value = cursor.u32()?;
     let properties = reference_list(ctx, &mut cursor, 2, "feature property list")?;
-    let value = cursor.u32("feature value")?;
+    let value = cursor.u32()?;
     cursor.finish("feature")?;
     Ok(PmDcFeaturePayload {
         save_version_major: version,
@@ -533,7 +556,7 @@ fn parse_terminator(
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32("feature-terminator state")? as i32;
+    let state = cursor.u32()? as i32;
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
         save_version_major: version,
@@ -589,8 +612,8 @@ fn parse_enumeration(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.i16("feature enumeration type")?;
-    let value = cursor.u16("feature enumeration value")?;
+    let type_value = cursor.i16()?;
+    let value = cursor.u16()?;
     cursor.finish("feature enumeration")?;
     Ok(property(
         version,
@@ -628,9 +651,9 @@ fn parse_chamfer(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.i16("chamfer enumeration type")?;
-    let value = cursor.u16("chamfer enumeration value")?;
-    let terminal = cursor.u32("chamfer enumeration terminal value")?;
+    let type_value = cursor.i16()?;
+    let value = cursor.u16()?;
+    let terminal = cursor.u32()?;
     if terminal != 0 {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc chamfer enumeration terminal value is {terminal}"
@@ -655,8 +678,8 @@ fn parse_fillet_edge_selection(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.u32("fillet edge-selection enumeration type")?;
-    let value = cursor.u32("fillet edge-selection enumeration value")?;
+    let type_value = cursor.u32()?;
+    let value = cursor.u32()?;
     cursor.finish("fillet edge-selection enumeration")?;
     Ok(property(
         version,
@@ -673,8 +696,8 @@ fn parse_boolean(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
-    let name_value = cursor.u32("feature Boolean name value")?;
-    let raw = cursor.u8("feature Boolean value")?;
+    let name_value = cursor.u32()?;
+    let raw = cursor.u8()?;
     if raw > 1 {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc feature Boolean value is {raw}"
@@ -735,9 +758,9 @@ fn parse_rdx_variable(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
-    let name_value = cursor.u32("feature RDx variable name value")?;
-    let nominal_value = cursor.u32("feature RDx nominal value")?;
-    let model_value = cursor.u32("feature RDx model value")?;
+    let name_value = cursor.u32()?;
+    let nominal_value = cursor.u32()?;
+    let model_value = cursor.u32()?;
     cursor.finish("feature RDx variable")?;
     Ok(property(
         version,
@@ -758,7 +781,7 @@ fn parse_surface_body(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let body = cursor.reference("feature surface-body reference")?;
+    let body = cursor.reference()?;
     cursor.finish("feature surface body")?;
     Ok(property(
         version,
@@ -774,8 +797,8 @@ fn parse_profile_selection(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let entity_link = cursor.reference("profile-selection entity link")?;
-    let value = cursor.u8("profile-selection value")?;
+    let entity_link = cursor.reference()?;
+    let value = cursor.u8()?;
     cursor.finish("profile selection")?;
     Ok(property(
         version,
@@ -790,9 +813,9 @@ fn parse_entity_style_link(
 ) -> Result<PmDcEntityStyleLinkPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
-    let value = cursor.u32("entity-style-link value")?;
-    let associative_id = cursor.u32("entity-style-link associative id")?;
-    let entity_type = cursor.u32("entity-style-link entity type")?;
+    let value = cursor.u32()?;
+    let associative_id = cursor.u32()?;
+    let entity_type = cursor.u32()?;
     cursor.finish("entity-style link")?;
     Ok(PmDcEntityStyleLinkPayload {
         save_version_major: version,
@@ -810,9 +833,9 @@ fn parse_placement(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let transform = cursor.reference("feature placement transform")?;
-    let point = cursor.reference("feature placement point")?;
-    let value = cursor.reference("feature placement value")?;
+    let transform = cursor.reference()?;
+    let point = cursor.reference()?;
+    let value = cursor.reference()?;
     cursor.finish("feature placement")?;
     Ok(property(
         version,
@@ -832,10 +855,10 @@ fn parse_fillet_edge_set(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let edges = cursor.reference("fillet edge-set collection")?;
-    let radius = cursor.reference("fillet edge-set radius")?;
-    let selection = cursor.reference("fillet edge-set selection")?;
-    let continuity = cursor.reference("fillet edge-set continuity")?;
+    let edges = cursor.reference()?;
+    let radius = cursor.reference()?;
+    let selection = cursor.reference()?;
+    let continuity = cursor.reference()?;
     cursor.finish("fillet edge set")?;
     Ok(property(
         version,
@@ -860,9 +883,9 @@ fn parse_edge_item(
     let index_reference_value = if index_references.values().is_empty() {
         -1
     } else {
-        cursor.i32("edge-item selected index")?
+        cursor.i32()?
     };
-    let value = cursor.u32("edge-item value")?;
+    let value = cursor.u32()?;
     cursor.finish("edge item")?;
     Ok(property(
         version,
@@ -877,15 +900,12 @@ fn parse_edge_item(
 
 fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError> {
     Ok(PmDcLinkedHeader {
-        header_value: cursor.u32("linked header value")?,
-        header_id: cursor.u16("linked header id")?,
-        values: [
-            cursor.u32("linked header value 0")?,
-            cursor.u32("linked header value 1")?,
-        ],
-        owner: cursor.reference("linked owner reference")?,
-        parent: cursor.reference("linked parent reference")?,
-        next: cursor.reference("linked next reference")?,
+        header_value: cursor.u32()?,
+        header_id: cursor.u16()?,
+        values: [cursor.u32()?, cursor.u32()?],
+        owner: cursor.reference()?,
+        parent: cursor.reference()?,
+        next: cursor.reference()?,
     })
 }
 
@@ -896,7 +916,7 @@ fn parse_label(
 ) -> Result<PmDcFeatureLabelPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
-    let index = cursor.u32("feature-label index")?;
+    let index = cursor.u32()?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
     let class_id = type_id_string(cursor.take_array("feature-label class id")?);
@@ -912,10 +932,62 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
-const EXTRUSION_CLASS_ID: &str = "3111a90cd0118b83000819b00524dc09";
-const FILLET_CLASS_ID: &str = "dc15f7f1d1114205000830b00524dc09";
-const CHAMFER_CLASS_ID: &str = "3f7100f9d2118b6f6000f0a89dccefb0";
-const HOLE_CLASS_ID: &str = "1a7d751fd2119c54a00020803603c8c9";
+const EXTRUSION_CLASS_ID: ClassId = ClassId([
+    0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]);
+const FILLET_CLASS_ID: ClassId = ClassId([
+    0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]);
+const CHAMFER_CLASS_ID: ClassId = ClassId([
+    0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
+]);
+const HOLE_CLASS_ID: ClassId = ClassId([
+    0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
+]);
+
+#[derive(Clone, Copy)]
+pub(crate) enum FeatureFamily {
+    Extrusion,
+    Fillet,
+    Chamfer,
+    Hole,
+}
+
+impl FeatureFamily {
+    pub(crate) fn class_id(self) -> ClassId {
+        match self {
+            Self::Extrusion => EXTRUSION_CLASS_ID,
+            Self::Fillet => FILLET_CLASS_ID,
+            Self::Chamfer => CHAMFER_CLASS_ID,
+            Self::Hole => HOLE_CLASS_ID,
+        }
+    }
+
+    pub(crate) fn output_slot(self) -> usize {
+        match self {
+            Self::Extrusion => 26,
+            Self::Fillet => 15,
+            Self::Chamfer => 11,
+            Self::Hole => 24,
+        }
+    }
+
+    fn from_class_id(class_id: ClassId) -> Option<Self> {
+        [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
+            .into_iter()
+            .find(|family| family.class_id() == class_id)
+    }
+
+    pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
+        match definition {
+            FeatureDefinition::Extrude { .. } => Some(Self::Extrusion),
+            FeatureDefinition::Fillet { .. } => Some(Self::Fillet),
+            FeatureDefinition::Chamfer { .. } => Some(Self::Chamfer),
+            FeatureDefinition::Hole { .. } => Some(Self::Hole),
+            _ => None,
+        }
+    }
+}
 
 struct ProjectionIndex<'a> {
     properties: HashMap<(&'a str, u32), &'a PmDcFeatureProperty>,
@@ -960,13 +1032,13 @@ pub(crate) fn project(
     }
 
     let index = ProjectionIndex {
-        properties: unique_by_key(&inventory.properties, |record| {
+        properties: unique_by(&inventory.properties, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
             )
         }),
-        parameters: unique_by_key(&design.parameters, |record| {
+        parameters: unique_by(&design.parameters, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -978,7 +1050,7 @@ pub(crate) fn project(
                 Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
             })
             .collect(),
-        sketches: unique_by_key(&sketch.sketches, |record| {
+        sketches: unique_by(&sketch.sketches, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -993,13 +1065,13 @@ pub(crate) fn project(
                     .map(|native| (native, sketch.id.clone()))
             })
             .collect(),
-        directions: unique_by_key(&sketch.directions, |record| {
+        directions: unique_by(&sketch.directions, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
             )
         }),
-        transforms: unique_by_key(&sketch.transforms, |record| {
+        transforms: unique_by(&sketch.transforms, |record| {
             (
                 record.identity.segment_token.as_str(),
                 record.identity.record_ordinal,
@@ -1016,7 +1088,7 @@ pub(crate) fn project(
             })
             .collect(),
     };
-    let labels = unique_by_key(&inventory.labels, |label| {
+    let labels = unique_by(&inventory.labels, |label| {
         (
             label.identity.segment_token.as_str(),
             label.header.owner.index.saturating_sub(1),
@@ -1030,12 +1102,14 @@ pub(crate) fn project(
         )) else {
             continue;
         };
-        let value = match label.class_id.as_str() {
-            EXTRUSION_CLASS_ID => project_extrusion(feature, label, &index),
-            FILLET_CLASS_ID => project_fillet(feature, label, &index),
-            CHAMFER_CLASS_ID => project_chamfer(feature, label, &index),
-            HOLE_CLASS_ID => project_hole(feature, label, &index),
-            _ => None,
+        let Some(family) = FeatureFamily::from_class_id(label.class_id()) else {
+            continue;
+        };
+        let value = match family {
+            FeatureFamily::Extrusion => project_extrusion(feature, label, &index),
+            FeatureFamily::Fillet => project_fillet(feature, label, &index),
+            FeatureFamily::Chamfer => project_chamfer(feature, label, &index),
+            FeatureFamily::Hole => project_hole(feature, label, &index),
         };
         if let Some(value) = value {
             projected.push(value);
@@ -1631,24 +1705,6 @@ fn boolean_properties(
         .collect()
 }
 
-fn unique_by_key<'a, T, K: Eq + std::hash::Hash + Copy>(
-    records: &'a [T],
-    key: impl Fn(&'a T) -> K,
-) -> HashMap<K, &'a T> {
-    let mut unique = HashMap::new();
-    let mut duplicate = HashSet::new();
-    for record in records {
-        let key = key(record);
-        if unique.insert(key, record).is_some() {
-            duplicate.insert(key);
-        }
-    }
-    for key in duplicate {
-        unique.remove(&key);
-    }
-    unique
-}
-
 pub(crate) type PmDcFeatureProperty = Located<PmDcFeaturePropertyPayload>;
 
 impl RecordPayload for PmDcFeaturePropertyPayload {
@@ -1827,13 +1883,13 @@ mod tests {
         }
         let mut wire = valid;
         wire["class_id"] = serde_json::json!("z".repeat(32));
-        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_ok());
+        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
     fn test_label(
         owner_ordinal: u32,
         index: u32,
-        class_id: &str,
+        class_id: ClassId,
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
@@ -2778,6 +2834,6 @@ mod tests {
         });
         assert_eq!(parsed.name, "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
-        assert_eq!(parsed.class_id, "abababababababababababababababab");
+        assert_eq!(parsed.class_id, ClassId([0xab; 16]));
     }
 }

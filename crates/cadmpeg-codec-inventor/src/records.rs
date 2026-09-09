@@ -77,6 +77,37 @@ impl std::fmt::Display for MetaSectionNumber {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReverseSectionNumber {
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    Ten,
+    Eleven,
+}
+
+impl From<ReverseSectionNumber> for MetaSectionNumber {
+    fn from(number: ReverseSectionNumber) -> Self {
+        match number {
+            ReverseSectionNumber::Five => Self::Five,
+            ReverseSectionNumber::Six => Self::Six,
+            ReverseSectionNumber::Seven => Self::Seven,
+            ReverseSectionNumber::Eight => Self::Eight,
+            ReverseSectionNumber::Nine => Self::Nine,
+            ReverseSectionNumber::Ten => Self::Ten,
+            ReverseSectionNumber::Eleven => Self::Eleven,
+        }
+    }
+}
+
+impl std::fmt::Display for ReverseSectionNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        MetaSectionNumber::from(*self).fmt(f)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct MetaSection<'a> {
     pub(crate) number: MetaSectionNumber,
@@ -205,16 +236,7 @@ pub(crate) fn parse_meta_tables<'a>(
         types.push(TypeDescriptor {
             index: index as u8,
             id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type field 0 kind")?,
-                    entry.u32("type field 0 value")?,
-                ),
-                (
-                    entry.u16("type field 1 kind")?,
-                    entry.u32("type field 1 value")?,
-                ),
-            ],
+            fields: [(entry.u16()?, entry.u32()?), (entry.u16()?, entry.u32()?)],
         });
     }
 
@@ -231,13 +253,13 @@ pub(crate) fn parse_meta_tables<'a>(
     let mut payload_len = SECTION_11_PAYLOAD_LEN;
     let mut reverse_sections = Vec::with_capacity(7);
     for number in [
-        MetaSectionNumber::Eleven,
-        MetaSectionNumber::Ten,
-        MetaSectionNumber::Nine,
-        MetaSectionNumber::Eight,
-        MetaSectionNumber::Seven,
-        MetaSectionNumber::Six,
-        MetaSectionNumber::Five,
+        ReverseSectionNumber::Eleven,
+        ReverseSectionNumber::Ten,
+        ReverseSectionNumber::Nine,
+        ReverseSectionNumber::Eight,
+        ReverseSectionNumber::Seven,
+        ReverseSectionNumber::Six,
+        ReverseSectionNumber::Five,
     ] {
         let header = end
             .checked_sub(payload_len.saturating_add(8))
@@ -252,7 +274,7 @@ pub(crate) fn parse_meta_tables<'a>(
         let payload = child(body, header + 8, end, "metadata section payload")?;
         validate_reverse_section(number, discriminator, payload.window().len())?;
         reverse_sections.push(MetaSection {
-            number,
+            number: number.into(),
             discriminator,
             payload,
         });
@@ -372,23 +394,17 @@ fn counted_section<'a>(
 }
 
 fn validate_reverse_section(
-    number: MetaSectionNumber,
+    number: ReverseSectionNumber,
     discriminator: u32,
     payload_len: usize,
 ) -> Result<(), CodecError> {
-    if number == MetaSectionNumber::Five {
-        return Ok(());
-    }
-    if discriminator > 1_000_000 {
+    if number != ReverseSectionNumber::Five && discriminator > 1_000_000 {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} count exceeds 1000000"
         )));
     }
-    if number == MetaSectionNumber::Six {
-        return Ok(());
-    }
     let item_size = match number {
-        MetaSectionNumber::Seven => {
+        ReverseSectionNumber::Seven => {
             if discriminator == 0 {
                 0
             } else if payload_len / discriminator as usize >= 0x4c {
@@ -397,15 +413,11 @@ fn validate_reverse_section(
                 32
             }
         }
-        MetaSectionNumber::Eight => 20,
-        MetaSectionNumber::Nine => 19,
-        MetaSectionNumber::Ten => 8,
-        MetaSectionNumber::Eleven => 4,
-        MetaSectionNumber::One => 4,
-        MetaSectionNumber::Two => 10,
-        MetaSectionNumber::Three => 28,
-        MetaSectionNumber::Four => type_desc::LEN,
-        MetaSectionNumber::Five | MetaSectionNumber::Six => return Ok(()),
+        ReverseSectionNumber::Eight => 20,
+        ReverseSectionNumber::Nine => 19,
+        ReverseSectionNumber::Ten => 8,
+        ReverseSectionNumber::Eleven => 4,
+        ReverseSectionNumber::Five | ReverseSectionNumber::Six => return Ok(()),
     };
     let expected = (discriminator as usize)
         .checked_mul(item_size)
