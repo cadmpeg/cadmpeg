@@ -79,11 +79,11 @@ fn historical_vertex_selection_requires_input_state_membership() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumPoint {
@@ -209,11 +209,11 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
@@ -296,11 +296,11 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -343,11 +343,11 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -367,7 +367,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             expression: "1mm".into(),
             display: None,
             value: None,
-            dependencies: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -398,11 +398,11 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -459,11 +459,11 @@ fn document_parameters_can_feed_feature_parameters() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -483,7 +483,7 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "60 mm".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -516,11 +516,11 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
@@ -585,11 +585,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumPoint {
@@ -604,11 +604,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
@@ -661,7 +661,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                 evaluation: crate::features::ConfigurationEvaluation::Active {
                     outputs: Default::default(),
                 },
-                dependencies: Default::default(),
+                dependencies: crate::features::DistinctMembers::default(),
                 definition: ir.model.features[1].evaluation.definition().clone(),
             },
         )]),
@@ -703,11 +703,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumPoint {
@@ -722,11 +722,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Pattern {
@@ -780,11 +780,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
@@ -900,7 +900,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                     evaluation: crate::features::ConfigurationEvaluation::Active {
                         outputs: Default::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: crate::features::DistinctMembers::default(),
                     definition: ir.model.features[index].evaluation.definition().clone(),
                 },
             )
@@ -970,11 +970,11 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -1006,7 +1006,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::BaseFeature {
@@ -1073,11 +1073,11 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::ReferenceImage {
@@ -1139,11 +1139,11 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
 
         evaluation: crate::features::FeatureEvaluation::from_definition(FeatureDefinition::Decal {
             asset: asset_id,

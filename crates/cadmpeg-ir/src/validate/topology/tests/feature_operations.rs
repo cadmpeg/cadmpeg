@@ -25,11 +25,11 @@ fn feature_operation_geometry_is_validated() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
 
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
