@@ -145,7 +145,10 @@ impl Serialize for ReferenceEdge {
         Wire {
             kind: self.origin,
             raw_pointer: self.raw_pointer,
-            target: self.target(),
+            target: self
+                .resolution
+                .target_sequence()
+                .map(|sequence| format!("iges:entity:directory#{sequence}")),
             resolution: self.resolution,
             expected: &self.expected,
             parameter_index: self.origin.parameter_index(),
@@ -155,10 +158,8 @@ impl Serialize for ReferenceEdge {
 }
 
 impl ReferenceEdge {
-    pub(crate) fn target(&self) -> Option<String> {
-        self.resolution
-            .target_sequence()
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    pub(crate) fn target_sequence(&self) -> Option<u32> {
+        self.resolution.target_sequence()
     }
 
     pub(crate) fn resolved_target_sequence_for(&self, kind: ReferenceKind) -> Option<u32> {

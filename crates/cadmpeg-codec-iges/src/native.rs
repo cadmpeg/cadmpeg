@@ -2136,7 +2136,8 @@ pub(crate) fn store(
                     .get(&entry.sequence)
                     .into_iter()
                     .flatten()
-                    .filter_map(ReferenceEdge::target)
+                    .filter_map(ReferenceEdge::target_sequence)
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     .collect(),
                 references: references.get(&entry.sequence).cloned().unwrap_or_default(),
             }
@@ -5272,7 +5273,8 @@ pub(crate) fn store(
             .get(&entity.directory_sequence)
             .into_iter()
             .flatten()
-            .filter_map(ReferenceEdge::target)
+            .filter_map(ReferenceEdge::target_sequence)
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
             .collect();
         entity.references = references
             .get(&entity.directory_sequence)
