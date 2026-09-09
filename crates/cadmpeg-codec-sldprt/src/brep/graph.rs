@@ -147,17 +147,18 @@ impl Brep {
                 .try_into()
                 .expect("qualified identity");
             shell
-                .faces_mut()
-                .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
-            shell
-                .wire_edges_mut()
-                .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
-            shell
-                .free_vertices_mut()
-                .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
+                .edit_topology(|faces, wire_edges, free_vertices| {
+                    faces.iter_mut().for_each(|id| {
+                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                    });
+                    wire_edges.iter_mut().for_each(|id| {
+                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                    });
+                    free_vertices.iter_mut().for_each(|id| {
+                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                    });
+                })
+                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
         }
         for face in &mut self.faces {
             face.id = qualify(face.id.as_str())
