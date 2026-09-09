@@ -1347,7 +1347,52 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             )
                     })
             }
-            _ => true,
+            Constraint::Disabled { .. }
+            | Constraint::Coincident { .. }
+            | Constraint::Polygon { .. }
+            | Constraint::SplineGroup { .. }
+            | Constraint::RectangularPattern { .. }
+            | Constraint::CircularPattern { .. }
+            | Constraint::CoincidentLoci { .. }
+            | Constraint::SameCoordinate { .. }
+            | Constraint::PointOnObject { .. }
+            | Constraint::Midpoint { .. }
+            | Constraint::Offset { .. }
+            | Constraint::ProjectedCopy { .. }
+            | Constraint::AtIntersection { .. }
+            | Constraint::Concentric { .. }
+            | Constraint::Coradial { .. }
+            | Constraint::Collinear { .. }
+            | Constraint::Symmetric { .. }
+            | Constraint::PointSymmetric { .. }
+            | Constraint::Horizontal { .. }
+            | Constraint::Vertical { .. }
+            | Constraint::Parallel { .. }
+            | Constraint::Perpendicular { .. }
+            | Constraint::Tangent { .. }
+            | Constraint::TangentLoci { .. }
+            | Constraint::Curvature { .. }
+            | Constraint::Equal { .. }
+            | Constraint::Fixed { .. }
+            | Constraint::ArcAngle { .. }
+            | Constraint::EllipseAngle { .. }
+            | Constraint::Distance { .. }
+            | Constraint::DistanceLoci { .. }
+            | Constraint::AngleDifference { .. }
+            | Constraint::ScalarEquality { .. }
+            | Constraint::HorizontalDistance { .. }
+            | Constraint::VerticalDistance { .. }
+            | Constraint::RepeatedDistance { .. }
+            | Constraint::Angle { .. }
+            | Constraint::AngleToAxis { .. }
+            | Constraint::Radius { .. }
+            | Constraint::Diameter { .. }
+            | Constraint::SnellsLaw { .. }
+            | Constraint::Weight { .. }
+            | Constraint::InternalAlignment { .. }
+            | Constraint::Group { .. }
+            | Constraint::Text { .. }
+            | Constraint::Native { .. } => true,
         };
         if !valid {
             finding(
