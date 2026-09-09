@@ -442,7 +442,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 0,
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::SolidBodies,
-                    children: Default::default(),
+                    children: crate::features::TreeChildren::default(),
                 },
             ),
             Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),

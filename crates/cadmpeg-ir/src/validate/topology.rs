@@ -2436,12 +2436,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Extrude {
                 direction, start, ..
             } => {
-                if let crate::features::ExtrudeDirection::Explicit { source, .. } = direction {
-                    if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
-                        source
-                    {
-                        paths.push(reference);
-                    }
+                if let crate::features::ExtrudeDirection::Explicit {
+                    source: Some(crate::features::ExtrusionDirectionSource::Edge { reference }),
+                    ..
+                } = direction
+                {
+                    paths.push(reference);
                 }
                 if let ExtrudeStart::FromFace { face, .. } = start {
                     face_selections.push(face);
