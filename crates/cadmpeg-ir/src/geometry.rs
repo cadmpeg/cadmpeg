@@ -4113,7 +4113,10 @@ impl ProceduralSurfaceDefinition {
                         });
                 let bridge_valid = bridge.iter().all(|token| match token {
                     crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-                    _ => true,
+                    crate::geometry::LoftBridgeToken::Boolean(_)
+                    | crate::geometry::LoftBridgeToken::Integer(_)
+                    | crate::geometry::LoftBridgeToken::Text(_)
+                    | crate::geometry::LoftBridgeToken::Enum(_) => true,
                 });
                 if !parameters_valid || !sections_valid || !bridge_valid {
                     return Err(ProceduralGeometryError::Payload(
@@ -4249,7 +4252,9 @@ impl ProceduralSurfaceDefinition {
                         .iter()
                         .flatten()
                         .all(|value| value.is_finite()),
-                    _ => true,
+                    crate::geometry::LawSurfaceTail::Full
+                    | crate::geometry::LawSurfaceTail::Historical
+                    | crate::geometry::LawSurfaceTail::Optimal => true,
                 };
                 let valid = construction
                     .parameter_ranges
@@ -4648,7 +4653,7 @@ impl ProceduralSurfaceDefinition {
                             range.iter().flatten().all(|value| value.is_finite())
                                 && match (range[0], range[1]) {
                                     (Some(lower), Some(upper)) => lower <= upper,
-                                    _ => true,
+                                    (None, None) | (None, Some(_)) | (Some(_), None) => true,
                                 }
                         });
                 let sides_valid = construction.sides.iter().all(|side| {
@@ -4750,7 +4755,7 @@ impl ProceduralSurfaceDefinition {
                             range.iter().flatten().all(|value| value.is_finite())
                                 && match range {
                                     [Some(lower), Some(upper)] => lower <= upper,
-                                    _ => true,
+                                    [None, None] | [None, Some(_)] | [Some(_), None] => true,
                                 }
                         });
                 let selector_valid = match construction.radius_selector {
@@ -12107,7 +12112,7 @@ impl ProceduralCurveDefinition {
                             }
                         }
                     }
-                    _ => true,
+                    None | Some(crate::geometry::CurveOffsetRange::Uniform { .. }) => true,
                 };
                 if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
                     return Err(ProceduralGeometryError::Payload(
@@ -12251,7 +12256,8 @@ impl ProceduralCurveDefinition {
                     crate::geometry::SilhouetteKind::Taper { draft_factor } => {
                         draft_factor.is_finite()
                     }
-                    _ => true,
+                    crate::geometry::SilhouetteKind::Standard
+                    | crate::geometry::SilhouetteKind::Parametric => true,
                 };
                 if !light_direction.x.is_finite()
                     || !light_direction.y.is_finite()
