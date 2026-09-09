@@ -44,14 +44,10 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let serde_value::Value::Map(wire) = serde_value::to_value(&out).unwrap() else {
         panic!("ASM graph object")
     };
-    assert!(wire
-        .get(&serde_value::Value::String(
-            "procedural_support_sources".into()
-        ))
-        .is_none());
-    assert!(wire
-        .get(&serde_value::Value::String(
-            "procedural_curve_child_sources".into()
-        ))
-        .is_none());
+    assert!(!wire.contains_key(&serde_value::Value::String(
+        "procedural_support_sources".into()
+    )));
+    assert!(!wire.contains_key(&serde_value::Value::String(
+        "procedural_curve_child_sources".into()
+    )));
 }
