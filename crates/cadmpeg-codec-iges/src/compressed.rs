@@ -49,6 +49,14 @@ const FIELDS: [(CompressedField, usize); 16] = [
     (CompressedField::Shared(DirectoryFieldSlot::Subscript), 19),
 ];
 
+const _: () = {
+    let mut index = 0;
+    while index < FIELDS.len() {
+        assert!(FIELDS[index].0.slot() == index);
+        index += 1;
+    }
+};
+
 impl CompressedField {
     const fn slot(self) -> usize {
         match self {
