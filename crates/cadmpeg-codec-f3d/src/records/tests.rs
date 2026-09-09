@@ -1711,7 +1711,7 @@ fn dimension_locus_pairs_preserve_both_frame_forms_and_reject_a_stray_opaque_ind
 
 #[test]
 fn null_locus_arena_preserves_base_wire_fields_and_order() {
-    let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":50,"null_role":0,"null_role_offset":60,"geometry_record_index":41,"geometry_reference_offset":65,"geometry_role":1,"geometry_role_offset":75,"paired_class_tag":"273","paired_byte_offset":90}"#;
+    let entry = r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"null_reference_offset":35,"null_role":0,"null_role_offset":45,"geometry_record_index":41,"geometry_reference_offset":50,"geometry_role":1,"geometry_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#;
     let wire = format!(r#"{{"design_dimension_null_locus_pairs":[{entry}]}}"#);
     let native: crate::native::F3dNative = serde_json::from_str(&wire).unwrap();
     let encoded = serde_json::to_string(&native).unwrap();
