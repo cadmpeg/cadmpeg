@@ -477,8 +477,8 @@ fn gradient_point(
     Ok(values)
 }
 
-pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
-    serde_json::to_string(&serde_json::json!({
+pub(crate) fn gradient_json(gradient: &Gradient) -> String {
+    serde_json::json!({
         "type": gradient.kind.name(),
         "type_value": gradient.kind.value(),
         "start": gradient.start,
@@ -488,8 +488,8 @@ pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
             "color": stop.color,
             "position": stop.position,
         })).collect::<Vec<_>>(),
-    }))
-    .ok()
+    })
+    .to_string()
 }
 
 fn parse_userdata(
@@ -753,8 +753,7 @@ pub(crate) mod tests {
             assert_eq!(gradient.colors[1].color, [0, 0, 255, 0]);
             assert_eq!(gradient.colors[1].position, 1.0);
             let semantic: serde_json::Value =
-                serde_json::from_str(&gradient_json(&gradient).expect("gradient JSON"))
-                    .expect("gradient JSON object");
+                serde_json::from_str(&gradient_json(&gradient)).expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
             assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));

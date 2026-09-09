@@ -1015,7 +1015,7 @@ fn extended_geometry_json(
         if let Some(gradient) = hatch
             .gradient
             .as_ref()
-            .and_then(crate::hatch::gradient_json)
+            .map(crate::hatch::gradient_json)
             .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
         {
             semantic["gradient"] = gradient;
