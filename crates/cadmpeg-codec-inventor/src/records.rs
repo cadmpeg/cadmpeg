@@ -205,16 +205,7 @@ pub(crate) fn parse_meta_tables<'a>(
         types.push(TypeDescriptor {
             index: index as u8,
             id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type field 0 kind")?,
-                    entry.u32("type field 0 value")?,
-                ),
-                (
-                    entry.u16("type field 1 kind")?,
-                    entry.u32("type field 1 value")?,
-                ),
-            ],
+            fields: [(entry.u16()?, entry.u32()?), (entry.u16()?, entry.u32()?)],
         });
     }
 
