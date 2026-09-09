@@ -1570,7 +1570,7 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
     })
 }
 
-/// The result of applying one deltas stream to one partition image.
+/// The merged partition image and collected terminal tombstone counts.
 pub(crate) struct MergeFullRecordsResult {
     pub(crate) merged: Vec<u8>,
     pub(crate) unmatched_tombstones: BTreeMap<&'static str, usize>,
@@ -1592,18 +1592,41 @@ enum MergeEvent {
 #[cfg(test)]
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
-    merge_full_records_with_census(partition, deltas, &census, false).merged
+    merge_full_records_with_census(partition, deltas, &census)
 }
 
+/// Merge deltas records with a previously decoded census.
 pub(crate) fn merge_full_records_with_census(
     partition: &[u8],
     deltas: &[u8],
     census: &Census,
-    collect_unmatched_tombstones: bool,
+) -> Vec<u8> {
+    merge_records(partition, deltas, census, None)
+}
+
+/// Merge deltas records and collect unmatched terminal tombstone counts.
+pub(crate) fn merge_full_records_with_tombstone_census(
+    partition: &[u8],
+    deltas: &[u8],
+    census: &Census,
 ) -> MergeFullRecordsResult {
+    let mut unmatched_tombstones = BTreeMap::new();
+    let merged = merge_records(partition, deltas, census, Some(&mut unmatched_tombstones));
+    MergeFullRecordsResult {
+        merged,
+        unmatched_tombstones,
+    }
+}
+
+fn merge_records(
+    partition: &[u8],
+    deltas: &[u8],
+    census: &Census,
+    unmatched_tombstones: Option<&mut BTreeMap<&'static str, usize>>,
+) -> Vec<u8> {
     let current_scopes = current_revision_scopes(census, deltas.len());
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    let mut unmatched_events = collect_unmatched_tombstones.then(BTreeMap::new);
+    let mut unmatched_events = unmatched_tombstones.map(|totals| (totals, BTreeMap::new()));
     for record in census
         .records
         .iter()
@@ -1614,7 +1637,7 @@ pub(crate) fn merge_full_records_with_census(
         };
         if mergeable_record(record, kind) {
             replacements.insert((kind, record.xmt), record);
-            if let Some(events) = &mut unmatched_events {
+            if let Some((_, events)) = &mut unmatched_events {
                 events
                     .entry((kind, record.xmt))
                     .or_insert_with(Vec::new)
@@ -1633,7 +1656,7 @@ pub(crate) fn merge_full_records_with_census(
     {
         let kind = tombstone.kind.code();
         tombstones.insert((kind, tombstone.xmt), tombstone);
-        if let Some(events) = &mut unmatched_events {
+        if let Some((_, events)) = &mut unmatched_events {
             events
                 .entry((kind, tombstone.xmt))
                 .or_insert_with(Vec::new)
@@ -1645,9 +1668,9 @@ pub(crate) fn merge_full_records_with_census(
     }
 
     let graph = crate::topology::Graph::parse(partition);
-    let unmatched_tombstones = unmatched_events
-        .map(|events| count_unmatched_events(events, &graph))
-        .unwrap_or_default();
+    if let Some((totals, events)) = unmatched_events {
+        *totals = count_unmatched_events(events, &graph);
+    }
     let topology_carriers = graph.referenced_carrier_xmts();
     replacements.retain(|key, record| {
         tombstones
@@ -1688,10 +1711,7 @@ pub(crate) fn merge_full_records_with_census(
         merged
     };
     if !graph.body_shape_shells().is_empty() {
-        return MergeFullRecordsResult {
-            merged: build(false),
-            unmatched_tombstones,
-        };
+        return build(false);
     }
     let merged = build(true);
     let merged_graph = crate::topology::Graph::parse(&merged);
@@ -1705,15 +1725,9 @@ pub(crate) fn merge_full_records_with_census(
             .saturating_add(deleted_faces)
             < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
-        MergeFullRecordsResult {
-            merged: build(false),
-            unmatched_tombstones,
-        }
+        build(false)
     } else {
-        MergeFullRecordsResult {
-            merged,
-            unmatched_tombstones,
-        }
+        merged
     }
 }
 

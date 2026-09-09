@@ -1855,7 +1855,7 @@ fn merged_result_preserves_tombstone_accounting() {
     ] {
         let census = crate::deltas::census::walk(deltas);
         let result =
-            crate::deltas::merge_full_records_with_census(&partition, deltas, &census, true);
+            crate::deltas::merge_full_records_with_tombstone_census(&partition, deltas, &census);
         assert_eq!(
             result.unmatched_tombstones,
             crate::deltas::unmatched_terminal_tombstones_by_family(&partition, deltas)
