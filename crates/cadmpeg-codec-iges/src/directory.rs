@@ -9,6 +9,33 @@ use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
+/// The stored directory fields shared by Binary and Compressed ASCII.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+pub(crate) enum DirectoryFieldSlot {
+    EntityType,
+    Structure,
+    LineFont,
+    Level,
+    View,
+    Transform,
+    LabelDisplay,
+    Status,
+    LineWeight,
+    Color,
+    Form,
+    ReservedFirst,
+    ReservedSecond,
+    Label,
+    Subscript,
+}
+
+impl DirectoryFieldSlot {
+    pub(crate) const fn slot(self) -> usize {
+        self as usize
+    }
+}
+
 /// Source status fields. Undefined numeric values remain available to native serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct SourceStatus {
