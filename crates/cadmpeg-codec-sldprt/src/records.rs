@@ -986,16 +986,16 @@ impl SketchInputEntity {
     }
 
     #[cfg(test)]
-    /// Creates a fixture through serialized marker identity fields.
+    /// Sets the identity fields on a cloned fixture.
     pub(crate) fn with_test_identity(
         &self,
         object_index: Option<u32>,
         local_id: Option<u32>,
     ) -> Self {
-        let mut wire = serde_json::to_value(self).unwrap();
-        wire["object_index"] = serde_json::json!(object_index);
-        wire["local_id"] = serde_json::json!(local_id);
-        serde_json::from_value(wire).unwrap()
+        let mut updated = self.clone();
+        updated.object_index = object_index;
+        updated.local_id = local_id;
+        updated
     }
 
     pub(crate) fn try_new(
