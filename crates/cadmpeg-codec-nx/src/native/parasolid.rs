@@ -2325,7 +2325,8 @@ pub struct ParasolidEntity51StructuredUse {
 }
 
 /// Resolved registered class of one Parasolid type-81 attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(into = "ParasolidAttributeClassUseWire")]
 pub struct ParasolidAttributeClassUse {
     /// Globally unique relation identity.
     pub id: String,
@@ -2337,6 +2338,29 @@ pub struct ParasolidAttributeClassUse {
     pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ParasolidAttributeClassUseWire {
+    id: String,
+    stream_ordinal: u32,
+    entity_51_record: String,
+    definition_xmt: NonNullXmt,
+    attribute_definition: String,
+}
+
+impl From<ParasolidAttributeClassUse> for ParasolidAttributeClassUseWire {
+    fn from(value: ParasolidAttributeClassUse) -> Self {
+        Self {
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            entity_51_record: value.entity_51_record,
+            definition_xmt: value.definition_xmt,
+            attribute_definition: value.attribute_definition,
+        }
+    }
 }
 
 /// Value-record family assigned to one declared Parasolid attribute field.
@@ -2406,7 +2430,8 @@ pub struct ParasolidAttributeFieldUse {
 }
 
 /// Resolved class of one topology-owned Parasolid attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(into = "ParasolidTopologyAttributeClassUseWire")]
 pub struct ParasolidTopologyAttributeClassUse {
     /// Globally unique relation identity.
     pub id: String,
@@ -2420,6 +2445,33 @@ pub struct ParasolidTopologyAttributeClassUse {
     pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ParasolidTopologyAttributeClassUseWire {
+    id: String,
+    topology_attribute_reference: String,
+    entity_51_record: String,
+    attribute_class_use: String,
+    definition_xmt: NonNullXmt,
+    attribute_definition: String,
+}
+
+impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClassUseWire {
+    fn from(value: ParasolidTopologyAttributeClassUse) -> Self {
+        Self {
+            id: value.id,
+            topology_attribute_reference: value.topology_attribute_reference,
+            entity_51_record: value.entity_51_record,
+            attribute_class_use: value.attribute_class_use,
+            definition_xmt: value.definition_xmt,
+            attribute_definition: value.attribute_definition,
+        }
+    }
 }
 
 /// Retain named attribute-class declarations from all Parasolid streams.
@@ -3161,6 +3213,8 @@ pub fn parasolid_topology_attribute_class_uses(
                 )
             };
             uses.push(ParasolidTopologyAttributeClassUse {
+                stream_ordinal: reference.stream_ordinal,
+                inflated_offset: member.inflated_offset,
                 id,
                 topology_attribute_reference: reference.id.clone(),
                 entity_51_record: class_use.entity_51_record.clone(),
@@ -3198,6 +3252,7 @@ pub fn parasolid_attribute_class_uses(
                 return None;
             };
             Some(ParasolidAttributeClassUse {
+                inflated_offset: entity.inflated_offset,
                 id: format!(
                     "nx:s{}:attribute-class-use#{}-{}",
                     entity.stream_ordinal,
@@ -4233,6 +4288,7 @@ mod tests {
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4303,6 +4359,7 @@ mod tests {
         assert_eq!(uses[2].value_record, "string");
 
         let duplicate = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "duplicate".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4454,6 +4511,7 @@ mod tests {
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4534,6 +4592,7 @@ mod tests {
             inflated_offset: 30,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "class-use".into(),
             stream_ordinal: 0,
             entity_51_record: entity.id.clone(),
@@ -4562,6 +4621,8 @@ mod tests {
             inflated_offset: 28,
         };
         let topology_class_use = ParasolidTopologyAttributeClassUse {
+            stream_ordinal: topology_reference.stream_ordinal,
+            inflated_offset: entity.inflated_offset,
             id: "topology-class-use".into(),
             topology_attribute_reference: topology_reference.id.clone(),
             entity_51_record: entity.id.clone(),

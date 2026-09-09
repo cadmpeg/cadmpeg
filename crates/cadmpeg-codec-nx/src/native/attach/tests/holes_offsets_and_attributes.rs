@@ -1356,6 +1356,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
+        stream_ordinal: 3,
+        inflated_offset: 100,
         id: "class-use".into(),
         topology_attribute_reference: references[2].id.clone(),
         entity_51_record: "entity".into(),
@@ -1470,6 +1472,8 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
+        stream_ordinal: 3,
+        inflated_offset: 100,
         id: "topology-class-use".into(),
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
@@ -1624,6 +1628,8 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         inflated_offset: 100,
     };
     let class_use = ParasolidTopologyAttributeClassUse {
+        stream_ordinal: 3,
+        inflated_offset: 100,
         id: "topology-class-use".into(),
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
@@ -1719,6 +1725,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     };
     let class_uses = [
         ParasolidTopologyAttributeClassUse {
+            stream_ordinal: 3,
+            inflated_offset: 100,
             id: "head-class".into(),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "head".into(),
@@ -1727,6 +1735,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             attribute_definition: definition.id.clone(),
         },
         ParasolidTopologyAttributeClassUse {
+            stream_ordinal: 3,
+            inflated_offset: 100,
             id: "child-class".into(),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "child".into(),
