@@ -1560,11 +1560,11 @@ mod tests {
     fn face_run_admission_checks_byte_bounds() {
         assert!(FbbFaceRun::try_new(0, usize::MAX).is_none());
         assert!(FbbFaceRun::try_new(usize::MAX, 1).is_none());
-        let run = FbbFaceRun::try_new(7, 2).unwrap();
+        let run = FbbFaceRun::try_new(7, 2).expect("bounded face run");
         assert_eq!(run.face_start(), 7);
         assert_eq!(run.face_count(), 2);
         assert_eq!(run.after_faces(), 7 + 2 * fbb_row::LEN);
-        let empty = FbbFaceRun::try_new(usize::MAX, 0).unwrap();
+        let empty = FbbFaceRun::try_new(usize::MAX, 0).expect("empty face run");
         assert_eq!(empty.face_count(), 0);
         assert_eq!(empty.after_faces(), usize::MAX);
     }
