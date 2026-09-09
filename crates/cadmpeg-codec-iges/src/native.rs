@@ -1514,13 +1514,13 @@ struct NativeDrawing {
 }
 
 fn drawing_property_candidates(
-    trailing: Option<&crate::parameter::TrailingPointerGroups>,
+    trailing: Option<&crate::parameter::ResolvedGroups>,
     form: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Vec<u32> {
     trailing
         .into_iter()
-        .flat_map(|groups| groups.properties().copied())
+        .flat_map(|groups| groups.properties().iter().copied())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .filter(|sequence| {
@@ -2019,7 +2019,7 @@ pub(crate) fn store(
         trailing_pointer_analysis
             .get(&sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                 _ => None,
             })
             .map_or(record.parameter_end(), |groups| groups.token_start)
@@ -2083,7 +2083,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                     _ => None,
                 });
             let invalid_trailing = (trailing.is_none()
@@ -2097,55 +2097,79 @@ pub(crate) fn store(
                     })
             })
             .flatten();
-            let edge_trailing = trailing.or(invalid_trailing);
-            let resolved_associations = edge_trailing
-                .as_ref()
+            for (token_index, raw_pointer) in trailing
                 .into_iter()
-                .flat_map(|groups| groups.association_pointers.iter())
-                .filter_map(|pointer| {
-                    parameter_resolver.resolve(
-                        entry.sequence,
-                        pointer.token_index,
-                        pointer.raw_pointer,
-                        ReferenceExpectation::AnyOf {
-                            first: 212,
-                            second: 312,
-                            rest: vec![402],
-                        },
-                        |target| matches!(target.entity_type, 212 | 312 | 402),
-                    )
+                .flat_map(|groups| {
+                    groups
+                        .associations()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, sequence)| {
+                            (groups.token_start + 1 + index, i64::from(*sequence))
+                        })
                 })
-                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect::<Vec<_>>();
-            let resolved_properties = edge_trailing
-                .as_ref()
+                .chain(invalid_trailing.into_iter().flat_map(|groups| {
+                    groups
+                        .association_pointers
+                        .iter()
+                        .map(|pointer| (pointer.token_index, pointer.raw_pointer))
+                }))
+            {
+                parameter_resolver.resolve(
+                    entry.sequence,
+                    token_index,
+                    raw_pointer,
+                    ReferenceExpectation::AnyOf {
+                        first: 212,
+                        second: 312,
+                        rest: vec![402],
+                    },
+                    |target| matches!(target.entity_type, 212 | 312 | 402),
+                );
+            }
+            for (token_index, raw_pointer) in trailing
                 .into_iter()
-                .flat_map(|groups| groups.property_pointers.iter())
-                .filter_map(|pointer| {
-                    parameter_resolver.resolve(
-                        entry.sequence,
-                        pointer.token_index,
-                        pointer.raw_pointer,
-                        ReferenceExpectation::AnyOf {
-                            first: 316,
-                            second: 322,
-                            rest: vec![406, 422],
-                        },
-                        |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
-                    )
+                .flat_map(|groups| {
+                    groups
+                        .properties()
+                        .iter()
+                        .enumerate()
+                        .map(|(index, sequence)| {
+                            (
+                                groups.token_start + groups.associations().len() + 2 + index,
+                                i64::from(*sequence),
+                            )
+                        })
                 })
+                .chain(invalid_trailing.into_iter().flat_map(|groups| {
+                    groups
+                        .property_pointers
+                        .iter()
+                        .map(|pointer| (pointer.token_index, pointer.raw_pointer))
+                }))
+            {
+                parameter_resolver.resolve(
+                    entry.sequence,
+                    token_index,
+                    raw_pointer,
+                    ReferenceExpectation::AnyOf {
+                        first: 316,
+                        second: 322,
+                        rest: vec![406, 422],
+                    },
+                    |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
+                );
+            }
+            let association_links = trailing
+                .into_iter()
+                .flat_map(|groups| groups.associations())
                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect::<Vec<_>>();
-            let association_links = if trailing.is_some() {
-                resolved_associations
-            } else {
-                Vec::new()
-            };
-            let property_links = if trailing.is_some() {
-                resolved_properties
-            } else {
-                Vec::new()
-            };
+                .collect();
+            let property_links = trailing
+                .into_iter()
+                .flat_map(|groups| groups.properties())
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect();
             NativeEntity {
                 id: format!("iges:entity:directory#{}", entry.sequence),
                 directory_sequence: entry.sequence,
@@ -4293,16 +4317,10 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous(groups) => {
-                                        Some(groups.as_groups())
-                                    }
+                                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                     _ => None,
                                 })
-                                .is_some_and(|groups| {
-                                    groups
-                                        .properties()
-                                        .any(|sequence| sequence == &entry.sequence)
-                                })
+                                .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4644,16 +4662,10 @@ pub(crate) fn store(
                             && trailing_pointer_analysis
                                 .get(sequence)
                                 .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous(groups) => {
-                                        Some(groups.as_groups())
-                                    }
+                                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                     _ => None,
                                 })
-                                .is_some_and(|groups| {
-                                    groups
-                                        .properties()
-                                        .any(|sequence| sequence == &entry.sequence)
-                                })
+                                .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),
@@ -4674,16 +4686,10 @@ pub(crate) fn store(
                     trailing_pointer_analysis
                         .get(sequence)
                         .and_then(|analysis| match analysis {
-                            TrailingPointerAnalysis::Unambiguous(groups) => {
-                                Some(groups.as_groups())
-                            }
+                            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                             _ => None,
                         })
-                        .is_some_and(|groups| {
-                            groups
-                                .properties()
-                                .any(|sequence| sequence == &entry.sequence)
-                        })
+                        .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                 .collect();
@@ -4987,7 +4993,7 @@ pub(crate) fn store(
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| match analysis {
-                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                     _ => None,
                 });
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);

@@ -399,14 +399,10 @@ fn has_association_back_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
             _ => None,
         })
-        .is_some_and(|groups| {
-            groups
-                .associations()
-                .any(|sequence| sequence == &group_sequence)
-        })
+        .is_some_and(|groups| groups.associations().contains(&group_sequence))
 }
 
 fn has_property_pointer(
@@ -417,14 +413,10 @@ fn has_property_pointer(
     trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
             _ => None,
         })
-        .is_some_and(|groups| {
-            groups
-                .properties()
-                .any(|sequence| sequence == &property_sequence)
-        })
+        .is_some_and(|groups| groups.properties().contains(&property_sequence))
 }
 
 fn legacy_primary_end_valid(
@@ -436,7 +428,7 @@ fn legacy_primary_end_valid(
         || trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                 _ => None,
             })
             .is_some_and(|groups| groups.token_start == primary_end)
@@ -2106,13 +2098,11 @@ pub(super) fn project(
                         let groups = trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => {
-                                    Some(groups.as_groups())
-                                }
+                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                 _ => None,
                             });
                         let has_basic = groups.as_ref().is_some_and(|groups| {
-                            groups.properties().any(|sequence| {
+                            groups.properties().iter().any(|sequence| {
                                 entries.get(sequence).is_some_and(|property| {
                                     property.entity_type == 406 && property.form == 31
                                 })
@@ -2121,6 +2111,7 @@ pub(super) fn project(
                         let display_count = groups.as_ref().map_or(0, |groups| {
                             groups
                                 .properties()
+                                .iter()
                                 .filter(|sequence| {
                                     entries.get(sequence).is_some_and(|property| {
                                         property.entity_type == 406 && property.form == 30
@@ -2183,14 +2174,13 @@ pub(super) fn project(
                         trailing_pointer_analysis
                             .get(&owner_record.directory_sequence)
                             .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => {
-                                    Some(groups.as_groups())
-                                }
+                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                                 _ => None,
                             })
                             .is_some_and(|groups| {
                                 groups
                                     .properties()
+                                    .iter()
                                     .filter(|sequence| {
                                         entries.get(sequence).is_some_and(|property| {
                                             property.entity_type == 406 && property.form == 33

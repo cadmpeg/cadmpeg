@@ -157,7 +157,7 @@ fn conflicting_drawing_property_forms(
     let Some(groups) = trailing_pointer_analysis
         .get(&record.directory_sequence)
         .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
+            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
             _ => None,
         })
     else {
@@ -165,6 +165,7 @@ fn conflicting_drawing_property_forms(
     };
     let values = groups
         .properties()
+        .iter()
         .copied()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -509,14 +510,12 @@ pub(super) fn project(
                                     .get(&view_record.directory_sequence)
                                     .and_then(|analysis| match analysis {
                                         TrailingPointerAnalysis::Unambiguous(groups) => {
-                                            Some(groups.as_groups())
+                                            Some(groups)
                                         }
                                         _ => None,
                                     })
                                     .is_some_and(|groups| {
-                                        groups
-                                            .associations()
-                                            .any(|sequence| sequence == &entry.sequence)
+                                        groups.associations().contains(&entry.sequence)
                                     })
                             })
                     })
