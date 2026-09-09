@@ -316,8 +316,7 @@ pub(crate) fn transfer_neutral(
                 .element_scales()
                 .get(index)
                 .copied()
-                .map(crate::native::frame::FiniteVec3::values)
-                .unwrap_or([1.0; 3]);
+                .map_or([1.0; 3], crate::native::frame::FiniteVec3::values);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale: [f64; 3] =
                 std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
