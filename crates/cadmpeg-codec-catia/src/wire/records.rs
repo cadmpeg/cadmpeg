@@ -457,16 +457,18 @@ where
                     pos += 1;
                     continue;
                 };
+                let Some(physical_range) = record.range() else {
+                    return records;
+                };
                 record.source_index = source_index;
-                let Some(source_start) = source_offset.checked_add(record.byte_offset() - start)
+                let Some(source_start) = source_offset.checked_add(physical_range.start - start)
                 else {
                     return records;
                 };
-                let Some(source_end) = source_offset.checked_add(record.source_range.end - start)
-                else {
+                let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
                     return records;
                 };
-                pos = record.source_range.end;
+                pos = physical_range.end;
                 record.source_range = source_start..source_end;
                 source_records.push(record);
             }

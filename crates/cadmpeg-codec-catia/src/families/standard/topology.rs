@@ -977,8 +977,8 @@ pub(crate) fn incidence_cycles(
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let face_run = largest_fbb_run(bytes)?;
-    let face_start = face_run.face_start;
-    let face_count = face_run.face_count;
+    let face_start = face_run.face_start();
+    let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let (mut edge_rows, _, vertex_header, handle_width) =
         parse_fbb_edge_tables(bytes, after_faces)?;

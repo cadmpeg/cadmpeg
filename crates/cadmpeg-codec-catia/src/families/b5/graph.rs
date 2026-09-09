@@ -3758,10 +3758,7 @@ fn analytic_pcurve_range(record: &B5Record) -> Option<[f64; 2]> {
 }
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
-    (record.family == 0xb5
-        && matches!(record.class, 0x37 | 0x3b)
-        && record.payload.first() == Some(&0x85))
-    .then_some(())?;
+    (record.family == 0xb5 && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
     let references: [u32; 5] = (0..5)
         .map(|_| wire::object_ref(&record.payload, &mut position, true))
@@ -3796,7 +3793,7 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
             scalars.iter().all(|scalar| *scalar > 0.0).then_some(())?;
             B5SupportedSurfaceParameters::ScalarPair { controls, scalars }
         }
-        _ => unreachable!(),
+        _ => return None,
     };
     Some(B5SupportedSurface {
         object_id: record.object_id,
@@ -4325,10 +4322,7 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
     if parse_class_1a_pcurve(record).is_some() {
         return None;
     }
-    if record.family != 0xb5
-        || !matches!(record.class, 0x1a | 0x1d)
-        || record.payload.first() != Some(&0x81)
-    {
+    if record.family != 0xb5 || record.payload.first() != Some(&0x81) {
         return None;
     }
     let mut position = 1;
@@ -4351,7 +4345,7 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
             (record.payload.get(position) == Some(&0x1d)).then_some(())?;
             line_values::<5>(&record.payload, position + 1)?;
         }
-        _ => unreachable!(),
+        _ => return None,
     }
     Some(B5OpaquePcurve {
         object_id: record.object_id,
