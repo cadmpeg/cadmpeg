@@ -313,8 +313,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &HashSet::new(),
             &HashSet::new(),
             IdFormat("f3d"),
-        )
-        .unwrap();
+        );
         let ProceduralCurveDefinition::Spring {
             layout: SpringLayout::CacheFirst { context, .. },
             ..
@@ -371,4 +370,233 @@ fn evaluated_and_absent_vertex_slots_have_the_same_native_tail_wire() {
     );
     assert_eq!(absent_tolerance, None);
     assert_eq!(evaluated_wire, absent_wire);
+}
+
+#[test]
+fn invalid_cache_first_context_keeps_the_decoded_curve() {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let mut curve_tokens = vec![
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        Token::False,
+        Token::SubtypeOpen,
+        Token::Ident("spring_int_cur".into()),
+        Token::Long(23_100),
+        Token::Enum(0),
+        Token::Ident("nubs".into()),
+        Token::Long(1),
+        Token::Enum(0),
+        Token::Long(2),
+        Token::Double(2.0),
+        Token::Long(1),
+        Token::Double(5.0),
+        Token::Long(1),
+    ];
+    curve_tokens.extend([0.0, 0.0, 0.0, 1.0, 0.0, 0.0].map(Token::Double));
+    curve_tokens.extend([
+        Token::Double(0.0004),
+        Token::Ident("null_surface".into()),
+        Token::Ident("null_surface".into()),
+        Token::Ident("nullbs".into()),
+        Token::Ident("nullbs".into()),
+        Token::True,
+        Token::Double(5.0),
+        Token::True,
+        Token::Double(2.0),
+        Token::Long(0),
+        Token::Long(0),
+        Token::Long(0),
+        Token::Long(7),
+        Token::Enum(4),
+        Token::SubtypeClose,
+    ]);
+    let refs = |values: &[i64]| values.iter().copied().map(Token::Ref).collect();
+    let records = [
+        record(0, "face", refs(&[-1, -1, -1, -1, 1, -1, -1, 5])),
+        record(1, "loop", refs(&[-1, -1, -1, -1, 2])),
+        record(2, "coedge", refs(&[-1, -1, -1, 2, -1, -1, 3])),
+        record(3, "edge", refs(&[-1, -1, -1, -1, -1, -1, -1, -1, 4])),
+        record(4, "intcurve", curve_tokens),
+        record(5, "unknown-surface", vec![]),
+    ];
+
+    let result = super::super::decode_with_header(
+        &records,
+        &[],
+        None,
+        "context",
+        IdFormat("f3d"),
+        super::super::DecodePurpose::Model,
+    );
+    let out = result.expect("invalid construction must retain its cache");
+    assert!(out
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "f3d:brep:entity#4"));
+    assert!(out.procedural_curves.is_empty());
+    assert_eq!(
+        out.stats
+            .procedural_curve_kinds
+            .get("support context parameter_range must be finite and ordered"),
+        Some(&1)
+    );
+}
+
+#[test]
+fn procedural_curve_admission_failures_keep_the_carrier() {
+    use super::super::ProceduralCurveSource;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    for (source, cause) in [
+        (
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Exact),
+                cache_fit_tolerance: Some(-1.0),
+                parsed_domain: Some([0.0, 1.0]),
+            },
+            "invalid procedural curve cache tolerance",
+        ),
+        (
+            ProceduralCurveSource::Cacheless(Box::new(ProceduralCurveDefinition::Subset {
+                source: CurveId::mint("f3d:brep:entity#source").unwrap(),
+                parameter_range: [2.0, 1.0],
+                sense: true,
+            })),
+            "subset-curve range is not finite and ordered",
+        ),
+    ] {
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        carriers
+            .curve_geo
+            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.procedural_curve_defs.insert(4, source);
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            IdFormat("f3d"),
+        );
+        assert_eq!(out.curves.len(), 1);
+        assert_eq!(out.curves[0].id.as_str(), "f3d:brep:entity#4");
+        assert!(out.procedural_curves.is_empty());
+        assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
+    }
+}
+
+#[test]
+fn failed_procedural_curves_discard_only_their_candidate_children() {
+    use super::super::ProceduralCurveSource;
+    use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
+    use cadmpeg_ir::math::Point3;
+
+    for (parameter_range, distance, tolerance, cause) in [
+        (
+            [2.0, 1.0],
+            1.0,
+            None,
+            "support context parameter_range must be finite and ordered",
+        ),
+        (
+            [0.0, 1.0],
+            f64::NAN,
+            None,
+            "surface-offset fields are not finite and ordered",
+        ),
+        (
+            [0.0, 1.0],
+            1.0,
+            Some(-1.0),
+            "invalid procedural curve cache tolerance",
+        ),
+    ] {
+        let mut out = AsmBrep::default();
+        out.surfaces.push(Surface {
+            id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        out.curves.push(Curve {
+            id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let mut carriers = Carriers::default();
+        carriers
+            .curve_geo
+            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.procedural_curve_defs.insert(
+            4,
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::SurfaceOffset(
+                    EmbeddedSurfaceOffset {
+                        layout: EmbeddedSurfaceOffsetLayout::ContextFirst {
+                            context: Box::new(EmbeddedIntersection {
+                                surfaces: std::array::from_fn(|_| {
+                                    SupportSlot::Surface(SurfaceGeometry::Unknown { record: None })
+                                }),
+                                pcurves: [None, None],
+                                parameter_range,
+                                discontinuities: std::array::from_fn(|_| Vec::new()),
+                            }),
+                            discontinuity_flag: false,
+                        },
+                        base_u_range: [0.0, 1.0],
+                        base_v_range: [0.0, 1.0],
+                        base_range: [0.0, 1.0],
+                        base: NurbsCurve::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                            None,
+                            false,
+                        )
+                        .unwrap(),
+                        distance,
+                        shift: 0.0,
+                        scale: 1.0,
+                    },
+                )),
+                cache_fit_tolerance: tolerance,
+                parsed_domain: Some([0.0, 1.0]),
+            },
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::from([4]),
+            &HashSet::from([4]),
+            IdFormat("f3d"),
+        );
+        assert_eq!(
+            out.surfaces
+                .iter()
+                .map(|surface| surface.id.as_str())
+                .collect::<Vec<_>>(),
+            ["f3d:brep:entity#existing-surface"]
+        );
+        assert_eq!(
+            out.curves
+                .iter()
+                .map(|curve| curve.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "f3d:brep:entity#existing-curve",
+                "f3d:brep:entity#4:reversed",
+                "f3d:brep:entity#4"
+            ]
+        );
+        assert!(out.procedural_curves.is_empty());
+        assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
+    }
 }
