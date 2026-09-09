@@ -604,7 +604,7 @@ fn repositioned_placement(record: &RawRecord, geometry: &GeometryData) -> Option
         .placements
         .get(&placement_id)
         .copied()
-        .map(super::geometry::placement_transform)
+        .and_then(super::geometry::placement_transform)
 }
 
 fn tessellated_annotation_item(record: &RawRecord) -> Option<u64> {
