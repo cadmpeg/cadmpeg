@@ -19,7 +19,8 @@ const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
 const FAT_SECTOR: u32 = 0xffff_fffd;
 const DIFAT_SECTOR: u32 = 0xffff_fffc;
-const NO_STREAM: u32 = 0xffff_ffff;
+// NO_STREAM and FREE_SECTOR are the CFB specification names for the same value.
+const NO_STREAM: u32 = FREE_SECTOR;
 const V3_MAX_FILE_SIZE: u64 = 0x8000_0000;
 const RANGE_LOCK_START: u64 = 0x7fff_ff00;
 const RANGE_LOCK_END: u64 = 0x8000_0000;
