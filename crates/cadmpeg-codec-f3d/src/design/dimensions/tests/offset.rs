@@ -620,7 +620,7 @@ fn counted_roles_require_matching_solved_geometry() {
             if &entity == vertical.id()
     ));
     assert!(matches!(
-        counted_role_relation(&[&horizontal], 0x20_0000_0040),
+        counted_role_relation(&[&horizontal], 0x40 | 0x800),
         Some(SketchConstraintDefinition::Horizontal { entity }) if &entity == horizontal.id()
     ));
     assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
