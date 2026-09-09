@@ -592,6 +592,7 @@ impl Tessellation {
         &self.shading
     }
 
+    /// Reads the `PerVertex` shading storage.
     /// Per-vertex normals; empty when the source carried none or corner normals.
     #[must_use]
     pub fn vertex_normals(&self) -> &[Vector3] {
@@ -619,6 +620,7 @@ impl Tessellation {
         Ok(())
     }
 
+    /// Reads the `PerCorner` shading storage.
     /// Per-triangle-corner normals; empty when the source carried none or vertex normals.
     #[must_use]
     pub fn per_corner_normals(&self) -> &[Vector3] {
