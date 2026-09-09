@@ -967,7 +967,7 @@ pub(crate) fn find_dimension_null_locus_pair(
         }
         position = at.saturating_add(1);
     }
-    candidates.sort_by_key(|pair| pair.byte_offset());
+    candidates.sort_by_key(crate::records::DesignDimensionLocusPair::byte_offset);
     candidates.dedup_by_key(|pair| pair.byte_offset());
     let [pair] = candidates.as_slice() else {
         return None;
