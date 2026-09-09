@@ -71,7 +71,7 @@ pub(super) struct WritableCoedge<'a> {
 pub(super) struct WritablePcurve<'a> {
     pub(super) source: &'a Pcurve,
     pub(super) payload: ([u8; 16], Vec<u8>),
-    pub(super) hull: Vec<cadmpeg_ir::math::Point2>,
+    pub(super) domain_extent_points: Vec<cadmpeg_ir::math::Point2>,
 }
 
 pub(super) struct WritableLoop<'a> {
