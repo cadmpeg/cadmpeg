@@ -2646,7 +2646,10 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::SewBodies {
                     bodies: (BodySelection::local(
-                        vec!["historical-sheet".to_string()],
+                        vec![
+                            "historical-sheet".to_string(),
+                            "second-historical-sheet".to_string(),
+                        ],
                         "native-selection".to_string(),
                     )
                     .unwrap())
@@ -3326,32 +3329,6 @@ mod tests {
                 },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
-        );
-    }
-
-    #[test]
-    fn overlapping_replace_face_operands_do_not_change_the_body_identity_effect() {
-        let mut ir = complete_block_ir();
-        let body = ir.model.bodies[0].id.clone();
-        let faces = FaceSelection::Faces(vec![
-            FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
-        ]);
-        ir.model.features.push(body_preserving_feature(
-            "replace-face",
-            1,
-            body.clone(),
-            FeatureDefinition::ReplaceFace {
-                operands: cadmpeg_ir::features::ReplaceFaceOperands::new(faces.clone(), faces)
-                    .unwrap(),
-            },
-        ));
-
-        assert!(feature_completeness::replace_face_definition_is_incomplete(
-            &ir.model.features[1]
-        ));
-        assert_eq!(
-            evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 }

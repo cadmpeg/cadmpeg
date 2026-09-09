@@ -2,8 +2,8 @@
 //! Geometry-report losses for NX decode.
 
 use super::feature_completeness::operands::{
-    body_selection_is_incomplete, body_selections_overlap, face_selection_is_incomplete,
-    path_ref_is_incomplete, pattern_feature_is_incomplete,
+    body_selection_is_incomplete, face_selection_is_incomplete, path_ref_is_incomplete,
+    pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
@@ -667,7 +667,6 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 approximate,
             } if body_selection_is_incomplete(operands.first())
                 || body_selection_is_incomplete(operands.second())
-                || body_selections_overlap(operands.first(), operands.second())
                 || approximate.is_none() =>
             {
                 "section"

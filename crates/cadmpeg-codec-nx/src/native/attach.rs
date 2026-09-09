@@ -8284,10 +8284,7 @@ fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyI
     let BodySelection::Resolved { bodies, .. } = operands.target() else {
         return None;
     };
-    let [body] = bodies.as_slice() else {
-        return None;
-    };
-    Some(body.clone())
+    bodies.first().cloned()
 }
 
 pub(crate) fn boolean_feature_definition(
