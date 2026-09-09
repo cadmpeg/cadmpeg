@@ -1767,4 +1767,4 @@ mod direct_circle_carrier;
 mod duplicate_link_arc;
 mod point_identity;
 mod point_projection;
-mod radial_geometry;
+mod radial_geometry_tests;
