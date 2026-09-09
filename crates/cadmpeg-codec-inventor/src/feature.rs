@@ -919,6 +919,50 @@ const FILLET_CLASS_ID: &str = "dc15f7f1d1114205000830b00524dc09";
 const CHAMFER_CLASS_ID: &str = "3f7100f9d2118b6f6000f0a89dccefb0";
 const HOLE_CLASS_ID: &str = "1a7d751fd2119c54a00020803603c8c9";
 
+#[derive(Clone, Copy)]
+pub(crate) enum FeatureFamily {
+    Extrusion,
+    Fillet,
+    Chamfer,
+    Hole,
+}
+
+impl FeatureFamily {
+    pub(crate) fn class_id(self) -> &'static str {
+        match self {
+            Self::Extrusion => EXTRUSION_CLASS_ID,
+            Self::Fillet => FILLET_CLASS_ID,
+            Self::Chamfer => CHAMFER_CLASS_ID,
+            Self::Hole => HOLE_CLASS_ID,
+        }
+    }
+
+    pub(crate) fn output_slot(self) -> usize {
+        match self {
+            Self::Extrusion => 26,
+            Self::Fillet => 15,
+            Self::Chamfer => 11,
+            Self::Hole => 24,
+        }
+    }
+
+    fn from_class_id(class_id: &str) -> Option<Self> {
+        [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
+            .into_iter()
+            .find(|family| family.class_id() == class_id)
+    }
+
+    pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
+        match definition {
+            FeatureDefinition::Extrude { .. } => Some(Self::Extrusion),
+            FeatureDefinition::Fillet { .. } => Some(Self::Fillet),
+            FeatureDefinition::Chamfer { .. } => Some(Self::Chamfer),
+            FeatureDefinition::Hole { .. } => Some(Self::Hole),
+            _ => None,
+        }
+    }
+}
+
 struct ProjectionIndex<'a> {
     properties: HashMap<(&'a str, u32), &'a PmDcFeatureProperty>,
     parameters: HashMap<(&'a str, u32), &'a crate::design::PmDcParameter>,
@@ -1032,12 +1076,14 @@ pub(crate) fn project(
         )) else {
             continue;
         };
-        let value = match label.class_id.as_str() {
-            EXTRUSION_CLASS_ID => project_extrusion(feature, label, &index),
-            FILLET_CLASS_ID => project_fillet(feature, label, &index),
-            CHAMFER_CLASS_ID => project_chamfer(feature, label, &index),
-            HOLE_CLASS_ID => project_hole(feature, label, &index),
-            _ => None,
+        let Some(family) = FeatureFamily::from_class_id(label.class_id()) else {
+            continue;
+        };
+        let value = match family {
+            FeatureFamily::Extrusion => project_extrusion(feature, label, &index),
+            FeatureFamily::Fillet => project_fillet(feature, label, &index),
+            FeatureFamily::Chamfer => project_chamfer(feature, label, &index),
+            FeatureFamily::Hole => project_hole(feature, label, &index),
         };
         if let Some(value) = value {
             projected.push(value);
