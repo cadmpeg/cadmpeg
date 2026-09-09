@@ -49,8 +49,10 @@ fn named_feature(id: &str, name: &str) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::StoredGeometry,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::StoredGeometry,
+        ),
         native_ref: None,
     }
 }
@@ -87,17 +89,19 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::new(PatternTransform::Linear {
-                direction: None,
-                spacing: Length::new(10.0).unwrap(),
-                count: 2,
-                second: None,
-            })
-            .unwrap(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::new(PatternTransform::Linear {
+                    direction: None,
+                    spacing: Length::new(10.0).unwrap(),
+                    count: 2,
+                    second: None,
+                })
+                .unwrap(),
+            },
+        ),
         native_ref: None,
     };
 
@@ -879,7 +883,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {

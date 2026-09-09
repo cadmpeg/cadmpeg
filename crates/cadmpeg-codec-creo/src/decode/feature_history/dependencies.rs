@@ -400,7 +400,7 @@ pub(in super::super) fn reconcile_feature_links(
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let output_updates = ir
         .model
         .features
@@ -434,7 +434,10 @@ pub(in super::super) fn reconcile_feature_links(
             continue;
         };
         if let Some(outputs) = output_updates.get(&feature.id) {
-            feature.outputs.clone_from(outputs);
+            feature
+                .evaluation
+                .set_outputs(outputs.clone())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         let native_dependencies = native_feature_dependency_ids(
             &scan.features.affected_ids,
@@ -453,7 +456,8 @@ pub(in super::super) fn reconcile_feature_links(
         })
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
-        let generated_dependencies = feature_generated_dependencies(&feature.definition);
+        let generated_dependencies =
+            feature_generated_dependencies(feature.evaluation.definition());
         feature.dependencies = (reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
@@ -507,6 +511,7 @@ pub(in super::super) fn reconcile_feature_links(
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = ordinal as u64;
     }
+    Ok(())
 }
 
 pub(in super::super) fn feature_generated_dependencies(

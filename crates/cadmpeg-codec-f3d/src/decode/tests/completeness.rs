@@ -145,20 +145,29 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: resolved("target"),
-            replacements: resolved("replacement"),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                resolved("target"),
+                resolved("replacement")
+            )
+            .unwrap(),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: FaceSelection::Native("native:target".into()),
-            replacements: resolved("replacement"),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                FaceSelection::Native("native:target".into()),
+                resolved("replacement")
+            )
+            .unwrap(),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: resolved("target"),
-            replacements: FaceSelection::Native("native:replacement".into()),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                resolved("target"),
+                FaceSelection::Native("native:replacement".into())
+            )
+            .unwrap(),
         }
     ));
 }

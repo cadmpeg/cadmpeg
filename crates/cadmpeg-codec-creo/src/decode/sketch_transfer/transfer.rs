@@ -856,12 +856,14 @@ pub(in super::super) fn transfer_sketches(
                 source_tag: Some("section".to_string()),
                 source_text: None,
                 source_content: Default::default(),
-                outputs: Vec::new(),
-                definition: IrFeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                        sketch_id.clone(),
-                    )),
-                },
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    IrFeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                            sketch_id.clone(),
+                        )),
+                    },
+                ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
             });
         }

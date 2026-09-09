@@ -160,7 +160,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .iter()
         .find(|feature| feature.source_tag.as_deref() == Some("Fillet"))
         .expect("typed fillet");
-    let FeatureDefinition::Fillet { groups } = &fillet.definition else {
+    let FeatureDefinition::Fillet { groups } = fillet.evaluation.definition() else {
         panic!("expected typed fillet");
     };
     assert!(matches!(
@@ -176,7 +176,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .find(|feature| feature.source_tag.as_deref() == Some("Chamfer"))
         .expect("typed chamfer");
     assert!(matches!(
-        &chamfer.definition,
+        chamfer.evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
@@ -211,7 +211,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
@@ -242,7 +242,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
@@ -275,25 +275,23 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::Hole {
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             placements: Some(placements),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
-                ..
-            },
-            diameter: Some(actual_diameter),
+            shape,
+
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: actual_length }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
-        } if (faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            }, Some(actual_diameter),) if (faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
             && native == &scopes[2].id
             && placements == &vec![cadmpeg_ir::features::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
-            }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0
-    ));
+            }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
 
     hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
     let (features, _) = project_parameter_design(
@@ -311,16 +309,14 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
-                ..
-            },
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
             bottom: None,
             ..
-        } if drill_point_angle.get() == 118.0_f64.to_radians()
-    ));
+        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+                ..
+            },) if drill_point_angle.get() == 118.0_f64.to_radians())));
 
     let mut counterbore_parameters = hole_parameters.to_vec();
     counterbore_parameters.extend([
@@ -344,20 +340,18 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+            bottom: None,
+            ..
+        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
                     diameter: actual_diameter,
                     depth: actual_depth,
                     drill_point_angle,
                 },
                 ..
-            },
-            bottom: None,
-            ..
-        } if (drill_point_angle.get() == 118.0_f64.to_radians()) && actual_diameter.get() == 8.0 && actual_depth.get() == 3.0
-    ));
+            },) if (drill_point_angle.get() == 118.0_f64.to_radians()) && actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
 
     counterbore_parameters[2].evaluated_value = std::f64::consts::PI;
     let (features, _) = project_parameter_design(
@@ -377,19 +371,17 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            ..
+        } if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
                 },
                 ..
-            },
-            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
-            ..
-        } if actual_diameter.get() == 8.0 && actual_depth.get() == 3.0
-    ));
+            },) if actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
 
     let (features, _) = project_parameter_design(
         &[
@@ -405,7 +397,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::TwoDistances { first, second },
@@ -424,7 +416,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::Distance { distance },
@@ -446,7 +438,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
             parameters,
@@ -464,7 +456,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
             parameters,
@@ -490,7 +482,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
             parameters,
@@ -511,7 +503,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
             parameters,
@@ -575,7 +567,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Chamfer { groups, .. }
             if matches!(groups.as_slice(), [
                 ChamferGroup {
@@ -740,7 +732,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         angle,
         outward,
         ..
-    } = &features[0].definition
+    } = features[0].evaluation.definition()
     else {
         panic!("expected a typed Draft definition");
     };
@@ -784,7 +776,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         });
     let (features, _) = project(&selection);
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
             ..
@@ -1181,7 +1173,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &[],
     );
     assert!(matches!(
-        &chord_features[0].definition,
+        chord_features[0].evaluation.definition(),
         FeatureDefinition::Fillet { groups }
             if matches!(
                 groups.as_slice(),
@@ -1224,7 +1216,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &[],
     );
     assert!(matches!(
-        &chord_only_features[0].definition,
+        chord_only_features[0].evaluation.definition(),
         FeatureDefinition::Fillet { groups }
             if matches!(
                 groups.as_slice(),
@@ -1268,7 +1260,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &[],
     );
     assert!(matches!(
-        &asymmetric_features[0].definition,
+        asymmetric_features[0].evaluation.definition(),
         FeatureDefinition::Fillet { groups }
             if matches!(
                 groups.as_slice(),
@@ -1296,7 +1288,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &[],
         &[],
     );
-    let FeatureDefinition::Fillet { groups } = &features[0].definition else {
+    let FeatureDefinition::Fillet { groups } = features[0].evaluation.definition() else {
         panic!("expected typed localized Fillet");
     };
     assert_eq!(groups.len(), 2);
@@ -1553,6 +1545,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
         }) if tool_selection == &tools.id
-            && cell_selections == &[cadmpeg_ir::features::BodySelection::Native(cell.id)]
+            && cell_selections.as_slice() == &[cadmpeg_ir::features::BodySelection::Native(cell.id)]
     ));
 }

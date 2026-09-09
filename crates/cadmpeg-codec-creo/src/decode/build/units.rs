@@ -112,7 +112,12 @@ pub(super) fn normalize_model_lengths(
         scale_optional(&mut tessellation.chordal_deflection, length_scale_mm);
     }
     for feature in &mut ir.model.features {
-        scale_feature_definition(&mut feature.definition, length_scale_mm)?;
+        let mut definition = feature.evaluation.definition().clone();
+        scale_feature_definition(&mut definition, length_scale_mm)?;
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
 
     for parameter in &mut ir.model.parameters {
@@ -533,13 +538,15 @@ fn scale_feature_definition(
             placement: None, ..
         } => {}
         FeatureDefinition::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
-        FeatureDefinition::Sweep {
-            section, sections, ..
-        } => {
-            scale_sweep_section(section, scale)?;
-            for section in sections {
+        FeatureDefinition::Sweep { shape, .. } => {
+            let mut section = shape.section().clone();
+            let mut sections = shape.sections().to_vec();
+            scale_sweep_section(&mut section, scale)?;
+            for section in &mut sections {
                 scale_sweep_section(section, scale)?;
             }
+            *shape = cadmpeg_ir::features::SweepShape::new(section, sections, shape.mode())
+                .map_err(CodecError::malformed)?;
         }
         FeatureDefinition::HelicalSweep { construction, .. } => {
             scale_finite_point3(&mut construction.axis_origin, scale)?;
@@ -669,20 +676,23 @@ fn scale_feature_definition(
         FeatureDefinition::Scale { .. } => {}
         FeatureDefinition::Hole {
             placements,
-            construction,
-            exit_kind,
-            diameter,
+            shape,
             extent,
             ..
         } => {
             for placement in placements.iter_mut().flatten() {
                 scale_hole_placement(placement, scale)?;
             }
-            scale_hole_construction(construction, scale)?;
-            if let Some(exit_kind) = exit_kind {
+            let mut construction = shape.construction().clone();
+            let mut exit_kind = *shape.exit_kind();
+            let mut diameter = shape.diameter();
+            scale_hole_construction(&mut construction, scale)?;
+            if let Some(exit_kind) = &mut exit_kind {
                 scale_hole_kind(exit_kind, scale)?;
             }
-            scale_optional_positive_length(diameter, scale)?;
+            scale_optional_positive_length(&mut diameter, scale)?;
+            *shape = cadmpeg_ir::features::HoleShape::new(construction, exit_kind, diameter)
+                .map_err(CodecError::malformed)?;
             if let Some(extent) = extent {
                 scale_linear_termination(extent, scale)?;
             }
@@ -693,7 +703,9 @@ fn scale_feature_definition(
             fuzzy_tolerance,
             ..
         } => {
-            scale_feature_definition(operation, scale)?;
+            let mut definition = operation.as_ref().clone();
+            scale_feature_definition(&mut definition, scale)?;
+            *operation = definition.try_into().map_err(CodecError::malformed)?;
             scale_fuzzy_tolerance(fuzzy_tolerance, scale)?;
         }
         _ => {}
@@ -799,14 +811,15 @@ fn scale_sweep_section(
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let cadmpeg_ir::features::SweepSection::Generated(
-        cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
-            outer_radius,
-            wall_thickness,
-        },
+        cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region },
     ) = section
     {
-        scale_positive_length(outer_radius, scale)?;
-        scale_optional_positive_length(wall_thickness, scale)?;
+        let mut outer_radius = region.outer_radius();
+        let mut wall_thickness = region.wall_thickness();
+        scale_positive_length(&mut outer_radius, scale)?;
+        scale_optional_positive_length(&mut wall_thickness, scale)?;
+        *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
+            .map_err(CodecError::malformed)?;
     };
     Ok(())
 }
@@ -1161,13 +1174,14 @@ fn scale_hole_kind(
             scale_positive_length(depth, scale)?;
         }
         HoleKind::Counterdrill {
-            diameter,
-            entry_diameter,
-            depth,
-            ..
+            diameters, depth, ..
         } => {
-            scale_positive_length(diameter, scale)?;
-            scale_optional_positive_length(entry_diameter, scale)?;
+            let mut diameter = diameters.diameter();
+            let mut entry_diameter = diameters.entry_diameter();
+            scale_positive_length(&mut diameter, scale)?;
+            scale_optional_positive_length(&mut entry_diameter, scale)?;
+            *diameters = cadmpeg_ir::features::CounterdrillDiameters::new(diameter, entry_diameter)
+                .map_err(CodecError::malformed)?;
             scale_positive_length(depth, scale)?;
         }
         HoleKind::Simple | HoleKind::SimpleDrilled { .. } => {}
@@ -1930,7 +1944,8 @@ mod tests {
             });
         normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
 
-        let FeatureDefinition::Extrude { start, extent, .. } = &ir.model.features[0].definition
+        let FeatureDefinition::Extrude { start, extent, .. } =
+            ir.model.features[0].evaluation.definition()
         else {
             panic!("test feature changed family");
         };
@@ -2057,10 +2072,12 @@ mod tests {
     #[test]
     fn scales_explicit_fuzzy_tolerance() {
         let mut definition = FeatureDefinition::PostProcess {
-            operation: Box::new(FeatureDefinition::Native {
+            operation: FeatureDefinition::Native {
                 kind: "Boolean".into(),
                 parameters: BTreeMap::new(),
-            }),
+            }
+            .try_into()
+            .unwrap(),
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(
                 cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),

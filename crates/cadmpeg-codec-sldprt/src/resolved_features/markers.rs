@@ -54,7 +54,7 @@ pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> (Vec<SpatialSketch>, Vec<SpatialSketchEntity>) {
+) -> Result<(Vec<SpatialSketch>, Vec<SpatialSketchEntity>), cadmpeg_core::CodecError> {
     let records = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -63,9 +63,16 @@ pub(crate) fn spatial_sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     for feature in model_features {
-        let declared_spatial =
-            matches!(feature.definition, FeatureDefinition::SpatialSketch { .. });
-        if !declared_spatial && !matches!(feature.definition, FeatureDefinition::Sketch { .. }) {
+        let declared_spatial = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::SpatialSketch { .. }
+        );
+        if !declared_spatial
+            && !matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        {
             continue;
         }
         let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -207,9 +214,12 @@ pub(crate) fn spatial_sketches(
                     .with_native_ref(native_ref)
                 },
             ));
-            feature.definition = FeatureDefinition::SpatialSketch {
-                sketch: Some(sketch_id),
-            };
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::SpatialSketch {
+                    sketch: Some(sketch_id),
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             continue;
         }
         if !declared_spatial {
@@ -277,11 +287,14 @@ pub(crate) fn spatial_sketches(
                     )
                 }),
         );
-        feature.definition = FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        };
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
-    (sketches, entities)
+    Ok((sketches, entities))
 }
 
 pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {

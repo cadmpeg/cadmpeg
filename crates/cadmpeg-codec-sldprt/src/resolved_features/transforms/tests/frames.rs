@@ -317,10 +317,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ),
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
@@ -760,10 +762,12 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut entities = vec![
@@ -1191,10 +1195,12 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
@@ -1346,7 +1352,8 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[history],
         &[lane],
         &mut annotations,
-    );
+    )
+    .unwrap();
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());
@@ -1354,7 +1361,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     assert!(annotations.provenance.is_empty());
     assert!(annotations.exactness().is_empty());
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

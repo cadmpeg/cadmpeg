@@ -41,7 +41,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .unwrap(),
         IrFeatureDefinition::DatumPlane { .. }
     ));
 
@@ -50,7 +51,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .unwrap(),
         IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
         }
@@ -139,7 +141,7 @@ fn unbounded_plane_rejects_conflicting_carriers() {
 
     assert!(unbounded_feature_plane_definition(&scan, &ir, 5).is_none());
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane"),
+        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane").unwrap(),
         IrFeatureDefinition::Native { .. }
     ));
 }

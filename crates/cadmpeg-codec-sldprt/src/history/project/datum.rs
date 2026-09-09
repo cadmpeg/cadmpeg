@@ -157,7 +157,7 @@ pub(crate) fn project_composite_curve(
         return None;
     }
     Some(FeatureDefinition::CompositeCurve {
-        segments,
+        segments: segments.try_into().ok()?,
         closed: feature
             .properties
             .get("Closed")
@@ -218,7 +218,7 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .and_then(|value| parse_bool(value))
         .unwrap_or(false);
     Some(FeatureDefinition::HelixNativeAxis {
-        axis_native_ref: feature.id.clone(),
+        axis_native_ref: cadmpeg_ir::NonEmptyString::new(feature.id.clone())?,
         axial_rise: Length::new(axial_rise)?,
         pitch: Length::new(pitch)?,
         revolutions: cadmpeg_ir::features::PositiveReal::new(revolutions)?,
@@ -252,7 +252,7 @@ pub(crate) fn project_wrap(
         _ => return None,
     };
     Some(FeatureDefinition::Wrap {
-        profile: ProfileRef::Native(profile),
+        profile: (ProfileRef::Native(profile)).try_into().ok()?,
         face,
         mode,
     })

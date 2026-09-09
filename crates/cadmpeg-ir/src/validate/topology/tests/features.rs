@@ -44,8 +44,8 @@ fn historical_body_overlap_ignores_set_ordering_form() {
         .expect("valid historical body selection rows"),
     };
 
-    assert!(body_selections_overlap(&target, &overlapping));
-    assert!(!body_selections_overlap(&target, &disjoint));
+    assert!(crate::features::SectionOperands::new(target.clone(), overlapping).is_err());
+    assert!(crate::features::SectionOperands::new(target, disjoint).is_ok());
 }
 
 #[test]
@@ -84,19 +84,23 @@ fn historical_vertex_selection_requires_input_state_membership() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0))
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumPoint {
+                position: crate::features::FinitePoint3::new(crate::math::Point3::new(
+                    1.0, 2.0, 3.0,
+                ))
                 .unwrap(),
-            construction: Some(Box::new(DatumPointConstruction::Vertex {
-                vertex: VertexSelection::historical(
-                    state_id.clone(),
-                    historical_vertex,
-                    "vertex:local".into(),
-                )
-                .unwrap(),
-            })),
-        },
+                construction: Some(Box::new(DatumPointConstruction::Vertex {
+                    vertex: VertexSelection::historical(
+                        state_id.clone(),
+                        historical_vertex,
+                        "vertex:local".into(),
+                    )
+                    .unwrap(),
+                })),
+            },
+        ),
         native_ref: None,
     });
 
@@ -110,20 +114,25 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-vertex#missing";
-    let FeatureDefinition::DatumPoint {
-        construction: Some(construction),
-        ..
-    } = &mut ir.model.features[0].definition
-    else {
-        unreachable!("test feature is a constructed datum point")
-    };
-    let DatumPointConstruction::Vertex {
-        vertex: VertexSelection::Historical { vertex, .. },
-    } = construction.as_mut()
-    else {
-        unreachable!("test datum point uses a historical vertex")
-    };
-    *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
+    ir.model.features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::DatumPoint {
+                construction: Some(construction),
+                ..
+            } = definition
+            else {
+                unreachable!("test feature is a constructed datum point")
+            };
+            let DatumPointConstruction::Vertex {
+                vertex: VertexSelection::Historical { vertex, .. },
+            } = construction.as_mut()
+            else {
+                unreachable!("test datum point uses a historical vertex")
+            };
+            *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
+        })
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -131,115 +140,6 @@ fn historical_vertex_selection_requires_input_state_membership() {
             finding.check == Check::ReferentialIntegrity
                 && finding.entity.as_deref() == Some(feature_id.as_str())
                 && finding.message == format!("references missing historical vertex `{missing}`")
-        }));
-}
-
-#[test]
-fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureInputTopology, VertexSelection,
-    };
-    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
-
-    let feature_id =
-        FeatureId::mint("test:model:feature#three-point-plane").expect("identity grammar");
-    let first_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-a")
-        .expect("valid identity");
-    let second_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-b")
-        .expect("valid identity");
-    let vertices = [
-        HistoricalVertexId::mint("test:model:historical-vertex#1").expect("valid identity"),
-        HistoricalVertexId::mint("test:model:historical-vertex#2").expect("valid identity"),
-        HistoricalVertexId::mint("test:model:historical-vertex#3").expect("valid identity"),
-    ];
-    let other_vertex =
-        HistoricalVertexId::mint("test:model:historical-vertex#4").expect("valid identity");
-    let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
-        VertexSelection::historical(state.clone(), vertex.clone(), native.into()).unwrap()
-    };
-
-    let mut ir = CadIr::empty();
-    ir.model.feature_input_topologies.extend([
-        FeatureInputTopology {
-            id: first_state.clone(),
-            input_of: feature_id.clone(),
-            bodies: (Vec::new()).try_into().unwrap(),
-            faces: (Vec::new()).try_into().unwrap(),
-            edges: (Vec::new()).try_into().unwrap(),
-            vertices: (vertices.to_vec()).try_into().unwrap(),
-            native_ref: None,
-        },
-        FeatureInputTopology {
-            id: second_state.clone(),
-            input_of: feature_id.clone(),
-            bodies: (Vec::new()).try_into().unwrap(),
-            faces: (Vec::new()).try_into().unwrap(),
-            edges: (Vec::new()).try_into().unwrap(),
-            vertices: (vec![other_vertex.clone()]).try_into().unwrap(),
-            native_ref: None,
-        },
-    ]);
-    ir.model.features.push(Feature {
-        id: feature_id,
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumThreePointPlane {
-            frame: crate::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-
-            points: Box::new([
-                historical(&first_state, &vertices[0], "native:1"),
-                historical(&first_state, &vertices[1], "native:2"),
-                historical(&first_state, &vertices[2], "native:3"),
-            ]),
-        },
-        native_ref: None,
-    });
-
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    assert!(!findings
-        .iter()
-        .any(|finding| finding.message.contains("three-point datum-plane")));
-
-    let set_third = |ir: &mut CadIr, point| {
-        let FeatureDefinition::DatumThreePointPlane { points, .. } =
-            &mut ir.model.features[0].definition
-        else {
-            unreachable!("test feature is a three-point datum plane")
-        };
-        points[2] = point;
-    };
-    set_third(
-        &mut ir,
-        historical(&first_state, &vertices[0], "different-native-identity"),
-    );
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "three-point datum plane requires three distinct vertices"
-        }));
-
-    set_third(
-        &mut ir,
-        historical(&second_state, &other_vertex, "native:4"),
-    );
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.message == "three-point datum-plane vertices use different input topologies"
         }));
 }
 
@@ -273,10 +173,17 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Sweep {
-            section: crate::features::SweepSection::Profile(ProfileRef::Sketch(sketch.clone())),
-            sections: Vec::new(),
+            shape: crate::features::SweepShape::new(
+                crate::features::SweepSection::Profile(
+                    ProfileRef::Sketch(sketch.clone()).try_into().unwrap(),
+                ),
+                Vec::new(),
+                crate::features::SweepMode::NewBody,
+            )
+            .unwrap(),
+
             path: Some(PathRef::Sketch(sketch.clone())),
-            mode: crate::features::SweepMode::NewBody,
+
             orientation: None,
             transition: None,
             transformation: None,
@@ -307,8 +214,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: definitions[1].clone(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
     ir.finalize();
@@ -351,32 +258,37 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ])
         .try_into()
         .unwrap(),
-        outputs: vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Faces(vec![
-                FaceId::mint("synthetic:test:face#profile-missing").expect("valid identity")
-            ]),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::ToFace {
-                        face: FaceSelection::Faces(vec![FaceId::mint(
-                            "synthetic:test:face#termination-missing",
-                        )
-                        .expect("valid identity")]),
-                        offset: None,
+
+        evaluation: crate::features::FeatureEvaluation::new(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Faces(vec![FaceId::mint(
+                    "synthetic:test:face#profile-missing",
+                )
+                .expect("valid identity")]),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ToFace {
+                            face: FaceSelection::Faces(vec![FaceId::mint(
+                                "synthetic:test:face#termination-missing",
+                            )
+                            .expect("valid identity")]),
+                            offset: None,
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+            vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
+        )
+        .unwrap(),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -389,11 +301,13 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Marker".into(),
-            parameters: BTreeMap::new(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Marker".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     ir.finalize();
@@ -434,11 +348,13 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
@@ -487,11 +403,13 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     let first = ParameterId::mint("synthetic:test:parameter#first").expect("identity grammar");
@@ -546,11 +464,13 @@ fn document_parameters_can_feed_feature_parameters() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "Test".into(),
-            parameters: BTreeMap::new(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "Test".into(),
+                parameters: BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     let document =
@@ -601,8 +521,8 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -634,10 +554,13 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
 
     let offset = ir.model.features[0].id.clone();
-    ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Feature(offset)),
-        distance: Length::new(5.0).unwrap(),
-    };
+    ir.model.features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(offset)),
+            distance: Length::new(5.0).unwrap(),
+        })
+        .unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
@@ -667,11 +590,13 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            construction: None,
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            },
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -684,30 +609,32 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Native("test:profile".into()),
-            direction: ExtrudeDirection::ProfileNormal,
-            start: crate::features::ExtrudeStart::ProfilePlane,
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::ToVertex {
-                        vertex: VertexSelection::generated(
-                            GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
-                            "test:vertex-selection".into(),
-                        )
-                        .unwrap(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native("test:profile".into()),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::ToVertex {
+                            vertex: VertexSelection::generated(
+                                GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
+                                "test:vertex-selection".into(),
+                            )
+                            .unwrap(),
+                        },
+                        draft: None,
                     },
-                    draft: None,
                 },
+                op: BooleanOp::NewBody,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
-            op: BooleanOp::NewBody,
-            solid: None,
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        },
+        ),
         native_ref: None,
     });
 
@@ -735,7 +662,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                     outputs: Default::default(),
                 },
                 dependencies: Default::default(),
-                definition: ir.model.features[1].definition.clone(),
+                definition: ir.model.features[1].evaluation.definition().clone(),
             },
         )]),
         native_ref: None,
@@ -764,118 +691,6 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 }
 
 #[test]
-fn body_combine_requires_exactly_one_resolved_target() {
-    use crate::features::{BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId};
-    use crate::ids::BodyId;
-
-    let mut ir = unit_cube();
-    let body = ir.model.bodies[0].id.clone();
-    ir.model.features.push(Feature {
-        id: FeatureId::mint("synthetic:test:feature#invalid-combine-target")
-            .expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: Default::default(),
-        source_properties: std::collections::BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Combine {
-            target: BodySelection::Bodies(vec![
-                body.clone(),
-                BodyId::mint("synthetic:test:body#other-target").expect("valid identity"),
-            ]),
-            tools: BodySelection::Bodies(vec![body]),
-            op: BooleanKind::Join,
-            keep_tools: false,
-        },
-        native_ref: None,
-    });
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "body combine target is invalid",
-        "body combine operands overlap",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
-}
-
-#[test]
-fn feature_operand_roles_must_be_disjoint() {
-    use crate::features::{
-        BodySelection, BodyTrimSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        RadiusSpec,
-    };
-
-    let mut ir = unit_cube();
-    let body = ir.model.bodies[0].id.clone();
-    let body_key = body.as_str().to_owned();
-    let face = ir.model.faces[0].id.clone();
-    for (ordinal, definition) in [
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Faces(vec![face.clone()]),
-            second_faces: FaceSelection::Faces(vec![face]),
-            radius: RadiusSpec::Constant {
-                radius: crate::features::PositiveLength::new(1.0).unwrap(),
-            },
-        },
-        FeatureDefinition::TrimBodies {
-            targets: BodySelection::local(vec![body_key.clone()], "test:selection#targets".into())
-                .unwrap(),
-            tools: BodySelection::local(vec![body_key.clone()], "test:selection#tools".into())
-                .unwrap(),
-            keep: BodyTrimSide::Forward,
-        },
-        FeatureDefinition::SectionShape {
-            first: BodySelection::local(vec![body_key.clone()], "test:selection#first".into())
-                .unwrap(),
-            second: BodySelection::local(vec![body_key.clone()], "test:selection#second".into())
-                .unwrap(),
-            approximate: Some(false),
-        },
-        FeatureDefinition::ReplaceFace {
-            targets: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
-            replacements: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
-        },
-        FeatureDefinition::SewBodies {
-            bodies: BodySelection::local(vec![body_key], "test:selection#sew".into()).unwrap(),
-            gap_tolerance: None,
-        },
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#overlap-{ordinal}"))
-                .expect("identity grammar"),
-            ordinal: ordinal as u64,
-            name: None,
-            suppressed: Some(false),
-            dependencies: Default::default(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
-            native_ref: None,
-        });
-    }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
-    for message in [
-        "face blend supports overlap",
-        "body trim operands overlap",
-        "section operands overlap",
-        "replacement face operands overlap",
-        "sew requires at least two bodies",
-    ] {
-        assert!(findings.iter().any(|finding| finding.message == message));
-    }
-}
-
-#[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
     use crate::features::{
         Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed, PatternTransform,
@@ -893,11 +708,13 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            construction: None,
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            },
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -910,15 +727,17 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: Point3::new(0.0, 0.0, 0.0),
-                plane_normal: Vector3::new(1.0, 0.0, 0.0),
-            })
-            .unwrap(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Pattern {
+                seeds: vec![PatternSeed::Feature(seed.clone())],
+                pattern: PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                })
+                .unwrap(),
+            },
+        ),
         native_ref: None,
     });
     let message = format!(
@@ -966,8 +785,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features = vec![
@@ -1082,7 +901,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                         outputs: Default::default(),
                     },
                     dependencies: Default::default(),
-                    definition: ir.model.features[index].definition.clone(),
+                    definition: ir.model.features[index].evaluation.definition().clone(),
                 },
             )
         })
@@ -1156,11 +975,13 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "producer".into(),
-            parameters: BTreeMap::default(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "producer".into(),
+                parameters: BTreeMap::default(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.feature_result_topologies.push(
@@ -1186,32 +1007,42 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::generated(
-                vec![GeneratedBodyRef {
-                    feature: producer,
-                    local_id: "body#declared".to_owned().try_into().unwrap(),
-                }],
-                "synthetic:native-selection#0".into(),
-            )
-            .unwrap(),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::generated(
+                    vec![GeneratedBodyRef {
+                        feature: producer,
+                        local_id: "body#declared".to_owned().try_into().unwrap(),
+                    }],
+                    "synthetic:native-selection#0".into(),
+                )
+                .unwrap(),
+            },
+        ),
         native_ref: None,
     });
 
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.is_empty(), "{:?}", report.findings);
-    let FeatureDefinition::BaseFeature {
-        bodies: BodySelection::Generated { bodies, .. },
-    } = &mut ir.model.features[1].definition
-    else {
-        panic!("test consumer must retain its generated body selection");
-    };
-    *bodies =
-        vec![GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into()).unwrap()]
-            .try_into()
-            .unwrap();
+    ir.model.features[1]
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Generated { bodies, .. },
+            } = definition
+            else {
+                panic!("test consumer must retain its generated body selection");
+            };
+            *bodies =
+                vec![
+                    GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into())
+                        .unwrap(),
+                ]
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -1247,25 +1078,27 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::ReferenceImage {
-            asset: asset_id,
-            visible: true,
-            mirror_u: false,
-            mirror_v: false,
-            frame: crate::features::FeatureUnitPlaneFrame::new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-            )
-            .unwrap(),
-            bounds: crate::features::FeatureImageBounds::new([
-                Point2::new(-10.0, -5.0),
-                Point2::new(10.0, 5.0),
-            ])
-            .unwrap(),
-            opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::ReferenceImage {
+                asset: asset_id,
+                visible: true,
+                mirror_u: false,
+                mirror_v: false,
+                frame: crate::features::FeatureUnitPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+                bounds: crate::features::FeatureImageBounds::new([
+                    Point2::new(-10.0, -5.0),
+                    Point2::new(10.0, 5.0),
+                ])
+                .unwrap(),
+                opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
+            },
+        ),
         native_ref: None,
     });
     ir.finalize();
@@ -1311,13 +1144,13 @@ fn decals_require_valid_assets_faces_and_opacity() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Decal {
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(FeatureDefinition::Decal {
             asset: asset_id,
             faces: FaceSelection::Faces(vec![face_id]),
             mapping: DecalMapping::FitToFaces,
             opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
-        },
+        }),
         native_ref: None,
     });
     ir.finalize();

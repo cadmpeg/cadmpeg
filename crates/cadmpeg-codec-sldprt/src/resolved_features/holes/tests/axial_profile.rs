@@ -169,8 +169,12 @@ fn axial_profile_resolves_counterdrill_roles() {
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
-            diameter: cadmpeg_ir::features::PositiveLength::new(5.5).unwrap(),
-            entry_diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.55).unwrap()),
+            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+                cadmpeg_ir::features::PositiveLength::new(5.5).unwrap(),
+                Some(cadmpeg_ir::features::PositiveLength::new(5.55).unwrap())
+            )
+            .unwrap(),
+
             depth: cadmpeg_ir::features::PositiveLength::new(2.9).unwrap(),
             angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         }
@@ -637,10 +641,12 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            },
+        ),
         native_ref: Some("native-profile".into()),
     };
     let position_feature = cadmpeg_ir::features::Feature {
@@ -653,12 +659,14 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "position".into(),
-            ))),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                    "position".into(),
+                ))),
+            },
+        ),
         native_ref: Some("native-position".into()),
     };
     let mut features = vec![model_hole(), sketch_feature, position_feature];
@@ -669,7 +677,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -718,23 +726,21 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
-    project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]);
+    project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]).unwrap();
 
     assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Hole {
-            diameter: Some(actual_diameter),
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
             extent: Some(LinearTermination::ThroughAll),
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+
+            ..
+        } if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter_2,
                     depth: actual_depth,
                 },
                 ..
-            },
-            ..
-        } if actual_diameter.get() == 9.0 && actual_diameter_2.get() == 15.0 && actual_depth.get() == 8.6
-    ));
+            },) if actual_diameter.get() == 9.0 && actual_diameter_2.get() == 15.0 && actual_depth.get() == 8.6)));
 }
 
 #[test]
@@ -787,12 +793,14 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                sketch.into(),
-            ))),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                    sketch.into(),
+                ))),
+            },
+        ),
         native_ref: Some(id.into()),
     };
     let mut second_model_hole = model_hole();
@@ -841,26 +849,22 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]
     .concat();
 
-    project_profiled_hole_constructions(&mut features, &entities, &[history], &[]);
+    project_profiled_hole_constructions(&mut features, &entities, &[history], &[]).unwrap();
 
     assert!(matches!(
-        features[0].definition,
-        FeatureDefinition::Hole {
-            diameter: Some(actual_diameter),
+        features[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length
             }),
             ..
-        } if actual_diameter.get() == 4.2 && actual_length.get() == 6.8
-    ));
+        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 4.2 && actual_length.get() == 6.8)));
     assert!(matches!(
-        features[1].definition,
-        FeatureDefinition::Hole {
-            diameter: Some(actual_diameter),
+        features[1].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length
             }),
             ..
-        } if actual_diameter.get() == 6.0 && actual_length.get() == 14.0
-    ));
+        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.0 && actual_length.get() == 14.0)));
 }

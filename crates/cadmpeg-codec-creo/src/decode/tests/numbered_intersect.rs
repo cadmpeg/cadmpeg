@@ -882,11 +882,11 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     )
     .unwrap();
     let fillet = IrFeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
             radius: RadiusSpec::Unresolved,
             tangency_weight: None,
-        }],
+        }),
     };
     assert_eq!(
         feature_generated_dependencies(&fillet),
@@ -894,10 +894,10 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     );
 
     let chamfer = IrFeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: generated_edges,
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
-        }],
+        }),
         flip_direction: false,
     };
     assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
@@ -1072,11 +1072,13 @@ fn mixed_current_and_generated_edges_remain_native() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: IrFeatureDefinition::Native {
-            kind: "producer".into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Native {
+                kind: "producer".into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {

@@ -788,22 +788,20 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             9,
             Some(SchemaClass::Hole),
             "Hole"
-        ),
-        IrFeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: angle,
-                },
-                ..
-            },
-            diameter: Some(actual_diameter),
+        ).unwrap(), IrFeatureDefinition::Hole {
+            shape,
+
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
             bottom: None,
             ..
-        } if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: angle,
+                },
+                ..
+            }, Some(actual_diameter),) if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
@@ -836,17 +834,15 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole"),
-        IrFeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                ..
-            },
-            diameter: None,
+        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").unwrap(), IrFeatureDefinition::Hole {
+            shape,
+
             extent: None,
             ..
-        }
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            }, None,))));
 }
 
 #[test]

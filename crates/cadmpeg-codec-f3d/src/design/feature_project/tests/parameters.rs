@@ -256,7 +256,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
     assert_eq!(features[0].suppressed, Some(true));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
             parameters,

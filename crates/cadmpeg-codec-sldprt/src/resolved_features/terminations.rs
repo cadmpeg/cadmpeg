@@ -706,7 +706,7 @@ pub(crate) fn project_surface_sweep_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{GeneratedCurveRef, ProfileRef};
 
     let history_features = histories
@@ -848,26 +848,42 @@ pub(crate) fn project_surface_sweep_profiles(
         }
     }
     for feature in features {
-        let Some((profile, dependencies)) = feature
-            .native_ref
-            .as_ref()
-            .and_then(|native| projections.remove(native))
-        else {
-            continue;
-        };
-        let FeatureDefinition::Sweep { section, .. } = &mut feature.definition else {
-            continue;
-        };
-        if !matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
-            continue;
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some((profile, dependencies)) = feature
+                .native_ref
+                .as_ref()
+                .and_then(|native| projections.remove(native))
+            else {
+                break 'feature_edit;
+            };
+            let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            let profile = profile
+                .try_into()
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            shape
+                .try_edit(|section, _, _| {
+                    if !matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
+                        return;
+                    }
+                    *section = cadmpeg_ir::features::SweepSection::Profile(profile);
+                    for dependency in dependencies {
+                        if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                            feature.dependencies.insert(dependency);
+                        }
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        *section = cadmpeg_ir::features::SweepSection::Profile(profile);
-        for dependency in dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(dependency);
-            }
-        }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -956,7 +972,7 @@ pub(crate) fn project_compact_combine_paths(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     struct Projection {
         target: cadmpeg_ir::features::BodySelection,
         tools: cadmpeg_ir::features::BodySelection,
@@ -1052,24 +1068,37 @@ pub(crate) fn project_compact_combine_paths(
         );
     }
     for feature in features {
-        let Some(projection) = feature
-            .native_ref
-            .as_ref()
-            .and_then(|native| projections.remove(native))
-        else {
-            continue;
-        };
-        let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition else {
-            continue;
-        };
-        *target = projection.target;
-        *tools = projection.tools;
-        for dependency in projection.dependencies {
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(dependency);
-            }
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            let Some(projection) = feature
+                .native_ref
+                .as_ref()
+                .and_then(|native| projections.remove(native))
+            else {
+                break 'feature_edit;
+            };
+            let FeatureDefinition::Combine { operands, .. } = &mut definition else {
+                break 'feature_edit;
+            };
+            operands
+                .try_edit(|target, tools| {
+                    *target = projection.target;
+                    *tools = projection.tools;
+                    for dependency in projection.dependencies {
+                        if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                            feature.dependencies.insert(dependency);
+                        }
+                    }
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(super) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {

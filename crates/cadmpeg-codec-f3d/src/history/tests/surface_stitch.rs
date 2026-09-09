@@ -193,7 +193,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    )
+    .unwrap();
 
     let FeatureDefinition::KnitSurface {
         faces:
@@ -203,7 +204,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 native,
             },
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         panic!("SurfaceStitch face selection remains unresolved");
     };
@@ -231,9 +232,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &ambiguous_operands,
         &[],
         std::slice::from_ref(&history),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        &ambiguous_feature.definition,
+        ambiguous_feature.evaluation.definition(),
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Native(native),
             ..

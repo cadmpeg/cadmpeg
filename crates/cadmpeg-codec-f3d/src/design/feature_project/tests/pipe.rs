@@ -119,16 +119,14 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
-        definition,
-        FeatureDefinition::Sweep {
-            section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                outer_radius: actual_outer_radius,
-                wall_thickness: None,
-            }),
+        definition, FeatureDefinition::Sweep {
+            shape,
             path: Some(PathRef::Native(path)),
             ..
-        } if (path == path_group.id) && actual_outer_radius.get() == 3.0
-    ));
+        } if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+                region,
+
+            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, None,) if (path == path_group.id) && actual_outer_radius.get() == 3.0))));
 
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
@@ -155,16 +153,14 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
-        hollow_definition,
-        FeatureDefinition::Sweep {
-            section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                outer_radius: actual_outer_radius,
-                wall_thickness: Some(actual_wall_thickness),
-            }),
+        hollow_definition, FeatureDefinition::Sweep {
+            shape,
             path: Some(PathRef::Native(path)),
             ..
-        } if (path == path_group.id) && actual_outer_radius.get() == 3.0 && actual_wall_thickness.get() == 1.5
-    ));
+        } if matches!((shape.section(),), (SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+                region,
+
+            }),) if matches!((&region.outer_radius(), &region.wall_thickness(),), (actual_outer_radius, Some(actual_wall_thickness),) if (path == path_group.id) && actual_outer_radius.get() == 3.0 && actual_wall_thickness.get() == 1.5))));
 
     let mut too_thick_parameters = parameters.clone();
     too_thick_parameters[3].evaluated_value = 0.35;

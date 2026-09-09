@@ -97,7 +97,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
             )
     };
     FeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: feature
                 .properties
                 .get("Edges")
@@ -105,7 +105,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
             radius,
             tangency_weight: None,
-        }],
+        }),
     }
 }
 
@@ -251,16 +251,20 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         .try_into()
         .ok()?;
     Some(FeatureDefinition::Combine {
-        target: feature
-            .properties
-            .get("Target")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
-        tools: feature
-            .properties
-            .get("Tools")
-            .cloned()
-            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            feature
+                .properties
+                .get("Target")
+                .cloned()
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+            feature
+                .properties
+                .get("Tools")
+                .cloned()
+                .map_or(BodySelection::Unresolved, BodySelection::Native),
+        )
+        .ok()?,
+
         op,
         keep_tools: false,
     })
@@ -326,8 +330,11 @@ pub(crate) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition
 
 pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::ReplaceFace {
-        targets: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        replacements: FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
+        operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+            FaceSelection::Native(feature.properties.get("ReplacementFaces")?.clone()),
+        )
+        .ok()?,
     })
 }
 
@@ -617,14 +624,14 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         }
     });
     FeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: feature
                 .properties
                 .get("Edges")
                 .cloned()
                 .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
             spec,
-        }],
+        }),
         flip_direction: false,
     }
 }

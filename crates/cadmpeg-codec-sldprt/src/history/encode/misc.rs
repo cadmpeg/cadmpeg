@@ -27,8 +27,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_tree_node(
         &self,
         role: &FeatureTreeNodeRole,
-        children: &Vec<FeatureId>,
-        active_child: &Option<FeatureId>,
+        children: &[FeatureId],
+        active_child: Option<&FeatureId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -264,7 +264,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_composite_curve(
         &self,
-        segments: &Vec<PathRef>,
+        segments: &[PathRef],
         closed: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -371,7 +371,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_helix_native_axis(
         &self,
-        axis_native_ref: &String,
+        axis_native_ref: &str,
         axial_rise: &Length,
         pitch: &Length,
         revolutions: &cadmpeg_ir::features::PositiveReal,

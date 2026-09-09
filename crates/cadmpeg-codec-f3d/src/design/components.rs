@@ -123,7 +123,7 @@ pub(crate) fn project_local_components(
 pub(crate) fn project_derived_instance_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for scope in scopes {
         let Some(construction) = scope.derived_instance_construction() else {
             continue;
@@ -134,15 +134,23 @@ pub(crate) fn project_derived_instance_features(
         else {
             continue;
         };
-        if !matches!(feature.definition, FeatureDefinition::Native { .. }) {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Native { .. }
+        ) {
             continue;
         }
-        feature.definition = FeatureDefinition::InsertComponent {
-            occurrence: crate::ids::neutral_component_occurrence_id(
-                construction.occurrence_guid.as_str(),
-            ),
-        };
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::InsertComponent {
+                occurrence: crate::ids::neutral_component_occurrence_id(
+                    construction.occurrence_guid.as_str(),
+                ),
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 /// Project the occurrence side of an external `Component Insert` when its
@@ -157,7 +165,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     ordinal_start: usize,
-) -> Vec<Occurrence> {
+) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
     for scope in scopes {
         let Some(construction) = scope.component_insert_construction() else {
@@ -169,14 +177,20 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         else {
             continue;
         };
-        if !matches!(feature.definition, FeatureDefinition::Native { .. }) {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Native { .. }
+        ) {
             continue;
         }
 
         let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
-        feature.definition = FeatureDefinition::InsertComponent {
-            occurrence: occurrence_id.clone(),
-        };
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::InsertComponent {
+                occurrence: occurrence_id.clone(),
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         occurrences.push(Occurrence {
             id: occurrence_id,
             prototype: PrototypeReference::Unresolved,
@@ -192,7 +206,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             native_ref: Some(scope.id.clone()),
         });
     }
-    occurrences
+    Ok(occurrences)
 }
 
 fn project_occurrence(
@@ -397,9 +411,10 @@ mod tests {
             },
         );
         feature.native_ref = Some(scope.id.clone());
-        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope]);
+        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope])
+            .unwrap();
         assert_eq!(
-            feature.definition,
+            *feature.evaluation.definition(),
             FeatureDefinition::InsertComponent {
                 occurrence: crate::ids::neutral_component_occurrence_id(OCCURRENCE),
             }

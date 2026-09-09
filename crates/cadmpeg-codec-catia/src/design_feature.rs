@@ -49,7 +49,11 @@ impl DesignFeatureTransfer {
     /// Bind parameters to a transferred feature only through their exact
     /// entity-record and object-record ownership chain. The same exact
     /// incidences populate feature-local parameter ordinals.
-    pub(crate) fn assign_parameter_owners(&self, ir: &mut CadIr, native: &CatiaNative) {
+    pub(crate) fn assign_parameter_owners(
+        &self,
+        ir: &mut CadIr,
+        native: &CatiaNative,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let entities = native
             .entity_records
             .iter()
@@ -105,7 +109,7 @@ impl DesignFeatureTransfer {
         );
         assign_document_parameter_ordinals(ir);
         normalize_parameter_names(ir);
-        assign_native_operation_parameter_values(ir, &exact_feature_owners);
+        assign_native_operation_parameter_values(ir, &exact_feature_owners)
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -338,7 +342,7 @@ fn assign_document_parameter_ordinals(ir: &mut CadIr) {
 fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut values_by_feature = HashMap::<FeatureId, BTreeMap<String, String>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
@@ -354,10 +358,16 @@ fn assign_native_operation_parameter_values(
         let Some(values) = values_by_feature.remove(&feature.id) else {
             continue;
         };
-        match &mut feature.definition {
-            FeatureDefinition::Native { parameters, .. } => {
+        match feature.evaluation.definition() {
+            FeatureDefinition::Native { kind, parameters } => {
                 if parameters.is_empty() {
-                    *parameters = values;
+                    feature
+                        .evaluation
+                        .set_definition(FeatureDefinition::Native {
+                            kind: kind.clone(),
+                            parameters: values,
+                        })
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
             FeatureDefinition::Unresolved {
@@ -375,6 +385,7 @@ fn assign_native_operation_parameter_values(
             _ => {}
         }
     }
+    Ok(())
 }
 
 /// Give every neutral parameter a unique name within its ownership scope.
@@ -600,10 +611,12 @@ fn transfer_principal_plane(
         source_tag: Some(candidate.declaration_class.to_string()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPrincipalPlane {
-            plane: candidate.plane,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::DatumPrincipalPlane {
+                plane: candidate.plane,
+            },
+        ),
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -633,10 +646,12 @@ fn transfer_reference_plane(
         source_tag: Some(candidate.kind.to_string()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumPlane,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            },
+        ),
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -673,10 +688,12 @@ fn transfer_sketch(
         source_tag: Some("Sketch".to_string()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+            },
+        ),
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -796,8 +813,8 @@ fn transfer_native_operation(
         source_tag: Some(kind.clone()),
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -842,12 +859,10 @@ fn native_operation_definition(
             pattern: PatternKind::UNRESOLVED_CIRCULAR,
         },
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
-            sections: Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::unresolved(Some(native_ref.to_string())),
             path: Some(cadmpeg_ir::features::PathRef::Unresolved(
                 native_ref.to_string(),
             )),
-            mode: cadmpeg_ir::features::SweepMode::Unresolved,
             orientation: None,
             transition: None,
             transformation: None,

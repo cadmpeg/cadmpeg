@@ -648,25 +648,28 @@ mod tests {
             source_tag: Some("Draft".into()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Draft {
-                faces: FaceSelection::Unresolved,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    plane: FaceSelection::Unresolved,
-                    pull: None,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Draft {
+                    faces: FaceSelection::Unresolved,
+                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: FaceSelection::Unresolved,
+                        pull: None,
+                    },
+                    angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+                    outward: None,
                 },
-                angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
-                outward: None,
-            },
+            ),
             native_ref: Some("draft".into()),
         }];
         super::super::projections::project_draft_operands(
             &mut projected,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        );
+        )
+        .unwrap();
         assert!(matches!(
-            &projected[0].definition,
+            projected[0].evaluation.definition(),
             FeatureDefinition::Draft {
                 faces: FaceSelection::Native(faces),
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -680,15 +683,22 @@ mod tests {
             } if ( faces.contains(":8") && neutral_plane.contains(":3")) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
         ));
 
-        let FeatureDefinition::Draft { faces, anchor, .. } = &mut projected[0].definition else {
-            panic!("typed draft");
-        };
-        *faces = FaceSelection::Native("explicit-faces".into());
-        anchor.pull_mut().unwrap().direction =
-            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
-        super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);
+        projected[0]
+            .evaluation
+            .try_edit(|definition, _| {
+                let FeatureDefinition::Draft { faces, anchor, .. } = definition else {
+                    panic!("typed draft");
+                };
+                *faces = FaceSelection::Native("explicit-faces".into());
+                anchor.pull_mut().unwrap().direction =
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                        .unwrap();
+            })
+            .unwrap();
+        super::super::projections::project_draft_operands(&mut projected, &[history], &[lane])
+            .unwrap();
         assert!(matches!(
-            &projected[0].definition,
+            projected[0].evaluation.definition(),
             FeatureDefinition::Draft {
                 faces: FaceSelection::Native(faces),
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {

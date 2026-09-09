@@ -147,13 +147,15 @@ pub(crate) fn project_feature_model(
                             source_tag: Some(feature.xml_tag.clone()),
                             source_text: feature.text.clone(),
                             source_content: project_feature_content(feature, &by_native)?,
-                            outputs: Vec::new(),
-                            definition: project_definition(
-                                feature,
-                                &by_source,
-                                &native_by_source,
-                                &features_by_source,
-                                &history.features,
+
+                            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                                project_definition(
+                                    feature,
+                                    &by_source,
+                                    &native_by_source,
+                                    &features_by_source,
+                                    &history.features,
+                                ),
                             ),
                             native_ref: Some(feature.id.clone()),
                         },
@@ -166,7 +168,12 @@ pub(crate) fn project_feature_model(
         .unzip();
     let tree_nodes = features
         .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::TreeNode { .. }))
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::TreeNode { .. }
+            )
+        })
         .map(|feature| feature.id.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut regeneration_parents = Vec::new();
@@ -182,14 +189,17 @@ pub(crate) fn project_feature_model(
         let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
             continue;
         };
-        if let FeatureDefinition::TreeNode { children, .. } = &mut parent.definition {
-            if !children.contains(&child) {
-                children.push(child);
-            }
-        }
+        parent
+            .evaluation
+            .try_edit(|definition, _| {
+                if let FeatureDefinition::TreeNode { children, .. } = definition {
+                    children.insert(child);
+                }
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
-    bind_offset_plane_references(&mut features);
-    bind_native_construction_features(&mut features, histories);
+    bind_offset_plane_references(&mut features)?;
+    bind_native_construction_features(&mut features, histories)?;
     Ok(FeatureProjection {
         features,
         regeneration_parents,
@@ -237,7 +247,9 @@ pub fn project_semantic_notes(
         .collect()
 }
 
-pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+pub(crate) fn bind_offset_plane_references(
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> Result<(), cadmpeg_core::CodecError> {
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -355,9 +367,9 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 feature.id.clone(),
                 (
                     feature.ordinal,
-                    match feature.definition {
+                    match feature.evaluation.definition() {
                         FeatureDefinition::DatumPrincipalPlane { plane } => {
-                            Some(principal_frame(plane))
+                            Some(principal_frame(*plane))
                         }
                         FeatureDefinition::DatumPlane { frame } => {
                             Some((frame.origin(), frame.normal(), frame.u_axis()))
@@ -366,11 +378,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         _ => None,
                     },
                     matches!(
-                        feature.definition,
+                        feature.evaluation.definition(),
                         FeatureDefinition::DatumPrincipalPlane { .. }
                     ),
                     matches!(
-                        feature.definition,
+                        feature.evaluation.definition(),
                         FeatureDefinition::DatumPrincipalPlane { .. }
                             | FeatureDefinition::DatumPlane { .. }
                     ),
@@ -387,7 +399,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             let FeatureDefinition::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature(reference)),
                 distance,
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -410,10 +422,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             || feature.source_properties.contains_key("Plane");
         let result_frame = stored_frame(feature);
         let source_reference_frame = serialized_reference_frame(feature);
+        let mut definition = feature.evaluation.definition().clone();
         let FeatureDefinition::DatumOffsetPlane {
             reference,
             distance,
-        } = &mut feature.definition
+        } = &mut definition
         else {
             continue;
         };
@@ -467,12 +480,17 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         if !feature.dependencies.contains(&reference_id) {
             feature.dependencies.insert(reference_id);
         }
+
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut frames = features
         .iter()
         .filter_map(|feature| {
-            let frame = match feature.definition {
-                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(plane),
+            let frame = match feature.evaluation.definition() {
+                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(*plane),
                 FeatureDefinition::DatumPlane { frame } => {
                     (frame.origin(), frame.normal(), frame.u_axis())
                 }
@@ -488,7 +506,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             let FeatureDefinition::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature(reference)),
                 distance,
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 continue;
             };
@@ -521,7 +539,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 let FeatureDefinition::DatumOffsetPlane {
                     reference,
                     distance,
-                } = &feature.definition
+                } = feature.evaluation.definition()
                 else {
                     return None;
                 };
@@ -602,10 +620,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             })
             .collect::<Vec<_>>();
         for (index, (reference, distance)) in bindings {
+            let mut definition = features[index].evaluation.definition().clone();
             let FeatureDefinition::DatumOffsetPlane {
                 reference: slot,
                 distance: stored_distance,
-            } = &mut features[index].definition
+            } = &mut definition
             else {
                 continue;
             };
@@ -618,16 +637,22 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 features[index].dependencies.insert(reference);
             }
             changed = true;
+
+            features[index]
+                .evaluation
+                .set_definition(definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if !changed {
             break;
         }
     }
     for feature in features {
+        let mut definition = feature.evaluation.definition().clone();
         let FeatureDefinition::DatumOffsetPlane {
             reference: reference @ None,
             ..
-        } = &mut feature.definition
+        } = &mut definition
         else {
             continue;
         };
@@ -640,13 +665,20 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 )?,
             })
         })();
+
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn bind_native_construction_features(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let construction_native_refs = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -686,23 +718,39 @@ pub(crate) fn bind_native_construction_features(
             *profile = ProfileRef::Feature(target.clone());
             dependencies.push(target.clone());
         };
-        match &mut feature.definition {
-            FeatureDefinition::Extrude { profile, .. }
-            | FeatureDefinition::Wrap { profile, .. } => bind(profile),
+        let mut definition = feature.evaluation.definition().clone();
+        match &mut definition {
+            FeatureDefinition::Extrude { profile, .. } => bind(profile),
+            FeatureDefinition::Wrap { profile, .. } => profile
+                .try_edit(&mut bind)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             FeatureDefinition::Revolve { construction, .. } => {
                 if let Some(profile) = construction.profile_mut() {
-                    bind(profile);
+                    profile
+                        .try_edit(&mut bind)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
             FeatureDefinition::Rib { construction, .. } => {
                 if let Some(profile) = &mut construction.profile {
-                    bind(profile);
+                    profile
+                        .try_edit(&mut bind)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
-            FeatureDefinition::Sweep { section, .. } => {
+            FeatureDefinition::Sweep { shape, .. } => {
+                let mut section = shape.section().clone();
                 if let Some(profile) = section.referenced_profile_mut() {
-                    bind(profile);
+                    profile
+                        .try_edit(&mut bind)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
+                *shape = cadmpeg_ir::features::SweepShape::new(
+                    section,
+                    shape.sections().to_vec(),
+                    shape.mode(),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             FeatureDefinition::Loft { sections, .. } => {
                 for section in sections {
@@ -721,12 +769,19 @@ pub(crate) fn bind_native_construction_features(
             }
             _ => {}
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature.dependencies.insert(dependency);
             }
         }
     }
+
+    Ok(())
 }
 
 /// Project Keywords custom-property records into document-owned attributes.
@@ -933,8 +988,7 @@ pub(crate) fn project_definition(
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
             role,
-            children: Vec::new(),
-            active_child: None,
+            children: Default::default(),
         };
     }
     let class = classify(feature);
@@ -1062,6 +1116,7 @@ pub(crate) fn project_definition(
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
         project_hole(feature, features_by_source, history_features)
+            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {

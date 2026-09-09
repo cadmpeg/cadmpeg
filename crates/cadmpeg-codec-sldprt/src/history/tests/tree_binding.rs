@@ -47,7 +47,7 @@ fn decode_extracts_parametric_history() {
         Some(history.features[0].id.as_str())
     );
     assert!(matches!(
-        &neutral.definition,
+        neutral.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
@@ -146,7 +146,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .model
         .features
         .iter()
-        .map(|feature| &feature.definition)
+        .map(|feature| feature.evaluation.definition())
         .collect::<Vec<_>>();
     assert!(matches!(
         definitions[0],
@@ -178,12 +178,10 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             ..
         }
     ));
-    assert!(!decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. })));
+    assert!(!decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Sketch { .. }
+    )));
     decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
@@ -197,7 +195,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Annotations,
             ..
@@ -226,12 +224,10 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded
-        .ir()
-        .model
-        .features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(decoded.ir().model.features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Native { .. }
+    )));
 }
 
 #[test]
@@ -252,7 +248,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -264,7 +260,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 }
@@ -295,14 +291,14 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
         }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::SolidBodies,
             ..
@@ -463,7 +459,7 @@ fn decode_does_not_bind_object_class_by_display_name() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
     assert_eq!(

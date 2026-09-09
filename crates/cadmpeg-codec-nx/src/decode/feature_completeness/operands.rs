@@ -77,11 +77,9 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
         HoleKind::CounterboreDrilled { diameter, .. } => {
             treatment_diameter_is_incomplete(*diameter)
         }
-        HoleKind::Counterdrill {
-            diameter,
-            entry_diameter,
-            ..
-        } => {
+        HoleKind::Counterdrill { diameters, .. } => {
+            let diameter = &diameters.diameter();
+            let entry_diameter = &diameters.entry_diameter();
             treatment_diameter_is_incomplete(*diameter)
                 || entry_diameter.is_some_and(|entry| entry.get() <= diameter.get())
         }
@@ -94,7 +92,7 @@ pub(crate) fn hole_specification_is_incomplete(
     specification.is_some_and(|specification| {
         let (cadmpeg_ir::features::HoleSpecification::Clearance { standard, .. }
         | cadmpeg_ir::features::HoleSpecification::Threaded { standard, .. }) = specification;
-        standard.trim().is_empty()
+        standard.as_str().trim().is_empty()
     })
 }
 
@@ -254,7 +252,7 @@ fn angular_termination_dependency_is_incomplete(
 pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: BooleanOp) -> bool {
     construction
         .profile
-        .as_ref()
+        .as_deref()
         .is_none_or(profile_ref_is_incomplete)
         || construction.direction.is_none()
         || construction.thickness.is_none()

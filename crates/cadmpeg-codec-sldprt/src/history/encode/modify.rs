@@ -29,12 +29,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_fillet(
         &self,
-        groups: &Vec<FilletGroup>,
+        groups: &[FilletGroup],
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let [group] = groups.as_slice() else {
+            let [group] = groups else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} requires exactly one fillet edge group",
                     feature.id
@@ -145,13 +145,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_chamfer(
         &self,
-        groups: &Vec<ChamferGroup>,
+        groups: &[ChamferGroup],
         flip_direction: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let [group] = groups.as_slice() else {
+            let [group] = groups else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} requires exactly one chamfer edge group",
                     feature.id

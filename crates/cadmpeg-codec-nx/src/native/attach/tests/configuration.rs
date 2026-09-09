@@ -458,12 +458,15 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs,
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Default::default(),
+                },
+                outputs,
+            )
+            .unwrap(),
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
@@ -541,12 +544,15 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs,
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+            outputs,
+        )
+        .unwrap(),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
@@ -607,12 +613,15 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+        )
+        .unwrap(),
         native_ref: None,
     };
     let configuration = |id: &str, active, bodies| DesignConfiguration {
@@ -917,7 +926,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             super::HoleProjection::default(),
             parameters,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Native {
             kind: "UNKNOWN OPERATION".into(),
             parameters: std::collections::BTreeMap::from([
@@ -934,7 +944,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             super::HoleProjection::default(),
             std::collections::BTreeMap::default(),
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
@@ -945,7 +955,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             super::HoleProjection::default(),
             std::collections::BTreeMap::new(),
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Unresolved {
             family: cadmpeg_ir::features::UnresolvedFamily::Loft
         }
@@ -958,14 +969,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             super::HoleProjection::default(),
             std::collections::BTreeMap::new(),
-        ),
-        cadmpeg_ir::features::FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
             path: None,
-            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+
             ..
-        }
-    ));
+        } if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Unresolved,))));
     let duplicate_expressions = vec![
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
@@ -989,13 +998,11 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
                 None,
                 super::HoleProjection::default(),
                 std::collections::BTreeMap::default(),
-            ),
-            cadmpeg_ir::features::FeatureDefinition::SectionShape {
-                first: cadmpeg_ir::features::BodySelection::Unresolved,
-                second: cadmpeg_ir::features::BodySelection::Unresolved,
+            ).unwrap(), cadmpeg_ir::features::FeatureDefinition::SectionShape {
+                operands,
+
                 approximate: None,
-            }
-        ));
+            } if matches!((operands.first(), operands.second(),), (cadmpeg_ir::features::BodySelection::Unresolved, cadmpeg_ir::features::BodySelection::Unresolved,))));
     }
 }
 
@@ -1009,7 +1016,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
                 None,
                 super::HoleProjection::default(),
                 std::collections::BTreeMap::default(),
-            )),
+            ).unwrap()),
             cadmpeg_ir::features::FeatureDefinition::Pattern {
                 seeds,
                 pattern: admitted_pattern,
@@ -1062,25 +1069,33 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
     let body = BodyId::mint("nx:s0:body#0").expect("identity grammar");
     let definition = FeatureDefinition::Combine {
-        target: BodySelection::Resolved {
-            bodies: vec![body.clone()],
-            native: "target".into(),
-        },
-        tools: BodySelection::Unresolved,
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            BodySelection::Resolved {
+                bodies: vec![body.clone()],
+                native: "target".into(),
+            },
+            BodySelection::Unresolved,
+        )
+        .unwrap(),
+
         op: BooleanKind::Join,
         keep_tools: false,
     };
     assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
 
     let ambiguous = FeatureDefinition::Combine {
-        target: BodySelection::Resolved {
-            bodies: vec![
-                BodyId::mint("nx:s0:body#0").expect("identity grammar"),
-                BodyId::mint("nx:s0:body#1").expect("identity grammar"),
-            ],
-            native: "target".into(),
-        },
-        tools: BodySelection::Unresolved,
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            BodySelection::Resolved {
+                bodies: vec![
+                    BodyId::mint("nx:s0:body#0").expect("identity grammar"),
+                    BodyId::mint("nx:s0:body#1").expect("identity grammar"),
+                ],
+                native: "target".into(),
+            },
+            BodySelection::Unresolved,
+        )
+        .unwrap(),
+
         op: BooleanKind::Join,
         keep_tools: false,
     };
@@ -1107,7 +1122,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                     ..super::HoleProjection::default()
                 },
                 std::collections::BTreeMap::new(),
-            ),
+            ).unwrap(),
             FeatureDefinition::Hole {
                 placements,
                 ..
@@ -1692,9 +1707,12 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         id,
         FeatureId::mint("nx:feature-history:feature#initial-bodies").expect("identity grammar")
     );
-    assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&bound));
     assert_eq!(
-        ir.model.features[0].definition,
+        ir.model.features[0].evaluation.outputs(),
+        std::slice::from_ref(&bound)
+    );
+    assert_eq!(
+        *ir.model.features[0].evaluation.definition(),
         FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved {
                 bodies: vec![bound.clone()],
@@ -1757,20 +1775,25 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         &BTreeMap::from([(94, 94), (122, 122)]),
         &BooleanOffsetStoreResolution::None,
         &BTreeMap::from([(94, vec![body.clone()])]),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         definition,
         FeatureDefinition::Combine {
-            target: BodySelection::Resolved {
-                bodies: vec![body.clone()],
-                native: "nx:om-object-index#94".to_string(),
-            },
-            tools: BodySelection::local(
-                vec!["nx:om-body-object#122".to_string()],
-                "nx:om-object-indices#122".to_string()
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Resolved {
+                    bodies: vec![body.clone()],
+                    native: "nx:om-object-index#94".to_string(),
+                },
+                BodySelection::local(
+                    vec!["nx:om-body-object#122".to_string()],
+                    "nx:om-object-indices#122".to_string()
+                )
+                .unwrap()
             )
             .unwrap(),
+
             op: BooleanKind::Cut,
             keep_tools: false,
         }
@@ -1785,8 +1808,8 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: vec![body],
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]).unwrap(),
         native_ref: None,
     };
     assert!(!combine_definition_is_incomplete(&feature));
@@ -1820,21 +1843,26 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
             &BTreeMap::new(),
             &BooleanOffsetStoreResolution::Complete(blocks.clone()),
             &BTreeMap::new(),
-        ),
+        )
+        .unwrap(),
         FeatureDefinition::Combine {
-            target: BodySelection::local(
-                vec!["nx:om-data-blocks-3:block#401".to_string()],
-                "nx:om-object-index#401".to_string()
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::local(
+                    vec!["nx:om-data-blocks-3:block#401".to_string()],
+                    "nx:om-object-index#401".to_string()
+                )
+                .unwrap(),
+                BodySelection::local(
+                    vec![
+                        "nx:om-data-blocks-3:block#402".to_string(),
+                        "nx:om-data-blocks-3:block#403".to_string(),
+                    ],
+                    "nx:om-object-indices#402,403".to_string()
+                )
+                .unwrap()
             )
             .unwrap(),
-            tools: BodySelection::local(
-                vec![
-                    "nx:om-data-blocks-3:block#402".to_string(),
-                    "nx:om-data-blocks-3:block#403".to_string(),
-                ],
-                "nx:om-object-indices#402,403".to_string()
-            )
-            .unwrap(),
+
             op: BooleanKind::Join,
             keep_tools: false,
         }
@@ -1865,10 +1893,13 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         &BTreeMap::new(),
         &BooleanOffsetStoreResolution::Complete(blocks.clone()),
         &BTreeMap::new(),
-    );
-    let FeatureDefinition::Combine { target, tools, .. } = &definition else {
+    )
+    .unwrap();
+    let FeatureDefinition::Combine { operands, .. } = &definition else {
         panic!("Boolean definition");
     };
+    let target = operands.target();
+    let tools = operands.tools();
 
     let native_prior = FeatureId::mint("native-prior".to_string()).expect("identity grammar");
     let offset_prior = FeatureId::mint("offset-prior".to_string()).expect("identity grammar");
@@ -1891,8 +1922,12 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     );
 
     let native_definition = FeatureDefinition::Combine {
-        target: BodySelection::Native("nx:om-object-index#401".to_string()),
-        tools: BodySelection::Native("nx:om-object-indices#402".to_string()),
+        operands: cadmpeg_ir::features::CombineOperands::new(
+            BodySelection::Native("nx:om-object-index#401".to_string()),
+            BodySelection::Native("nx:om-object-indices#402".to_string()),
+        )
+        .unwrap(),
+
         op: BooleanKind::Join,
         keep_tools: false,
     };

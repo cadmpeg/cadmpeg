@@ -535,7 +535,7 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
     }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
-impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
+impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,

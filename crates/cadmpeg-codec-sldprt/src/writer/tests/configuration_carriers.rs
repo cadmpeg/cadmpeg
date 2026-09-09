@@ -75,8 +75,8 @@ fn encoder_writes_source_less_datum_features() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -90,15 +90,15 @@ fn encoder_writes_source_less_datum_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(matches!(
-        decoded.ir().model.features[1].definition,
+        decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::DatumAxis { .. }
     ));
     assert!(matches!(
-        decoded.ir().model.features[2].definition,
+        decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::DatumPoint { .. }
     ));
 }
@@ -638,11 +638,13 @@ fn encoder_writes_source_less_neutral_parameters() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "EquationDriven".into(),
-            parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "EquationDriven".into(),
+                parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
+            },
+        ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {

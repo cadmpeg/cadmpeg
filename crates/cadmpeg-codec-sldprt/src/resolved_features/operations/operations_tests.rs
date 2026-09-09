@@ -499,7 +499,11 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     let revolve = |op| FeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
+            Some(
+                (ProfileRef::Sketch(SketchId("sketch".into())))
+                    .try_into()
+                    .unwrap(),
+            ),
             Some(RevolutionAxis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
@@ -529,8 +533,8 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let native_feature = |id: &str, class: &str| Feature {
@@ -570,27 +574,30 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         feature("revolve", "native-revolve", revolve(BooleanOp::Unresolved)),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
 
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Cut,
             ..
         }
     ));
     assert!(matches!(
-        configured[1].definition,
+        configured[1].evaluation.definition(),
         FeatureDefinition::Revolve {
             op: BooleanOp::Join,
             ..
         }
     ));
 
-    configured[0].definition = extrude(BooleanOp::NewBody);
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    configured[0]
+        .evaluation
+        .set_definition(extrude(BooleanOp::NewBody))
+        .unwrap();
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::NewBody,
             ..
@@ -638,9 +645,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        inherited[0].definition,
+        inherited[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Cut,
             ..
@@ -659,9 +667,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane],
         Some(4),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        unresolved[0].definition,
+        unresolved[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Unresolved,
             ..

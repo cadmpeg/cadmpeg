@@ -1334,11 +1334,13 @@ pub(crate) fn project(
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: record.command_id.to_string().into(),
-                parameters,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: record.command_id.to_string().into(),
+                    parameters,
+                },
+            ),
             native_ref: Some(native_ids[index].clone()),
         });
     }

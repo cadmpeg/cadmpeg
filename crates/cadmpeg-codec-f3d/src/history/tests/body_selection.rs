@@ -133,12 +133,12 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
     };
-    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs).unwrap();
 
     let expected_body =
         crate::ids::history_input_body_id(&crate::ids::history_input_prefix("move", 41), 1);
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Historical { ref bodies, ref native, .. },
             ..

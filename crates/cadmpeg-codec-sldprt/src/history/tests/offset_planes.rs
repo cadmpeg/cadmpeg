@@ -33,7 +33,7 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(bound)),
             distance: actual_distance,
@@ -85,7 +85,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(bound)),
             distance: actual_distance,
@@ -143,10 +143,10 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features).unwrap();
 
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,
@@ -229,10 +229,10 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
 
     let mut features = vec![base, alias, offset];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features).unwrap();
 
     assert!(matches!(
-        &features[2].definition,
+        features[2].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,
@@ -284,10 +284,10 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
-    bind_offset_plane_references(&mut features);
+    bind_offset_plane_references(&mut features).unwrap();
 
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,
@@ -342,7 +342,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[2].definition,
+        projected[2].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: actual_distance,
@@ -379,7 +379,7 @@ fn coincident_plane_frame_does_not_infer_an_offset_reference() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: Length::ZERO,
@@ -577,7 +577,7 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
 
     let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: actual_distance,
@@ -609,7 +609,7 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
     .unwrap();
 
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: Length::ZERO,
@@ -643,7 +643,7 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
 
     let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,
@@ -683,7 +683,7 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
 
     let mut projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,
@@ -729,7 +729,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
     let projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
-        &projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: Length::ZERO,
@@ -768,7 +768,7 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
     let mut projected = project_features(&[history]).unwrap();
 
     assert!(matches!(
-        &projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: actual_distance,

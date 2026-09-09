@@ -68,12 +68,14 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                "sketch".into(),
-            ))),
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
+                    "sketch".into(),
+                ))),
+            },
+        ),
         native_ref: Some("feature".into()),
     });
     ir.model.sketch_entities.push(
@@ -181,11 +183,13 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
 
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
 
-    ir.model.features[0].definition = FeatureDefinition::TreeNode {
-        role: FeatureTreeNodeRole::History,
-        children: Vec::new(),
-        active_child: None,
-    };
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Default::default(),
+        })
+        .unwrap();
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
 
@@ -373,12 +377,13 @@ fn native_dimension_subtypes_are_reported() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {

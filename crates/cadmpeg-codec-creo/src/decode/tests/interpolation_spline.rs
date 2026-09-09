@@ -449,7 +449,8 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             942,
             Some(SchemaClass::Surface),
             "Surface"
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             op: BooleanOp::NewBody,
@@ -472,7 +473,8 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             942,
             Some(SchemaClass::Surface),
             "Surface"
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::BoundarySurface
         }
@@ -503,7 +505,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface"),
+        schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface").unwrap(),
         IrFeatureDefinition::Native { kind, .. } if kind.as_str() == "Surface"
     ));
 }
@@ -596,7 +598,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface"),
+        schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface").unwrap(),
         IrFeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -968,7 +970,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             Some(IrFeatureDefinition::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
-            }) if matches!(construction.profile(), Some(ProfileRef::Native(profile))
+            }) if matches!(construction.profile().map(AsRef::as_ref), Some(ProfileRef::Native(profile))
                 if profile == "creo:featdefs:sketch#822")
                 && construction.axis().is_none()
                 && construction.extent().is_none()
@@ -1273,7 +1275,8 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
 
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .unwrap(),
         IrFeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
@@ -1284,7 +1287,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         }
     );
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
+        schema_feature_definition(&scan, &ir, 5, None, "Native Feature").unwrap(),
         IrFeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
@@ -1305,13 +1308,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         offset: 1,
     });
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane")
+            .unwrap(),
         IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
         }
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
+        schema_feature_definition(&scan, &ir, 5, None, "Native Feature").unwrap(),
         IrFeatureDefinition::Native { .. }
     ));
 }
@@ -1343,7 +1347,8 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane",
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
@@ -1402,7 +1407,8 @@ fn datum_feature_uses_its_unique_complete_local_system() {
             5,
             Some(SchemaClass::DatumPlane),
             "Datum Plane"
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(3.0, 4.0, 5.0),
@@ -1461,7 +1467,8 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::DatumCoordinateSystem {
             frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
                 Point3::new(5.0, 6.0, 7.0),
@@ -1511,7 +1518,8 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             7,
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
-        ),
+        )
+        .unwrap(),
         IrFeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumCoordinateSystem
         }
@@ -1530,25 +1538,31 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs,
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).unwrap(),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
     ir.model.features.push(feature(
         IrFeatureDefinition::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
-                edges: EdgeSelection::Unresolved,
-                spec: ChamferSpec::Unresolved,
-            }],
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::ChamferGroup {
+                    edges: EdgeSelection::Unresolved,
+                    spec: ChamferSpec::Unresolved,
+                },
+            ),
             flip_direction: false,
         },
         Vec::new(),
     ));
     assert!(!preceding_features_establish_body(&ir));
 
-    ir.model.features[0].outputs =
-        vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")];
+    ir.model.features[0]
+        .evaluation
+        .set_outputs(vec![
+            BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")
+        ])
+        .unwrap();
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(
@@ -1577,10 +1591,15 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0].suppressed = Some(true);
     assert!(!preceding_features_establish_body(&ir));
     ir.model.features[0].suppressed = Some(false);
-    let IrFeatureDefinition::Extrude { op, .. } = &mut ir.model.features[0].definition else {
-        unreachable!();
-    };
-    *op = BooleanOp::Join;
+    ir.model.features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            let IrFeatureDefinition::Extrude { op, .. } = definition else {
+                unreachable!();
+            };
+            *op = BooleanOp::Join;
+        })
+        .unwrap();
     assert!(!preceding_features_establish_body(&ir));
 }
 

@@ -420,7 +420,9 @@ fn project_qualified_operands(
                     &crate::records::feature::DesignFeatureKind::ComponentInsert,
                 )?;
                 let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
+                let FeatureDefinition::InsertComponent { occurrence } =
+                    feature.evaluation.definition()
+                else {
                     return None;
                 };
                 Some(JointOperand::occurrence(
@@ -455,7 +457,7 @@ fn project_joint_origin_operand(
     )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::DatumCoordinateSystem { .. }
         ) {
             return None;
@@ -600,8 +602,8 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         }
     }

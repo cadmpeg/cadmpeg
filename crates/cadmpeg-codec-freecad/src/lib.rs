@@ -1253,7 +1253,7 @@ fn semantic_losses(
         .features
         .iter()
         .filter_map(|feature| {
-            let definition = match &feature.definition {
+            let definition = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
                     operation.as_ref()
                 }

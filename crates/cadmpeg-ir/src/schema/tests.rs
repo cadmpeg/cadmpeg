@@ -76,21 +76,23 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Fillet {
-            groups: vec![FilletGroup {
-                edges: EdgeSelection::historical(
-                    state_id.clone(),
-                    vec![historical_edge],
-                    "edge:local".into(),
-                )
-                .unwrap(),
-                radius: RadiusSpec::Constant {
-                    radius: crate::features::PositiveLength::new(1.0).unwrap(),
-                },
-                tangency_weight: None,
-            }],
-        },
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Fillet {
+                groups: crate::features::NonEmptyMembers::one(FilletGroup {
+                    edges: EdgeSelection::historical(
+                        state_id.clone(),
+                        vec![historical_edge],
+                        "edge:local".into(),
+                    )
+                    .unwrap(),
+                    radius: RadiusSpec::Constant {
+                        radius: crate::features::PositiveLength::new(1.0).unwrap(),
+                    },
+                    tangency_weight: None,
+                }),
+            },
+        ),
         native_ref: None,
     };
 
@@ -111,14 +113,19 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-edge#missing";
-    let FeatureDefinition::Fillet { groups } = &mut ir.model.features[0].definition else {
-        unreachable!("test feature is a fillet")
-    };
-    let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
-        unreachable!("test fillet uses a historical selection")
-    };
-    *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
-        .try_into()
+    ir.model.features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::Fillet { groups } = definition else {
+                unreachable!("test feature is a fillet")
+            };
+            let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
+                unreachable!("test fillet uses a historical selection")
+            };
+            *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
+                .try_into()
+                .unwrap();
+        })
         .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings

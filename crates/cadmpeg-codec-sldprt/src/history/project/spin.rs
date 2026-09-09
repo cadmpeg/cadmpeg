@@ -20,7 +20,7 @@ pub(crate) fn project_rib(
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
     let profile = feature.properties.get("Profile").map(|profile| {
-        ProfileRef::Native(
+        cadmpeg_ir::features::PlanarProfileRef::native(
             native_by_source
                 .get(profile.as_str())
                 .map_or_else(|| profile.clone(), |id| (*id).to_string()),
@@ -160,7 +160,7 @@ pub(crate) fn project_sweep(
     let profile = feature
         .properties
         .get("Profile")
-        .map(|source| ProfileRef::Native(native_ref(source)));
+        .map(|source| cadmpeg_ir::features::PlanarProfileRef::native(native_ref(source)));
     let path = feature
         .properties
         .get("Path")
@@ -198,13 +198,18 @@ pub(crate) fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Sweep {
-        section: profile.map_or(
-            cadmpeg_ir::features::SweepSection::Unresolved(None),
-            cadmpeg_ir::features::SweepSection::Profile,
-        ),
-        sections: Vec::new(),
+        shape: cadmpeg_ir::features::SweepShape::new(
+            profile.map_or(
+                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                cadmpeg_ir::features::SweepSection::Profile,
+            ),
+            Vec::new(),
+            mode,
+        )
+        .ok()?,
+
         path,
-        mode,
+
         orientation: None,
         transition: None,
         transformation: None,
@@ -306,7 +311,7 @@ pub(crate) fn project_revolve(
     let profile = feature.properties.get("Profile").and_then(|source| {
         native_by_source
             .get(source.as_str())
-            .map(|id| ProfileRef::Native((*id).to_string()))
+            .map(|id| cadmpeg_ir::features::PlanarProfileRef::native((*id).to_string()))
     });
     let axis = feature
         .properties

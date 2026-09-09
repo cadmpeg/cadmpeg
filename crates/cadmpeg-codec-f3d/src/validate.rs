@@ -1440,7 +1440,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ctx.ir.model.features.iter().any(|neutral| {
                     neutral.native_ref.as_deref() == Some(scope.id.as_str())
                         && matches!(
-                            &neutral.definition,
+                            neutral.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::MeshImport { tessellations }
                                 if tessellations.iter().map(String::as_str).eq(projected.iter().copied())
                         )
@@ -1581,7 +1581,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ctx.ir.model.features.iter().any(|feature| {
                     feature.native_ref.as_deref() == Some(scope.id.as_str())
                         && matches!(
-                            &feature.definition,
+                            feature.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Decal {
                                 asset,
                                 faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native },

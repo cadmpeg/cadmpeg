@@ -442,7 +442,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SplitFace {
             targets: cadmpeg_ir::features::FaceSelection::Native(targets),
             tool: cadmpeg_ir::features::SplitFaceTool::Path(
@@ -468,7 +468,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        &compact_features[0].definition,
+        compact_features[0].evaluation.definition(),
         FeatureDefinition::SplitFace { .. }
     ));
 
@@ -579,11 +579,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .find(|feature| feature.source_tag.as_deref() == Some("SplitFace"))
         .expect("projected SplitFace");
     assert!(matches!(
-        &plane_split.definition,
+        plane_split.evaluation.definition(),
         FeatureDefinition::SplitFace {
             tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
             ..
-        } if planes == &expected_planes
+        } if planes[..] == expected_planes
     ));
     assert_eq!(plane_split.dependencies.as_slice(), expected_planes);
 
@@ -600,7 +600,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        &mismatched_features[0].definition,
+        mismatched_features[0].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 
@@ -860,7 +860,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
             heal: true,
@@ -877,7 +877,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved {
                 faces: vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")],
@@ -899,7 +899,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace { heal: true, .. }
     ));
     delete_scope.frame_length += 1;
@@ -914,7 +914,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
             ..
@@ -937,7 +937,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
             heal: false,
@@ -954,7 +954,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert_eq!(
-        features[0].definition,
+        *features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved {
                 faces: vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")],
@@ -976,7 +976,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::DeleteFace { heal: false, .. }
     ));
     surface_scope.frame_length = 236 + reference_bytes;
@@ -992,7 +992,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
             ..
@@ -1026,7 +1026,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             &[],
         );
         assert!(matches!(
-            features[0].definition,
+            features[0].evaluation.definition(),
             FeatureDefinition::DeleteFace { heal: false, .. }
         ));
     }
@@ -1047,7 +1047,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
             ..
@@ -1073,7 +1073,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             &[],
         );
         assert!(matches!(
-            features[0].definition,
+            features[0].evaluation.definition(),
             FeatureDefinition::DeleteFace { heal: true, .. }
         ));
     }
@@ -1092,7 +1092,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &[],
     );
     assert!(matches!(
-        features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
             ..

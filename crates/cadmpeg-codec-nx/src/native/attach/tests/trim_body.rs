@@ -19,9 +19,13 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         segment_body_bindings: Vec::new(),
     };
     let expected_target = Some(FeatureDefinition::TrimBodies {
-        targets: BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string())
-            .unwrap(),
-        tools: BodySelection::Unresolved,
+        operands: cadmpeg_ir::features::TrimBodyOperands::new(
+            BodySelection::local(vec![body.1.clone()], "nx:om-object-index#114".to_string())
+                .unwrap(),
+            BodySelection::Unresolved,
+        )
+        .unwrap(),
+
         keep: BodyTrimSide::Unresolved,
     });
 
@@ -55,9 +59,12 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
             &[&target_alias_operand],
         ),
         Some(FeatureDefinition::TrimBodies {
-            targets: BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string())
-                .unwrap(),
-            tools: BodySelection::Unresolved,
+            operands: cadmpeg_ir::features::TrimBodyOperands::new(
+                BodySelection::local(vec![body.1], "nx:om-object-index#114".to_string()).unwrap(),
+                BodySelection::Unresolved
+            )
+            .unwrap(),
+
             keep: BodyTrimSide::Unresolved,
         })
     );

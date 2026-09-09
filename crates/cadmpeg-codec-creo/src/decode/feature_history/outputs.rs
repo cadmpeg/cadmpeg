@@ -119,7 +119,7 @@ fn generated_input_output_bodies(
     ) else {
         return Vec::new();
     };
-    feature_generated_dependencies(&feature.definition)
+    feature_generated_dependencies(feature.evaluation.definition())
         .into_iter()
         .filter_map(|producer| {
             producer

@@ -96,7 +96,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         vec![ir.model.features[0].id.clone()]
     );
     let cadmpeg_ir::features::FeatureDefinition::Native { kind, parameters } =
-        &ir.model.features[1].definition
+        ir.model.features[1].evaluation.definition()
     else {
         panic!("native history operation");
     };
@@ -234,7 +234,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
         vec![ir.model.features[0].id.clone()]
     );
     let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-        &ir.model.features[0].definition
+        ir.model.features[0].evaluation.definition()
     else {
         panic!("native history operation");
     };

@@ -413,7 +413,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
-        decoded.ir().model.features[0].definition,
+        decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -460,7 +460,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         "Base * 2"
     );
     assert!(matches!(
-        regenerated.ir().model.features[0].definition,
+        regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -500,7 +500,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .find(|feature| feature.name.as_deref() == Some("Equations"))
         .expect("equations node");
     assert!(matches!(
-        equations.definition,
+        equations.evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
@@ -537,19 +537,22 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     {
         let mut ir = decoded.ir_mut();
         ir.model.features[extrusion].name = Some("Renamed equation boss".into());
-        let FeatureDefinition::Extrude { extent, .. } =
-            &mut ir.model.features[extrusion].definition
-        else {
-            panic!("typed extrusion");
-        };
-        *extent = ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
-                },
-                draft: None,
-            },
-        };
+        ir.model.features[extrusion]
+            .evaluation
+            .try_edit(|definition, _| {
+                let FeatureDefinition::Extrude { extent, .. } = definition else {
+                    panic!("typed extrusion");
+                };
+                *extent = ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                        },
+                        draft: None,
+                    },
+                };
+            })
+            .unwrap();
         let depth = ir
             .model
             .parameters
@@ -578,7 +581,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .find(|feature| feature.name.as_deref() == Some("Equations"))
         .expect("equations node");
     assert!(matches!(
-        equations.definition,
+        equations.evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
@@ -605,7 +608,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .find(|feature| feature.name.as_deref() == Some("Renamed equation boss"))
         .expect("extrusion");
     assert!(matches!(
-        extrusion.definition,
+        extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -925,7 +928,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .find(|feature| feature.name.as_deref() == Some("Boss"))
         .expect("projected extrusion");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

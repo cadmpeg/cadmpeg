@@ -307,7 +307,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         active.iter().any(|id| {
             ir.model.features.iter().any(|feature| {
                 feature.id == *id
-                    && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+                    && !matches!(
+                        feature.evaluation.definition(),
+                        FeatureDefinition::BaseFeature { .. }
+                    )
             })
         })
     });
@@ -390,7 +393,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if !feature_in_active_scope(feature) {
             continue;
         }
-        if let FeatureDefinition::Native { kind, .. } = &feature.definition {
+        if let FeatureDefinition::Native { kind, .. } = feature.evaluation.definition() {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
     }
@@ -411,7 +414,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if !feature_in_active_scope(feature) {
             continue;
         }
-        let family = match feature.definition {
+        let family = match feature.evaluation.definition() {
             FeatureDefinition::Unresolved { family } => match family {
                 UnresolvedFamily::Brep => "brep",
                 UnresolvedFamily::DatumPlane => "datum plane",
@@ -475,10 +478,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let is_exact_empty_base = matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
-            } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
+            } if bodies.is_empty() && !native.trim().is_empty() && feature.evaluation.outputs().is_empty()
         );
         if feature.suppressed != Some(true)
             && !is_exact_empty_base
@@ -487,24 +490,35 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             && !output_free_pattern_construction(feature)
             && !output_free_trim_surface_construction(feature)
         {
-            if let Some(family) = feature.definition.body_output_family().filter(|_| {
-                let current_outputs_are_valid = !feature.outputs.is_empty()
-                    && feature.outputs.iter().collect::<BTreeSet<_>>().len()
-                        == feature.outputs.len()
-                    && feature
-                        .outputs
-                        .iter()
-                        .all(|output| ir.model.bodies.iter().any(|body| body.id == *output));
-                !(current_outputs_are_valid
-                    || feature.outputs.is_empty() && generated_body_outputs.contains(&feature.id))
-            }) {
+            if let Some(family) =
+                feature
+                    .evaluation
+                    .definition()
+                    .body_output_family()
+                    .filter(|_| {
+                        let current_outputs_are_valid = !feature.evaluation.outputs().is_empty()
+                            && feature
+                                .evaluation
+                                .outputs()
+                                .iter()
+                                .collect::<BTreeSet<_>>()
+                                .len()
+                                == feature.evaluation.outputs().len()
+                            && feature.evaluation.outputs().iter().all(|output| {
+                                ir.model.bodies.iter().any(|body| body.id == *output)
+                            });
+                        !(current_outputs_are_valid
+                            || feature.evaluation.outputs().is_empty()
+                                && generated_body_outputs.contains(&feature.id))
+                    })
+            {
                 *incomplete_feature_output_families
                     .entry(family)
                     .or_default() += 1;
                 continue;
             }
         }
-        let family = match &feature.definition {
+        let family = match feature.evaluation.definition() {
             FeatureDefinition::BaseFeature { bodies }
                 if !is_exact_empty_base
                     && !output_free_native_snapshot(feature)
@@ -615,7 +629,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "face blend"
             }
             FeatureDefinition::Shell { .. }
-                if shell_definition_is_incomplete(&feature.definition) =>
+                if shell_definition_is_incomplete(feature.evaluation.definition()) =>
             {
                 "shell"
             }
@@ -649,12 +663,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "pattern"
             }
             FeatureDefinition::SectionShape {
-                first,
-                second,
+                operands,
                 approximate,
-            } if body_selection_is_incomplete(first)
-                || body_selection_is_incomplete(second)
-                || body_selections_overlap(first, second)
+            } if body_selection_is_incomplete(operands.first())
+                || body_selection_is_incomplete(operands.second())
+                || body_selections_overlap(operands.first(), operands.second())
                 || approximate.is_none() =>
             {
                 "section"
@@ -706,7 +719,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .features
         .iter()
         .filter(|feature| feature_in_active_scope(feature))
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        })
         .count();
     let unresolved_sketch_feature_count = ir
         .model
@@ -715,7 +733,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                         | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -737,7 +755,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .features
         .iter()
         .filter(|feature| feature_in_active_scope(feature))
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..

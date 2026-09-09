@@ -61,7 +61,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         start_angle,
         clockwise,
         ..
-    } = &result.ir().model.features[0].definition
+    } = result.ir().model.features[0].evaluation.definition()
     else {
         panic!("complete curve-equation frame transfers a neutral helix");
     };

@@ -29,10 +29,10 @@ const EPS_UNIT_DIRECTION: f64 = 1.0e-9;
 const EPS_PERPENDICULAR: f64 = 1.0e-9;
 
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
+    feature.evaluation.outputs().is_empty()
         && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
         && matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved
             }
@@ -49,7 +49,7 @@ pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Featur
 /// feature-local identities. They do not create neutral current-body outputs;
 /// the saved segment image remains the only neutral body census.
 pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
+    feature.evaluation.outputs().is_empty()
         && feature
             .source_properties
             .contains_key("primary_body_reference")
@@ -67,8 +67,11 @@ pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features
 /// a primary writer. Keep that distinction explicit so an incomplete body
 /// binding cannot be mistaken for a construction-only record.
 pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
-        && matches!(&feature.definition, FeatureDefinition::Pattern { .. })
+    feature.evaluation.outputs().is_empty()
+        && matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Pattern { .. }
+        )
         && !feature.source_properties.keys().any(|key| {
             key == "primary_body_reference"
                 || key == "primary_body_object_index"
@@ -86,8 +89,11 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
 pub(crate) fn output_free_trim_surface_construction(
     feature: &cadmpeg_ir::features::Feature,
 ) -> bool {
-    feature.outputs.is_empty()
-        && matches!(&feature.definition, FeatureDefinition::TrimSurface { .. })
+    feature.evaluation.outputs().is_empty()
+        && matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::TrimSurface { .. }
+        )
         && !feature.source_properties.keys().any(|key| {
             key == "primary_body_reference"
                 || key == "primary_body_object_index"
@@ -143,8 +149,8 @@ pub(crate) fn active_configuration_state_is_incomplete(
         };
         Some(state.evaluation.is_suppressed()) != feature.suppressed
             || state.dependencies != feature.dependencies
-            || state.evaluation.outputs() != feature.outputs.as_slice()
-            || state.definition != feature.definition
+            || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
+            || &state.definition != feature.evaluation.definition()
     }) {
         return true;
     }
@@ -326,7 +332,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::TrimSurface {
         faces, tool, keep, ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -340,7 +346,7 @@ pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool
         faces,
         distance,
         method,
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -350,7 +356,7 @@ pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool
 }
 
 pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::SewBodies { bodies, .. } = &feature.definition else {
+    let FeatureDefinition::SewBodies { bodies, .. } = feature.evaluation.definition() else {
         return true;
     };
     body_selection_is_incomplete(bodies)
@@ -358,9 +364,11 @@ pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Combine { target, tools, .. } = &feature.definition else {
+    let FeatureDefinition::Combine { operands, .. } = feature.evaluation.definition() else {
         return true;
     };
+    let target = operands.target();
+    let tools = operands.tools();
     body_selection_is_incomplete(target)
         || body_selection_is_incomplete(tools)
         || resolved_body_selection_len(target) != Some(1)
@@ -368,14 +376,11 @@ pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::TrimBodies {
-        targets,
-        tools,
-        keep,
-    } = &feature.definition
-    else {
+    let FeatureDefinition::TrimBodies { operands, keep } = feature.evaluation.definition() else {
         return true;
     };
+    let targets = operands.targets();
+    let tools = operands.tools();
     body_selection_is_incomplete(targets)
         || body_selection_is_incomplete(tools)
         || body_selections_overlap(targets, tools)
@@ -383,7 +388,7 @@ pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+    let FeatureDefinition::DeleteBody { bodies, mode } = feature.evaluation.definition() else {
         return true;
     };
     body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
@@ -394,22 +399,24 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         profile,
         face,
         placements,
-        construction,
-        exit_kind,
-        diameter,
+        shape,
+
         extent,
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
+    let construction = shape.construction();
+    let exit_kind = shape.exit_kind();
+    let diameter = &shape.diameter();
     let (construction_incomplete, specification) = match construction {
         cadmpeg_ir::features::HoleConstruction::Form {
             kind,
             specification,
         } => (
             hole_feature_is_incomplete(
-                profile.as_ref(),
+                profile.as_ref().map(AsRef::as_ref),
                 face.as_ref(),
                 placements.as_deref(),
                 (kind, exit_kind.as_ref()),
@@ -428,7 +435,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
             };
             (
                 hole_feature_is_incomplete(
-                    profile.as_ref(),
+                    profile.as_ref().map(AsRef::as_ref),
                     face.as_ref(),
                     placements.as_deref(),
                     (&kind, exit_kind.as_ref()),
@@ -450,7 +457,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Chamfer { groups, .. } = &feature.definition else {
+    let FeatureDefinition::Chamfer { groups, .. } = feature.evaluation.definition() else {
         return true;
     };
     groups.is_empty()
@@ -460,7 +467,7 @@ pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Fillet { groups } = &feature.definition else {
+    let FeatureDefinition::Fillet { groups } = feature.evaluation.definition() else {
         return true;
     };
     groups.is_empty()
@@ -470,14 +477,11 @@ pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::FaceBlend {
-        first_faces,
-        second_faces,
-        radius,
-    } = &feature.definition
-    else {
+    let FeatureDefinition::FaceBlend { operands, radius } = feature.evaluation.definition() else {
         return true;
     };
+    let first_faces = operands.first_faces();
+    let second_faces = operands.second_faces();
     face_selection_is_incomplete(first_faces)
         || face_selection_is_incomplete(second_faces)
         || face_selections_overlap(first_faces, second_faces)
@@ -509,7 +513,8 @@ pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> 
 }
 
 pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
+    let FeatureDefinition::OffsetSurface { faces, distance } = feature.evaluation.definition()
+    else {
         return true;
     };
     face_selection_is_incomplete(faces)
@@ -517,7 +522,7 @@ pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool
 }
 
 pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Sphere { op, .. } = &feature.definition else {
+    let FeatureDefinition::Sphere { op, .. } = feature.evaluation.definition() else {
         return true;
     };
     matches!(op, BooleanOp::Unresolved)
@@ -528,7 +533,7 @@ pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
         faces,
         thickness,
         side,
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -541,7 +546,7 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
         anchor,
         angle,
         outward,
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -564,13 +569,11 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::ReplaceFace {
-        targets,
-        replacements,
-    } = &feature.definition
-    else {
+    let FeatureDefinition::ReplaceFace { operands } = feature.evaluation.definition() else {
         return true;
     };
+    let targets = operands.targets();
+    let replacements = operands.replacements();
     face_selection_is_incomplete(targets)
         || face_selection_is_incomplete(replacements)
         || face_selections_overlap(targets, replacements)
@@ -582,7 +585,7 @@ pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
         guidance,
         op,
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -615,7 +618,7 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         op,
         solid,
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
@@ -639,14 +642,14 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+    let FeatureDefinition::Revolve { construction, op } = feature.evaluation.definition() else {
         return true;
     };
     revolve_feature_is_incomplete(construction, *op, &feature.dependencies)
 }
 
 pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Rib { construction, op } = &feature.definition else {
+    let FeatureDefinition::Rib { construction, op } = feature.evaluation.definition() else {
         return true;
     };
     rib_feature_is_incomplete(construction, *op)
@@ -658,18 +661,21 @@ pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
 
 pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Sweep {
-        section,
-        sections,
+        shape,
+
         path,
-        mode,
+
         orientation,
         transition,
         transformation,
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         return true;
     };
+    let section = shape.section();
+    let sections = shape.sections();
+    let mode = shape.mode();
     matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
         || section
             .referenced_profile()
@@ -689,7 +695,7 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
             })
         })
         || path.as_ref().is_none_or(path_ref_is_incomplete)
-        || sweep_mode_is_incomplete(*mode)
+        || sweep_mode_is_incomplete(mode)
         || orientation
             .as_ref()
             .is_none_or(sweep_orientation_is_incomplete)

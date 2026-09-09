@@ -851,7 +851,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .expect("decode");
 
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -888,7 +888,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -919,7 +919,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(partial), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -940,7 +940,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(conflicting), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
@@ -988,7 +988,7 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         2
     );
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {

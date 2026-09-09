@@ -275,23 +275,22 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             ..super::HoleProjection::default()
         },
         BTreeMap::new(),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                ..
-            },
-            diameter: Some(actual_diameter),
+        definition, FeatureDefinition::Hole {
+            shape,
+
             extent: Some(LinearTermination::Blind { length: actual_length }),
             placements,
             ..
-        } if (placements.as_deref() == Some(&[HolePlacement::Directed {
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            }, Some(actual_diameter),) if (placements.as_deref() == Some(&[HolePlacement::Directed {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-        }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0
-    ));
+        }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0)));
 
     let mut missing_cap = ir.clone();
     missing_cap.model.shells[0]
@@ -624,26 +623,25 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             ..super::HoleProjection::default()
         },
         BTreeMap::new(),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
+        definition, FeatureDefinition::Hole {
+            shape,
+
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
+            placements,
+            ..
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
                 },
                 ..
-            },
-            diameter: Some(actual_diameter_2),
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
-            placements,
-            ..
-        } if (placements.as_deref() == Some(&[HolePlacement::Axis {
+            }, Some(actual_diameter_2),) if (placements.as_deref() == Some(&[HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-        }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0
-    ));
+        }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0)));
 
     let mut missing_shoulder = ir.clone();
     missing_shoulder.model.shells[0]
@@ -1080,13 +1078,11 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     )
     .expect("face blend retains unresolved supports");
     assert!(matches!(
-        definition,
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
+        definition, FeatureDefinition::FaceBlend {
+            operands,
+
             radius: RadiusSpec::Constant { .. },
-        }
-    ));
+        } if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Unresolved, FaceSelection::Unresolved,))));
 
     let mut face_blend_ir = ir.clone();
     let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
@@ -1132,16 +1128,14 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     )
     .expect("complete face-blend supports");
     assert!(matches!(
-        definition,
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Resolved { ref faces, .. },
-            second_faces: FaceSelection::Resolved {
+        definition, FeatureDefinition::FaceBlend {
+            operands,
+
+            radius: RadiusSpec::Constant { .. },
+        } if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Resolved { ref faces, .. }, FaceSelection::Resolved {
                 faces: ref second,
                 ..
-            },
-            radius: RadiusSpec::Constant { .. },
-        } if faces.len() == 1 && second.len() == 1 && faces != second
-    ));
+            },) if faces.len() == 1 && second.len() == 1 && faces != second)));
 
     let (unowned, procedural) = make_blend(
         99,

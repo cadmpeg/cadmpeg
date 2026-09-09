@@ -238,7 +238,7 @@ pub(crate) fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
     history_features: &[Feature],
-) -> FeatureDefinition {
+) -> Option<FeatureDefinition> {
     let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = feature
         .parameters
@@ -348,7 +348,7 @@ pub(crate) fn project_hole(
         Some("ThroughAll") => Some(LinearTermination::ThroughAll),
         Some(_) => None,
     };
-    FeatureDefinition::Hole {
+    Some(FeatureDefinition::Hole {
         profile: None,
         profile_filter: None,
         face: feature
@@ -374,14 +374,18 @@ pub(crate) fn project_hole(
                     direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 }])
             }),
-        construction,
-        exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
-        diameter,
+        shape: cadmpeg_ir::features::HoleShape::new(
+            construction,
+            profile.as_ref().and_then(|profile| profile.exit_kind),
+            diameter,
+        )
+        .ok()?,
+
         extent,
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
         taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
         allow_multi_profile_faces: None,
-    }
+    })
 }
 
 pub(crate) fn threaded_hole_major_diameter(
@@ -392,11 +396,12 @@ pub(crate) fn threaded_hole_major_diameter(
     if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
-    let FeatureDefinition::Hole {
-        construction: HoleConstruction::NativeThread { major_diameter, .. },
-        ..
-    } = project_hole(feature, features_by_source, history_features)
+    let FeatureDefinition::Hole { shape, .. } =
+        project_hole(feature, features_by_source, history_features)?
     else {
+        return None;
+    };
+    let HoleConstruction::NativeThread { major_diameter, .. } = shape.construction() else {
         return None;
     };
     Some(major_diameter.get())
@@ -660,10 +665,14 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 diameter: cadmpeg_ir::features::PositiveLength::new(diameter.get())?,
                 depth: Some(*drill_depth),
                 construction: hole_form(HoleKind::Counterdrill {
-                    diameter: cadmpeg_ir::features::PositiveLength::new(recess_diameter.get())?,
-                    entry_diameter: Some(cadmpeg_ir::features::PositiveLength::new(
-                        entry_diameter.get(),
-                    )?),
+                    diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+                        cadmpeg_ir::features::PositiveLength::new(recess_diameter.get())?,
+                        Some(cadmpeg_ir::features::PositiveLength::new(
+                            entry_diameter.get(),
+                        )?),
+                    )
+                    .ok()?,
+
                     depth: cadmpeg_ir::features::PositiveLength::new(recess_depth.get())?,
                     angle: *entry_angle,
                 }),

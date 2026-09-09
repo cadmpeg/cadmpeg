@@ -41,14 +41,15 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
         )
         .expect("PartDesign post-processing");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Automatic"),
@@ -138,14 +139,15 @@ fn retains_native_for_malformed_post_process_controls() {
         )
         .expect("post-processing control admission");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Absent"),
@@ -238,41 +240,41 @@ pub(crate) fn transfers_part_construction_geometry_features() {
             .unwrap_or_else(|| panic!("missing {name}"))
     };
     assert!(
-        matches!(feature("Vertex").definition, FeatureDefinition::PointGeometry { position } if position == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+        matches!(feature("Vertex").evaluation.definition(), FeatureDefinition::PointGeometry { position } if *position == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert!(
-        matches!(feature("Line").definition, FeatureDefinition::LineSegment { segment } if segment.start() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 2.0) && segment.end() == cadmpeg_ir::math::Point3::new(3.0, 4.0, 5.0))
+        matches!(feature("Line").evaluation.definition(), FeatureDefinition::LineSegment { segment } if segment.start() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 2.0) && segment.end() == cadmpeg_ir::math::Point3::new(3.0, 4.0, 5.0))
     );
     assert!(matches!(
-        feature("Circle").definition,
+        feature("Circle").evaluation.definition(),
         FeatureDefinition::CircularArc { arc }
             if ((arc.angles().endpoints()[0] - 30_f64.to_radians()).abs() < 1.0e-12
             && (arc.angles().endpoints()[1] - 300_f64.to_radians()).abs() < 1.0e-12) && arc.radius().get() == 4.0
     ));
     assert!(matches!(
-        feature("Ellipse").definition,
+        feature("Ellipse").evaluation.definition(),
         FeatureDefinition::EllipticArc { arc }
             if arc.radii()[0].get() == 6.0 && arc.radii()[1].get() == 2.0
     ));
     assert!(
-        matches!(&feature("Polyline").definition, FeatureDefinition::Polyline { chain } if chain.closed() && chain.points().len() == 3)
+        matches!(feature("Polyline").evaluation.definition(), FeatureDefinition::Polyline { chain } if chain.closed() && chain.points().len() == 3)
     );
     assert!(matches!(
-        feature("Regular").definition,
+        feature("Regular").evaluation.definition(),
         FeatureDefinition::RegularPolygonCurve {
             sides,
             circumradius: actual_circumradius
         } if sides.get() == 7 && actual_circumradius.get() == 8.0
     ));
     assert!(matches!(
-        feature("Plane").definition,
+        feature("Plane").evaluation.definition(),
         FeatureDefinition::PlanarPatch {
             length: actual_length,
             width: actual_width
         } if actual_length.get() == 9.0 && actual_width.get() == 10.0
     ));
     assert!(
-        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker } if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
+        matches!(feature("Face").evaluation.definition(), FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker } if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
@@ -311,7 +313,7 @@ fn rejects_nested_polygon_vector_list_root() {
         .find(|feature| feature.name.as_deref() == Some("Polygon"))
         .expect("polygon feature");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 }
@@ -357,7 +359,7 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
             .find(|feature| feature.name.as_deref() == Some("Polygon"))
             .expect("polygon feature");
         assert!(matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Native { .. }
         ));
     }
@@ -385,7 +387,7 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
         .find(|feature| feature.name.as_deref() == Some("Polygon"))
         .expect("polygon feature");
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
 }
@@ -424,14 +426,15 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         )
         .expect("Part scale");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Uniform"),
@@ -456,14 +459,15 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn document(uniform_property: Option<&str>) -> String {
@@ -581,21 +585,21 @@ fn transfers_part_compound_refine_and_reverse_operations() {
             .unwrap_or_else(|| panic!("missing {name}"))
     };
     assert!(matches!(
-        &feature("Compound").definition,
+        feature("Compound").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Compound {
             members: cadmpeg_ir::features::BodySelection::Native(reference)
         } if reference.ends_with(":Links")
     ));
     assert!(matches!(
-        feature("Refine").definition,
+        feature("Refine").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::RefineShape { .. }
     ));
     assert!(matches!(
-        feature("Reverse").definition,
+        feature("Reverse").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::ReverseShape { .. }
     ));
     assert!(matches!(
-        feature("CachedCompound").definition,
+        feature("CachedCompound").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert_eq!(feature("Compound").dependencies.len(), 2);
@@ -644,7 +648,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
             .unwrap_or_else(|| panic!("missing {name}"))
     };
     assert!(matches!(
-        &feature("Ruled").definition,
+        feature("Ruled").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::RuledBetweenCurves {
             first: cadmpeg_ir::features::PathRef::Native(first),
             second: cadmpeg_ir::features::PathRef::Native(second),
@@ -652,7 +656,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
         } if first.ends_with(":Curve1") && second.ends_with(":Curve2")
     ));
     assert!(matches!(
-        feature("Section").definition,
+        feature("Section").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::SectionShape {
             approximate: Some(true),
             ..
@@ -695,7 +699,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         .find(|feature| feature.name.as_deref() == Some("Mirror"))
         .expect("mirror feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::MirrorShape {
             source: cadmpeg_ir::features::BodySelection::Native(source),
             plane_origin: geometry_1,
@@ -743,7 +747,7 @@ fn transfers_part_projection_on_surface_construction() {
         .find(|feature| feature.name.as_deref() == Some("Projection"))
         .expect("projection feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::ProjectOnSurface {
             sources: cadmpeg_ir::features::PathRef::Native(sources),
             support_face: cadmpeg_ir::features::FaceSelection::Native(support),
@@ -825,7 +829,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             .expect("feature")
     };
     assert!(matches!(
-        &feature("Loft").definition,
+        feature("Loft").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
             closed: true,
@@ -840,7 +844,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
     ));
     assert!(matches!(
-        &feature("SurfaceLoft").definition,
+        feature("SurfaceLoft").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Loft {
             solid: false,
             ruled: false,
@@ -866,16 +870,11 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         .raw_xml
         .contains("<Bool value=\"false\"/>"));
     assert!(matches!(
-        &feature("Pipe").definition,
-        cadmpeg_ir::features::FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::ProfileRef::Sketch(_),
-            ),
-            sections,
+        feature("Pipe").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
+
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Cut,
-            },
+
             orientation: Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
                 tangent: true,
                 curvilinear: false,
@@ -886,20 +885,19 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             path_tangent: true,
             allow_multi_profile_faces: Some(true),
             ..
-        } if path.ends_with(":Spine") && sections.len() == 1
-    ));
+        } if matches!((shape.section(), shape.sections(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), sections, cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanKind::Cut,
+            },) if matches!(&**profile, cadmpeg_ir::features::ProfileRef::Sketch(_)) && path.ends_with(":Spine") && sections.len() == 1)));
     assert!(matches!(
-        &feature("SurfaceSweep").definition,
-        cadmpeg_ir::features::FeatureDefinition::Sweep {
-            sections,
-            mode: cadmpeg_ir::features::SweepMode::Surface,
+        feature("SurfaceSweep").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Sweep {
+            shape,
+
             orientation: Some(cadmpeg_ir::features::SweepOrientation::CorrectedFrenet),
             transition: Some(cadmpeg_ir::features::SweepTransition::RoundCorner),
             transformation: Some(cadmpeg_ir::features::SweepTransformation::Constant),
             linearize: true,
             ..
-        } if sections.len() == 1
-    ));
+        } if matches!((shape.sections(), shape.mode(),), (sections, cadmpeg_ir::features::SweepMode::Surface,) if sections.len() == 1)));
     assert_eq!(feature("Loft").dependencies.len(), 2);
     assert_eq!(feature("Pipe").dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -966,14 +964,15 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
         )
         .expect("pipe modes");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Fixed"),
@@ -1020,14 +1019,15 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -1174,37 +1174,31 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
         }
     ));
     assert!(matches!(
-        definition(&result, "SweepAbsent"),
-        FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::NewBody,
+        definition(&result, "SweepAbsent"), FeatureDefinition::Sweep {
+            shape,
             orientation: Some(SweepOrientation::Frenet),
             path_tangent: false,
             linearize: false,
             allow_multi_profile_faces: None,
             ..
-        }
-    ));
+        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::NewBody,))));
     assert!(matches!(
-        definition(&result, "SweepValid"),
-        FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Surface,
+        definition(&result, "SweepValid"), FeatureDefinition::Sweep {
+            shape,
             orientation: Some(SweepOrientation::CorrectedFrenet),
             path_tangent: false,
             linearize: true,
             allow_multi_profile_faces: None,
             ..
-        }
-    ));
+        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface,))));
     assert!(matches!(
-        definition(&result, "PipeAbsent"),
-        FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+        definition(&result, "PipeAbsent"), FeatureDefinition::Sweep {
+            shape,
             orientation: Some(SweepOrientation::CorrectedFrenet),
             path_tangent: false,
             allow_multi_profile_faces: Some(false),
             ..
-        }
-    ));
+        } if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { .. },))));
     assert!(matches!(
         definition(&result, "PipeValid"),
         FeatureDefinition::Sweep {
@@ -1286,12 +1280,10 @@ TShapes 0
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("cached operations");
-    assert!(result
-        .ir()
-        .model
-        .features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::StoredGeometry)));
+    assert!(result.ir().model.features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::StoredGeometry
+    )));
     assert!(result.report().losses.is_empty());
 }
 
@@ -1323,14 +1315,15 @@ fn transfers_shape_and_subshape_binder_construction() {
         )
         .expect("binders");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(
         matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } } if sources.len() == 1 && sources[0].subelements == ["Face1", "Face2"])
@@ -1421,7 +1414,7 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("subshape binder feature");
         assert!(matches!(
-            &definition.definition,
+            definition.evaluation.definition(),
             FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::SubShapeBinder"
         ));
     }
@@ -1472,7 +1465,7 @@ fn transfers_complete_thickness_construction_controls() {
         .find(|feature| feature.name.as_deref() == Some("Wall"))
         .expect("wall");
     assert!(matches!(
-        &wall.definition,
+        wall.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection),
             thickness: Some(actual_thickness),
@@ -1536,14 +1529,15 @@ fn transfers_part_thickness_and_shape_offset_construction() {
         )
         .expect("Part offsets");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Thickness"),
@@ -1589,14 +1583,15 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         result: &'a cadmpeg_ir::codec::DecodeResult,
         name: &str,
     ) -> &'a FeatureDefinition {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing {name}"))
-            .definition
+            .evaluation
+            .definition()
     }
 
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
@@ -1826,7 +1821,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         .find(|feature| feature.name.as_deref() == Some("Draft"))
         .expect("draft feature");
     assert!(matches!(
-        &draft.definition,
+        draft.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -1854,7 +1849,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         .find(|feature| feature.name.as_deref() == Some("FaceDraft"))
         .expect("face draft");
     assert!(matches!(
-        face_draft.definition,
+        face_draft.evaluation.definition(),
         FeatureDefinition::Draft {
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull: None, .. },
             ..
@@ -1911,14 +1906,15 @@ fn rejects_ambiguous_single_source_design_operands() {
         )
         .expect("ambiguous single-source operands");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("feature")
-            .definition
+            .evaluation
+            .definition()
     };
     for name in ["Scale", "Offset", "Cut", "Compound", "Sweep"] {
         assert!(matches!(definition(name), FeatureDefinition::Native { .. }));

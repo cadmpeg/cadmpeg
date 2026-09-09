@@ -32,7 +32,10 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, row_feature_schema_classes,
 };
 
-fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
+fn refresh_feature_outputs(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
     let output_updates = ir
         .model
         .features
@@ -51,9 +54,13 @@ fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
         .collect::<BTreeMap<_, _>>();
     for feature in &mut ir.model.features {
         if let Some(outputs) = output_updates.get(&feature.id) {
-            feature.outputs.clone_from(outputs);
+            feature
+                .evaluation
+                .set_outputs(outputs.clone())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn ordered_row_feature_ids(rows: &[crate::feature::FeatureRow]) -> Vec<u32> {
@@ -67,7 +74,7 @@ pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
@@ -103,16 +110,16 @@ pub(super) fn emit_model_features(
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id)
-                .is_some()
-            {
-                datum_plane_feature_definition(&datum.plane)
-            } else {
-                IrFeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::DatumPlane,
-                }
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
+                    datum_plane_feature_definition(&datum.plane)
+                } else {
+                    IrFeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::DatumPlane,
+                    }
+                },
+            ),
             native_ref: None,
         });
     }
@@ -143,20 +150,30 @@ pub(super) fn emit_model_features(
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: feature_output_bodies(scan, ir, feature_id),
-            definition: if scan
-                .features
-                .legacy_rounds
-                .iter()
-                .any(|round| round.feature_id == feature_id)
-            {
-                schema_feature_definition(scan, ir, feature_id, Some(SchemaClass::Round), "Fillet")
-            } else {
-                IrFeatureDefinition::StoredGeometry
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                if scan
+                    .features
+                    .legacy_rounds
+                    .iter()
+                    .any(|round| round.feature_id == feature_id)
+                {
+                    schema_feature_definition(
+                        scan,
+                        ir,
+                        feature_id,
+                        Some(SchemaClass::Round),
+                        "Fillet",
+                    )?
+                } else {
+                    IrFeatureDefinition::StoredGeometry
+                },
+                feature_output_bodies(scan, ir, feature_id),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: None,
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -190,21 +207,27 @@ pub(super) fn emit_model_features(
                         )
                     })
                     .or_else(|| {
-                        current_operation.and_then(|operation| {
-                            named_or_referenced_feature_definition(
-                                scan,
-                                ir,
-                                operation.feature_id,
-                                operation.kind.as_str(),
-                            )
-                        })
+                        current_operation
+                            .and_then(|operation| {
+                                named_or_referenced_feature_definition(
+                                    scan,
+                                    ir,
+                                    operation.feature_id,
+                                    operation.kind.as_str(),
+                                )
+                            })
+                            .map(Ok)
                     })
-                    .or_else(|| unbounded_feature_plane_definition(scan, ir, operation.feature_id))
-                    .unwrap_or_else(|| IrFeatureDefinition::Native {
-                        kind: current_operation
-                            .map_or("Native Feature", |operation| operation.kind.as_str())
-                            .into(),
-                        parameters: parameters.clone(),
+                    .or_else(|| {
+                        unbounded_feature_plane_definition(scan, ir, operation.feature_id).map(Ok)
+                    })
+                    .unwrap_or_else(|| {
+                        Ok(IrFeatureDefinition::Native {
+                            kind: current_operation
+                                .map_or("Native Feature", |operation| operation.kind.as_str())
+                                .into(),
+                            parameters: parameters.clone(),
+                        })
                     })
             },
             |schema_class| {
@@ -216,7 +239,7 @@ pub(super) fn emit_model_features(
                     operation.kind.as_str(),
                 )
             },
-        );
+        )?;
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(
             scan,
@@ -272,9 +295,15 @@ pub(super) fn emit_model_features(
                 .iter()
                 .any(|round| round.feature_id == operation.feature_id)
                 && matches!(&definition, IrFeatureDefinition::Fillet { .. })
-                && matches!(existing.definition, IrFeatureDefinition::StoredGeometry);
+                && matches!(
+                    existing.evaluation.definition(),
+                    IrFeatureDefinition::StoredGeometry
+                );
             if upgrade_legacy_round {
-                existing.definition = definition;
+                existing
+                    .evaluation
+                    .set_definition(definition)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             if name.is_some() {
                 existing.name = name;
@@ -291,12 +320,17 @@ pub(super) fn emit_model_features(
             if existing.native_ref.is_none() {
                 existing.native_ref = native_ref;
             }
+            let mut combined_outputs = existing.evaluation.outputs().clone();
             for output in outputs {
-                if !existing.outputs.contains(&output) {
-                    existing.outputs.push(output);
+                if !combined_outputs.contains(&output) {
+                    combined_outputs.push(output);
                 }
             }
-            refresh_feature_outputs(scan, ir);
+            existing
+                .evaluation
+                .set_outputs(combined_outputs)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            refresh_feature_outputs(scan, ir)?;
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -324,11 +358,12 @@ pub(super) fn emit_model_features(
             source_tag,
             source_text: None,
             source_content: Default::default(),
-            outputs,
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref,
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
@@ -366,17 +401,17 @@ pub(super) fn emit_model_features(
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
             || {
-                named_feature_definition(scan, ir, feature_id, kind)
+                Ok(named_feature_definition(scan, ir, feature_id, kind)
                     .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: kind.into(),
                         parameters: parameters.clone(),
-                    })
+                    }))
             },
             |schema_class| {
                 schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
             },
-        );
+        )?;
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
             source_properties.insert(
@@ -419,16 +454,20 @@ pub(super) fn emit_model_features(
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: feature_output_bodies(scan, ir, feature_id),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                feature_output_bodies(scan, ir, feature_id),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
-        refresh_feature_outputs(scan, ir);
+        refresh_feature_outputs(scan, ir)?;
     }
     for (child, parent) in regeneration_edges {
         let _ = ir.model.set_feature_regeneration_parent(child, parent);
     }
-    geometry_generator_feature_count
+    Ok(geometry_generator_feature_count)
 }
 
 pub(super) fn finish_feature_transfers(
@@ -439,7 +478,7 @@ pub(super) fn finish_feature_transfers(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
-    reconcile_feature_links(scan, ir, &prototype_feature_dependencies);
+    reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(scan, ir);
     let feature_result_edge_count = ir
         .model

@@ -27,8 +27,8 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -100,8 +100,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs,
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).unwrap(),
             native_ref: None,
         });
     };
@@ -148,7 +148,9 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::SewBodies {
-            bodies: BodySelection::Bodies(vec![body.clone()]),
+            bodies: (BodySelection::Bodies(vec![body.clone()]))
+                .try_into()
+                .unwrap(),
             gap_tolerance: None,
         },
     );
@@ -158,8 +160,12 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::TrimBodies {
-            targets: BodySelection::Bodies(vec![body.clone()]),
-            tools: BodySelection::Bodies(vec![body.clone()]),
+            operands: cadmpeg_ir::features::TrimBodyOperands::new(
+                BodySelection::Bodies(vec![body.clone()]),
+                BodySelection::Bodies(vec![body.clone()]),
+            )
+            .unwrap(),
+
             keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
         },
     );
@@ -169,7 +175,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::ImportedGeometry {
-            path: "  ".into(),
+            path: "  ".to_owned().try_into().unwrap(),
             format: cadmpeg_ir::features::GeometryImportFormat::Step,
         },
     );
@@ -179,8 +185,12 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::SectionShape {
-            first: BodySelection::Bodies(vec![body.clone()]),
-            second: BodySelection::Bodies(vec![body]),
+            operands: cadmpeg_ir::features::SectionOperands::new(
+                BodySelection::Bodies(vec![body.clone()]),
+                BodySelection::Bodies(vec![body]),
+            )
+            .unwrap(),
+
             approximate: None,
         },
     );
@@ -219,7 +229,9 @@ fn design_completeness_audits_typed_construction_families() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: cadmpeg_ir::features::ProfileRef::Sketch(sketch),
+            profile: (cadmpeg_ir::features::ProfileRef::Sketch(sketch))
+                .try_into()
+                .unwrap(),
             thickness: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
             side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
         },
@@ -265,13 +277,14 @@ fn design_completeness_audits_typed_construction_families() {
             op: BooleanOp::Unresolved,
         },
         FeatureDefinition::FaceBlend {
-            first_faces: face.clone(),
-            second_faces: face.clone(),
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(face.clone(), face.clone())
+                .unwrap(),
+
             radius: RadiusSpec::UnresolvedVariable,
         },
         FeatureDefinition::BoundaryFill {
             tools: BodySelection::Bodies(vec![body]),
-            cells: Vec::new(),
+            cells: Vec::new().try_into().unwrap(),
         },
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -285,8 +298,8 @@ fn design_completeness_audits_typed_construction_families() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -314,8 +327,8 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -324,8 +337,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         Vec::new(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
+            children: Default::default(),
         },
     ));
     let shape = |sources| FeatureDefinition::Binder {
@@ -342,7 +354,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
             target: cadmpeg_ir::features::BinderTarget::Feature {
                 feature: source.clone(),
             },
-            subelements: vec!["Face1".into()],
+            subelements: vec![cadmpeg_ir::NonEmptyString::new("Face1").unwrap()],
         }]),
     ));
     ir.model.features.push(feature(
@@ -351,7 +363,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         Vec::new(),
         shape(vec![cadmpeg_ir::features::BinderSource {
             target: cadmpeg_ir::features::BinderTarget::Native {
-                reference: "source".into(),
+                reference: cadmpeg_ir::NonEmptyString::new("source").unwrap(),
             },
             subelements: Vec::new(),
         }]),
@@ -363,15 +375,15 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         shape(vec![
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: "a.FCStd".into(),
-                    object: "Body".into(),
+                    document: cadmpeg_ir::NonEmptyString::new("a.FCStd").unwrap(),
+                    object: cadmpeg_ir::NonEmptyString::new("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: "b.FCStd".into(),
-                    object: "Body".into(),
+                    document: cadmpeg_ir::NonEmptyString::new("b.FCStd").unwrap(),
+                    object: cadmpeg_ir::NonEmptyString::new("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },
@@ -390,8 +402,8 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
 #[test]
 fn post_process_completeness_delegates_to_the_wrapped_operation() {
     let mut ir = CadIr::empty();
-    let post_process = |operation| FeatureDefinition::PostProcess {
-        operation: Box::new(operation),
+    let post_process = |operation: FeatureDefinition| FeatureDefinition::PostProcess {
+        operation: operation.try_into().unwrap(),
         refine: true,
         fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
     };
@@ -430,8 +442,8 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -516,11 +528,13 @@ fn design_completeness_recurses_through_pattern_operands() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Pattern {
-                seeds: vec![seed.clone()],
-                pattern,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Pattern {
+                    seeds: vec![seed.clone()],
+                    pattern,
+                },
+            ),
             native_ref: None,
         });
     }
@@ -541,10 +555,15 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| FeatureDefinition::Sweep {
-        section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
-        sections,
+        shape: cadmpeg_ir::features::SweepShape::new(
+            cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
+            sections,
+            cadmpeg_ir::features::SweepMode::Surface,
+        )
+        .unwrap(),
+
         path: Some(path.clone()),
-        mode: cadmpeg_ir::features::SweepMode::Surface,
+
         orientation,
         transition: None,
         transformation: None,
@@ -560,7 +579,9 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let definitions = [
         sweep(
             vec![cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::ProfileRef::Native("section".into()),
+                (cadmpeg_ir::features::ProfileRef::Native("section".into()))
+                    .try_into()
+                    .unwrap(),
             )],
             None,
         ),
@@ -601,8 +622,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -719,8 +740,8 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -747,21 +768,23 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition,
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.extend([
         feature(
             0,
             FeatureDefinition::Fillet {
-                groups: vec![cadmpeg_ir::features::FilletGroup {
-                    edges: EdgeSelection::Edges(Vec::new()),
-                    radius: RadiusSpec::Constant {
-                        radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Edges(Vec::new()),
+                        radius: RadiusSpec::Constant {
+                            radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+                        },
+                        tangency_weight: None,
                     },
-                    tangency_weight: None,
-                }],
+                ),
             },
         ),
         feature(
@@ -781,7 +804,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             3,
             FeatureDefinition::CompositeCurve {
-                segments: vec![PathRef::Edges(Vec::new())],
+                segments: cadmpeg_ir::features::NonEmptyMembers::one(PathRef::Edges(Vec::new())),
                 closed: false,
             },
         ),
@@ -833,13 +856,15 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             7,
             FeatureDefinition::Fillet {
-                groups: vec![cadmpeg_ir::features::FilletGroup {
-                    edges: EdgeSelection::Edges(vec![
-                        EdgeId::mint("test:model:entity#edge").expect("identity grammar")
-                    ]),
-                    radius: RadiusSpec::UnresolvedVariable,
-                    tangency_weight: None,
-                }],
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Edges(vec![
+                            EdgeId::mint("test:model:entity#edge").expect("identity grammar")
+                        ]),
+                        radius: RadiusSpec::UnresolvedVariable,
+                        tangency_weight: None,
+                    },
+                ),
             },
         ),
     ]);
@@ -866,11 +891,13 @@ fn hole_completeness_checks_optional_operands_when_present() {
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
         }]),
-        construction: cadmpeg_ir::features::HoleConstruction::form(
-            cadmpeg_ir::features::HoleKind::Simple,
-        ),
-        exit_kind,
-        diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+        shape: cadmpeg_ir::features::HoleShape::new(
+            cadmpeg_ir::features::HoleConstruction::form(cadmpeg_ir::features::HoleKind::Simple),
+            exit_kind,
+            Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+        )
+        .unwrap(),
+
         extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
         bottom: None,
         taper_angle: None,
@@ -878,7 +905,11 @@ fn hole_completeness_checks_optional_operands_when_present() {
     };
     for (ordinal, definition) in [
         hole(
-            Some(cadmpeg_ir::features::ProfileRef::Native("profile".into())),
+            Some(
+                (cadmpeg_ir::features::ProfileRef::Native("profile".into()))
+                    .try_into()
+                    .unwrap(),
+            ),
             None,
         ),
         hole(None, Some(cadmpeg_ir::features::HoleKind::Unresolved(None))),
@@ -897,8 +928,8 @@ fn hole_completeness_checks_optional_operands_when_present() {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -926,12 +957,13 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
@@ -1105,12 +1137,13 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+        ),
         native_ref: None,
     };
     ir.model
@@ -1167,12 +1200,15 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        outputs,
-        definition: FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: Vec::new(),
-            active_child: None,
-        },
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Default::default(),
+            },
+            outputs,
+        )
+        .unwrap(),
         native_ref: None,
     };
     ir.model

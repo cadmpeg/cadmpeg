@@ -1506,6 +1506,90 @@ impl<'de> Deserialize<'de> for PolygonSideCount {
     }
 }
 
+/// A feature definition and its compatible output-body list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureEvaluation {
+    definition: FeatureDefinition,
+    outputs: Vec<BodyId>,
+}
+
+impl FeatureEvaluation {
+    /// Admit outputs that equal resolved inserted-body membership.
+    pub fn new(definition: FeatureDefinition, outputs: Vec<BodyId>) -> Result<Self, &'static str> {
+        if Self::inserted_bodies(&definition).is_some_and(|bodies| *bodies != outputs) {
+            return Err("outputs must equal the resolved InsertBodies selection");
+        }
+        Ok(Self {
+            definition,
+            outputs,
+        })
+    }
+
+    fn inserted_bodies(definition: &FeatureDefinition) -> Option<&Vec<BodyId>> {
+        let definition = match definition {
+            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
+            definition => definition,
+        };
+        match definition {
+            FeatureDefinition::InsertBodies {
+                bodies: BodySelection::Resolved { bodies, .. },
+            } => Some(bodies),
+            _ => None,
+        }
+    }
+
+    /// Construct an evaluation with the definition's inserted bodies or no outputs.
+    pub fn from_definition(definition: FeatureDefinition) -> Self {
+        let outputs = Self::inserted_bodies(&definition)
+            .cloned()
+            .unwrap_or_default();
+        Self {
+            definition,
+            outputs,
+        }
+    }
+
+    /// Return the neutral construction semantics.
+    pub fn definition(&self) -> &FeatureDefinition {
+        &self.definition
+    }
+
+    /// Return the produced or modified body identities.
+    pub fn outputs(&self) -> &Vec<BodyId> {
+        &self.outputs
+    }
+
+    /// Admit edited semantics and outputs before replacing either value.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut FeatureDefinition, &mut Vec<BodyId>),
+    ) -> Result<(), &'static str> {
+        let mut definition = self.definition.clone();
+        let mut outputs = self.outputs.clone();
+        edit(&mut definition, &mut outputs);
+        *self = Self::new(definition, outputs)?;
+        Ok(())
+    }
+
+    /// Replace semantics while preserving compatible output bodies.
+    pub fn set_definition(&mut self, definition: FeatureDefinition) -> Result<(), &'static str> {
+        if Self::inserted_bodies(&definition).is_some_and(|bodies| *bodies != self.outputs) {
+            return Err("outputs must equal the resolved InsertBodies selection");
+        }
+        self.definition = definition;
+        Ok(())
+    }
+
+    /// Replace output bodies when compatible with the definition.
+    pub fn set_outputs(&mut self, outputs: Vec<BodyId>) -> Result<(), &'static str> {
+        if Self::inserted_bodies(&self.definition).is_some_and(|bodies| *bodies != outputs) {
+            return Err("outputs must equal the resolved InsertBodies selection");
+        }
+        self.outputs = outputs;
+        Ok(())
+    }
+}
+
 /// An ordered neutral construction feature and its resulting bodies.
 ///
 /// Prefer [`Feature::new`] for invariant-bearing construction. There is no
@@ -1530,10 +1614,8 @@ pub struct Feature {
     pub source_text: Option<String>,
     /// Ordered source text, parameter, and child-feature content.
     pub source_content: FeatureContent,
-    /// Bodies produced or modified by the feature.
-    pub outputs: Vec<BodyId>,
-    /// Neutral construction semantics.
-    pub definition: FeatureDefinition,
+    /// Construction semantics and their admitted resulting bodies.
+    pub evaluation: FeatureEvaluation,
     /// Identifier of the full-fidelity record in a native namespace.
     pub native_ref: Option<String>,
 }
@@ -1551,8 +1633,7 @@ impl Feature {
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition,
+            evaluation: FeatureEvaluation::from_definition(definition),
             native_ref: None,
         }
     }
@@ -1597,8 +1678,8 @@ impl<'a> FeatureWriteWire<'a> {
             source_tag: &feature.source_tag,
             source_text: &feature.source_text,
             source_content: &feature.source_content,
-            outputs: &feature.outputs,
-            definition: &feature.definition,
+            outputs: feature.evaluation.outputs(),
+            definition: feature.evaluation.definition(),
             native_ref: &feature.native_ref,
         }
     }
@@ -1637,8 +1718,8 @@ pub(crate) struct FeatureReadWire {
 }
 
 impl FeatureReadWire {
-    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
-        (
+    pub(crate) fn into_parts(self) -> Result<(Feature, Option<FeatureId>), &'static str> {
+        Ok((
             Feature {
                 id: self.id,
                 ordinal: self.ordinal,
@@ -1649,12 +1730,11 @@ impl FeatureReadWire {
                 source_tag: self.source_tag,
                 source_text: self.source_text,
                 source_content: self.source_content,
-                outputs: self.outputs,
-                definition: self.definition,
+                evaluation: FeatureEvaluation::new(self.definition, self.outputs)?,
                 native_ref: self.native_ref,
             },
             self.parent,
-        )
+        ))
     }
 }
 
@@ -1672,7 +1752,9 @@ impl<'de> Deserialize<'de> for Feature {
     where
         D: serde::Deserializer<'de>,
     {
-        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?.into_parts();
+        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?
+            .into_parts()
+            .map_err(serde::de::Error::custom)?;
         if parent.is_some() {
             return Err(serde::de::Error::custom(
                 "a feature parent requires its owning model",
@@ -2276,6 +2358,336 @@ impl Default for LoftGuidance {
     }
 }
 
+fn known_body_count(selection: &BodySelection) -> Option<usize> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            Some(bodies.len())
+        }
+        BodySelection::Local { bodies, .. } => Some(bodies.len()),
+        BodySelection::ResolvedSet { members } => Some(members.len()),
+        BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+        BodySelection::HistoricalSet { members, .. } => Some(members.len()),
+        BodySelection::HistoricalUnorderedSet { selection, .. } => Some(selection.len()),
+        BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
+    }
+}
+
+/// A body selection with at least two members when membership is resolved.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SewBodySelection(BodySelection);
+
+impl TryFrom<BodySelection> for SewBodySelection {
+    type Error = &'static str;
+    fn try_from(bodies: BodySelection) -> Result<Self, Self::Error> {
+        if known_body_count(&bodies).is_some_and(|count| count < 2) {
+            return Err("bodies must select at least two bodies for sewing");
+        }
+        Ok(Self(bodies))
+    }
+}
+
+impl std::ops::Deref for SewBodySelection {
+    type Target = BodySelection;
+    fn deref(&self) -> &BodySelection {
+        &self.0
+    }
+}
+
+impl AsRef<BodySelection> for SewBodySelection {
+    fn as_ref(&self) -> &BodySelection {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SewBodySelection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(BodySelection::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+macro_rules! selection_operands {
+    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $valid:expr) => {
+        /// Two admitted operand selections for one feature operation.
+        #[derive(Debug, Clone, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        pub struct $name {
+            $first: $selection,
+            $second: $selection,
+        }
+
+        #[derive(Deserialize)]
+        struct $wire {
+            $first: $selection,
+            $second: $selection,
+        }
+
+        impl $name {
+            /// Admit the operand arity and disjoint membership.
+            pub fn new($first: $selection, $second: $selection) -> Result<Self, &'static str> {
+                if !($valid)(&$first, &$second) {
+                    return Err(concat!(
+                        stringify!($first),
+                        " and ",
+                        stringify!($second),
+                        " must have valid arity and disjoint membership"
+                    ));
+                }
+                Ok(Self { $first, $second })
+            }
+
+            /// Return the first operand selection.
+            pub fn $first(&self) -> &$selection {
+                &self.$first
+            }
+
+            /// Return the second operand selection.
+            pub fn $second(&self) -> &$selection {
+                &self.$second
+            }
+
+            /// Admit both edited selections before replacing either operand.
+            pub fn try_edit(
+                &mut self,
+                edit: impl FnOnce(&mut $selection, &mut $selection),
+            ) -> Result<(), &'static str> {
+                let mut first = self.$first.clone();
+                let mut second = self.$second.clone();
+                edit(&mut first, &mut second);
+                *self = Self::new(first, second)?;
+                Ok(())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let wire = $wire::deserialize(deserializer)?;
+                Self::new(wire.$first, wire.$second).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+selection_operands!(
+    FaceBlendOperands,
+    FaceBlendOperandsWire,
+    FaceSelection,
+    first_faces,
+    second_faces,
+    |first, second| !face_selections_overlap(first, second)
+);
+selection_operands!(
+    ReplaceFaceOperands,
+    ReplaceFaceOperandsWire,
+    FaceSelection,
+    targets,
+    replacements,
+    |first, second| !face_selections_overlap(first, second)
+);
+selection_operands!(
+    SectionOperands,
+    SectionOperandsWire,
+    BodySelection,
+    first,
+    second,
+    |first, second| !body_selections_overlap(first, second)
+);
+selection_operands!(
+    CombineOperands,
+    CombineOperandsWire,
+    BodySelection,
+    target,
+    tools,
+    |first, second| known_body_count(first).is_none_or(|count| count == 1)
+        && !body_selections_overlap(first, second)
+);
+selection_operands!(
+    TrimBodyOperands,
+    TrimBodyOperandsWire,
+    BodySelection,
+    targets,
+    tools,
+    |first, second| !body_selections_overlap(first, second)
+);
+
+fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
+    fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
+        match selection {
+            FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+                Some(faces.as_slice())
+            }
+            _ => None,
+        }
+    }
+    fn historical(
+        selection: &FaceSelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        &[crate::ids::HistoricalFaceId],
+    )> {
+        match selection {
+            FaceSelection::Historical { state, faces, .. } => Some((state, faces.as_slice())),
+            FaceSelection::HistoricalPartial { state, faces, .. } => {
+                Some((state, faces.as_slice()))
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|face| second.contains(face));
+    }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|face| second.contains(face));
+    }
+    match (first, second) {
+        (
+            FaceSelection::Generated { faces: first, .. },
+            FaceSelection::Generated { faces: second, .. },
+        ) => first.iter().any(|face| second.contains(face)),
+        _ => false,
+    }
+}
+
+fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
+    fn direct(selection: &BodySelection) -> Option<Vec<&crate::ids::BodyId>> {
+        match selection {
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                Some(bodies.iter().collect())
+            }
+            BodySelection::ResolvedSet { members } => Some(members.bodies().collect()),
+            _ => None,
+        }
+    }
+    fn historical(
+        selection: &BodySelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        Vec<&crate::ids::HistoricalBodyId>,
+    )> {
+        match selection {
+            BodySelection::Historical { state, bodies, .. } => {
+                Some((state, bodies.iter().collect()))
+            }
+            BodySelection::HistoricalSet { state, members } => {
+                Some((state, members.bodies().collect()))
+            }
+            BodySelection::HistoricalUnorderedSet { state, selection } => {
+                Some((state, selection.bodies().iter().collect()))
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|body| second.contains(body));
+    }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|body| second.contains(body));
+    }
+    match (first, second) {
+        (
+            BodySelection::Generated { bodies: first, .. },
+            BodySelection::Generated { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Local { bodies: first, .. },
+            BodySelection::Local { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        _ => false,
+    }
+}
+
+/// Distinct tree children and an optional active member.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct TreeChildren {
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    children: DistinctMembers<FeatureId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_child: Option<FeatureId>,
+}
+
+#[derive(Deserialize)]
+struct TreeChildrenWire {
+    #[serde(default)]
+    children: Vec<FeatureId>,
+    #[serde(default)]
+    active_child: Option<FeatureId>,
+}
+
+impl TreeChildren {
+    /// Admit distinct children and an active identity from those children.
+    pub fn new(
+        children: Vec<FeatureId>,
+        active_child: Option<FeatureId>,
+    ) -> Result<Self, &'static str> {
+        if active_child
+            .as_ref()
+            .is_some_and(|active| !children.contains(active))
+        {
+            return Err("active_child must belong to children");
+        }
+        Ok(Self {
+            children: children
+                .try_into()
+                .map_err(|_| "children must be distinct")?,
+            active_child,
+        })
+    }
+
+    /// Return the active child identity.
+    pub fn active_child(&self) -> &Option<FeatureId> {
+        &self.active_child
+    }
+
+    /// Add a child unless it is already a member.
+    pub fn insert(&mut self, child: FeatureId) {
+        self.children.insert(child);
+    }
+
+    /// Select an active child from the current members.
+    pub fn set_active_child(
+        &mut self,
+        active_child: Option<FeatureId>,
+    ) -> Result<(), &'static str> {
+        if active_child
+            .as_ref()
+            .is_some_and(|active| !self.children.contains(active))
+        {
+            return Err("active_child must belong to children");
+        }
+        self.active_child = active_child;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for TreeChildren {
+    type Target = [FeatureId];
+    fn deref(&self) -> &[FeatureId] {
+        &self.children
+    }
+}
+
+impl<'a> IntoIterator for &'a TreeChildren {
+    type Item = &'a FeatureId;
+    type IntoIter = std::slice::Iter<'a, FeatureId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.children.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for TreeChildren {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = TreeChildrenWire::deserialize(deserializer)?;
+        Self::new(wire.children, wire.active_child).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2285,12 +2697,9 @@ pub enum FeatureDefinition {
     TreeNode {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
-        /// Ordered features owned by this node.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        children: Vec<FeatureId>,
-        /// Active child, when the source design identifies one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        active_child: Option<FeatureId>,
+        /// Ordered child membership and its optional active child.
+        #[serde(flatten)]
+        children: TreeChildren,
     },
     /// Direct-modeling session represented by its captured result bodies.
     BaseFeature {
@@ -2300,7 +2709,8 @@ pub enum FeatureDefinition {
     /// Mesh geometry imported into the parametric timeline.
     MeshImport {
         /// Tessellation identities supplied by the mesh-body records.
-        tessellations: Vec<String>,
+        #[serde(deserialize_with = "deserialize_local_tessellations")]
+        tessellations: SelectionMembers<String>,
     },
     /// Independent bodies introduced by a copy-and-paste operation.
     InsertBodies {
@@ -2384,7 +2794,7 @@ pub enum FeatureDefinition {
         #[serde(flatten)]
         frame: FeatureDatumPlaneFrame,
         /// Construction vertices in source order.
-        points: Box<[VertexSelection; 3]>,
+        points: ThreePointSelection,
     },
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
@@ -2513,7 +2923,8 @@ pub enum FeatureDefinition {
     /// Ordered chain of source paths exposed as one construction curve.
     CompositeCurve {
         /// Source segments in traversal order.
-        segments: Vec<PathRef>,
+        #[serde(deserialize_with = "deserialize_local_segments")]
+        segments: NonEmptyMembers<PathRef>,
         /// Whether the final segment joins the first.
         #[serde(default)]
         closed: bool,
@@ -2547,7 +2958,8 @@ pub enum FeatureDefinition {
     /// Circular helix with retained native axis placement.
     HelixNativeAxis {
         /// Source-native record carrying the unresolved construction axis.
-        axis_native_ref: String,
+        #[serde(deserialize_with = "deserialize_local_axis_native_ref")]
+        axis_native_ref: NonEmptyString,
         /// Signed total rise along the axis.
         #[serde(alias = "radius")]
         axial_rise: Length,
@@ -2593,7 +3005,7 @@ pub enum FeatureDefinition {
     /// Profile mapped onto a target face.
     Wrap {
         /// Sketch or face profile mapped onto the target.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Face receiving the mapped profile.
         face: FaceSelection,
         /// Material or imprint operation performed by the mapping.
@@ -2646,7 +3058,7 @@ pub enum FeatureDefinition {
     /// Geometry imported from an external model file.
     ImportedGeometry {
         /// External source path exactly as persisted by the design.
-        path: String,
+        path: GeometryImportPath,
         /// Model format read from the external file.
         format: GeometryImportFormat,
     },
@@ -2699,16 +3111,12 @@ pub enum FeatureDefinition {
     },
     /// Sweep of a referenced or generated cross-section along a path.
     Sweep {
-        /// Primary cross-section swept along the path.
-        section: SweepSection,
-        /// Additional cross-sections after the primary profile, in path order.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        sections: Vec<SweepSection>,
+        /// Cross-sections and their compatible result mode.
+        #[serde(flatten)]
+        shape: SweepShape,
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
-        /// Result family and solid Boolean operation.
-        mode: SweepMode,
         /// Rule used to orient cross-sections along the path.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         orientation: Option<SweepOrientation>,
@@ -2794,7 +3202,7 @@ pub enum FeatureDefinition {
     /// Planar sheet-metal body created from a closed profile.
     SheetMetalBaseFlange {
         /// Closed profile defining the planar sheet boundary.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Finished sheet thickness.
         thickness: PositiveLength,
         /// Distribution of thickness relative to the profile plane.
@@ -2831,26 +3239,28 @@ pub enum FeatureDefinition {
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
-        groups: Vec<FilletGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<FilletGroup>,
     },
     /// Full-round fillet built from a center-face selection and two side-face sets.
     FullRoundFillet {
         /// Ordered full-round face groups.
-        groups: Vec<FullRoundFilletGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<FullRoundFilletGroup>,
     },
     /// Blend constructed between two face sets.
     FaceBlend {
-        /// First support-face set.
-        first_faces: FaceSelection,
-        /// Second support-face set.
-        second_faces: FaceSelection,
+        /// Disjoint operand selections and their operation arity.
+        #[serde(flatten)]
+        operands: FaceBlendOperands,
         /// Radius law along the face intersection.
         radius: RadiusSpec,
     },
     /// Edge chamfer.
     Chamfer {
         /// Ordered edge groups and their dimensional specifications.
-        groups: Vec<ChamferGroup>,
+        #[serde(deserialize_with = "deserialize_local_groups")]
+        groups: NonEmptyMembers<ChamferGroup>,
         /// Whether the dimensional reference side is reversed.
         #[serde(default)]
         flip_direction: bool,
@@ -2927,10 +3337,9 @@ pub enum FeatureDefinition {
     },
     /// Intersection curves produced where two source shapes meet.
     SectionShape {
-        /// First intersected source shape.
-        first: BodySelection,
-        /// Second intersected source shape.
-        second: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        #[serde(flatten)]
+        operands: SectionOperands,
         /// Whether the resulting section edges are approximated, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approximate: Option<bool>,
@@ -2980,7 +3389,7 @@ pub enum FeatureDefinition {
     /// Joins sheet or solid bodies along coincident boundaries.
     SewBodies {
         /// Bodies participating in the sew operation.
-        bodies: BodySelection,
+        bodies: SewBodySelection,
         /// Maximum accepted boundary gap, when resolved.
         gap_tolerance: Option<PositiveLength>,
     },
@@ -3052,10 +3461,9 @@ pub enum FeatureDefinition {
     },
     /// Boolean operation between existing bodies.
     Combine {
-        /// Body modified by the operation.
-        target: BodySelection,
-        /// Bodies consumed as Boolean tools.
-        tools: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        #[serde(flatten)]
+        operands: CombineOperands,
         /// Join, cut, or intersection operation.
         op: BooleanKind,
         /// Whether tool bodies remain present after the Boolean result is created.
@@ -3067,7 +3475,8 @@ pub enum FeatureDefinition {
         /// Bodies whose faces partition space into candidate cells.
         tools: BodySelection,
         /// Enclosed cells retained as result bodies, in source order.
-        cells: Vec<BodySelection>,
+        #[serde(deserialize_with = "deserialize_local_cells")]
+        cells: NonEmptyMembers<BodySelection>,
     },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
@@ -3082,10 +3491,9 @@ pub enum FeatureDefinition {
     },
     /// Removes one side of target bodies using ordered tool bodies.
     TrimBodies {
-        /// Bodies modified by the operation.
-        targets: BodySelection,
-        /// Bodies defining the trimming boundary.
-        tools: BodySelection,
+        /// Disjoint operand selections and their operation arity.
+        #[serde(flatten)]
+        operands: TrimBodyOperands,
         /// Side retained by the trim.
         keep: BodyTrimSide,
     },
@@ -3121,10 +3529,9 @@ pub enum FeatureDefinition {
     },
     /// Replaces selected faces with another face set.
     ReplaceFace {
-        /// Faces removed from the target body.
-        targets: FaceSelection,
-        /// Faces whose underlying geometry supplies the replacement.
-        replacements: FaceSelection,
+        /// Disjoint operand selections and their operation arity.
+        #[serde(flatten)]
+        operands: ReplaceFaceOperands,
     },
     /// Direct motion of selected faces.
     MoveFace {
@@ -3184,7 +3591,7 @@ pub enum FeatureDefinition {
     Hole {
         /// Sketch or profile supplying one or more hole locations.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        profile: Option<ProfileRef>,
+        profile: Option<PlanarProfileRef>,
         /// Geometry families in the profile that generate hole locations.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         profile_filter: Option<HoleProfileFilter>,
@@ -3197,17 +3604,9 @@ pub enum FeatureDefinition {
         /// Complete one-or-many hole placements, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placements: Option<Vec<HolePlacement>>,
-        /// Structural drilling, entry-treatment, and standard/thread construction.
+        /// Bore diameter and compatible entry, exit, and thread construction.
         #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(flatten))]
-        construction: HoleConstruction,
-        /// Exit treatment at the far side, when distinct from the entry treatment.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
-        exit_kind: Option<HoleKind>,
-        /// Hole diameter, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        diameter: Option<PositiveLength>,
+        shape: HoleShape,
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3232,7 +3631,7 @@ pub enum FeatureDefinition {
     /// Operation followed by source-requested topology cleanup.
     PostProcess {
         /// Underlying construction whose result is post-processed.
-        operation: Box<FeatureDefinition>,
+        operation: UnprocessedFeature,
         /// Whether redundant splitter boundaries are removed.
         refine: bool,
         /// Boolean-operation tolerance selection carried by the feature family.
@@ -3551,7 +3950,9 @@ pub enum PatternSeed {
     /// Selected bodies, including bodies in an intermediate regenerated result.
     Bodies(BodySelection),
     /// Selected placed component occurrences.
-    Occurrences(Vec<OccurrenceId>),
+    Occurrences(
+        #[serde(deserialize_with = "deserialize_local_occurrences")] SelectionMembers<OccurrenceId>,
+    ),
 }
 
 /// External model format consumed by an imported-geometry feature.
@@ -3847,7 +4248,7 @@ pub enum RevolveConstruction {
     /// All required construction inputs are present.
     Resolved {
         /// Profile revolved about the axis.
-        profile: ProfileRef,
+        profile: PlanarProfileRef,
         /// Placed revolution axis and its optional native source.
         axis: RevolutionAxis,
         /// Angular extent.
@@ -3866,7 +4267,7 @@ pub enum RevolveConstruction {
 /// Incomplete inputs of a profile revolution.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartialRevolveConstruction {
-    profile: Option<ProfileRef>,
+    profile: Option<PlanarProfileRef>,
     axis: Option<RevolutionAxis>,
     extent: Option<RevolveExtent>,
     solid: Option<bool>,
@@ -3877,7 +4278,7 @@ pub struct PartialRevolveConstruction {
 
 #[derive(Clone)]
 struct RevolveConstructionComponents {
-    profile: Option<ProfileRef>,
+    profile: Option<PlanarProfileRef>,
     axis: Option<RevolutionAxis>,
     extent: Option<RevolveExtent>,
     solid: Option<bool>,
@@ -3893,7 +4294,7 @@ impl RevolveConstruction {
         reason = "the arguments are the complete legacy revolution record"
     )]
     pub fn new(
-        profile: Option<ProfileRef>,
+        profile: Option<PlanarProfileRef>,
         axis: Option<RevolutionAxis>,
         extent: Option<RevolveExtent>,
         solid: Option<bool>,
@@ -3987,7 +4388,7 @@ impl RevolveConstruction {
     }
 
     /// Returns the profile, when decoded.
-    pub fn profile(&self) -> Option<&ProfileRef> {
+    pub fn profile(&self) -> Option<&PlanarProfileRef> {
         match self {
             Self::Unresolved(partial) => partial.profile.as_ref(),
             Self::Resolved { profile, .. } => Some(profile),
@@ -3995,7 +4396,7 @@ impl RevolveConstruction {
     }
 
     /// Returns the mutable profile, when decoded.
-    pub fn profile_mut(&mut self) -> Option<&mut ProfileRef> {
+    pub fn profile_mut(&mut self) -> Option<&mut PlanarProfileRef> {
         match self {
             Self::Unresolved(partial) => partial.profile.as_mut(),
             Self::Resolved { profile, .. } => Some(profile),
@@ -4003,7 +4404,7 @@ impl RevolveConstruction {
     }
 
     /// Replaces the decoded profile and updates the resolution state.
-    pub fn set_profile(&mut self, profile: Option<ProfileRef>) {
+    pub fn set_profile(&mut self, profile: Option<PlanarProfileRef>) {
         self.update(|components| components.profile = profile);
     }
 
@@ -4094,7 +4495,7 @@ impl RevolveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct RevolveConstructionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    profile: Option<ProfileRef>,
+    profile: Option<PlanarProfileRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     axis: Option<RevolutionAxis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4214,7 +4615,7 @@ pub struct RevolutionAxis {
 pub struct RibConstruction {
     /// Rib centerline or open profile, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<ProfileRef>,
+    pub profile: Option<PlanarProfileRef>,
     /// Rib growth direction, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<FeatureDirection3>,
@@ -5304,6 +5705,18 @@ selection_field_deserializer!(deserialize_selection_entities, "entities");
 selection_field_deserializer!(deserialize_selection_selections, "selections");
 selection_field_deserializer!(deserialize_selection_curves, "curves");
 selection_field_deserializer!(deserialize_profile_parameter_range, "parameter_range");
+selection_field_deserializer!(deserialize_local_tessellations, "tessellations");
+selection_field_deserializer!(deserialize_local_segments, "segments");
+selection_field_deserializer!(deserialize_local_axis_native_ref, "axis_native_ref");
+selection_field_deserializer!(deserialize_local_groups, "groups");
+selection_field_deserializer!(deserialize_local_cells, "cells");
+selection_field_deserializer!(deserialize_local_document, "document");
+selection_field_deserializer!(deserialize_local_object, "object");
+selection_field_deserializer!(deserialize_local_reference, "reference");
+selection_field_deserializer!(deserialize_local_subelements, "subelements");
+selection_field_deserializer!(deserialize_local_standard, "standard");
+selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
+selection_field_deserializer!(deserialize_local_value, "value");
 
 /// Edge operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5498,6 +5911,11 @@ impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {
 }
 
 impl<T> NonEmptyMembers<T> {
+    /// Construct a sequence with one member.
+    pub fn one(member: T) -> Self {
+        Self(vec![member])
+    }
+
     /// The members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0
@@ -5522,6 +5940,20 @@ impl<'a, T> IntoIterator for &'a NonEmptyMembers<T> {
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for NonEmptyMembers<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<T> std::ops::DerefMut for NonEmptyMembers<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut NonEmptyMembers<T> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
     }
 }
 
@@ -5832,6 +6264,11 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
 }
 
 impl<T> SelectionMembers<T> {
+    /// Construct a selection containing one member.
+    pub fn one(member: T) -> Self {
+        Self(vec![member])
+    }
+
     /// The selected members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0
@@ -7141,7 +7578,7 @@ pub enum SweepSection {
     /// The source requires a cross-section, but its carrier is unresolved.
     Unresolved(Option<String>),
     /// Cross-section supplied by referenced profile geometry.
-    Profile(ProfileRef),
+    Profile(PlanarProfileRef),
     /// Cross-section generated by the sweep construction itself.
     Generated(GeneratedSweepSection),
 }
@@ -7156,11 +7593,149 @@ impl SweepSection {
     }
 
     /// Returns the mutable referenced profile when this section does not own its geometry.
-    pub fn referenced_profile_mut(&mut self) -> Option<&mut ProfileRef> {
+    pub fn referenced_profile_mut(&mut self) -> Option<&mut PlanarProfileRef> {
         match self {
             Self::Profile(profile) => Some(profile),
             Self::Unresolved(_) | Self::Generated(_) => None,
         }
+    }
+}
+
+/// A sweep circular section with an optional wall thinner than its radius.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SweepCircularRegion {
+    outer_radius: PositiveLength,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wall_thickness: Option<PositiveLength>,
+}
+
+#[derive(Deserialize)]
+struct SweepCircularRegionWire {
+    outer_radius: PositiveLength,
+    #[serde(default)]
+    wall_thickness: Option<PositiveLength>,
+}
+
+impl SweepCircularRegion {
+    /// Admit a disk or a wall thinner than the outer radius.
+    pub fn new(
+        outer_radius: PositiveLength,
+        wall_thickness: Option<PositiveLength>,
+    ) -> Result<Self, &'static str> {
+        if wall_thickness.is_some_and(|wall| wall.get() >= outer_radius.get()) {
+            return Err("wall_thickness must be less than outer_radius");
+        }
+        Ok(Self {
+            outer_radius,
+            wall_thickness,
+        })
+    }
+
+    /// Return the outer radius.
+    pub const fn outer_radius(self) -> PositiveLength {
+        self.outer_radius
+    }
+
+    /// Return the inward radial wall thickness.
+    pub const fn wall_thickness(self) -> Option<PositiveLength> {
+        self.wall_thickness
+    }
+}
+
+impl<'de> Deserialize<'de> for SweepCircularRegion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SweepCircularRegionWire::deserialize(deserializer)?;
+        Self::new(wire.outer_radius, wire.wall_thickness).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Sweep cross-sections and their compatible result mode.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SweepShape {
+    section: SweepSection,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sections: Vec<SweepSection>,
+    mode: SweepMode,
+}
+
+#[derive(Deserialize)]
+struct SweepShapeWire {
+    section: SweepSection,
+    #[serde(default)]
+    sections: Vec<SweepSection>,
+    mode: SweepMode,
+}
+
+impl SweepShape {
+    /// Construct an unresolved sweep section and result mode.
+    pub fn unresolved(native: Option<String>) -> Self {
+        Self {
+            section: SweepSection::Unresolved(native),
+            sections: Vec::new(),
+            mode: SweepMode::Unresolved,
+        }
+    }
+
+    /// Admit sections whose generated circular regions use a solid result mode.
+    pub fn new(
+        section: SweepSection,
+        sections: Vec<SweepSection>,
+        mode: SweepMode,
+    ) -> Result<Self, &'static str> {
+        if !matches!(mode, SweepMode::NewBody | SweepMode::Solid { .. })
+            && std::iter::once(&section).chain(&sections).any(|section| {
+                matches!(
+                    section,
+                    SweepSection::Generated(GeneratedSweepSection::CircularRegion { .. })
+                )
+            })
+        {
+            return Err(
+                "section and sections with generated circular regions require a solid mode",
+            );
+        }
+        Ok(Self {
+            section,
+            sections,
+            mode,
+        })
+    }
+
+    /// Return the primary cross-section.
+    pub fn section(&self) -> &SweepSection {
+        &self.section
+    }
+
+    /// Return the additional cross-sections in path order.
+    pub fn sections(&self) -> &[SweepSection] {
+        &self.sections
+    }
+
+    /// Return the result mode.
+    pub const fn mode(&self) -> SweepMode {
+        self.mode
+    }
+
+    /// Admit edited sections and result mode before replacing the sweep shape.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut SweepSection, &mut Vec<SweepSection>, &mut SweepMode),
+    ) -> Result<(), &'static str> {
+        let mut section = self.section.clone();
+        let mut sections = self.sections.clone();
+        let mut mode = self.mode;
+        edit(&mut section, &mut sections, &mut mode);
+        *self = Self::new(section, sections, mode)?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for SweepShape {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = SweepShapeWire::deserialize(deserializer)?;
+        Self::new(wire.section, wire.sections, wire.mode).map_err(serde::de::Error::custom)
     }
 }
 
@@ -7171,11 +7746,9 @@ impl SweepSection {
 pub enum GeneratedSweepSection {
     /// Filled or hollow circular region centered on the sweep path.
     CircularRegion {
-        /// Outer radius of the circular region.
-        outer_radius: PositiveLength,
-        /// Inward radial wall thickness. Absence selects a filled disk.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        wall_thickness: Option<PositiveLength>,
+        /// Outer radius and optional smaller radial wall thickness.
+        #[serde(flatten)]
+        region: SweepCircularRegion,
     },
 }
 
@@ -7464,7 +8037,7 @@ impl TryFrom<HelicalSweepTravelWire> for HelicalSweepTravel {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct HelicalSweepConstruction {
     /// Profile swept along the helical path.
-    pub profile: ProfileRef,
+    pub profile: PlanarProfileRef,
     /// Point at the start of the helix axis.
     pub axis_origin: FinitePoint3,
     /// Unit direction of positive axial travel.
@@ -7515,7 +8088,8 @@ pub struct BinderSource {
     pub target: BinderTarget,
     /// Ordered native subelement selectors; empty selects the complete object.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subelements: Vec<String>,
+    #[serde(deserialize_with = "deserialize_local_subelements")]
+    pub subelements: Vec<NonEmptyString>,
 }
 
 /// Resolved or externally scoped binder target.
@@ -7531,14 +8105,17 @@ pub enum BinderTarget {
     /// Object in another source document.
     External {
         /// Source document identity.
-        document: String,
+        #[serde(deserialize_with = "deserialize_local_document")]
+        document: NonEmptyString,
         /// Object identity within the source document.
-        object: String,
+        #[serde(deserialize_with = "deserialize_local_object")]
+        object: NonEmptyString,
     },
     /// Source-native target identity that cannot be resolved further.
     Native {
         /// Opaque source-native target identity.
-        reference: String,
+        #[serde(deserialize_with = "deserialize_local_reference")]
+        reference: NonEmptyString,
     },
 }
 
@@ -7645,6 +8222,134 @@ pub enum BinderOffsetJoin {
     Intersection,
 }
 
+/// A profile reference excluding spatial-sketch profile forms.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct PlanarProfileRef(ProfileRef);
+
+impl TryFrom<ProfileRef> for PlanarProfileRef {
+    type Error = &'static str;
+    fn try_from(profile: ProfileRef) -> Result<Self, Self::Error> {
+        if matches!(
+            profile,
+            ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. }
+        ) {
+            return Err("profile must not select spatial-sketch profiles");
+        }
+        Ok(Self(profile))
+    }
+}
+
+impl std::ops::Deref for PlanarProfileRef {
+    type Target = ProfileRef;
+    fn deref(&self) -> &ProfileRef {
+        &self.0
+    }
+}
+
+impl AsRef<ProfileRef> for PlanarProfileRef {
+    fn as_ref(&self) -> &ProfileRef {
+        &self.0
+    }
+}
+
+impl From<crate::sketches::SketchId> for PlanarProfileRef {
+    fn from(sketch: crate::sketches::SketchId) -> Self {
+        Self(ProfileRef::Sketch(sketch))
+    }
+}
+
+impl PlanarProfileRef {
+    /// Retain a native profile reference.
+    pub fn native(reference: String) -> Self {
+        Self(ProfileRef::Native(reference))
+    }
+
+    /// Admit a profile edit before replacing the reference.
+    pub fn try_edit(&mut self, edit: impl FnOnce(&mut ProfileRef)) -> Result<(), &'static str> {
+        let mut profile = self.0.clone();
+        edit(&mut profile);
+        *self = Self::try_from(profile)?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for PlanarProfileRef {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(ProfileRef::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A feature operation eligible for a single post-processing layer.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct UnprocessedFeature(Box<FeatureDefinition>);
+
+impl TryFrom<FeatureDefinition> for UnprocessedFeature {
+    type Error = &'static str;
+    fn try_from(operation: FeatureDefinition) -> Result<Self, Self::Error> {
+        let spatial = |profile: &ProfileRef| {
+            matches!(
+                profile,
+                ProfileRef::SpatialSketchProfiles { .. }
+                    | ProfileRef::SpatialSketchSelection { .. }
+            )
+        };
+        match &operation {
+            FeatureDefinition::PostProcess { .. } => {
+                return Err("operation must not be a PostProcess")
+            }
+            FeatureDefinition::Extrude { profile, .. } if spatial(profile) => {
+                return Err("operation in PostProcess must not use spatial-sketch profiles")
+            }
+            FeatureDefinition::Loft { sections, .. }
+                if sections.iter().any(
+                    |section| matches!(section, LoftSection::Profile(profile) if spatial(profile)),
+                ) =>
+            {
+                return Err("operation in PostProcess must not use spatial-sketch profiles")
+            }
+            _ => {}
+        }
+        Ok(Self(Box::new(operation)))
+    }
+}
+
+impl AsRef<FeatureDefinition> for UnprocessedFeature {
+    fn as_ref(&self) -> &FeatureDefinition {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for UnprocessedFeature {
+    type Target = FeatureDefinition;
+    fn deref(&self) -> &FeatureDefinition {
+        &self.0
+    }
+}
+
+impl UnprocessedFeature {
+    /// Admit an operation edit before replacing the underlying operation.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut FeatureDefinition),
+    ) -> Result<(), &'static str> {
+        let mut operation = (*self.0).clone();
+        edit(&mut operation);
+        *self = Self::try_from(operation)?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for UnprocessedFeature {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(FeatureDefinition::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Profile consumed by a profile-driven feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7748,7 +8453,7 @@ pub enum LoftSection {
 pub enum LoftPointSection {
     /// Source-native point-selection record whose position is not resolved.
     #[serde(rename = "native_point")]
-    Native(String),
+    Native(#[serde(deserialize_with = "deserialize_local_value")] NonEmptyString),
     /// Solved model-space point section.
     Point(FinitePoint3),
     /// Solved B-rep vertex section.
@@ -7968,6 +8673,146 @@ impl GeneratedCurveRef {
     }
 }
 
+/// Three distinct vertex targets with a common historical input state.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct ThreePointSelection(Box<[VertexSelection; 3]>);
+
+impl TryFrom<Box<[VertexSelection; 3]>> for ThreePointSelection {
+    type Error = &'static str;
+    fn try_from(points: Box<[VertexSelection; 3]>) -> Result<Self, Self::Error> {
+        if same_vertex_target(&points[0], &points[1])
+            || same_vertex_target(&points[0], &points[2])
+            || same_vertex_target(&points[1], &points[2])
+        {
+            return Err("points must select three distinct vertex targets");
+        }
+        let mut states = points.iter().filter_map(|point| match point {
+            VertexSelection::Historical { state, .. } => Some(state),
+            _ => None,
+        });
+        if let Some(state) = states.next() {
+            if states.any(|candidate| candidate != state) {
+                return Err("points must use the same input topology");
+            }
+        }
+        Ok(Self(points))
+    }
+}
+
+impl std::ops::Deref for ThreePointSelection {
+    type Target = [VertexSelection; 3];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for ThreePointSelection {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Box::<[VertexSelection; 3]>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// At least two distinct datum-plane feature identities in source order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct SplitFacePlanes(SelectionMembers<FeatureId>);
+
+impl TryFrom<Vec<FeatureId>> for SplitFacePlanes {
+    type Error = &'static str;
+    fn try_from(planes: Vec<FeatureId>) -> Result<Self, Self::Error> {
+        if planes.len() < 2 {
+            return Err("planes must contain at least two planes");
+        }
+        Ok(Self(
+            planes.try_into().map_err(|_| "planes must be distinct")?,
+        ))
+    }
+}
+
+impl std::ops::Deref for SplitFacePlanes {
+    type Target = [FeatureId];
+    fn deref(&self) -> &[FeatureId] {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a SplitFacePlanes {
+    type Item = &'a FeatureId;
+    type IntoIter = std::slice::Iter<'a, FeatureId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'de> Deserialize<'de> for SplitFacePlanes {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(Vec::<FeatureId>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// A nonempty source path without NUL characters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct GeometryImportPath(String);
+
+impl TryFrom<String> for GeometryImportPath {
+    type Error = &'static str;
+    fn try_from(path: String) -> Result<Self, Self::Error> {
+        if path.is_empty() || path.contains('\0') {
+            return Err("path must be nonempty and contain no NUL");
+        }
+        Ok(Self(path))
+    }
+}
+
+impl std::ops::Deref for GeometryImportPath {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for GeometryImportPath {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+fn same_vertex_target(
+    first: &crate::features::VertexSelection,
+    second: &crate::features::VertexSelection,
+) -> bool {
+    use crate::features::VertexSelection;
+
+    match (first, second) {
+        (
+            VertexSelection::Generated { vertex: first, .. },
+            VertexSelection::Generated { vertex: second, .. },
+        ) => first == second,
+        (
+            VertexSelection::Historical {
+                state: first_state,
+                vertex: first_vertex,
+                ..
+            },
+            VertexSelection::Historical {
+                state: second_state,
+                vertex: second_vertex,
+                ..
+            },
+        ) => first_state == second_state && first_vertex == second_vertex,
+        (VertexSelection::Native(first), VertexSelection::Native(second)) => first == second,
+        (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
+        _ => false,
+    }
+}
+
 /// Geometry used to partition faces in a `SplitFace` operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7983,7 +8828,7 @@ pub enum SplitFaceTool {
     /// Two or more datum-plane features extended through the target faces.
     Planes {
         /// Unique earlier datum-plane features in operation order.
-        planes: Vec<FeatureId>,
+        planes: SplitFacePlanes,
     },
 }
 
@@ -8173,16 +9018,89 @@ pub struct FilletGroup {
     pub tangency_weight: Option<FiniteReal>,
 }
 
-/// One full-round fillet face-set group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One full-round fillet group with pairwise disjoint face selections.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FullRoundFilletGroup {
-    /// Center face retained by the full-round construction.
-    pub center_faces: FaceSelection,
-    /// Faces on the first side of the center-face set.
-    pub side_one_faces: FullRoundSideSelection,
-    /// Faces on the second side of the center-face set.
-    pub side_two_faces: FullRoundSideSelection,
+    center_faces: FaceSelection,
+    side_one_faces: FullRoundSideSelection,
+    side_two_faces: FullRoundSideSelection,
+}
+
+#[derive(Deserialize)]
+struct FullRoundFilletGroupWire {
+    center_faces: FaceSelection,
+    side_one_faces: FullRoundSideSelection,
+    side_two_faces: FullRoundSideSelection,
+}
+
+impl FullRoundFilletGroup {
+    /// Admit center and side selections with pairwise disjoint membership.
+    pub fn new(
+        center_faces: FaceSelection,
+        side_one_faces: FullRoundSideSelection,
+        side_two_faces: FullRoundSideSelection,
+    ) -> Result<Self, &'static str> {
+        fn explicit(side: &FullRoundSideSelection) -> Option<&FaceSelection> {
+            match side {
+                FullRoundSideSelection::Explicit(faces) => Some(faces),
+                FullRoundSideSelection::Automatic | FullRoundSideSelection::Unresolved => None,
+            }
+        }
+        let first = explicit(&side_one_faces);
+        let second = explicit(&side_two_faces);
+        if first.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
+            || second.is_some_and(|faces| face_selections_overlap(&center_faces, faces))
+            || first
+                .zip(second)
+                .is_some_and(|(first, second)| face_selections_overlap(first, second))
+        {
+            return Err(
+                "center_faces, side_one_faces and side_two_faces must be pairwise disjoint",
+            );
+        }
+        Ok(Self {
+            center_faces,
+            side_one_faces,
+            side_two_faces,
+        })
+    }
+
+    /// Return the center-face selection.
+    pub fn center_faces(&self) -> &FaceSelection {
+        &self.center_faces
+    }
+
+    /// Return the first side-face selection.
+    pub fn side_one_faces(&self) -> &FullRoundSideSelection {
+        &self.side_one_faces
+    }
+
+    /// Return the second side-face selection.
+    pub fn side_two_faces(&self) -> &FullRoundSideSelection {
+        &self.side_two_faces
+    }
+
+    /// Admit all edited selections before replacing the group.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut FaceSelection, &mut FullRoundSideSelection, &mut FullRoundSideSelection),
+    ) -> Result<(), &'static str> {
+        let mut center = self.center_faces.clone();
+        let mut first = self.side_one_faces.clone();
+        let mut second = self.side_two_faces.clone();
+        edit(&mut center, &mut first, &mut second);
+        *self = Self::new(center, first, second)?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for FullRoundFilletGroup {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = FullRoundFilletGroupWire::deserialize(deserializer)?;
+        Self::new(wire.center_faces, wire.side_one_faces, wire.side_two_faces)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// One side of a full-round fillet.
@@ -8411,6 +9329,137 @@ impl JsonSchema for ChamferSpec {
     }
 }
 
+/// A counterdrill recess diameter and optional larger entry diameter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CounterdrillDiameters {
+    diameter: PositiveLength,
+    entry_diameter: Option<PositiveLength>,
+}
+
+impl CounterdrillDiameters {
+    /// Admit a recess diameter and an optional larger entry diameter.
+    pub fn new(
+        diameter: PositiveLength,
+        entry_diameter: Option<PositiveLength>,
+    ) -> Result<Self, &'static str> {
+        if entry_diameter.is_some_and(|entry| entry.get() <= diameter.get()) {
+            return Err("entry_diameter must exceed diameter");
+        }
+        Ok(Self {
+            diameter,
+            entry_diameter,
+        })
+    }
+
+    /// Return the cylindrical recess diameter.
+    pub const fn diameter(self) -> PositiveLength {
+        self.diameter
+    }
+
+    /// Return the optional diameter before the conical transition.
+    pub const fn entry_diameter(self) -> Option<PositiveLength> {
+        self.entry_diameter
+    }
+}
+
+/// A hole bore and its compatible entry, exit, and thread dimensions.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct HoleShape {
+    #[serde(flatten)]
+    construction: HoleConstruction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
+    exit_kind: Option<HoleKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    diameter: Option<PositiveLength>,
+}
+
+#[derive(Deserialize)]
+struct HoleShapeWire {
+    #[serde(flatten)]
+    construction: HoleConstruction,
+    #[serde(default)]
+    exit_kind: Option<HoleKind>,
+    #[serde(default)]
+    diameter: Option<PositiveLength>,
+}
+
+impl HoleShape {
+    /// Admit treatments whose diameters exceed the bore diameter.
+    pub fn new(
+        construction: HoleConstruction,
+        exit_kind: Option<HoleKind>,
+        diameter: Option<PositiveLength>,
+    ) -> Result<Self, &'static str> {
+        let larger =
+            |treatment: PositiveLength| diameter.is_some_and(|bore| treatment.get() > bore.get());
+        let valid_kind = |kind: &HoleKind| match kind {
+            HoleKind::Unresolved(_)
+            | HoleKind::PartialCounterbore { .. }
+            | HoleKind::PartialCountersink { .. }
+            | HoleKind::Simple
+            | HoleKind::SimpleDrilled { .. } => true,
+            HoleKind::Chamfer { diameter, .. }
+            | HoleKind::Counterbore { diameter, .. }
+            | HoleKind::CounterboreDrilled { diameter, .. }
+            | HoleKind::Countersink { diameter, .. } => larger(*diameter),
+            HoleKind::Counterdrill { diameters, .. } => larger(diameters.diameter()),
+        };
+        let valid = match &construction {
+            HoleConstruction::Form { kind, .. } => valid_kind(kind),
+            HoleConstruction::NativeThread { major_diameter, .. } => larger(*major_diameter),
+        };
+        if !valid || exit_kind.as_ref().is_some_and(|kind| !valid_kind(kind)) {
+            return Err(
+                "construction and exit_kind treatment diameters must exceed the bore diameter",
+            );
+        }
+        Ok(Self {
+            construction,
+            exit_kind,
+            diameter,
+        })
+    }
+
+    /// Return the hole construction.
+    pub fn construction(&self) -> &HoleConstruction {
+        &self.construction
+    }
+
+    /// Return the exit treatment.
+    pub fn exit_kind(&self) -> &Option<HoleKind> {
+        &self.exit_kind
+    }
+
+    /// Return the bore diameter.
+    pub const fn diameter(&self) -> Option<PositiveLength> {
+        self.diameter
+    }
+
+    /// Admit edited construction and dimensions before replacing the hole shape.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut HoleConstruction, &mut Option<HoleKind>, &mut Option<PositiveLength>),
+    ) -> Result<(), &'static str> {
+        let mut construction = self.construction.clone();
+        let mut exit_kind = self.exit_kind;
+        let mut diameter = self.diameter;
+        edit(&mut construction, &mut exit_kind, &mut diameter);
+        *self = Self::new(construction, exit_kind, diameter)?;
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for HoleShape {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = HoleShapeWire::deserialize(deserializer)?;
+        Self::new(wire.construction, wire.exit_kind, wire.diameter)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Structural drilling, entry-treatment, and threading form of a hole.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8471,11 +9520,8 @@ pub enum HoleKind {
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
-        /// Cylindrical entry-recess diameter.
-        diameter: PositiveLength,
-        /// Diameter at the reference surface before the conical transition.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_diameter: Option<PositiveLength>,
+        /// Recess diameter and optional larger entry diameter.
+        diameters: CounterdrillDiameters,
         /// Cylindrical recess depth.
         depth: PositiveLength,
         /// Included conical entry angle.
@@ -8635,13 +9681,12 @@ impl From<HoleKind> for HoleKindWire {
             },
             HoleKind::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
             HoleKind::Counterdrill {
-                diameter,
-                entry_diameter,
+                diameters,
                 depth,
                 angle,
             } => Self::Counterdrill {
-                diameter,
-                entry_diameter,
+                diameter: diameters.diameter(),
+                entry_diameter: diameters.entry_diameter(),
                 depth,
                 angle,
             },
@@ -8707,8 +9752,7 @@ impl TryFrom<HoleKindWire> for HoleKind {
                 depth,
                 angle,
             } => Self::Counterdrill {
-                diameter,
-                entry_diameter,
+                diameters: CounterdrillDiameters::new(diameter, entry_diameter)?,
                 depth,
                 angle,
             },
@@ -8873,7 +9917,7 @@ pub enum HoleSpecification {
     /// Clearance-hole sizing, which may carry a fit but cannot carry thread data.
     Clearance {
         /// Named fastener standard family.
-        standard: String,
+        standard: NonEmptyString,
         /// Nominal size designation within the standard.
         designation: Option<String>,
         /// Clearance-hole fit class.
@@ -8892,7 +9936,7 @@ pub enum HoleSpecification {
     /// Internally threaded-hole sizing and thread geometry.
     Threaded {
         /// Named thread standard family.
-        standard: String,
+        standard: NonEmptyString,
         /// Nominal size designation within the standard.
         designation: Option<String>,
         /// Tolerance or thread class.
@@ -8917,7 +9961,8 @@ pub enum HoleSpecification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct HoleSpecificationWire {
-    standard: String,
+    #[serde(deserialize_with = "deserialize_local_standard")]
+    standard: NonEmptyString,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     designation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

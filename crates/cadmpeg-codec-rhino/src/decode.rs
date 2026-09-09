@@ -1225,11 +1225,13 @@ impl<'a> DecodeContext<'a> {
             source_tag: Some("RhinoHatch".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "hatch".into(),
-                parameters,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "hatch".into(),
+                    parameters,
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
@@ -1312,11 +1314,13 @@ impl<'a> DecodeContext<'a> {
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "polyedge_reference".into(),
-                parameters,
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "polyedge_reference".into(),
+                    parameters,
+                },
+            ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
         match self
@@ -1383,17 +1387,19 @@ impl<'a> DecodeContext<'a> {
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "detail_view".into(),
-                parameters: BTreeMap::from([
-                    ("boundary".to_string(), curve_id.clone()),
-                    (
-                        "page_per_model_ratio".to_string(),
-                        detail.page_per_model_ratio.to_string(),
-                    ),
-                ]),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "detail_view".into(),
+                    parameters: BTreeMap::from([
+                        ("boundary".to_string(), curve_id.clone()),
+                        (
+                            "page_per_model_ratio".to_string(),
+                            detail.page_per_model_ratio.to_string(),
+                        ),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let result = self.validate_candidate(|candidate, candidate_annotations| {
@@ -1508,22 +1514,24 @@ impl<'a> DecodeContext<'a> {
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "nurbs_cage".into(),
-                parameters: BTreeMap::from([
-                    ("dimension".to_string(), cage.dimension.to_string()),
-                    ("rational".to_string(), cage.rational().to_string()),
-                    (
-                        "orders".to_string(),
-                        format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
-                    ),
-                    (
-                        "counts".to_string(),
-                        format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
-                    ),
-                ]),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "nurbs_cage".into(),
+                    parameters: BTreeMap::from([
+                        ("dimension".to_string(), cage.dimension.to_string()),
+                        ("rational".to_string(), cage.rational().to_string()),
+                        (
+                            "orders".to_string(),
+                            format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+                        ),
+                        (
+                            "counts".to_string(),
+                            format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+                        ),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         match self
@@ -1666,14 +1674,16 @@ impl<'a> DecodeContext<'a> {
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
             source_content: Default::default(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "curve_on_surface".into(),
-                parameters: BTreeMap::from([
-                    ("parameter_curve".to_string(), parameter_id.clone()),
-                    ("support_surface".to_string(), surface_id.to_string()),
-                ]),
-            },
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Native {
+                    kind: "curve_on_surface".into(),
+                    parameters: BTreeMap::from([
+                        ("parameter_curve".to_string(), parameter_id.clone()),
+                        ("support_surface".to_string(), surface_id.to_string()),
+                    ]),
+                },
+            ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let parameter_curve = construction.parameter_curve;
