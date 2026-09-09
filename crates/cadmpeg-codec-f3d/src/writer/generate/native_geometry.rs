@@ -1112,7 +1112,7 @@ fn native_procedural_surface_definition(
                 })?,
                 revision_form.as_ref(),
                 Some(solved_cache),
-            )?
+            )?;
         }
         ProceduralSurfaceDefinition::Blend {
             supports,
