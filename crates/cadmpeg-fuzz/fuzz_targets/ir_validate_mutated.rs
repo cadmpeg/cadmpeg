@@ -78,7 +78,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         6 => {
-            ir.tolerances.linear = const { cadmpeg_ir::units::PositiveScalar::new(f64::MAX).expect("positive finite") };
+            // Duplicate a point identity in the document arena.
+            if let Some(point) = ir.model.points.first().cloned() {
+                ir.model.points.push(point);
+            }
         }
         7 => {
             // Clear all geometry but keep topology
