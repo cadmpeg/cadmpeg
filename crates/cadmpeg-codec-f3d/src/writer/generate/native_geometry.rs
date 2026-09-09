@@ -5289,7 +5289,6 @@ pub(crate) fn native_procedural_curve(
                     procedural.id
                 )))
             }
-
             cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D blend-spine curve {} lacks its native blend construction",
