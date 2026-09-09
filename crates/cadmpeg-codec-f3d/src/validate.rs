@@ -7918,10 +7918,7 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             _ => None,
         };
-        let valid = target_key.is_some()
-            && !link.design_id.is_empty()
-            && link.design_id.bytes().all(|byte| byte.is_ascii_digit());
-        if !valid {
+        if target_key.is_none() {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -7978,7 +7975,7 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             _ => None,
         };
-        if target_key.is_none() || tag.token.is_empty() {
+        if target_key.is_none() {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

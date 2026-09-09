@@ -1983,3 +1983,5 @@ mod act_entities;
 mod native_ids;
 
 mod annotation_frames;
+
+mod persistent_text;

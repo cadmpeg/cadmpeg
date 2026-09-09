@@ -453,6 +453,34 @@ pub struct SketchCurveLink {
     pub closure: i64,
 }
 
+/// Nonempty decimal text identifying a persistent Design entity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignPersistentIdText(String);
+
+impl DesignPersistentIdText {
+    /// Original decimal spelling of the identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for DesignPersistentIdText {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("design_id must contain one or more ASCII digits".into());
+        }
+        Ok(Self(value))
+    }
+}
+
+impl From<DesignPersistentIdText> for String {
+    fn from(value: DesignPersistentIdText) -> Self {
+        value.0
+    }
+}
+
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -465,7 +493,7 @@ pub struct PersistentDesignLink {
     /// Solved B-rep entity this persistent Fusion design id is attached to.
     pub target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
-    pub design_id: String,
+    pub design_id: DesignPersistentIdText,
     /// Design-stream reference paired with this persistent identifier.
     pub design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
@@ -503,7 +531,7 @@ impl TryFrom<PersistentDesignLinkWire> for PersistentDesignLink {
         Ok(Self {
             id: wire.id,
             target: wire.target,
-            design_id: wire.design_id,
+            design_id: wire.design_id.try_into()?,
             design_reference: wire.design_reference,
             ordinal: wire.ordinal,
             is_current: wire.is_current,
@@ -516,7 +544,7 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
         Self {
             id: record.id,
             target: record.target,
-            design_id: record.design_id,
+            design_id: record.design_id.into(),
             entity_kind: 3,
             design_reference: record.design_reference,
             ordinal: record.ordinal,
@@ -535,11 +563,19 @@ pub struct PersistentSubentityTag {
     /// Native selector stored before the tag token.
     pub selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
-    pub token: String,
+    #[serde(deserialize_with = "deserialize_persistent_tag_token")]
+    pub token: cadmpeg_ir::NonEmptyString,
     /// Ordered signed Design-stream references carried by this group.
     pub design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.
     pub ordinal: u32,
+}
+
+fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<cadmpeg_ir::NonEmptyString, D::Error> {
+    cadmpeg_ir::NonEmptyString::new(String::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
 
 /// Component-local Design naming space bound to a context UUID.

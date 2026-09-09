@@ -466,7 +466,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
-        tag.token == reference.token
+        tag.token.as_str() == reference.token
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {
