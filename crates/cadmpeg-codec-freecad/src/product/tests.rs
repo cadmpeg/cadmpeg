@@ -82,12 +82,23 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         occurrence.prototype(),
         Some("fcstd:native:object#Prototype")
     );
-    assert_eq!(occurrence.local_transform().expect("placement")[0][3], 4.0);
+    assert_eq!(
+        occurrence.local_transform().expect("placement").rows()[0][3],
+        4.0
+    );
     assert_eq!(occurrence.element_count(), Some(2));
     assert_eq!(occurrence.link_transform(), Some(true));
     assert_eq!(occurrence.element_transforms().len(), 2);
-    assert_eq!(occurrence.element_transforms()[1][0][3], 4.0);
-    assert_eq!(occurrence.element_scales(), &[[1.0; 3], [2.0; 3]]);
+    assert_eq!(occurrence.element_transforms()[1].rows()[0][3], 4.0);
+    assert_eq!(
+        occurrence
+            .element_scales()
+            .iter()
+            .copied()
+            .map(crate::native::frame::FiniteVec3::values)
+            .collect::<Vec<_>>(),
+        &[[1.0; 3], [2.0; 3]]
+    );
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -359,7 +370,7 @@ fn selects_the_active_link_placement_carrier() {
             .iter()
             .find(|node| node.object.ends_with(name))
             .and_then(native::ProductNodeRecord::local_transform)
-            .map(|matrix| matrix[0][3])
+            .map(|matrix| matrix.rows()[0][3])
             .expect("link placement")
     };
     assert_eq!(x("Propagating"), 2.0);
@@ -399,7 +410,7 @@ fn accepts_axis_angle_placement_values() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -442,7 +453,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -485,7 +496,7 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
@@ -525,7 +536,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
