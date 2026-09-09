@@ -1456,10 +1456,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+            )
+            .expect("finite frame fixture"),
         },
     );
     let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
@@ -1478,10 +1479,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
+                [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+            )
+            .expect("finite frame fixture"),
         },
     );
     assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
@@ -1489,10 +1491,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
-                prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
+                [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+            )
+            .expect("finite frame fixture"),
         },
     );
     replay.control_points[1] = Some([10.0, -5.0]);
@@ -1511,10 +1514,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
+            )
+            .expect("finite frame fixture"),
         },
     );
     replay.control_points[1] = Some([2.0, 2.5]);
@@ -1527,10 +1531,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
+                [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
+            )
+            .expect("finite frame fixture"),
         },
     );
     assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
@@ -1544,10 +1549,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
             variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
-            frame: crate::surface::TabulatedCylinderFrame {
-                values: [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
-                prefixes: [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-            },
+            frame: crate::surface::TabulatedCylinderFrame::new(
+                [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
+                [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+            )
+            .expect("finite frame fixture"),
         },
     );
     let (curve, sweep) =

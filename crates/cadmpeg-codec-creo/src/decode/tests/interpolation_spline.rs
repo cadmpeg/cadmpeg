@@ -2004,8 +2004,8 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
     );
     assert!(matches!(
         hole_cylinder_from_cap_outlines([
-            CapOutline { surface_id: 902, origin: [0.0, 0.0, 0.85], normal: [0.0, 0.0, 1.0], corners: Some([[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]]) },
-            CapOutline { surface_id: 905, origin: [0.0, 0.0, 7.35], normal: [0.0, 0.0, -1.0], corners: Some([[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]]) },
+            CapOutline { surface_id: 902, origin: [0.0, 0.0, 0.85], normal: [0.0, 0.0, 1.0], corners: [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]] },
+            CapOutline { surface_id: 905, origin: [0.0, 0.0, 7.35], normal: [0.0, 0.0, -1.0], corners: [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]] },
         ]),
         Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 19.0, 0.85)
@@ -2017,20 +2017,22 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             surface_id: 902,
             origin: [0.0, 0.0, 0.0],
             normal: [0.0, 0.0, 1.0],
-            corners: Some([[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]])
+            corners: [[-1.0, -2.0, 0.0], [1.0, 2.0, 0.0]]
         },
         CapOutline {
             surface_id: 905,
             origin: [0.0, 0.0, 1.0],
             normal: [0.0, 0.0, -1.0],
-            corners: Some([[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]])
+            corners: [[-1.0, -2.0, 1.0], [1.0, 2.0, 1.0]]
         },
     ])
     .is_none());
     assert!(matches!(
         circular_sweep_cylinder_from_cap_outlines([
-            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]) },
-            CapOutline { surface_id: 831, origin: [0.0, -4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: None },
+            (828, [0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
+            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+        ], [
+            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
         ]),
         Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(-12.5, 4.0, 0.0)
@@ -2038,7 +2040,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
                 && radius == 0.75
     ));
     assert!(matches!(
-        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]) }),
+        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]] }),
         Some(HoleCylinder { origin, axis, radius, .. })
             if origin == Point3::new(0.0, 16.0, 0.0)
                 && axis == Vector3::new(0.0, 1.0, 0.0)

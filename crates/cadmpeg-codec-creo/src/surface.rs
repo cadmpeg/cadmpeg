@@ -753,21 +753,67 @@ pub(crate) fn unique_surface_parameter(
 /// Six-slot model-space envelope frame following a tabulated-cylinder marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabulatedCylinderFrame {
+    values: [f64; 6],
+    prefixes: [u8; 6],
+}
+
+impl TabulatedCylinderFrame {
+    /// Admits six finite frame coordinates with their scalar prefixes.
+    pub fn new(values: [f64; 6], prefixes: [u8; 6]) -> Option<Self> {
+        values
+            .into_iter()
+            .all(f64::is_finite)
+            .then_some(Self { values, prefixes })
+    }
+
     /// Ordered frame coordinates.
-    pub values: [f64; 6],
-    /// Scalar-lane prefix byte for each coordinate.
-    pub prefixes: [u8; 6],
+    pub fn values(&self) -> [f64; 6] {
+        self.values
+    }
+
+    /// Scalar-lane prefix bytes in coordinate order.
+    pub fn prefixes(&self) -> [u8; 6] {
+        self.prefixes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PositionalFrame {
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+}
+
+impl PositionalFrame {
+    fn new(origin: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Option<Self> {
+        (origin
+            .into_iter()
+            .chain(axis)
+            .chain(ref_direction)
+            .all(f64::is_finite)
+            && valid_orthonormal_frame_directions(axis, ref_direction))
+        .then_some(Self {
+            origin,
+            axis,
+            ref_direction,
+        })
+    }
+
+    fn origin(&self) -> [f64; 3] {
+        self.origin
+    }
+    fn axis(&self) -> [f64; 3] {
+        self.axis
+    }
+    fn ref_direction(&self) -> [f64; 3] {
+        self.ref_direction
+    }
 }
 
 /// Complete model-space carrier and optional axial extent from a positional cylinder row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalCylinderFrame {
-    /// Model-space origin at one axial end of the bounded cylinder.
-    origin: [f64; 3],
-    /// Unit axis directed from `origin` toward the other axial end.
-    axis: [f64; 3],
-    /// Unit parameter-space reference direction.
-    ref_direction: [f64; 3],
+    frame: PositionalFrame,
     /// Cylinder radius.
     radius: f64,
     /// Positive distance between axial ends when the body stores an extent.
@@ -783,34 +829,27 @@ impl PositionalCylinderFrame {
         radius: f64,
         length: Option<f64>,
     ) -> Option<Self> {
-        (origin
-            .into_iter()
-            .chain(axis)
-            .chain(ref_direction)
-            .all(f64::is_finite)
-            && valid_orthonormal_frame_directions(axis, ref_direction)
-            && radius.is_finite()
+        let frame = PositionalFrame::new(origin, axis, ref_direction)?;
+        (radius.is_finite()
             && radius > 0.0
             && length.is_none_or(|length| length.is_finite() && length > 0.0))
         .then_some(Self {
-            origin,
-            axis,
-            ref_direction,
+            frame,
             radius,
             length,
         })
     }
     /// Returns the origin.
     pub fn origin(&self) -> [f64; 3] {
-        self.origin
+        self.frame.origin()
     }
     /// Returns the axis.
     pub fn axis(&self) -> [f64; 3] {
-        self.axis
+        self.frame.axis()
     }
     /// Returns the ref direction.
     pub fn ref_direction(&self) -> [f64; 3] {
-        self.ref_direction
+        self.frame.ref_direction()
     }
     /// Returns the radius.
     pub fn radius(&self) -> f64 {
@@ -825,12 +864,7 @@ impl PositionalCylinderFrame {
 /// Complete model-space carrier decoded from a positional cone row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalConeFrame {
-    /// Model-space cone apex.
-    apex: [f64; 3],
-    /// Unit axis directed from the apex toward increasing radius.
-    axis: [f64; 3],
-    /// Unit parameter-space reference direction.
-    ref_direction: [f64; 3],
+    frame: PositionalFrame,
     /// Positive cone half-angle in radians.
     half_angle: f64,
 }
@@ -843,31 +877,20 @@ impl PositionalConeFrame {
         ref_direction: [f64; 3],
         half_angle: f64,
     ) -> Option<Self> {
-        (apex
-            .into_iter()
-            .chain(axis)
-            .chain(ref_direction)
-            .all(f64::is_finite)
-            && valid_orthonormal_frame_directions(axis, ref_direction)
-            && valid_half_angle(half_angle))
-        .then_some(Self {
-            apex,
-            axis,
-            ref_direction,
-            half_angle,
-        })
+        let frame = PositionalFrame::new(apex, axis, ref_direction)?;
+        valid_half_angle(half_angle).then_some(Self { frame, half_angle })
     }
     /// Returns the apex.
     pub fn apex(&self) -> [f64; 3] {
-        self.apex
+        self.frame.origin()
     }
     /// Returns the axis.
     pub fn axis(&self) -> [f64; 3] {
-        self.axis
+        self.frame.axis()
     }
     /// Returns the ref direction.
     pub fn ref_direction(&self) -> [f64; 3] {
-        self.ref_direction
+        self.frame.ref_direction()
     }
     /// Returns the half angle.
     pub fn half_angle(&self) -> f64 {
@@ -878,12 +901,7 @@ impl PositionalConeFrame {
 /// Complete model-space carrier decoded from a positional torus row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalTorusFrame {
-    /// Model-space torus center.
-    center: [f64; 3],
-    /// Unit torus axis.
-    axis: [f64; 3],
-    /// Unit parameter-space reference direction.
-    ref_direction: [f64; 3],
+    frame: PositionalFrame,
     /// Non-negative major radius; zero selects the sphere form.
     major_radius: f64,
     /// Positive minor radius.
@@ -899,35 +917,28 @@ impl PositionalTorusFrame {
         major_radius: f64,
         minor_radius: f64,
     ) -> Option<Self> {
-        (center
-            .into_iter()
-            .chain(axis)
-            .chain(ref_direction)
-            .all(f64::is_finite)
-            && valid_orthonormal_frame_directions(axis, ref_direction)
-            && major_radius.is_finite()
+        let frame = PositionalFrame::new(center, axis, ref_direction)?;
+        (major_radius.is_finite()
             && major_radius >= 0.0
             && minor_radius.is_finite()
             && minor_radius > 0.0)
             .then_some(Self {
-                center,
-                axis,
-                ref_direction,
+                frame,
                 major_radius,
                 minor_radius,
             })
     }
     /// Returns the center.
     pub fn center(&self) -> [f64; 3] {
-        self.center
+        self.frame.origin()
     }
     /// Returns the axis.
     pub fn axis(&self) -> [f64; 3] {
-        self.axis
+        self.frame.axis()
     }
     /// Returns the ref direction.
     pub fn ref_direction(&self) -> [f64; 3] {
-        self.ref_direction
+        self.frame.ref_direction()
     }
     /// Returns the major radius.
     pub fn major_radius(&self) -> f64 {
@@ -2328,7 +2339,7 @@ impl SurfaceParameterRecord {
         }
 
         let frame = self.tabulated_cylinder_frame()?;
-        let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values;
+        let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values();
         Some(LineExtrusionFrame {
             direction: direction_values,
             directrix: [[start_x, start_y, start_z], [end_x, end_y, end_z]],
@@ -4207,15 +4218,15 @@ fn inline_suffix_witness_agrees(
                         return false;
                     };
                     let axis_dot = witness
-                        .axis
+                        .axis()
                         .into_iter()
-                        .zip(candidate.axis)
+                        .zip(candidate.axis())
                         .map(|(left, right)| left * right)
                         .sum::<f64>();
                     witness
-                        .origin
+                        .origin()
                         .into_iter()
-                        .zip(candidate.origin)
+                        .zip(candidate.origin())
                         .all(|(left, right)| inline_close(left, right))
                         && inline_close(witness.radius, candidate.radius)
                         && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
@@ -4228,9 +4239,9 @@ fn inline_suffix_witness_agrees(
                 return false;
             };
             let axis_dot = witness
-                .axis
+                .axis()
                 .into_iter()
-                .zip(candidate.axis)
+                .zip(candidate.axis())
                 .map(|(left, right)| left * right)
                 .sum::<f64>();
             inline_close(witness.half_angle, candidate.half_angle)
@@ -5567,9 +5578,9 @@ pub(crate) fn positional_cylinder_frames_agree(
     second: PositionalCylinderFrame,
 ) -> bool {
     let scale = first
-        .origin
+        .origin()
         .into_iter()
-        .chain(second.origin)
+        .chain(second.origin())
         .chain([first.radius, second.radius])
         .chain(first.length)
         .chain(second.length)
@@ -5578,19 +5589,19 @@ pub(crate) fn positional_cylinder_frames_agree(
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
     first
-        .origin
+        .origin()
         .into_iter()
-        .zip(second.origin)
+        .zip(second.origin())
         .all(|(left, right)| close(left, right))
         && first
-            .axis
+            .axis()
             .into_iter()
-            .zip(second.axis)
+            .zip(second.axis())
             .all(|(left, right)| close(left, right))
         && first
-            .ref_direction
+            .ref_direction()
             .into_iter()
-            .zip(second.ref_direction)
+            .zip(second.ref_direction())
             .all(|(left, right)| close(left, right))
         && close(first.radius, second.radius)
         && match (first.length, second.length) {
@@ -7141,15 +7152,11 @@ pub(super) fn decode_tabulated_cylinder_frame(
         } else {
             scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
         };
-        value.is_finite().then_some(())?;
         values.push(value);
         cursor = next;
     }
     Some((
-        TabulatedCylinderFrame {
-            values: values.try_into().ok()?,
-            prefixes: prefixes.try_into().ok()?,
-        },
+        TabulatedCylinderFrame::new(values.try_into().ok()?, prefixes.try_into().ok()?)?,
         cursor,
     ))
 }

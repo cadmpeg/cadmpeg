@@ -240,25 +240,25 @@ pub(super) fn transfer_and_record_scanned_geometry(
     {
         coverage.record(
             crate::coverage::UNIQUE_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.unique_rows,
+            surface_coverage.unique_rows(),
         );
         coverage.record(
             crate::coverage::TRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.transferred_rows,
+            surface_coverage.transferred_rows(),
         );
         coverage.record(
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.retained_unknown_rows,
+            surface_coverage.retained_unknown_rows(),
         );
         coverage.record(
             crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage
-                .unique_rows
-                .saturating_sub(surface_coverage.transferred_rows),
+                .unique_rows()
+                .saturating_sub(surface_coverage.transferred_rows()),
         );
         coverage.record(
             crate::coverage::AMBIGUOUS_VISIBLE_SURFACE_ROW_COUNT,
-            surface_coverage.ambiguous_rows,
+            surface_coverage.ambiguous_rows(),
         );
         for kind in crate::decode::coverage::SURFACE_KINDS {
             let (rows, transferred) = surface_coverage.family(kind);
@@ -270,27 +270,27 @@ pub(super) fn transfer_and_record_scanned_geometry(
         }
         coverage.record(
             crate::coverage::UNIQUE_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.unique_rows,
+            curve_coverage.unique_rows(),
         );
         coverage.record(
             crate::coverage::TRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.transferred_rows,
+            curve_coverage.transferred_rows(),
         );
         coverage.record(
             crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.retained_unknown_rows,
+            curve_coverage.retained_unknown_rows(),
         );
         coverage.record(
             crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage
-                .unique_rows
-                .saturating_sub(curve_coverage.transferred_rows),
+                .unique_rows()
+                .saturating_sub(curve_coverage.transferred_rows()),
         );
         coverage.record(
             crate::coverage::AMBIGUOUS_VISIBLE_CURVE_ROW_COUNT,
-            curve_coverage.ambiguous_rows,
+            curve_coverage.ambiguous_rows(),
         );
-        for (type_byte, (rows, transferred)) in &curve_coverage.by_type {
+        for (type_byte, (rows, transferred)) in curve_coverage.by_type() {
             coverage.record_hex_byte(
                 crate::coverage::VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
@@ -305,7 +305,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_TYPE_ROW_COUNT,
                 *type_byte,
                 curve_coverage
-                    .unknown_by_type
+                    .unknown_by_type()
                     .get(type_byte)
                     .copied()
                     .unwrap_or_default(),
@@ -513,17 +513,17 @@ pub(super) fn transfer_and_record_scanned_geometry(
         );
         coverage.record(
             crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT,
-            sketch_segment_coverage.decoded_rows,
+            sketch_segment_coverage.decoded_rows(),
         );
         coverage.record(
             crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
-            sketch_segment_coverage.resolved_geometry,
+            sketch_segment_coverage.resolved_geometry(),
         );
         coverage.record(
             crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
             sketch_segment_coverage
-                .decoded_rows
-                .saturating_sub(sketch_segment_coverage.resolved_geometry),
+                .decoded_rows()
+                .saturating_sub(sketch_segment_coverage.resolved_geometry()),
         );
         for (family, (decoded, resolved)) in sketch_segment_coverage.families() {
             let keys = crate::coverage::sketch_segment_keys(family);
@@ -533,7 +533,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         }
         coverage.record(
             crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT,
-            sketch_segment_coverage.missing_rows,
+            sketch_segment_coverage.missing_rows(),
         );
         coverage.record(
             crate::coverage::DECODED_FEATURE_SKAMP_COUNT,
