@@ -3870,12 +3870,13 @@ mod route_tests {
         );
         let direction = 1e-200;
         let parameter_end = 1e200;
+        assert!(matches!(
+            super::e5_isoparametric_direction(Point2::new(direction, 0.0)),
+            Some(super::E5IsoparametricDirection::ConstantV)
+        ));
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
-                Point2::new(0.0, 3.0),
-                Point2::new(direction, 0.0),
-            )
-            .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 3.0), Point2::new(1.0, 0.0))
+                .expect("valid LinePcurve fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3887,7 +3888,7 @@ mod route_tests {
             &surface,
             &native,
             &pcurve,
-            [0.0, parameter_end],
+            [0.0, direction * parameter_end],
             [
                 Point3::new(2.0, 0.0, 3.0),
                 Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
@@ -3908,11 +3909,8 @@ mod route_tests {
             .expect("valid PlaneSurface fixture"),
         );
         let plane_pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(direction, 0.0),
-            )
-            .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("valid LinePcurve fixture"),
         );
         let plane_native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -3925,7 +3923,7 @@ mod route_tests {
             &plane,
             &plane_native,
             &plane_pcurve,
-            [0.0, 1.0],
+            [0.0, direction],
             [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
             [1.0, 1.0],
         )
@@ -4019,17 +4017,14 @@ mod route_tests {
             range: [0.0, 1.0],
         };
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(tiny, 0.0),
-            )
-            .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("valid LinePcurve fixture"),
         );
         let (curve, range) = e5_boundary_curve(
             &surface,
             &native,
             &pcurve,
-            [0.0, 1.0],
+            [0.0, tiny],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
             [1.0, 1.0],
         )
