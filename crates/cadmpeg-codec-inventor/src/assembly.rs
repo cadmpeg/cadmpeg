@@ -749,7 +749,7 @@ mod tests {
             occurrence_id,
             graphics_index: 0,
             object_reference: 0,
-            suffix_len: 0,
+            suffix_len: 48,
             suffix_sha256: "0".repeat(64),
         })
         .expect("valid placement fixture")

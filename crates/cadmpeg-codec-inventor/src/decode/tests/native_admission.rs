@@ -162,7 +162,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         "transform_prefix": false, "transform_encoding": [0, 0],
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
-        "object_reference": 0, "suffix_len": 0, "suffix_sha256": "invalid"
+        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "invalid"
     });
     let mut issues = Vec::new();
     let bad: AssemblyPlacementRecordWire =

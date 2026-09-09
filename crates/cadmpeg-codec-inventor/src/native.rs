@@ -362,7 +362,7 @@ pub(crate) struct AssemblyPlacementRecord {
     pub(crate) occurrence_id: u32,
     pub(crate) graphics_index: u32,
     pub(crate) object_reference: u32,
-    pub(crate) suffix_len: u64,
+    pub(crate) suffix_len: std::num::NonZeroU64,
     suffix_sha256: digest::Sha256Hex,
 }
 
@@ -405,7 +405,8 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
             occurrence_id: wire.occurrence_id,
             graphics_index: wire.graphics_index,
             object_reference: wire.object_reference,
-            suffix_len: wire.suffix_len,
+            suffix_len: std::num::NonZeroU64::new(wire.suffix_len)
+                .ok_or("suffix_len must not be zero")?,
             suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
@@ -429,7 +430,7 @@ impl From<AssemblyPlacementRecord> for AssemblyPlacementRecordWire {
             occurrence_id: value.occurrence_id,
             graphics_index: value.graphics_index,
             object_reference: value.object_reference,
-            suffix_len: value.suffix_len,
+            suffix_len: value.suffix_len.get(),
             suffix_sha256: value.suffix_sha256.into(),
         }
     }
@@ -1662,7 +1663,7 @@ mod tests {
             "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
                           [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
-            "graphics_index": 0, "object_reference": 0, "suffix_len": 0, "suffix_sha256": "0".repeat(64)
+            "graphics_index": 0, "object_reference": 0, "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
         let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
             .expect("assembly matrix fixture agrees with its masks");
@@ -1670,6 +1671,25 @@ mod tests {
             serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
             wire
         );
+        let mut empty_suffix = wire.clone();
+        empty_suffix["suffix_len"] = serde_json::json!(0);
+        assert!(
+            serde_json::from_value::<super::AssemblyPlacementRecord>(empty_suffix)
+                .expect_err("empty placement suffix")
+                .to_string()
+                .contains("suffix_len")
+        );
+        for len in [1, 48, 49] {
+            let mut nonempty_suffix = wire.clone();
+            nonempty_suffix["suffix_len"] = serde_json::json!(len);
+            assert_eq!(
+                serde_json::from_value::<super::AssemblyPlacementRecord>(nonempty_suffix)
+                    .unwrap()
+                    .suffix_len
+                    .get(),
+                len
+            );
+        }
         for digest in ["a".repeat(63), "g".repeat(64)] {
             let mut invalid = wire.clone();
             invalid["suffix_sha256"] = serde_json::json!(digest);
