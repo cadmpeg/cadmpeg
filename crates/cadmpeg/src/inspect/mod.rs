@@ -235,6 +235,7 @@ fn parse_stride(text: &str) -> Result<NonZeroU64, String> {
     NonZeroU64::new(parse_offset(text)?).ok_or_else(|| "stride must be at least 1".to_owned())
 }
 
+// Zero parses to None (unlimited); clap detects Option syntactically, so do not inline this alias or remove parse_limit without changing argument admission.
 type CountLimit = Option<NonZeroUsize>;
 
 fn parse_limit(text: &str) -> Result<CountLimit, std::num::ParseIntError> {
