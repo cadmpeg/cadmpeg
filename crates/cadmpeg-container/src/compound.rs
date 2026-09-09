@@ -1533,12 +1533,12 @@ const DIRECTORY_RIGHT: usize = 72;
 const DIRECTORY_CHILD: usize = 76;
 const DIRECTORY_START_SECTOR: usize = 116;
 const DIRECTORY_SIZE: usize = 120;
-const _: () = assert!(DIRECTORY_NAME_LENGTH % 2 == 0);
-const _: () = assert!(DIRECTORY_LEFT % 4 == 0);
-const _: () = assert!(DIRECTORY_RIGHT % 4 == 0);
-const _: () = assert!(DIRECTORY_CHILD % 4 == 0);
-const _: () = assert!(DIRECTORY_START_SECTOR % 4 == 0);
-const _: () = assert!(DIRECTORY_SIZE % 8 == 0);
+const _: () = assert!(DIRECTORY_NAME_LENGTH.is_multiple_of(2));
+const _: () = assert!(DIRECTORY_LEFT.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_RIGHT.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_CHILD.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_START_SECTOR.is_multiple_of(4));
+const _: () = assert!(DIRECTORY_SIZE.is_multiple_of(8));
 
 fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
