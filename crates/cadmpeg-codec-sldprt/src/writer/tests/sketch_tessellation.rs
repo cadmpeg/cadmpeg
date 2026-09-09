@@ -772,8 +772,8 @@ fn semantic_writer_expands_indexed_tessellation() {
     assert_eq!(expanded.strip_lengths(), vec![3, 3]);
     assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
     assert_eq!(expanded.vertices().len(), 6);
-    assert_eq!(expanded.normals(), corner_normals);
-    assert!(expanded.corner_normals().is_empty());
+    assert_eq!(expanded.vertex_normals(), corner_normals);
+    assert!(expanded.per_corner_normals().is_empty());
     assert_eq!(expanded.channels()[0].count(), 6);
     assert_eq!(expanded.channels()[0].data(), vec![10, 11, 12, 10, 12, 13]);
 

@@ -26,6 +26,23 @@ fn rejects_wire_field(field: &str, value: impl serde::Serialize) {
     assert!(serde_json::from_value::<Tessellation>(wire).is_err());
 }
 
+#[test]
+fn per_corner_mesh_exposes_its_normals() {
+    let base = mesh();
+    let normals = vec![Vector3::new(0.0, 0.0, 1.0); 6];
+    let value = Tessellation::new(
+        "test:mesh:tessellation#corners",
+        base.vertices().to_vec(),
+        base.triangles().to_vec(),
+        TessellationTopology::List,
+        TessellationNormals::PerCorner(normals.clone()),
+        Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(value.per_corner_normals(), normals);
+    assert!(value.vertex_normals().is_empty());
+}
+
 fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
     TessellationTriangleGroup {
         source_id: source_id.map(str::to_owned),
@@ -250,9 +267,9 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
         value.edit_normals(|normals| normals[0].z = -2.0).unwrap();
         assert_eq!(value.vertices()[0].x, f64::MAX);
         let normals = if corner {
-            value.corner_normals()
+            value.per_corner_normals()
         } else {
-            value.normals()
+            value.vertex_normals()
         };
         assert_eq!(normals[0].z, -2.0);
     }

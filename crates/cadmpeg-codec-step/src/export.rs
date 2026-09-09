@@ -1878,7 +1878,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !mesh.corner_normals().is_empty() {
+            if !mesh.per_corner_normals().is_empty() {
                 self.loss(
                     StepLossCode::TessellationCornerNormals,
                     format!(
@@ -1912,7 +1912,8 @@ impl<'a> Builder<'a> {
                     .iter()
                     .flatten()
                     .any(|index| *index as usize >= mesh.vertices().len())
-                || (!mesh.normals().is_empty() && mesh.normals().len() != mesh.vertices().len())
+                || (!mesh.vertex_normals().is_empty()
+                    && mesh.vertex_normals().len() != mesh.vertices().len())
             {
                 self.loss(
                     StepLossCode::TessellationInvalidCardinality,
@@ -1937,12 +1938,12 @@ impl<'a> Builder<'a> {
                     mesh.vertices().len()
                 ),
             );
-            let normals = if mesh.normals().is_empty() {
+            let normals = if mesh.vertex_normals().is_empty() {
                 "$".to_string()
             } else {
                 format!(
                     "({})",
-                    mesh.normals()
+                    mesh.vertex_normals()
                         .iter()
                         .map(|normal| format!(
                             "({},{},{})",

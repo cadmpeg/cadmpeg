@@ -1982,13 +1982,13 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             }
         }
         descriptor(&mut out, 12, 100, 2, mesh.vertices().len(), &positions);
-        let mut normals = Vec::with_capacity(mesh.normals().len() * 12);
-        for normal in mesh.normals() {
+        let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
+        for normal in mesh.vertex_normals() {
             for value in [normal.x, normal.y, normal.z] {
                 normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.normals().len(), &normals);
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals);
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
         let auxiliary_count = mesh.channels().len().saturating_sub(auxiliary_start).min(3);
         let auxiliary = &mesh.channels()[auxiliary_start..auxiliary_start + auxiliary_count];
@@ -2071,7 +2071,7 @@ pub(super) fn sequential_tessellation(
     let expected = triangles_from_strips(mesh.strip_lengths())?;
     if expected == mesh.triangles()
         && mesh.strip_lengths().iter().sum::<u32>() as usize == mesh.vertices().len()
-        && mesh.corner_normals().is_empty()
+        && mesh.per_corner_normals().is_empty()
     {
         return Ok(mesh.clone());
     }
@@ -2090,22 +2090,25 @@ pub(super) fn sequential_tessellation(
         .iter()
         .map(|index| mesh.vertices()[*index])
         .collect();
-    let normals = if !mesh.corner_normals().is_empty() {
-        if mesh.corner_normals().len() != indices.len() {
+    let normals = if !mesh.per_corner_normals().is_empty() {
+        if mesh.per_corner_normals().len() != indices.len() {
             return Err(CodecError::Malformed(
                 "tessellation corner normals are not parallel to triangle corners".into(),
             ));
         }
-        mesh.corner_normals().to_vec()
-    } else if mesh.normals().is_empty() {
+        mesh.per_corner_normals().to_vec()
+    } else if mesh.vertex_normals().is_empty() {
         Vec::new()
     } else {
-        if mesh.normals().len() != mesh.vertices().len() {
+        if mesh.vertex_normals().len() != mesh.vertices().len() {
             return Err(CodecError::Malformed(
                 "tessellation normals are not parallel to vertices".into(),
             ));
         }
-        indices.iter().map(|index| mesh.normals()[*index]).collect()
+        indices
+            .iter()
+            .map(|index| mesh.vertex_normals()[*index])
+            .collect()
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {

@@ -819,7 +819,7 @@ fn approximate_surface_owner(
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Option<(usize, f64)> {
-    if mesh.normals().len() != mesh.vertices().len() || mesh.normals().is_empty() {
+    if mesh.vertex_normals().len() != mesh.vertices().len() || mesh.vertex_normals().is_empty() {
         return None;
     }
     let mut fits = candidates
@@ -827,7 +827,7 @@ fn approximate_surface_owner(
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices().iter().zip(mesh.normals()) {
+            for (point, normal) in mesh.vertices().iter().zip(mesh.vertex_normals()) {
                 let local_point = candidate.inverse.apply_point(*point);
                 let measure = surface_measure(candidate.surface, local_point, None)?;
                 let residual = measure.residual;

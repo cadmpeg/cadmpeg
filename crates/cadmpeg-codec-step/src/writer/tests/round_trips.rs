@@ -664,7 +664,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     let mesh = &decoded.ir().model.tessellations[0];
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
-    assert_eq!(mesh.normals().len(), 3);
+    assert_eq!(mesh.vertex_normals().len(), 3);
     assert!(mesh.body.is_some());
 }
 

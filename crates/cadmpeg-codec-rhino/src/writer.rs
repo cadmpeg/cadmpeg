@@ -1504,7 +1504,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.feature_edges().is_empty() || !mesh.corner_normals().is_empty() {
+    if !mesh.feature_edges().is_empty() || !mesh.per_corner_normals().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses feature edges or corner normals not yet writable",
             mesh.id
@@ -1516,7 +1516,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.normals().is_empty() && mesh.normals().len() != vertex_count {
+    if !mesh.vertex_normals().is_empty() && mesh.vertex_normals().len() != vertex_count {
         return Err(CodecError::malformed(format_args!(
             "mesh {} normal count mismatch",
             mesh.id
@@ -1529,7 +1529,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || !(p.x as f32).is_finite()
             || !(p.y as f32).is_finite()
             || !(p.z as f32).is_finite()
-    }) || mesh.normals().iter().any(|n| {
+    }) || mesh.vertex_normals().iter().any(|n| {
         !n.x.is_finite()
             || !n.y.is_finite()
             || !n.z.is_finite()
@@ -2085,7 +2085,7 @@ fn mesh_payload(
         })
         .collect::<Vec<_>>();
     let normals = mesh
-        .normals()
+        .vertex_normals()
         .iter()
         .flat_map(|normal| {
             [normal.x as f32, normal.y as f32, normal.z as f32]

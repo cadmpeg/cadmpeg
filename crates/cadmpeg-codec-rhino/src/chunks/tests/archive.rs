@@ -397,7 +397,7 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
             let mesh = &result.ir().model.tessellations[0];
             assert_eq!(mesh.vertices().len(), 4);
             assert_eq!(mesh.triangles(), vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
-            assert_eq!(mesh.normals().len(), 4);
+            assert_eq!(mesh.vertex_normals().len(), 4);
             assert!(mesh
                 .channels()
                 .iter()
@@ -476,7 +476,9 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "{:?}",
         result.report()
     );
-    assert!(result.ir().model.tessellations[0].normals().is_empty());
+    assert!(result.ir().model.tessellations[0]
+        .vertex_normals()
+        .is_empty());
     assert!(result
         .report()
         .losses
