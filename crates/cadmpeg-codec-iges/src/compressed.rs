@@ -418,23 +418,23 @@ fn field_i64(
     })
 }
 
-fn fixed_field(field: usize, bytes: &[u8]) -> Result<[u8; 8], CodecError> {
+fn eight_columns(bytes: &[u8]) -> Result<[u8; 8], CodecError> {
     if bytes.len() > 8 {
-        return Err(malformed(format!(
-            "Directory field {field} exceeds eight columns"
-        )));
+        return Err(malformed("Directory field exceeds eight columns"));
     }
     let mut output = [b' '; 8];
-    if matches!(field, 16 | 17) {
-        output[..bytes.len()].copy_from_slice(bytes);
-    } else {
-        output[8 - bytes.len()..].copy_from_slice(bytes);
-    }
+    output[8 - bytes.len()..].copy_from_slice(bytes);
+    Ok(output)
+}
+
+fn reserved_field(bytes: &[u8]) -> Result<[u8; 8], CodecError> {
+    let mut output = eight_columns(bytes)?;
+    output.rotate_left(8 - bytes.len());
     Ok(output)
 }
 
 fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
-    fixed_field(0, value.to_string().as_bytes())
+    eight_columns(value.to_string().as_bytes())
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
@@ -483,98 +483,78 @@ fn append_directory_cards(
         .fields
         .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
     let first_fields = [
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::EntityType).number(),
-            entity_type,
-        )?,
+        eight_columns(entity_type)?,
         fixed_number(i64::from(parameter_start))?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Structure).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Structure)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::LineFont).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LineFont)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Level).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Level)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::View).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::View)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Transform).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Transform)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::LabelDisplay).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LabelDisplay)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Status).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Status)),
         )?,
     ];
     let second_fields = [
-        fixed_field(11, entity_type)?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::LineWeight).number(),
+        eight_columns(entity_type)?,
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::LineWeight)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Color).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Color)),
         )?,
-        fixed_field(
-            CompressedField::ParameterLineCount.number(),
-            entity.fields.get(CompressedField::ParameterLineCount),
-        )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Form).number(),
+        eight_columns(entity.fields.get(CompressedField::ParameterLineCount))?,
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Form)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::ReservedFirst).number(),
+        reserved_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::ReservedFirst)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::ReservedSecond).number(),
+        reserved_field(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::ReservedSecond)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Label).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Label)),
         )?,
-        fixed_field(
-            CompressedField::Shared(DirectoryFieldSlot::Subscript).number(),
+        eight_columns(
             entity
                 .fields
                 .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),
