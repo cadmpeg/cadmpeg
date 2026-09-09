@@ -337,3 +337,42 @@ fn utf16(bytes: &mut Vec<u8>, value: &str) {
         u16_le(bytes, unit);
     }
 }
+
+#[test]
+fn protein_admission_keeps_later_assets_and_rejections() {
+    let mut issues = Vec::new();
+    let assets = ["bad.bin", "assets/InstanceProperties.bin"]
+        .into_iter()
+        .filter_map(|entry_name| {
+            let wire = serde_json::from_value(serde_json::json!({
+                "id": "asset", "entry_name": entry_name, "ordinal": 3,
+                "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+                    "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+            }))
+            .unwrap();
+            crate::decode::admit_protein_asset(wire, &mut issues)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(assets.len(), 1);
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].scope, "asset");
+    assert!(issues[0].detail.contains("entry_name"));
+    let rejections = ["bad.bin", "assets/InstanceProperties.bin"]
+        .into_iter()
+        .filter_map(|entry_name| {
+            crate::decode::admit_protein_rejection(
+                crate::native::protein::ProteinRejectionRecordWire {
+                    id: "rejection".into(),
+                    entry_name: entry_name.into(),
+                    ordinal: 4,
+                    detail: "invalid record".into(),
+                },
+                &mut issues,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rejections.len(), 1);
+    assert_eq!(issues.len(), 2);
+    assert_eq!(issues[1].scope, "rejection");
+    assert!(issues[1].detail.contains("entry_name"));
+}
