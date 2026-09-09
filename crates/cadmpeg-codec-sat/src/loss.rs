@@ -24,6 +24,8 @@ pub enum SatLossCode {
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A header tolerance cannot supply a positive finite document tolerance.
+    HeaderToleranceUnresolved,
     /// The stream was read with a grammar its own save-format declaration does
     /// not select.
     SourceDialectUnverified,
@@ -34,6 +36,7 @@ impl SatLossCode {
     pub const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::HeaderToleranceUnresolved,
         Self::SourceDialectUnverified,
     ];
 
@@ -43,6 +46,7 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
@@ -52,17 +56,17 @@ impl SatLossCode {
     pub const fn severity(self) -> Severity {
         match self {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
-            Self::GeometryProceduralSurfaceUntyped | Self::SourceDialectUnverified => {
-                Severity::Warning
-            }
+            Self::GeometryProceduralSurfaceUntyped
+            | Self::HeaderToleranceUnresolved
+            | Self::SourceDialectUnverified => Severity::Warning,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::GeometryFramedWithoutCarriers | Self::GeometryProceduralSurfaceUntyped => {
-                LossTaxonomy::GeometryNotTransferred
-            }
+            Self::GeometryFramedWithoutCarriers
+            | Self::GeometryProceduralSurfaceUntyped
+            | Self::HeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
         }
     }
@@ -106,6 +110,7 @@ mod tests {
             [
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "header.tolerance-unresolved",
                 "source.kernel-dialect-unverified",
             ]
         );
