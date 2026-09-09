@@ -1991,8 +1991,7 @@ pub(crate) fn generated_surface_identities(
             continue;
         };
         let tail = [t0, t1, t2, t3];
-        let [instance_low, instance_high, _, _] = tail;
-        let possible_instance = u16::from_le_bytes([instance_low, instance_high]);
+        let possible_instance = cadmpeg_core::bytes::assemble_u16_le([t0, t1]);
         if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
             && lane
@@ -2016,7 +2015,7 @@ pub(crate) fn generated_surface_identities(
         let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
             continue;
         };
-        let local_identity = u32::from_le_bytes(tail);
+        let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
         let key = (
             prefix,
             components
