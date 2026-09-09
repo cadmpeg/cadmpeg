@@ -52,6 +52,10 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A JT display graph failed native admission.
+    DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
+    /// A roll-forward table failed native admission.
+    RollForwardTableRejected => ("history.roll-forward-table-rejected", Blocking, DecodeDiagnostic),
     /// An embedded kernel dialect had no declared grammar and was recovered as residual.
     KernelDialectUnverified => ("source.kernel-dialect-unverified", Warning, SourceDialectUnverified),
     /// Two embedded kernel carriers resolved to one dialect-layer identity.
@@ -145,6 +149,8 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "container.display-jt-graph-rejected",
+                "history.roll-forward-table-rejected",
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
                 "carrier.analytic-census",

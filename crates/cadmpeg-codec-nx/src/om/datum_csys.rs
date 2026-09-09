@@ -1,60 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed datum coordinate-system reference frame.
 
+use super::discriminators::u8_discriminator;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 
-/// Position in the eight-reference datum-CSYS construction lane.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub(crate) enum DatumCsysSlot {
-    Zero = 0,
-    One = 1,
-    Two = 2,
-    Three = 3,
-    Four = 4,
-    Five = 5,
-    Six = 6,
-    Seven = 7,
-}
-
-impl DatumCsysSlot {
-    pub(crate) const ALL: [Self; 8] = [
-        Self::Zero,
-        Self::One,
-        Self::Two,
-        Self::Three,
-        Self::Four,
-        Self::Five,
-        Self::Six,
-        Self::Seven,
-    ];
-}
-
-impl From<DatumCsysSlot> for u8 {
-    fn from(value: DatumCsysSlot) -> Self {
-        value as u8
+u8_discriminator! {
+    /// Position in the eight-reference datum-CSYS construction lane.
+    #[derive(PartialOrd, Ord)]
+    pub(crate) DatumCsysSlot {
+        Zero = 0,
+        One = 1,
+        Two = 2,
+        Three = 3,
+        Four = 4,
+        Five = 5,
+        Six = 6,
+        Seven = 7,
     }
-}
-
-impl TryFrom<u8> for DatumCsysSlot {
-    type Error = &'static str;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Zero),
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            3 => Ok(Self::Three),
-            4 => Ok(Self::Four),
-            5 => Ok(Self::Five),
-            6 => Ok(Self::Six),
-            7 => Ok(Self::Seven),
-            _ => Err("DatumCsysSlot: expected 0..=7"),
-        }
-    }
+    "DatumCsysSlot: expected 0..=7"; ALL
 }
 
 impl std::fmt::Display for DatumCsysSlot {
