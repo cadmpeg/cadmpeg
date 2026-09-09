@@ -1328,24 +1328,27 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         )
         .expect("valid lost-edge record layout"),
     );
-    native.sketch_relations.push(SketchRelation {
-        id: "native:sketch-relation".into(),
-        record_index: 1,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: (Vec::new()).try_into().expect("uniform member resolution"),
-        owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: (Vec::new()).try_into().expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
-    });
+    native.sketch_relations.push(
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
+            id: "native:sketch-relation".into(),
+            record_index: 1,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (Vec::new()).try_into().expect("uniform member resolution"),
+            owner_reference_offset: 0,
+            definition: crate::records::SketchRelationDefinition::new(0, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: (Vec::new()).try_into().expect("uniform member resolution"),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap(),
+    );
     native.design_parameters.push(
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: "f3d:test:design-parameter#2".into(),

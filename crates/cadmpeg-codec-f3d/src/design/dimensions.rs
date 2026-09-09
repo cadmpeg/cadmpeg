@@ -5464,10 +5464,10 @@ pub(crate) fn exact_offset_constraint(
             relation.constraint_kinds().as_slice(),
             [SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset]
         )
-        || relation.return_members.len() < 4
-        || !relation.return_members.len().is_multiple_of(2)
-        || relation.return_members.len() != relation.members.len()
-        || relation.resolved_return_members().len() != relation.return_members.len()
+        || relation.return_members().len() < 4
+        || !relation.return_members().len().is_multiple_of(2)
+        || relation.return_members().len() != relation.members().len()
+        || relation.resolved_return_members().len() != relation.return_members().len()
     {
         return None;
     }

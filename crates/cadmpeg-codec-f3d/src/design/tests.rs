@@ -287,27 +287,30 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         })
         .unwrap()
     };
-    let relation = |stream: &str| SketchRelation {
-        id: format!("f3d:{stream}:sketch-relation#30"),
-        record_index: 30,
-        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 100,
-        owner_entity_id: None,
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: (vec![SketchRelationMember::from_index(20)])
-            .try_into()
-            .expect("uniform member resolution"),
-        owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: (vec![SketchRelationReturnMember::from_index(20)])
-            .try_into()
-            .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
+    let relation = |stream: &str| {
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
+            id: format!("f3d:{stream}:sketch-relation#30"),
+            record_index: 30,
+            class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 100,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![SketchRelationMember::from_index(20)])
+                .try_into()
+                .expect("uniform member resolution"),
+            owner_reference_offset: 0,
+            definition: crate::records::SketchRelationDefinition::new(0, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: (vec![SketchRelationReturnMember::from_index(20)])
+                .try_into()
+                .expect("uniform member resolution"),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
     };
 
     let placements = [placement("A"), placement("B")];

@@ -6573,6 +6573,44 @@ pub struct SketchRelation {
     #[serde(default)]
     pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
     /// Nullable or role-specific references stored before the owner reference.
+    auxiliary_references: ReferenceRun<u32, u32>,
+    /// Serialized count of the rectangular class's reference run. Zero selects
+    /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
+    /// for other relation classes and native data that did not retain it.
+    pub rectangular_counted_reference_count: Option<u32>,
+    /// First reference run, interleaved with per-member relation ordinals.
+    /// Its order does not define relation operand order.
+    members: SketchRelationMembers,
+    /// Payload offset of `owner_reference`, relative to the record.
+    owner_reference_offset: u32,
+    /// Constraint mask and the payload it selects.
+    pub definition: SketchRelationDefinition,
+    /// `EntityGenesis` origin bitfield stored by the relation record, when present.
+    pub entity_genesis: Option<u64>,
+    /// Second reference run in semantic member order.
+    return_members: SketchRelationReturnMembers,
+    /// Complete variable-width source record for native replay/write.
+    raw_bytes: Vec<u8>,
+}
+
+/// Unchecked sketch relation payload and byte frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchRelationDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this relation record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the constraint mask relative to the record start.
+    pub state_offset: u32,
+    /// Numeric design-entity suffix of the sketch container that owns this relation.
+    pub owner_reference: u32,
+    /// Full Design entity id resolved from `owner_reference`.
+    pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
+    /// Nullable or role-specific references stored before the owner reference.
     pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
@@ -6594,6 +6632,134 @@ pub struct SketchRelation {
 }
 
 impl SketchRelation {
+    /// Admit a relation whose reference offsets fit its retained bytes.
+    pub fn try_new(draft: SketchRelationDraft) -> Result<Self, SketchRelationPayloadError> {
+        if draft.raw_bytes.len() < 24 {
+            return Err(SketchRelationPayloadError(
+                "sketch relation raw_bytes is shorter than 24 bytes".into(),
+            ));
+        }
+        if draft.auxiliary_references.located_rows().is_none() {
+            return Err(SketchRelationPayloadError(
+                "sketch relation auxiliary_references must be located".into(),
+            ));
+        }
+        for (field, offset) in draft
+            .members
+            .iter()
+            .map(|row| ("member_offsets", row.offset))
+            .chain(
+                draft
+                    .auxiliary_references
+                    .offsets()
+                    .map(|offset| ("auxiliary_reference_offsets", *offset)),
+            )
+            .chain(std::iter::once((
+                "owner_reference_offset",
+                draft.owner_reference_offset,
+            )))
+            .chain(
+                draft
+                    .return_members
+                    .iter()
+                    .map(|row| ("return_member_offsets", row.offset)),
+            )
+        {
+            if !usize::try_from(offset)
+                .ok()
+                .and_then(|offset| offset.checked_add(4))
+                .is_some_and(|end| end <= draft.raw_bytes.len())
+            {
+                return Err(SketchRelationPayloadError(format!(
+                    "sketch relation {field} exceeds raw_bytes"
+                )));
+            }
+        }
+        Ok(Self {
+            id: draft.id,
+            record_index: draft.record_index,
+            class_tag: draft.class_tag,
+            byte_offset: draft.byte_offset,
+            state_offset: draft.state_offset,
+            owner_reference: draft.owner_reference,
+            owner_entity_id: draft.owner_entity_id,
+            auxiliary_references: draft.auxiliary_references,
+            rectangular_counted_reference_count: draft.rectangular_counted_reference_count,
+            members: draft.members,
+            owner_reference_offset: draft.owner_reference_offset,
+            definition: draft.definition,
+            entity_genesis: draft.entity_genesis,
+            return_members: draft.return_members,
+            raw_bytes: draft.raw_bytes,
+        })
+    }
+
+    /// Return the unchecked payload for a checked edit.
+    pub fn into_draft(self) -> SketchRelationDraft {
+        SketchRelationDraft {
+            id: self.id,
+            record_index: self.record_index,
+            class_tag: self.class_tag,
+            byte_offset: self.byte_offset,
+            state_offset: self.state_offset,
+            owner_reference: self.owner_reference,
+            owner_entity_id: self.owner_entity_id,
+            auxiliary_references: self.auxiliary_references,
+            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
+            members: self.members,
+            owner_reference_offset: self.owner_reference_offset,
+            definition: self.definition,
+            entity_genesis: self.entity_genesis,
+            return_members: self.return_members,
+            raw_bytes: self.raw_bytes,
+        }
+    }
+
+    /// Apply an edit only when the resulting byte frame is valid.
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut SketchRelationDraft),
+    ) -> Result<(), SketchRelationPayloadError> {
+        let mut draft = self.clone().into_draft();
+        edit(&mut draft);
+        *self = Self::try_new(draft)?;
+        Ok(())
+    }
+
+    /// Resolve both member runs without changing their byte offsets.
+    pub(crate) fn resolve_members(
+        &mut self,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) {
+        self.members.resolve(&mut resolve);
+        self.return_members.resolve(resolve);
+    }
+
+    /// Retained auxiliary references.
+    pub fn auxiliary_references(&self) -> &ReferenceRun<u32, u32> {
+        &self.auxiliary_references
+    }
+
+    /// Retained members.
+    pub fn members(&self) -> &SketchRelationMembers {
+        &self.members
+    }
+
+    /// Retained return members.
+    pub fn return_members(&self) -> &SketchRelationReturnMembers {
+        &self.return_members
+    }
+
+    /// Retained raw bytes.
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+
+    /// Owner reference offset within the retained bytes.
+    pub fn owner_reference_offset(&self) -> u32 {
+        self.owner_reference_offset
+    }
+
     /// Constraint kinds selected by `state`.
     #[must_use]
     pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
@@ -6814,8 +6980,13 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
+        if wire.auxiliary_references.len() != wire.auxiliary_reference_offsets.len() {
+            return Err(SketchRelationPayloadError(
+                "sketch relation auxiliary_reference_offsets must locate every reference".into(),
+            ));
+        }
         let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
-        Ok(Self {
+        Self::try_new(SketchRelationDraft {
             id: wire.id,
             record_index: wire.record_index,
             class_tag: DesignClassTag::try_from(wire.class_tag)
@@ -6824,12 +6995,13 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_ir::NonEmptyString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::from_columns(
-                wire.auxiliary_references,
-                wire.auxiliary_reference_offsets,
-                "auxiliary_reference",
-            )
-            .map_err(SketchRelationPayloadError)?,
+            auxiliary_references: ReferenceRun::located(
+                wire.auxiliary_references
+                    .into_iter()
+                    .zip(wire.auxiliary_reference_offsets)
+                    .map(|(value, offset)| Located { value, offset })
+                    .collect(),
+            ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,

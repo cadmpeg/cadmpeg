@@ -374,7 +374,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         primary_id: u64::from(record_index),
         secondary_id,
     };
-    let relation = SketchRelation {
+    let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
         id: "f3d:native:sketch-relation#0".into(),
         record_index: 10,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
@@ -421,8 +421,9 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),
-        raw_bytes: Vec::new(),
-    };
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap();
     let projected = HashMap::from([
         (("native", 1), &source_horizontal),
         (("native", 2), &source_vertical),
@@ -450,7 +451,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(parameter, None);
 
     let mut repeated_pair = relation;
-    let mut returned = repeated_pair.return_members.to_vec();
+    let mut returned = repeated_pair.return_members().to_vec();
     returned.extend([
         crate::records::SketchRelationReturnMember {
             reference: crate::records::SketchRelationReference::Resolved(curve(1, 10)),
@@ -461,7 +462,11 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
             offset: 0,
         },
     ]);
-    repeated_pair.return_members = returned.try_into().expect("uniform member resolution");
+    repeated_pair
+        .try_edit(|draft| {
+            draft.return_members = returned.try_into().expect("uniform member resolution")
+        })
+        .unwrap();
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
 }
 

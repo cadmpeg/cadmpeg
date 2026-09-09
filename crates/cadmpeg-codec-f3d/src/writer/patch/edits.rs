@@ -2586,16 +2586,18 @@ pub(crate) fn validate_sketch_relation_edits(
         let mut normalized = relation.clone();
         normalized.owner_reference = before.owner_reference;
         normalized
-            .auxiliary_references
-            .clone_from(&before.auxiliary_references);
-        normalized.members.clone_from(&before.members);
-        normalized.definition.clone_from(&before.definition);
-        normalized.return_members.clone_from(&before.return_members);
+            .try_edit(|draft| {
+                draft.auxiliary_references = before.auxiliary_references().clone();
+                draft.members = before.members().clone();
+                draft.definition = before.definition.clone();
+                draft.return_members = before.return_members().clone();
+            })
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if &normalized != before
             || relation
-                .auxiliary_references
+                .auxiliary_references()
                 .offsets()
-                .ne(before.auxiliary_references.offsets())
+                .ne(before.auxiliary_references().offsets())
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
@@ -2604,9 +2606,9 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         if relation.definition.state() == before.definition.state()
             && relation.owner_reference == before.owner_reference
-            && relation.auxiliary_references == before.auxiliary_references
-            && relation.members == before.members
-            && relation.return_members == before.return_members
+            && relation.auxiliary_references() == before.auxiliary_references()
+            && relation.members() == before.members()
+            && relation.return_members() == before.return_members()
         {
             continue;
         }
@@ -2622,20 +2624,20 @@ pub(crate) fn validate_sketch_relation_edits(
         collect_sketch_reference_edits(
             relation,
             before
-                .members
+                .members()
                 .iter()
                 .map(|row| row.reference.record_index()),
             relation
-                .members
+                .members()
                 .iter()
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
-        match relation.auxiliary_references.located_rows() {
-            Some(after) if before.auxiliary_references.len() == after.len() => {
+        match relation.auxiliary_references().located_rows() {
+            Some(after) if before.auxiliary_references().len() == after.len() => {
                 values.extend(
                     before
-                        .auxiliary_references
+                        .auxiliary_references()
                         .values()
                         .zip(after)
                         .filter(|(before, after)| **before != after.value)
@@ -2654,18 +2656,18 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         if relation.owner_reference != before.owner_reference {
             values.push(Edit {
-                offset: relation.byte_offset + u64::from(relation.owner_reference_offset),
+                offset: relation.byte_offset + u64::from(relation.owner_reference_offset()),
                 value: relation.owner_reference.to_le_bytes().to_vec(),
             });
         }
         collect_sketch_reference_edits(
             relation,
             before
-                .return_members
+                .return_members()
                 .iter()
                 .map(|row| row.reference.record_index()),
             relation
-                .return_members
+                .return_members()
                 .iter()
                 .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
@@ -2673,7 +2675,7 @@ pub(crate) fn validate_sketch_relation_edits(
         if relation.definition.state() != before.definition.state() {
             let encoded = encode_sketch_relation_state(
                 &relation.id,
-                &before.raw_bytes,
+                &before.raw_bytes(),
                 relation.definition.state(),
             )?;
             values.push(Edit {
