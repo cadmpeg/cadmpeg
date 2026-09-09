@@ -775,15 +775,7 @@ fn extract_entry(args: &ExtractArgs) -> Result<()> {
         .with_context(|| format!("extracting from {}", args.file.display()))?;
     match &args.output {
         ExtractDestination::Stdout => write_payload_to_stdout(&payload),
-        ExtractDestination::File(destination) => {
-            let path = &destination.path;
-            if path.exists() && !destination.overwrite {
-                bail!("{} exists; pass --force to replace it", path.display());
-            }
-            std::fs::write(path, &payload)
-                .with_context(|| format!("writing {}", path.display()))?;
-            Ok(())
-        }
+        ExtractDestination::File(destination) => destination.write(&args.file, &payload),
     }
 }
 
