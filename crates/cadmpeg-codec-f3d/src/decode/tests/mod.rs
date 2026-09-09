@@ -11,6 +11,7 @@ mod procedural;
 mod procedural_blends;
 mod procedural_revision;
 mod projection;
+mod surface_curves;
 mod surfaces;
 mod surfaces_deform;
 mod topology;
