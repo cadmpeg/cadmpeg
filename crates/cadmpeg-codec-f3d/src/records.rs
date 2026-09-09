@@ -2099,11 +2099,6 @@ impl DesignDimensionAnnotationFrame {
         &self.operands
     }
 
-    /// Retained annotation bytes.
-    pub fn annotation_bytes(&self) -> &[u8] {
-        &self.annotation_bytes
-    }
-
     /// Derived annotation byte offset.
     pub fn annotation_byte_offset(&self) -> u64 {
         self.byte_offset + 24 + self.operands.len() as u64 * 15 + 57
