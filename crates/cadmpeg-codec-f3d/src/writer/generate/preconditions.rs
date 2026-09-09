@@ -8,6 +8,7 @@ use crate::native::F3dNative;
 use crate::records::{
     PersistentDesignLink, PersistentSubentityTag, SegmentType, SketchCurveGeometry,
 };
+use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
@@ -1092,12 +1093,14 @@ pub(crate) fn validate_source_less_design_links(
             .leading_tolerances
             .iter()
             .any(|value| !value.is_finite())
+            || (tail.evaluated_slot == EvaluatedToleranceSlot::Absent
+                && tail.trailing_field.is_some())
             || vertex_by_id
                 .get(tail.vertex.as_str())
                 .copied()
                 .is_none_or(|vertex| {
-                    (vertex.tolerance.is_none() && !tail.evaluated_unset)
-                        || (tail.evaluated_unset && vertex.tolerance.is_some())
+                    vertex.tolerance.is_some()
+                        != (tail.evaluated_slot == EvaluatedToleranceSlot::Evaluated)
                 })
         {
             return Err(CodecError::InvalidInput(format!(
@@ -1267,7 +1270,7 @@ mod tests {
     use super::{validate_source_less_design_links, F3dNative};
     use crate::writer::generate::attributes::AttributeIndex;
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
-    use cadmpeg_asm::brep::records::TolerantVertexTail;
+    use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::units::PositiveScalar;
 
@@ -1282,7 +1285,7 @@ mod tests {
                 vertex: target.model.vertices[0].id.clone(),
                 leading_tolerances: [-1.0, -1.0],
                 trailing_field: Some(0),
-                evaluated_unset: true,
+                evaluated_slot: EvaluatedToleranceSlot::Unset,
             }],
             ..F3dNative::default()
         };

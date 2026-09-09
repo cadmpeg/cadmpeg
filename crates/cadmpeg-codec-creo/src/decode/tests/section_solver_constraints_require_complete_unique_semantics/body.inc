@@ -3064,7 +3064,7 @@ offset: 30,
             operands: vec![SketchNativeOperand {
                 native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
                 field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
-                object_index: 12,
+                object_index: Some(12),
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
         }
@@ -3091,7 +3091,7 @@ offset: 30,
             && operands == &[SketchNativeOperand {
                 native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr").expect("source operand kind is nonempty"),
                 field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
-                object_index: 999,
+                object_index: Some(999),
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }]
     ));
@@ -4135,7 +4135,7 @@ offset: 30,
             operands,
             ..
         } if native_kind == "creo:relation:0"
-            && operands.first().is_some_and(|operand| operand.object_index == 8)
+            && operands.first().is_some_and(|operand| operand.object_index == Some(8))
             && operands.iter().any(|operand| operand.field.as_ref().map(|field| field.name.as_str()) == Some("c[3]"))
     ));
     let mut legacy_radius_definition = definition.clone();
@@ -4926,7 +4926,7 @@ offset: 30,
             operands: vec![SketchNativeOperand {
                 native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr").expect("source operand kind is nonempty"),
                 field: None,
-                object_index: 8,
+                object_index: Some(8),
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }],
         }
@@ -4960,14 +4960,14 @@ offset: 30,
             .map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.object_index))
             .collect::<Vec<_>>(),
         vec![
-            (None, 8),
-            (Some("a[0]"), 12),
-            (Some("a[2]"), 0),
-            (Some("a[3]"), 1),
-            (Some("c[0]"), 15),
-            (Some("c[1]"), 16),
-            (Some("c[2]"), 15),
-            (Some("c[3]"), 1),
+            (None, Some(8)),
+            (Some("a[0]"), Some(12)),
+            (Some("a[2]"), Some(0)),
+            (Some("a[3]"), Some(1)),
+            (Some("c[0]"), Some(15)),
+            (Some("c[1]"), Some(16)),
+            (Some("c[2]"), Some(15)),
+            (Some("c[3]"), Some(1)),
         ]
     );
     let mut special_endpoint_dimension = definition.clone();

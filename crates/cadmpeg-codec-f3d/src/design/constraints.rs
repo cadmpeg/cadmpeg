@@ -132,7 +132,7 @@ pub fn project_sketch_constraints(
                 name: crate::design::literals::nonempty(field),
                 role: None,
             }),
-            object_index: record_index,
+            object_index: Some(record_index),
             native_ref: native_ref
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
                 .map(str::to_owned),

@@ -966,6 +966,38 @@ fn neutralizes_line_midpoint_coincidence() {
 }
 
 #[test]
+fn native_constraint_unresolved_operands_keep_an_object_index_only_for_objects() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Type="99" First="-3" FirstPos="1" Second="7" SecondPos="2"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native relation with unresolved operands");
+    let constraints = &result.ir().model.sketch_constraints;
+    assert_eq!(constraints.len(), 1);
+    let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { operands, .. } =
+        constraints[0].definition.kind()
+    else {
+        panic!("unknown relation remains native");
+    };
+    assert_eq!(
+        operands
+            .iter()
+            .map(|operand| (operand.native_kind.as_str(), operand.object_index))
+            .collect::<Vec<_>>(),
+        vec![("position:1", None), ("position:2", Some(7))]
+    );
+}
+
+#[test]
 fn native_constraint_negative_operands_resolve_to_distinct_builtin_axes() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>

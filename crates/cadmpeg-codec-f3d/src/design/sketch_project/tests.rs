@@ -670,10 +670,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             && entities.iter().all(|entity| entity == &entities[0])
                     && operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
                 == [
-                    (Some("member"), "point", 175),
-                    (Some("auxiliary"), "record", 999),
-                    (Some("return"), "point", 175),
-                    (Some("return"), "point", 175),
+                    (Some("member"), "point", Some(175)),
+                    (Some("auxiliary"), "record", Some(999)),
+                    (Some("return"), "point", Some(175)),
+                    (Some("return"), "point", Some(175)),
                 ]
     ));
     assert!(matches!(

@@ -58,7 +58,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
                 )
                 .expect("source operand kind is nonempty"),
                 field: None,
-                object_index: 7,
+                object_index: Some(7),
                 native_ref: Some(owner.id),
             },
             SketchNativeOperand {
@@ -67,7 +67,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
                 )
                 .expect("source operand kind is nonempty"),
                 field: None,
-                object_index: 8,
+                object_index: Some(8),
                 native_ref: Some(point.id),
             },
         ]
@@ -697,7 +697,7 @@ fn horizontal_relation_requires_one_line_or_two_points() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 3,
+                    object_index: Some(3),
                     native_ref: Some("same-marker".into()),
                 },
                 SketchNativeOperand {
@@ -706,7 +706,7 @@ fn horizontal_relation_requires_one_line_or_two_points() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 3,
+                    object_index: Some(3),
                     native_ref: Some("same-marker".into()),
                 },
             ],

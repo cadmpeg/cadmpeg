@@ -1411,7 +1411,7 @@ fn native_operand(
                 .expect("source field name is nonempty"),
             role: None,
         }),
-        object_index: reference.index,
+        object_index: Some(reference.index),
         native_ref: reference.index.checked_sub(1).map(|ordinal| {
             format!(
                 "inventor:pmdc:sketch-entity#{}-{ordinal}",
