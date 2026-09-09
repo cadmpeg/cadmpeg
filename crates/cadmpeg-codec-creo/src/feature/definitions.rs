@@ -1088,23 +1088,24 @@ impl<T> SolverSubtable<T> {
     }
 }
 
-impl SolverSubtable<FeatureSkamp> {
-    /// Rebases the table header and row offsets.
-    pub(crate) fn shift_offsets(&mut self, delta: usize) {
-        let rows = match self {
-            Self::Declared { header, rows } => {
-                header.offset += delta;
-                rows
-            }
-            Self::Unframed(rows) => &mut rows.0,
-        };
-        for row in rows {
-            row.offset += delta;
-        }
+/// A solver row with a mutable source offset.
+pub(crate) trait HasOffset {
+    fn offset_mut(&mut self) -> &mut usize;
+}
+
+impl HasOffset for FeatureSkamp {
+    fn offset_mut(&mut self) -> &mut usize {
+        &mut self.offset
     }
 }
 
-impl SolverSubtable<FeatureRelationTriple> {
+impl HasOffset for FeatureRelationTriple {
+    fn offset_mut(&mut self) -> &mut usize {
+        &mut self.offset
+    }
+}
+
+impl<T: HasOffset> SolverSubtable<T> {
     /// Rebases the table header and row offsets.
     pub(crate) fn shift_offsets(&mut self, delta: usize) {
         let rows = match self {
@@ -1115,7 +1116,7 @@ impl SolverSubtable<FeatureRelationTriple> {
             Self::Unframed(rows) => &mut rows.0,
         };
         for row in rows {
-            row.offset += delta;
+            *row.offset_mut() += delta;
         }
     }
 }
