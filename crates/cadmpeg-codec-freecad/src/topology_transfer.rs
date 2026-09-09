@@ -123,7 +123,7 @@ struct Tables<'a> {
     surfaces: &'a [TextSurface],
     polygons3d: &'a [TextPolygon3d],
     polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
-    tshapes: &'a [TextTShape],
+    tshapes: &'a crate::brep::TextTShapes,
     triangulations: &'a [TextTriangulation],
     roots: &'a [TextShapeUse],
 }
@@ -1463,10 +1463,7 @@ impl<'a> Builder<'a> {
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
-        self.tables
-            .tshapes
-            .get(index - 1)
-            .ok_or_else(|| CodecError::malformed(format_args!("missing TShape {index}")))
+        self.tables.tshapes.resolve(index)
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> Result<String, CodecError> {
