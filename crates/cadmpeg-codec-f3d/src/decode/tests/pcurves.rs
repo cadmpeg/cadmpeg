@@ -80,18 +80,16 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
             let shift = &mut shift_value;
             let mut scale_value = *definition_payload.scale();
             let scale = &mut scale_value;
-            {
-                context
-                    .edit(|_, context_parameter_range, _| {
-                        (*context_parameter_range) = [-1.5, 2.5];
-                        *discontinuity_flag = false;
-                        *base_u_range = [-2.0, 5.0];
-                        *base_v_range = [-6.0, 7.0];
-                        *base_range = [-0.75, 1.75];
-                        (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
-                    })
-                    .unwrap()
-            };
+            context
+                .edit(|_, context_parameter_range, _| {
+                    (*context_parameter_range) = [-1.5, 2.5];
+                    *discontinuity_flag = false;
+                    *base_u_range = [-2.0, 5.0];
+                    *base_v_range = [-6.0, 7.0];
+                    *base_range = [-0.75, 1.75];
+                    (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+                })
+                .unwrap();
             *definition_payload =
                 cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
                     context_value,

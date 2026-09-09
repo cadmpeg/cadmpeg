@@ -314,7 +314,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     match result.ir().model.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
             let parameter_range = definition_payload.parameter_range();
-            assert_eq!(*parameter_range, [0.0, 5.0])
+            assert_eq!(*parameter_range, [0.0, 5.0]);
         }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
