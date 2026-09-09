@@ -7072,11 +7072,11 @@ fn validate_dimension_locus_pairs<'a>(
             locus_pair_companions.insert((native_stream, pair.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
-            pair.byte_offset >= companion.byte_offset.saturating_add(58)
+            pair.byte_offset() >= companion.byte_offset.saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
                         && owner.byte_offset() > companion.byte_offset
-                        && owner.byte_offset() <= pair.byte_offset
+                        && owner.byte_offset() <= pair.byte_offset()
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
@@ -7092,25 +7092,15 @@ fn validate_dimension_locus_pairs<'a>(
         let governs_following_dimension =
             design::decode::dimension_frames::following_dimension_companion_record_index(
                 &pair.id,
-                pair.paired_byte_offset,
+                pair.paired_byte_offset(),
                 &native.design_parameter_owners,
                 &native.design_parameters,
             ) == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
-            && pair.frame_length > 69
-            && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
-            && pair
-                .opaque_index
-                .as_ref()
-                .is_some_and(|opaque| opaque.offset == pair.byte_offset.saturating_add(35))
-            && pair.loci[0].geometry_reference_offset == pair.byte_offset.saturating_add(40)
-            && pair.loci[0].role_offset == pair.byte_offset.saturating_add(50)
-            && pair.loci[1].geometry_reference_offset == pair.byte_offset.saturating_add(55)
-            && pair.loci[1].role_offset == pair.byte_offset.saturating_add(65)
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci[0].geometry_index()))
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci[1].geometry_index()))
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[0].geometry_index()))
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[1].geometry_index()))
             && unique_index
             && unique_companion;
         if !valid {
@@ -7427,11 +7417,11 @@ fn validate_dimension_null_locus_pairs<'a>(
             null_locus_pair_companions.insert((native_stream, pair.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
-            pair.byte_offset >= companion.byte_offset.saturating_add(58)
+            pair.byte_offset() >= companion.byte_offset.saturating_add(58)
                 && !native.design_parameter_owners.iter().any(|owner| {
                     design_stream(owner.id()) == native_stream
                         && owner.byte_offset() > companion.byte_offset
-                        && owner.byte_offset() <= pair.byte_offset
+                        && owner.byte_offset() <= pair.byte_offset()
                 })
         });
         let dimension_companion = companion.is_some_and(|companion| {
@@ -7447,7 +7437,7 @@ fn validate_dimension_null_locus_pairs<'a>(
         let governs_following_dimension =
             design::decode::dimension_frames::following_dimension_companion_record_index(
                 &pair.id,
-                pair.paired_byte_offset,
+                pair.paired_byte_offset(),
                 &native.design_parameter_owners,
                 &native.design_parameters,
             ) == Some(pair.governing_companion_record_index);
@@ -7458,13 +7448,7 @@ fn validate_dimension_null_locus_pairs<'a>(
             && dimension_companion
             && governs_following_dimension
             && !companion_has_typed_frame
-            && pair.frame_length > 54
-            && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
-            && pair.loci[0].geometry_reference_offset == pair.byte_offset.saturating_add(25)
-            && pair.loci[0].role_offset == pair.byte_offset.saturating_add(35)
-            && pair.loci[1].geometry_reference_offset == pair.byte_offset.saturating_add(40)
-            && pair.loci[1].role_offset == pair.byte_offset.saturating_add(50)
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci[1].geometry_index()))
+            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[1].geometry_index()))
             && unique_index
             && unique_companion;
         if !valid {
@@ -7807,7 +7791,10 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Some(owner) = owner else {
             continue;
         };
-        for member in [pair.loci[0].geometry_index(), pair.loci[1].geometry_index()] {
+        for member in [
+            pair.loci()[0].geometry_index(),
+            pair.loci()[1].geometry_index(),
+        ] {
             if relation_owners
                 .insert((native_stream, member), owner)
                 .is_some_and(|existing| existing != owner)
@@ -7857,7 +7844,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         };
         if relation_owners
-            .insert((native_stream, pair.loci[1].geometry_index()), owner)
+            .insert((native_stream, pair.loci()[1].geometry_index()), owner)
             .is_some_and(|existing| existing != owner)
         {
             findings.push(Finding {

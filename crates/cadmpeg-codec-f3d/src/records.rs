@@ -1546,6 +1546,37 @@ pub struct DesignDimensionLocusPair {
     pub id: String,
     /// Companion record containing this frame.
     pub companion_record_index: u32,
+    /// Companion owned by the following governed dimension parameter.
+    pub governing_companion_record_index: u32,
+    byte_offset: u64,
+    /// Per-file primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    frame_length: u64,
+    first: DimensionFirstLocus,
+    second_geometry_record_index: NonZeroU32,
+    roles: [u32; 2],
+    /// Per-file paired class tag.
+    pub paired_class_tag: DesignClassTag,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DimensionFirstLocus {
+    Null,
+    Geometry {
+        opaque_index: u32,
+        record_index: NonZeroU32,
+    },
+}
+
+/// Unchecked dimension locus pair payload and frame offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionLocusPairDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
     /// Companion record owned by the following dimension parameter governed by
     /// this frame.
     pub governing_companion_record_index: u32,
@@ -1567,6 +1598,143 @@ pub struct DesignDimensionLocusPair {
     pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+impl DesignDimensionLocusPair {
+    /// Admit one of the two locus frame layouts with representable offsets.
+    pub fn try_new(draft: DesignDimensionLocusPairDraft) -> Result<Self, String> {
+        let first = match (
+            draft.opaque_index.as_ref(),
+            draft.loci[0].geometry_record_index,
+        ) {
+            (None, None) => DimensionFirstLocus::Null,
+            (Some(opaque), Some(record_index)) => DimensionFirstLocus::Geometry {
+                opaque_index: opaque.value,
+                record_index,
+            },
+            _ => return Err(
+                "opaque_index is present exactly when first_geometry_record_index names geometry"
+                    .into(),
+            ),
+        };
+        let second_geometry_record_index = draft.loci[1]
+            .geometry_record_index
+            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
+        let prefix = match first {
+            DimensionFirstLocus::Null => 25,
+            DimensionFirstLocus::Geometry { .. } => 40,
+        };
+        if draft.frame_length <= prefix + 29 {
+            return Err("frame_length does not contain the complete locus frame".into());
+        }
+        let paired_byte_offset = draft
+            .byte_offset
+            .checked_add(draft.frame_length)
+            .ok_or("paired_byte_offset overflows")?;
+        if draft.paired_byte_offset != paired_byte_offset {
+            return Err("paired_byte_offset disagrees with frame_length".into());
+        }
+        if draft
+            .opaque_index
+            .as_ref()
+            .is_some_and(|opaque| opaque.offset != draft.byte_offset + 35)
+        {
+            return Err("opaque_index_offset disagrees with byte_offset".into());
+        }
+        for (ordinal, locus) in draft.loci.iter().enumerate() {
+            let offset = draft.byte_offset + prefix + ordinal as u64 * 15;
+            let field = if ordinal == 0 { "first" } else { "second" };
+            if locus.geometry_reference_offset != offset {
+                return Err(format!(
+                    "{field}_geometry_reference_offset disagrees with byte_offset"
+                ));
+            }
+            if locus.role_offset != offset + 10 {
+                return Err(format!("{field}_role_offset disagrees with byte_offset"));
+            }
+        }
+        Ok(Self {
+            id: draft.id,
+            companion_record_index: draft.companion_record_index,
+            governing_companion_record_index: draft.governing_companion_record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            first,
+            second_geometry_record_index,
+            roles: [draft.loci[0].role, draft.loci[1].role],
+            paired_class_tag: draft.paired_class_tag,
+        })
+    }
+
+    /// Primary indexed header byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Length from the primary header to the paired header.
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+
+    /// Paired indexed header byte offset.
+    pub fn paired_byte_offset(&self) -> u64 {
+        self.byte_offset + self.frame_length
+    }
+
+    /// Opaque index and its derived offset in the ordinary two-locus form.
+    pub fn opaque_index(&self) -> Option<Located<u32>> {
+        match self.first {
+            DimensionFirstLocus::Null => None,
+            DimensionFirstLocus::Geometry { opaque_index, .. } => Some(Located {
+                value: opaque_index,
+                offset: self.byte_offset + 35,
+            }),
+        }
+    }
+
+    /// Ordered loci and their derived geometry and role offsets.
+    pub fn loci(&self) -> [DesignDimensionAnnotationOperand; 2] {
+        let (first, prefix) = match self.first {
+            DimensionFirstLocus::Null => (None, 25),
+            DimensionFirstLocus::Geometry { record_index, .. } => (Some(record_index), 40),
+        };
+        [
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: first,
+                geometry_reference_offset: self.byte_offset + prefix,
+                role: self.roles[0],
+                role_offset: self.byte_offset + prefix + 10,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: Some(self.second_geometry_record_index),
+                geometry_reference_offset: self.byte_offset + prefix + 15,
+                role: self.roles[1],
+                role_offset: self.byte_offset + prefix + 25,
+            },
+        ]
+    }
+
+    /// Recover the payload with derived frame and locus offsets.
+    pub fn into_draft(self) -> DesignDimensionLocusPairDraft {
+        let opaque_index = self.opaque_index();
+        let loci = self.loci();
+        let paired_byte_offset = self.paired_byte_offset();
+        DesignDimensionLocusPairDraft {
+            id: self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            opaque_index,
+            loci,
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1604,15 +1772,8 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
             _ => return Err("opaque_index and opaque_index_offset must occur together".to_owned()),
         };
         let first = NonZeroU32::new(wire.first_geometry_record_index);
-        if opaque_index.is_some() != first.is_some() {
-            return Err(
-                "opaque_index is present exactly when first_geometry_record_index names geometry"
-                    .to_owned(),
-            );
-        }
-        let second = NonZeroU32::new(wire.second_geometry_record_index)
-            .ok_or("second_geometry_record_index must name an indexed sketch-geometry record")?;
-        Ok(Self {
+        let second = NonZeroU32::new(wire.second_geometry_record_index);
+        Self::try_new(DesignDimensionLocusPairDraft {
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
@@ -1629,7 +1790,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
                     role_offset: wire.first_role_offset,
                 },
                 DesignDimensionAnnotationOperand {
-                    geometry_record_index: Some(second),
+                    geometry_record_index: second,
                     geometry_reference_offset: wire.second_geometry_reference_offset,
                     role: wire.second_role,
                     role_offset: wire.second_role_offset,
@@ -1643,6 +1804,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
 
 impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
     fn from(pair: DesignDimensionLocusPair) -> Self {
+        let pair = pair.into_draft();
         let [first, second] = pair.loci;
         Self {
             id: pair.id,

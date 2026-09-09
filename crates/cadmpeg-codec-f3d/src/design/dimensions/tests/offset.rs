@@ -778,34 +778,37 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         })
         .unwrap()
     };
-    let pair = |stream: &str| DesignDimensionLocusPair {
-        id: format!("f3d:{stream}:design-dimension-locus-pair#0"),
-        companion_record_index: 12,
-        governing_companion_record_index: 12,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        record_index: 13,
-        frame_length: 100,
-        opaque_index: Some(crate::records::Located {
-            value: 0,
-            offset: 35,
-        }),
-        loci: [
-            crate::records::DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(20),
-                geometry_reference_offset: 40,
-                role: 0,
-                role_offset: 50,
-            },
-            crate::records::DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(21),
-                geometry_reference_offset: 55,
-                role: 0,
-                role_offset: 65,
-            },
-        ],
-        paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
-        paired_byte_offset: 100,
+    let pair = |stream: &str| {
+        DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
+            id: format!("f3d:{stream}:design-dimension-locus-pair#0"),
+            companion_record_index: 12,
+            governing_companion_record_index: 12,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            record_index: 13,
+            frame_length: 100,
+            opaque_index: Some(crate::records::Located {
+                value: 0,
+                offset: 35,
+            }),
+            loci: [
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(20),
+                    geometry_reference_offset: 40,
+                    role: 0,
+                    role_offset: 50,
+                },
+                crate::records::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(21),
+                    geometry_reference_offset: 55,
+                    role: 0,
+                    role_offset: 65,
+                },
+            ],
+            paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
+            paired_byte_offset: 100,
+        })
+        .unwrap()
     };
     let point = |stream: &str, record_index| {
         SketchPoint::try_from(crate::records::SketchPointDraft {
