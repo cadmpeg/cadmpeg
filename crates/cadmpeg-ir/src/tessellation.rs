@@ -611,7 +611,11 @@ impl Tessellation {
             TessellationNormals::PerVertex(normals) | TessellationNormals::PerCorner(normals) => {
                 normals.as_mut_slice()
             }
-            TessellationNormals::None => &mut [],
+            TessellationNormals::None => {
+                return Err(TessellationError(
+                    "mesh has no shading normals to edit".into(),
+                ));
+            }
         };
         edit(normals);
         require_finite_normals(normals)?;
