@@ -160,6 +160,7 @@ impl FiniteReal {
         &self.0
     }
     /// Reverse the sign.
+    #[must_use]
     pub const fn negated(self) -> Self {
         Self(-self.0)
     }
