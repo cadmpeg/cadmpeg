@@ -950,8 +950,11 @@ fn hex(bytes: &[u8]) -> String {
         })
 }
 
-pub(crate) fn suffix_fields(source: View<'_>) -> (u64, String) {
-    (source.window().len() as u64, sha256_hex(source.window()))
+pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sha256Hex) {
+    (
+        source.window().len() as u64,
+        crate::native::digest::Sha256Hex::digest(source.window()),
+    )
 }
 
 #[cfg(test)]

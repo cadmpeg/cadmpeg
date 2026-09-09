@@ -247,7 +247,7 @@ pub(crate) struct PropertyRecord {
     pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
-    pub(crate) raw_sha256: String,
+    pub(crate) raw_sha256: digest::Sha256Hex,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -278,7 +278,7 @@ impl From<PropertyRecord> for PropertyRecordWire {
             name: value.name,
             scalar_value: value.scalar_value,
             raw_len: value.raw_len,
-            raw_sha256: value.raw_sha256,
+            raw_sha256: value.raw_sha256.into(),
         }
     }
 }
@@ -297,7 +297,8 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             name: wire.name,
             scalar_value: wire.scalar_value,
             raw_len: wire.raw_len,
-            raw_sha256: wire.raw_sha256,
+            raw_sha256: digest::Sha256Hex::try_from(wire.raw_sha256)
+                .map_err(|error| format!("raw_sha256: {error}"))?,
         })
     }
 }
@@ -448,7 +449,7 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) state: u8,
     pub(crate) terminal_reference: u32,
     pub(crate) suffix_len: u64,
-    pub(crate) suffix_sha256: String,
+    pub(crate) suffix_sha256: digest::Sha256Hex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -474,7 +475,7 @@ pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) long_name: String,
     pub(crate) extension: Option<RenderingStyleExtension>,
     pub(crate) suffix_len: u64,
-    pub(crate) suffix_sha256: String,
+    pub(crate) suffix_sha256: digest::Sha256Hex,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -551,7 +552,7 @@ impl From<PmAppRenderingStyleRecord> for PmAppRenderingStyleRecordWire {
             style_values,
             guid,
             suffix_len: value.suffix_len,
-            suffix_sha256: value.suffix_sha256,
+            suffix_sha256: value.suffix_sha256.into(),
         }
     }
 }
@@ -617,7 +618,8 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
             long_name: wire.long_name,
             extension,
             suffix_len: wire.suffix_len,
-            suffix_sha256: wire.suffix_sha256,
+            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+                .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
 }
@@ -1578,7 +1580,7 @@ mod tests {
             "segment_version_major": 16, "header_value": 0, "header_id": 0,
             "state": 0, "flags": 0, "values": [0, 0], "default_state": 0,
             "value": 0, "name_reference": 0, "name": "", "comment": "comment",
-            "long_name": "", "suffix_len": 0, "suffix_sha256": ""
+            "long_name": "", "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         });
         assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
         let mut modern = legacy.clone();
