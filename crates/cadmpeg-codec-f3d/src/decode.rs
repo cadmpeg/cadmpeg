@@ -3547,7 +3547,9 @@ fn annotate_docstruct(
         return;
     };
     attributes.insert("docstruct_type".into(), docstruct.doc_type);
-    attributes.insert("docstruct_subtype".into(), docstruct.subtype);
+    if let Some(subtype) = docstruct.subtype {
+        attributes.insert("docstruct_subtype".into(), subtype);
+    }
 }
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
