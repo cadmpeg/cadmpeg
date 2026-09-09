@@ -1046,7 +1046,8 @@ impl<T> SolverSubtable<T> {
         }
     }
 
-    pub fn header_mut(&mut self) -> Option<&mut FeatureSolverTableHeader> {
+    #[cfg(test)]
+    pub(crate) fn header_mut(&mut self) -> Option<&mut FeatureSolverTableHeader> {
         match self {
             Self::Declared { header, .. } => Some(header),
             Self::Unframed(_) => None,
@@ -1060,7 +1061,8 @@ impl<T> SolverSubtable<T> {
         }
     }
 
-    pub fn rows_mut(&mut self) -> &mut [T] {
+    #[cfg(test)]
+    pub(crate) fn rows_mut(&mut self) -> &mut [T] {
         match self {
             Self::Declared { rows, .. } => rows,
             Self::Unframed(rows) => &mut rows.0,
@@ -1082,6 +1084,39 @@ impl<T> SolverSubtable<T> {
                 .unwrap_or(usize::MAX)
                 .saturating_sub(rows.len()),
             Self::Unframed(_) => 0,
+        }
+    }
+}
+
+/// A solver row with a mutable source offset.
+pub(crate) trait HasOffset {
+    fn offset_mut(&mut self) -> &mut usize;
+}
+
+impl HasOffset for FeatureSkamp {
+    fn offset_mut(&mut self) -> &mut usize {
+        &mut self.offset
+    }
+}
+
+impl HasOffset for FeatureRelationTriple {
+    fn offset_mut(&mut self) -> &mut usize {
+        &mut self.offset
+    }
+}
+
+impl<T: HasOffset> SolverSubtable<T> {
+    /// Rebases the table header and row offsets.
+    pub(crate) fn shift_offsets(&mut self, delta: usize) {
+        let rows = match self {
+            Self::Declared { header, rows } => {
+                header.offset += delta;
+                rows
+            }
+            Self::Unframed(rows) => &mut rows.0,
+        };
+        for row in rows {
+            *row.offset_mut() += delta;
         }
     }
 }

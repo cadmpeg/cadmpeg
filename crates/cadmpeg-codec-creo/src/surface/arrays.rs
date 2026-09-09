@@ -61,12 +61,12 @@ impl DimensionedScalars {
     }
 }
 
-/// A counted scalar array with a token and value for every declared slot.
+/// A counted scalar array with undecoded values and optional source tokens.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CountedScalars {
     count: u32,
     values: Vec<Option<f64>>,
-    tokens: Vec<Vec<u8>>,
+    tokens: Option<Vec<Vec<u8>>>,
 }
 
 impl CountedScalars {
@@ -76,7 +76,7 @@ impl CountedScalars {
         Some(Self {
             count,
             values: std::iter::repeat_n(None, len).collect(),
-            tokens: std::iter::repeat_with(Vec::new).take(len).collect(),
+            tokens: None,
         })
     }
 
@@ -85,7 +85,9 @@ impl CountedScalars {
         if slots.len() != self.values.len() {
             return None;
         }
-        (self.values, self.tokens) = slots.into_iter().unzip();
+        let (values, tokens) = slots.into_iter().unzip();
+        self.values = values;
+        self.tokens = Some(tokens);
         Some(())
     }
 
@@ -98,8 +100,8 @@ impl CountedScalars {
         &self.values
     }
     /// Source token bytes in slot order.
-    pub(crate) fn tokens(&self) -> &[Vec<u8>] {
-        &self.tokens
+    pub(crate) fn tokens(&self) -> Option<&[Vec<u8>]> {
+        self.tokens.as_deref()
     }
 }
 
@@ -127,6 +129,8 @@ mod tests {
     #[test]
     fn counted_fills_reject_mismatched_extents_without_mutation() {
         let mut array = CountedScalars::empty(2).expect("valid extent");
+        assert_eq!(array.tokens(), None);
+        assert_eq!(array.values(), &[None; 2]);
         assert_eq!(
             array.fill_tokens(vec![(Some(2.0), vec![0xe4]); 2]),
             Some(())
@@ -138,7 +142,7 @@ mod tests {
         }
         assert_eq!(array.fill_tokens(vec![(None, vec![0x0f]); 2]), Some(()));
         assert_eq!(array.values(), &[None; 2]);
-        assert_eq!(array.tokens(), &[vec![0x0f], vec![0x0f]]);
+        assert_eq!(array.tokens(), Some([vec![0x0f], vec![0x0f]].as_slice()));
     }
 
     #[test]

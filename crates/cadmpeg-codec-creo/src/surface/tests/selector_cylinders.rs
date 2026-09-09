@@ -198,7 +198,7 @@ fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
     assert_eq!(
         candidates
             .iter()
-            .map(|candidate| candidate.origin)
+            .map(PositionalCylinderFrame::origin)
             .collect::<Vec<_>>(),
         [
             [10.0, 7.0, 9.0],
@@ -208,7 +208,7 @@ fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
         ]
     );
     assert!(candidates.iter().all(|candidate| {
-        candidate.axis == [1.0, 0.0, 0.0]
+        candidate.axis() == [1.0, 0.0, 0.0]
             && candidate.radius == 4.0
             && candidate.length == Some(6.0)
     }));

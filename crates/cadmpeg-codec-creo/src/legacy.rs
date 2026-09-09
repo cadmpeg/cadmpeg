@@ -1519,7 +1519,7 @@ impl Serialize for ObjectRecord {
     }
 }
 
-/// Native identity family bound to its legacy payload type.
+/// Payload-shape marker whose runtime token distinguishes legacy identity families.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ValueKind<T> {
     token: &'static str,

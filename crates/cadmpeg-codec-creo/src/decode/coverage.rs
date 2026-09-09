@@ -70,51 +70,178 @@ const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
 
 #[derive(Default)]
 pub(crate) struct SurfaceTransferCoverage {
-    pub(crate) unique_rows: usize,
-    pub(crate) transferred_rows: usize,
-    pub(crate) retained_unknown_rows: usize,
-    pub(crate) ambiguous_rows: usize,
+    unique_rows: usize,
+    transferred_rows: usize,
+    retained_unknown_rows: usize,
+    ambiguous_rows: usize,
     by_family: [(usize, usize); 7],
     unknown_by_family: [usize; 7],
 }
 
 impl SurfaceTransferCoverage {
-    pub(crate) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
-        self.by_family[surface_family_index(kind)]
+    /// Recorded unique rows.
+    pub(crate) fn unique_rows(&self) -> usize {
+        self.unique_rows
     }
 
-    fn family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut (usize, usize) {
-        &mut self.by_family[surface_family_index(kind)]
+    /// Recorded transferred rows.
+    pub(crate) fn transferred_rows(&self) -> usize {
+        self.transferred_rows
+    }
+
+    /// Recorded retained unknown rows.
+    pub(crate) fn retained_unknown_rows(&self) -> usize {
+        self.retained_unknown_rows
+    }
+
+    /// Recorded ambiguous rows.
+    pub(crate) fn ambiguous_rows(&self) -> usize {
+        self.ambiguous_rows
+    }
+
+    fn record_ambiguous_rows(&mut self, count: usize) {
+        self.ambiguous_rows += count;
+    }
+
+    pub(crate) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
+        self.by_family[surface_family_index(kind)]
     }
 
     pub(crate) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
         self.unknown_by_family[surface_family_index(kind)]
     }
 
-    fn unknown_family_mut(&mut self, kind: crate::surface::SurfaceKind) -> &mut usize {
-        &mut self.unknown_by_family[surface_family_index(kind)]
+    fn record_source_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.unique_rows += 1;
+        self.by_family[surface_family_index(kind)].0 += 1;
+    }
+
+    fn record_transferred_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.transferred_rows += 1;
+        self.by_family[surface_family_index(kind)].1 += 1;
+    }
+
+    fn record_retained_unknown_row(&mut self, kind: crate::surface::SurfaceKind) {
+        self.retained_unknown_rows += 1;
+        self.unknown_by_family[surface_family_index(kind)] += 1;
     }
 }
 
 #[derive(Default)]
 pub(crate) struct CurveTransferCoverage {
-    pub(crate) unique_rows: usize,
-    pub(crate) transferred_rows: usize,
-    pub(crate) retained_unknown_rows: usize,
-    pub(crate) ambiguous_rows: usize,
-    pub(crate) by_type: BTreeMap<u8, (usize, usize)>,
-    pub(crate) unknown_by_type: BTreeMap<u8, usize>,
+    unique_rows: usize,
+    transferred_rows: usize,
+    retained_unknown_rows: usize,
+    ambiguous_rows: usize,
+    by_type: BTreeMap<u8, (usize, usize)>,
+    unknown_by_type: BTreeMap<u8, usize>,
+}
+
+impl CurveTransferCoverage {
+    /// Recorded unique rows.
+    pub(crate) fn unique_rows(&self) -> usize {
+        self.unique_rows
+    }
+
+    /// Recorded transferred rows.
+    pub(crate) fn transferred_rows(&self) -> usize {
+        self.transferred_rows
+    }
+
+    /// Recorded retained unknown rows.
+    pub(crate) fn retained_unknown_rows(&self) -> usize {
+        self.retained_unknown_rows
+    }
+
+    /// Recorded ambiguous rows.
+    pub(crate) fn ambiguous_rows(&self) -> usize {
+        self.ambiguous_rows
+    }
+
+    fn record_ambiguous_rows(&mut self, count: usize) {
+        self.ambiguous_rows += count;
+    }
+
+    fn record_source_row(&mut self, type_byte: u8) {
+        self.unique_rows += 1;
+        self.by_type.entry(type_byte).or_default().0 += 1;
+        self.unknown_by_type.entry(type_byte).or_default();
+    }
+
+    fn record_transferred_row(&mut self, type_byte: u8) {
+        self.transferred_rows += 1;
+        self.by_type.entry(type_byte).or_default().1 += 1;
+    }
+
+    fn record_retained_unknown_row(&mut self, type_byte: u8) {
+        self.retained_unknown_rows += 1;
+        *self.unknown_by_type.entry(type_byte).or_default() += 1;
+    }
+
+    /// Source and transferred counts by native curve type.
+    pub(crate) fn by_type(&self) -> &BTreeMap<u8, (usize, usize)> {
+        &self.by_type
+    }
+
+    /// Retained unknown counts by native curve type.
+    pub(crate) fn unknown_by_type(&self) -> &BTreeMap<u8, usize> {
+        &self.unknown_by_type
+    }
 }
 
 #[derive(Default)]
 pub(crate) struct SketchSegmentTransferCoverage {
-    pub(crate) decoded_rows: usize,
-    pub(crate) resolved_geometry: usize,
-    pub(crate) missing_rows: usize,
+    decoded_rows: usize,
+    resolved_geometry: usize,
+    missing_rows: usize,
     by_family: [Option<(usize, usize)>; 9],
 }
 
 impl SketchSegmentTransferCoverage {
+    /// Records decoded and missing rows for a segment table.
+    pub(crate) fn record_table_rows(&mut self, decoded: usize, expected: usize) {
+        self.decoded_rows += decoded;
+        self.missing_rows += expected.saturating_sub(decoded);
+    }
+
+    /// Records decoded rows in one segment family.
+    pub(crate) fn record_family_rows(
+        &mut self,
+        family: crate::coverage::SketchSegmentFamily,
+        count: usize,
+    ) {
+        self.family_mut(family).0 += count;
+    }
+
+    /// Records resolved geometry instances.
+    pub(crate) fn record_resolved_geometry(&mut self, count: usize) {
+        self.resolved_geometry += count;
+    }
+
+    /// Records resolved rows in one segment family.
+    pub(crate) fn record_family_resolution(
+        &mut self,
+        family: crate::coverage::SketchSegmentFamily,
+        count: usize,
+    ) {
+        self.family_mut(family).1 += count;
+    }
+
+    /// Recorded decoded rows.
+    pub(crate) fn decoded_rows(&self) -> usize {
+        self.decoded_rows
+    }
+
+    /// Recorded resolved geometry.
+    pub(crate) fn resolved_geometry(&self) -> usize {
+        self.resolved_geometry
+    }
+
+    /// Recorded missing rows.
+    pub(crate) fn missing_rows(&self) -> usize {
+        self.missing_rows
+    }
+
     pub(crate) fn families(
         &self,
     ) -> impl Iterator<Item = (crate::coverage::SketchSegmentFamily, (usize, usize))> + '_ {
@@ -124,10 +251,7 @@ impl SketchSegmentTransferCoverage {
             .filter_map(|(family, counts)| counts.map(|counts| (family, counts)))
     }
 
-    pub(crate) fn family_mut(
-        &mut self,
-        family: crate::coverage::SketchSegmentFamily,
-    ) -> &mut (usize, usize) {
+    fn family_mut(&mut self, family: crate::coverage::SketchSegmentFamily) -> &mut (usize, usize) {
         self.by_family[family.index()].get_or_insert((0, 0))
     }
 }
@@ -246,20 +370,16 @@ pub(crate) fn curve_transfer_coverage(
                 .ok()
         })
         .collect::<BTreeSet<_>>();
-    let mut coverage = CurveTransferCoverage {
-        unique_rows: unique_rows.len(),
-        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
-        ..CurveTransferCoverage::default()
-    };
+    let mut coverage = CurveTransferCoverage::default();
+    coverage.record_ambiguous_rows(rows.len().saturating_sub(unique_rows.len()));
     for row in unique_rows {
-        let transferred = usize::from(transferred_ids.contains(&row.id));
-        let retained_unknown = usize::from(unknown_ids.contains(&row.id));
-        coverage.transferred_rows += transferred;
-        coverage.retained_unknown_rows += retained_unknown;
-        let type_coverage = coverage.by_type.entry(row.type_byte).or_default();
-        type_coverage.0 += 1;
-        type_coverage.1 += transferred;
-        *coverage.unknown_by_type.entry(row.type_byte).or_default() += retained_unknown;
+        coverage.record_source_row(row.type_byte);
+        if transferred_ids.contains(&row.id) {
+            coverage.record_transferred_row(row.type_byte);
+        }
+        if unknown_ids.contains(&row.id) {
+            coverage.record_retained_unknown_row(row.type_byte);
+        }
     }
     coverage
 }
@@ -326,22 +446,19 @@ pub(crate) fn surface_transfer_coverage(
                 .ok()
         })
         .collect::<BTreeSet<_>>();
-    let mut coverage = SurfaceTransferCoverage {
-        unique_rows: unique_rows.len(),
-        ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
-        ..SurfaceTransferCoverage::default()
-    };
+    let mut coverage = SurfaceTransferCoverage::default();
+    coverage.record_ambiguous_rows(rows.len().saturating_sub(unique_rows.len()));
     for row in unique_rows {
-        let is_transferred = transferred.iter().any(|(id, kinds)| {
-            *id == row.id && kinds.iter().any(|kind| kind.same_family(row.kind))
-        });
-        let retained_unknown = unknown_ids.contains(&row.id);
-        coverage.transferred_rows += usize::from(is_transferred);
-        coverage.retained_unknown_rows += usize::from(retained_unknown);
-        let family_coverage = coverage.family_mut(row.kind);
-        family_coverage.0 += 1;
-        family_coverage.1 += usize::from(is_transferred);
-        *coverage.unknown_family_mut(row.kind) += usize::from(retained_unknown);
+        coverage.record_source_row(row.kind);
+        if transferred
+            .iter()
+            .any(|(id, kinds)| *id == row.id && kinds.iter().any(|kind| kind.same_family(row.kind)))
+        {
+            coverage.record_transferred_row(row.kind);
+        }
+        if unknown_ids.contains(&row.id) {
+            coverage.record_retained_unknown_row(row.kind);
+        }
     }
     coverage
 }

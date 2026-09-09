@@ -217,16 +217,16 @@ fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
     let frame = decode_compound_local_system_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete compound-bounded frame");
     assert_eq!(
-        frame.origin,
+        frame.origin(),
         [
             -0.000_490_864_005_609_825_7,
             23.393_699_364_519_936,
             -16.052_039_999_999_998
         ]
     );
-    assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.axis(), [0.0, 0.0, -1.0]);
     assert_eq!(
-        frame.ref_direction,
+        frame.ref_direction(),
         [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
     );
     assert_eq!(frame.radius, 0.606_300_635_480_064_5);
@@ -685,7 +685,7 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
     let (frame, frame_end) =
         decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
             .expect("complete tabulated-cylinder frame");
-    assert_eq!(frame.prefixes, [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
+    assert_eq!(frame.prefixes(), [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
     assert_eq!(frame_end, body.len() - 3);
 
     assert_eq!(
@@ -709,7 +709,23 @@ fn tabulated_cylinder_zero_sweep_bound_does_not_consume_the_next_slot() {
     let (frame, end) = decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete zero-bound frame");
 
-    assert_eq!(frame.prefixes, [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
-    assert_eq!(frame.values[4], 0.0);
+    assert_eq!(frame.prefixes(), [0x46, 0x42, 0x78, 0x4a, 0x18, 0x7b]);
+    assert_eq!(frame.values()[4], 0.0);
     assert_eq!(end, body.len());
+}
+
+#[test]
+fn tabulated_cylinder_frame_rejects_nonfinite_coordinates() {
+    let prefixes = [0x18; 6];
+    for index in 0..6 {
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut values = [0.0; 6];
+            values[index] = invalid;
+            assert!(TabulatedCylinderFrame::new(values, prefixes).is_none());
+        }
+    }
+    let values = [-1.0, 0.0, 1.0, 2.0, 3.0, 4.0];
+    let frame = TabulatedCylinderFrame::new(values, prefixes).unwrap();
+    assert_eq!(frame.values(), values);
+    assert_eq!(frame.prefixes(), prefixes);
 }
