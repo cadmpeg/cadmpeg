@@ -122,7 +122,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), path.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 2.0]));
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

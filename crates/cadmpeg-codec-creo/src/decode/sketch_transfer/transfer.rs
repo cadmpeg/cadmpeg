@@ -547,7 +547,7 @@ pub(in super::super) fn transfer_sketches(
                                     entity,
                                     segment.external_id,
                                     0,
-                                ),
+                                )?,
                                 segment.offset,
                             )
                         })
@@ -573,7 +573,7 @@ pub(in super::super) fn transfer_sketches(
                                 entity,
                                 segment.external_id,
                                 verhor,
-                            ),
+                            )?,
                             segment.offset,
                         ))
                     }),
@@ -598,7 +598,7 @@ pub(in super::super) fn transfer_sketches(
                                 entity,
                                 segment.external_id,
                                 verhor,
-                            ),
+                            )?,
                             segment.offset,
                         ))
                     }),
@@ -620,7 +620,7 @@ pub(in super::super) fn transfer_sketches(
                                 entity,
                                 segment.external_id,
                                 verhor,
-                            ),
+                            )?,
                             segment.offset,
                         ))
                     }),

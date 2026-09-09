@@ -160,7 +160,7 @@ fn source_edge_for_vertices<'a>(
         .iter()
         .filter_map(|position| ir.model.edges.get(*position))
     {
-        let endpoints_agree = edge.param_range.is_some_and(|range| {
+        let endpoints_agree = edge.param_range().is_some_and(|range| {
             evaluation::curve(curve_geometry, range[0])
                 .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
                 && evaluation::curve(curve_geometry, range[1])
@@ -967,7 +967,7 @@ pub(super) fn project(
                             let curve_edges = edges_by_curve.get_or_insert_with(|| {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
-                                    if let Some(curve) = &edge.curve {
+                                    if let Some(curve) = &edge.curve() {
                                         positions.entry(curve.as_str()).or_default().push(position);
                                     }
                                 }
@@ -1020,16 +1020,26 @@ pub(super) fn project(
                                 edge_key.1 + 1
                             ))
                             .expect("identity grammar");
+                            let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
+                                Some(curve_id),
+                                source_edge.param_range(),
+                            ) {
+                                Ok(carrier) => carrier,
+                                Err(error) => {
+                                    losses.push(entity_loss(entry, error));
+                                    valid = false;
+                                    break;
+                                }
+                            };
                             candidate.model_mut().edges.push(Edge {
                                 id: id.clone(),
-                                curve: Some(curve_id),
+                                carrier,
                                 start: vertex_ids
                                     [&(edge_definition.start_list, edge_definition.start_index)]
                                     .clone(),
                                 end: vertex_ids
                                     [&(edge_definition.end_list, edge_definition.end_index)]
                                     .clone(),
-                                param_range: source_edge.param_range,
                                 tolerance: None,
                             });
                             edge_ids.insert(edge_key, id.clone());

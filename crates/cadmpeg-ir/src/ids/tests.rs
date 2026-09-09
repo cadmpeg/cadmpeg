@@ -145,3 +145,33 @@ fn arena_identity_types_enforce_the_entity_identity_grammar() {
     );
     check!(crate::drawings::DrawingId, "fcstd:drawing:page#Page");
 }
+
+#[test]
+fn checked_identity_admission_and_typed_conversion() {
+    use super::{BodyId, Identity};
+    let text = "test:model:body#1";
+    let identity = format_identity("test", "model", "body", 1).unwrap();
+    assert_eq!(identity.as_str(), text);
+    assert_eq!(
+        serde_json::to_string(&identity).unwrap(),
+        "\"test:model:body#1\""
+    );
+    assert_eq!(
+        serde_json::from_str::<Identity>("\"test:model:body#1\"").unwrap(),
+        identity
+    );
+    assert_eq!(BodyId::from(identity).as_str(), text);
+    for invalid in [
+        "",
+        "test:body#1",
+        "test::body#1",
+        "test:model:body#",
+        "test:model:body#a#b",
+        "test:model:body#a b",
+    ] {
+        assert!(Identity::new(invalid).is_err());
+        assert!(
+            serde_json::from_str::<Identity>(&serde_json::to_string(invalid).unwrap()).is_err()
+        );
+    }
+}

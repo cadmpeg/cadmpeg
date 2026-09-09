@@ -228,7 +228,7 @@ pub(super) fn decode(
             )?);
         }
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId::mint(ids::presentation("layer", layer_id)).expect("identity grammar"),
+            id: LayerId::from(ids::presentation("layer", layer_id)),
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
@@ -369,8 +369,7 @@ pub(super) fn decode(
                 } else {
                     format!("{color_id}-alpha-{}", color.a().to_bits())
                 };
-                let id = AppearanceId::mint(ids::presentation("appearance", key))
-                    .expect("identity grammar");
+                let id = AppearanceId::from(ids::presentation("appearance", key));
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -425,8 +424,7 @@ pub(super) fn decode(
                         "binding",
                         format!("{style_id}:{ordinal}-{target_ordinal}"),
                     )
-                    .try_into()
-                    .expect("STEP identity builder validates the grammar"),
+                    .into(),
                     target,
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
@@ -482,7 +480,7 @@ pub(super) fn decode(
             let expected_id = ids::presentation("layer", layer_id);
             let mut matched = false;
             for layer in &mut ir.model.presentation_layers {
-                if layer.id.as_str() == expected_id {
+                if layer.id.as_str() == expected_id.as_str() {
                     layer.visible = Some(false);
                     matched = true;
                     break;
@@ -582,7 +580,7 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return !ids.is_empty();
     }
-    let fallback = BodyId::mint(ids::data("body", id)).expect("identity grammar");
+    let fallback = BodyId::from(ids::data("body", id));
     if body_indices.contains_key(fallback.as_str()) {
         body_ids.insert(fallback);
         active.remove(&id);
@@ -720,38 +718,28 @@ fn appearance_targets(
     let curve_id = ids::data("curve", id);
     let point_id = ids::data("point", id);
     let tessellation_id = ids::tessellation("mesh", id);
-    if face_indices.contains_key(&face_id) {
-        return vec![AppearanceTarget::Face(
-            FaceId::mint(face_id).expect("identity grammar"),
-        )];
+    if face_indices.contains_key(face_id.as_str()) {
+        return vec![AppearanceTarget::Face(FaceId::from(face_id))];
     }
-    if body_indices.contains_key(&body_id) {
-        return vec![AppearanceTarget::Body(
-            BodyId::mint(body_id).expect("identity grammar"),
-        )];
+    if body_indices.contains_key(body_id.as_str()) {
+        return vec![AppearanceTarget::Body(BodyId::from(body_id))];
     }
-    if entity_ids.edges.contains(&edge_id) {
-        return vec![AppearanceTarget::Edge(
-            EdgeId::mint(edge_id).expect("identity grammar"),
-        )];
+    if entity_ids.edges.contains(edge_id.as_str()) {
+        return vec![AppearanceTarget::Edge(EdgeId::from(edge_id))];
     }
-    if entity_ids.surfaces.contains(&surface_id) {
-        return vec![AppearanceTarget::Surface(
-            SurfaceId::mint(surface_id).expect("identity grammar"),
-        )];
+    if entity_ids.surfaces.contains(surface_id.as_str()) {
+        return vec![AppearanceTarget::Surface(SurfaceId::from(surface_id))];
     }
-    if entity_ids.curves.contains(&curve_id) {
-        return vec![AppearanceTarget::Curve(
-            CurveId::mint(curve_id).expect("identity grammar"),
-        )];
+    if entity_ids.curves.contains(curve_id.as_str()) {
+        return vec![AppearanceTarget::Curve(CurveId::from(curve_id))];
     }
-    if entity_ids.points.contains(&point_id) {
-        return vec![AppearanceTarget::Point(
-            PointId::mint(point_id).expect("identity grammar"),
-        )];
+    if entity_ids.points.contains(point_id.as_str()) {
+        return vec![AppearanceTarget::Point(PointId::from(point_id))];
     }
-    if entity_ids.tessellations.contains(&tessellation_id) {
-        return vec![AppearanceTarget::Tessellation(tessellation_id)];
+    if entity_ids.tessellations.contains(tessellation_id.as_str()) {
+        return vec![AppearanceTarget::Tessellation(
+            tessellation_id.into_string(),
+        )];
     }
     if exchange.records.contains_key(&id) {
         return vec![AppearanceTarget::Source {
@@ -826,45 +814,45 @@ fn presentation_item_one(
 ) -> Result<PresentationItem, cadmpeg_core::CodecError> {
     let candidate = |kind: &str| ids::data(kind, id);
     let body = candidate("body");
-    if body_indices.contains_key(&body) {
+    if body_indices.contains_key(body.as_str()) {
         return Ok(PresentationItem::Body {
-            body: BodyId::mint(body).expect("identity grammar"),
+            body: BodyId::from(body),
         });
     }
     let face = candidate("face");
-    if face_indices.contains_key(&face) {
+    if face_indices.contains_key(face.as_str()) {
         return Ok(PresentationItem::Face {
-            face: FaceId::mint(face).expect("identity grammar"),
+            face: FaceId::from(face),
         });
     }
     let edge = candidate("edge");
-    if entity_ids.edges.contains(&edge) {
+    if entity_ids.edges.contains(edge.as_str()) {
         return Ok(PresentationItem::Edge {
-            edge: EdgeId::mint(edge).expect("identity grammar"),
+            edge: EdgeId::from(edge),
         });
     }
     let vertex = candidate("vertex");
-    if entity_ids.vertices.contains(&vertex) {
+    if entity_ids.vertices.contains(vertex.as_str()) {
         return Ok(PresentationItem::Vertex {
-            vertex: VertexId::mint(vertex).expect("identity grammar"),
+            vertex: VertexId::from(vertex),
         });
     }
     let point = candidate("point");
-    if entity_ids.points.contains(&point) {
+    if entity_ids.points.contains(point.as_str()) {
         return Ok(PresentationItem::Point {
-            point: PointId::mint(point).expect("identity grammar"),
+            point: PointId::from(point),
         });
     }
     let curve = candidate("curve");
-    if entity_ids.curves.contains(&curve) {
+    if entity_ids.curves.contains(curve.as_str()) {
         return Ok(PresentationItem::Curve {
-            curve: CurveId::mint(curve).expect("identity grammar"),
+            curve: CurveId::from(curve),
         });
     }
     let surface = candidate("surface");
-    if entity_ids.surfaces.contains(&surface) {
+    if entity_ids.surfaces.contains(surface.as_str()) {
         return Ok(PresentationItem::Surface {
-            surface: SurfaceId::mint(surface).expect("identity grammar"),
+            surface: SurfaceId::from(surface),
         });
     }
     let Some(record) = exchange.records.get(&id) else {
@@ -878,11 +866,10 @@ fn presentation_item_one(
     let item = if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
-            .contains(&ids::product("occurrence", id))
+            .contains(ids::product("occurrence", id).as_str())
     {
         PresentationItem::Occurrence {
-            occurrence: OccurrenceId::mint(ids::product("occurrence", id))
-                .expect("identity grammar"),
+            occurrence: OccurrenceId::from(ids::product("occurrence", id)),
         }
     } else if record.partials.iter().any(|partial| {
         (partial.name == "DATUM"
@@ -890,10 +877,12 @@ fn presentation_item_one(
             || partial.name.starts_with("DIMENSIONAL_")
             || partial.name.ends_with("_TOLERANCE")
             || super::pmi::is_presentation_annotation(&partial.name))
-            && entity_ids.pmi.contains(&ids::presentation("pmi", id))
+            && entity_ids
+                .pmi
+                .contains(ids::presentation("pmi", id).as_str())
     }) {
         PresentationItem::Pmi {
-            annotation: PmiId::mint(ids::presentation("pmi", id)).expect("identity grammar"),
+            annotation: PmiId::from(ids::presentation("pmi", id)),
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
@@ -901,10 +890,10 @@ fn presentation_item_one(
         || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
-            .contains(&ids::tessellation("mesh", id))
+            .contains(ids::tessellation("mesh", id).as_str())
     {
         PresentationItem::Tessellation {
-            tessellation: ids::tessellation("mesh", id),
+            tessellation: ids::tessellation("mesh", id).into_string(),
         }
     } else {
         PresentationItem::Source {

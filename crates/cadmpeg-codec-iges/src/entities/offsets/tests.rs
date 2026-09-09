@@ -212,18 +212,24 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            curve: Some(source_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(source_id.clone()),
+                Some([5.0, 6.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            curve: Some(source_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(source_id.clone()),
+                Some([0.0, 2.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
@@ -272,7 +278,7 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .unwrap();
-    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(edge.param_range(), Some([0.0, std::f64::consts::FRAC_PI_2]));
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -425,7 +431,7 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .expect("offset arc");
-    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(edge.param_range(), Some([0.0, std::f64::consts::FRAC_PI_2]));
     let start = result
         .ir()
         .model

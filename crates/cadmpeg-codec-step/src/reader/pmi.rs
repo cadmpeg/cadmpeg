@@ -1393,7 +1393,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Result<Vec<PmiTarget>, cadmpeg
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId::mint(ids::presentation("pmi", id)).expect("identity grammar")
+    PmiId::from(ids::presentation("pmi", id))
 }
 
 fn datum_target_form(value: &str) -> DatumTargetForm {

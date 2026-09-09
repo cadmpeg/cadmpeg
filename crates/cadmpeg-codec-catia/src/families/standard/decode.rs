@@ -255,14 +255,14 @@ fn bind_consolidated_revolution_faces_and_seams(
                     .filter_map(|id| vertex_positions.get(id).copied()),
             );
             let Some(curve) = edge
-                .curve
+                .curve()
                 .as_ref()
                 .and_then(|id| curve_indices.get(id))
                 .map(|index| &ir.model.curves[*index].geometry)
             else {
                 continue;
             };
-            let Some([start, end]) = edge.param_range else {
+            let Some([start, end]) = edge.param_range() else {
                 continue;
             };
             let parameter = start + (end - start) * 0.5;
@@ -345,14 +345,14 @@ fn bind_consolidated_revolution_faces_and_seams(
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref())
+        .filter_map(|edge| edge.curve().as_ref())
         .fold(HashMap::<CurveId, usize>::new(), |mut counts, curve| {
             *counts.entry(curve.clone()).or_default() += 1;
             counts
         });
     let mut seam_count = 0usize;
     for edge in &mut ir.model.edges {
-        let Some(curve_id) = edge.curve.as_ref() else {
+        let Some(curve_id) = edge.curve().as_ref() else {
             continue;
         };
         let Some(&curve_index) = curve_indices.get(curve_id) else {
@@ -391,7 +391,8 @@ fn bind_consolidated_revolution_faces_and_seams(
             }
             carrier => *carrier = geometry,
         }
-        edge.param_range = Some(parameter_range);
+        edge.set_param_range(Some(parameter_range))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -474,12 +475,15 @@ mod consolidated_revolution_binding_tests {
         });
         ir.model.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#seam-edge".to_string()).expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 1.0]),
+            )
+            .expect("valid edge carrier"),
             start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         for (side, surface) in surface_ids.iter().enumerate() {
@@ -569,7 +573,7 @@ mod consolidated_revolution_binding_tests {
         assert!(
             matches!(ir.model.curves[0].geometry.solved_cache(), Some(CurveGeometry::Circle(circle_curve)) if { *circle_curve.parts().3 == 3.0 })
         );
-        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 0.5]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 0.5]));
     }
 }
 
@@ -5116,11 +5120,11 @@ fn emit_standard_topology(
         }
         ir.model.edges.push(Edge {
             id,
-            curve,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             start: VertexId::mint(format!("catia:standard:v#{start_point}"))
                 .expect("identity grammar"),
             end: VertexId::mint(format!("catia:standard:v#{end_point}")).expect("identity grammar"),
-            param_range,
             tolerance: None,
         });
     }
@@ -5174,7 +5178,7 @@ fn emit_standard_topology(
                 let start = ir.model.points[point_assignment[logical_vertices[0]]].position;
                 let end = ir.model.points[point_assignment[logical_vertices[1]]].position;
                 let edge_curve = ir.model.edges[edge_use.edge_row]
-                    .curve
+                    .curve()
                     .as_ref()
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.model.curves[*index].geometry);
@@ -5258,11 +5262,20 @@ fn emit_standard_topology(
                         Sense::Forward
                     },
                     pcurves: pcurve_id
-                        .map(|(pcurve, range)| cadmpeg_ir::topology::PcurveUse {
-                            pcurve,
-                            isoparametric: None,
-                            parameter_range: edge_use.reversed.then_some([range[1], range[0]]),
+                        .map(|(pcurve, range)| {
+                            edge_use
+                                .reversed
+                                .then_some([range[1], range[0]])
+                                .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                .transpose()
+                                .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
+                                    pcurve,
+                                    isoparametric: None,
+                                    parameter_range,
+                                })
                         })
+                        .transpose()
+                        .map_err(cadmpeg_core::CodecError::malformed)?
                         .into_iter()
                         .collect(),
                     use_curve: None,
@@ -6896,10 +6909,10 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                         .filter_map(|id| vertex_positions.get(id).copied()),
                 );
                 let Some((curve, [start, end])) = edge
-                    .curve
+                    .curve()
                     .as_ref()
                     .and_then(|id| curves.get(id))
-                    .zip(edge.param_range)
+                    .zip(edge.param_range())
                 else {
                     continue;
                 };

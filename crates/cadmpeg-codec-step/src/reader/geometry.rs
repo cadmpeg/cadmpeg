@@ -92,9 +92,9 @@ pub(super) fn infer_edge_parameter_ranges(
         .edges
         .iter()
         .enumerate()
-        .filter(|(_, edge)| edge.param_range.is_none())
+        .filter(|(_, edge)| edge.param_range().is_none())
         .filter_map(|(index, edge)| {
-            let curve = edge.curve.clone()?;
+            let curve = edge.curve().clone()?;
             let start = vertices.get(edge.start.as_str()).copied()?;
             let end = vertices.get(edge.end.as_str()).copied()?;
             Some((index, curve, start, end))
@@ -134,7 +134,8 @@ pub(super) fn infer_edge_parameter_ranges(
 
     for (index, range) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
-            edge.param_range = Some(range);
+            edge.set_param_range(Some(range))
+                .map_err(CodecError::malformed)?;
         }
     }
     Ok(())
@@ -527,7 +528,7 @@ pub(super) fn decode(
                     })
                 })
                 .transpose()?,
-            id: PointId::mint(ids::data("point", id)).expect("identity grammar"),
+            id: PointId::from(ids::data("point", id)),
             position,
         });
     }
@@ -848,7 +849,7 @@ pub(super) fn decode(
                 curve_parameter_offsets.insert(id, offset);
             }
             ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
+                id: CurveId::from(ids::data("curve", id)),
                 geometry,
                 source_object: None,
             });
@@ -866,7 +867,7 @@ pub(super) fn decode(
         }
         if let Some(nurbs) = nurbs_curve(id, record, &points, &mut warnings) {
             ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
+                id: CurveId::from(ids::data("curve", id)),
                 geometry: CurveGeometry::Nurbs(nurbs),
                 source_object: None,
             });
@@ -933,13 +934,11 @@ pub(super) fn decode(
                 continue;
             };
             let curve_index = CurveIndex(ir.model.curves.len());
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+            let curve = CurveId::from(ids::data("curve", id));
             let procedural = match ProceduralCurve::new(
-                ProceduralCurveId::mint(ids::construction("curve_replica", id))
-                    .expect("identity grammar"),
+                ProceduralCurveId::from(ids::construction("curve_replica", id)),
                 ProceduralCurveDefinition::Replica {
-                    source: CurveId::mint(ids::data("curve", parent_step))
-                        .expect("identity grammar"),
+                    source: CurveId::from(ids::data("curve", parent_step)),
                     transform,
                 },
             ) {
@@ -980,8 +979,8 @@ pub(super) fn decode(
                 waiting_on.entry(basis_step).or_default().push(id);
                 continue;
             }
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
-            let basis = CurveId::mint(ids::data("curve", basis_step)).expect("identity grammar");
+            let curve = CurveId::from(ids::data("curve", id));
+            let basis = CurveId::from(ids::data("curve", basis_step));
             let Some(geometry) = carrier_index
                 .curves
                 .get(&basis_step)
@@ -1030,8 +1029,7 @@ pub(super) fn decode(
             };
             let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
             let procedural = match ProceduralCurve::try_new(
-                ProceduralCurveId::mint(ids::construction("trimmed_curve", id))
-                    .expect("identity grammar"),
+                ProceduralCurveId::from(ids::construction("trimmed_curve", id)),
                 ProceduralCurveDefinition::Subset {
                     source: basis,
                     parameter_range,
@@ -1078,7 +1076,7 @@ pub(super) fn decode(
             else {
                 continue;
             };
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+            let curve = CurveId::from(ids::data("curve", id));
             typed.extend(segments.iter().map(|(segment, _)| *segment));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
@@ -1108,8 +1106,7 @@ pub(super) fn decode(
         let source_reference_step = parameters.get(1).and_then(Value::reference);
         let source_step =
             source_reference_step.and_then(|source| curve_carrier_record(source, exchange));
-        let source = source_step
-            .map(|source| CurveId::mint(ids::data("curve", source)).expect("identity grammar"));
+        let source = source_step.map(|source| CurveId::from(ids::data("curve", source)));
         let distance = parameters.get(2).and_then(Value::number);
         let self_intersect = parameters
             .get(3)
@@ -1149,11 +1146,10 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+        let curve = CurveId::from(ids::data("curve", id));
         let curve_index = CurveIndex(ir.model.curves.len());
         let procedural = match ProceduralCurve::new(
-            ProceduralCurveId::mint(ids::construction("offset_curve", id))
-                .expect("identity grammar"),
+            ProceduralCurveId::from(ids::construction("offset_curve", id)),
             ProceduralCurveDefinition::SpatialOffset {
                 source,
                 distance: distance * unit_scales.length([id]),
@@ -1187,7 +1183,7 @@ pub(super) fn decode(
             ));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", id)).expect("identity grammar"),
+                id: CurveId::from(ids::data("curve", id)),
                 geometry: CurveGeometry::Unknown {
                     record: exchange
                         .records
@@ -1237,7 +1233,7 @@ pub(super) fn decode(
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
-            let curve = CurveId::mint(ids::data("curve", id)).expect("identity grammar");
+            let curve = CurveId::from(ids::data("curve", id));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -1286,9 +1282,7 @@ pub(super) fn decode(
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
                     .filter(|curve| carrier_index.curves.contains_key(curve))
-                    .map(|curve| {
-                        CurveId::mint(ids::data("curve", curve)).expect("identity grammar")
-                    })
+                    .map(|curve| CurveId::from(ids::data("curve", curve)))
                     .zip(
                         named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 2)
                             .and_then(Value::reference)
@@ -1304,7 +1298,7 @@ pub(super) fn decode(
             Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
                 .filter(|curve| carrier_index.curves.contains_key(curve))
-                .map(|curve| CurveId::mint(ids::data("curve", curve)).expect("identity grammar"))
+                .map(|curve| CurveId::from(ids::data("curve", curve)))
                 .zip(
                     named_parameter(record, "SURFACE_OF_REVOLUTION", 2)
                         .and_then(Value::reference)
@@ -1330,7 +1324,7 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+        let surface = SurfaceId::from(ids::data("surface", id));
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -1339,8 +1333,7 @@ pub(super) fn decode(
         let _attached = ir.model.add_procedural_surface(
             surface,
             match ProceduralSurface::new(
-                ProceduralSurfaceId::mint(ids::construction("swept_surface", id))
-                    .expect("identity grammar"),
+                ProceduralSurfaceId::from(ids::construction("swept_surface", id)),
                 definition,
                 None,
             ) {
@@ -1463,7 +1456,7 @@ pub(super) fn decode(
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
+                id: SurfaceId::from(ids::data("surface", id)),
                 geometry,
                 source_object: None,
             });
@@ -1480,7 +1473,7 @@ pub(super) fn decode(
         }
         if let Some(nurbs) = nurbs_surface(id, record, &points, &mut warnings) {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
+                id: SurfaceId::from(ids::data("surface", id)),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
                 source_object: None,
             });
@@ -1570,7 +1563,7 @@ pub(super) fn decode(
             };
             let Some(parameter_scales) = surface_parameter_scales_for_step(
                 ir,
-                &SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar"),
+                &SurfaceId::from(ids::data("surface", support_step)),
                 &geometry,
                 record_scale,
                 record_angle_scale,
@@ -1605,7 +1598,7 @@ pub(super) fn decode(
             {
                 continue;
             }
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data("surface", id));
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry,
@@ -1614,11 +1607,9 @@ pub(super) fn decode(
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("rectangular_trimmed_surface", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction("rectangular_trimmed_surface", id)),
                     ProceduralSurfaceDefinition::Subset {
-                        support: SurfaceId::mint(ids::data("surface", support_step))
-                            .expect("identity grammar"),
+                        support: SurfaceId::from(ids::data("surface", support_step)),
                         parameter_ranges,
                         u_sense: Some(u_sense),
                         v_sense: Some(v_sense),
@@ -1638,7 +1629,7 @@ pub(super) fn decode(
             typed.insert(id);
             true
         } else if record.partial("CURVE_BOUNDED_SURFACE").is_some() {
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data("surface", id));
             let Some(parameters) = entity_parameters(record, "CURVE_BOUNDED_SURFACE") else {
                 continue;
             };
@@ -1649,25 +1640,20 @@ pub(super) fn decode(
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
             };
-            let support =
-                SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar");
+            let support = SurfaceId::from(ids::data("surface", support_step));
             let boundary_steps = parameters.get(2).and_then(references);
             let boundaries = boundary_steps.as_ref().map(|boundaries| {
                 boundaries
                     .iter()
                     .copied()
-                    .map(|boundary| {
-                        CurveId::mint(ids::data("curve", boundary)).expect("identity grammar")
-                    })
+                    .map(|boundary| CurveId::from(ids::data("curve", boundary)))
                     .collect::<Vec<_>>()
             });
             let boundary_pcurves = boundary_steps
                 .iter()
                 .flatten()
                 .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
-                .map(|pcurve| {
-                    PcurveId::mint(ids::data("pcurve", pcurve)).expect("identity grammar")
-                })
+                .map(|pcurve| PcurveId::from(ids::data("pcurve", pcurve)))
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
@@ -1707,8 +1693,7 @@ pub(super) fn decode(
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("curve_bounded_surface", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction("curve_bounded_surface", id)),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support,
                         boundaries,
@@ -1728,7 +1713,7 @@ pub(super) fn decode(
             typed.insert(id);
             true
         } else if record.partial("OFFSET_SURFACE").is_some() {
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data("surface", id));
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
@@ -1740,8 +1725,7 @@ pub(super) fn decode(
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
             }
-            let support =
-                SurfaceId::mint(ids::data("surface", support_step)).expect("identity grammar");
+            let support = SurfaceId::from(ids::data("surface", support_step));
             let distance = parameters.get(2).and_then(Value::number);
             let self_intersect = parameters
                 .get(3)
@@ -1758,8 +1742,7 @@ pub(super) fn decode(
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("offset_surface", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction("offset_surface", id)),
                     ProceduralSurfaceDefinition::ParallelOffset {
                         support,
                         distance: distance * record_scale,
@@ -1804,7 +1787,7 @@ pub(super) fn decode(
             }) else {
                 continue;
             };
-            let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data("surface", id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -1817,11 +1800,9 @@ pub(super) fn decode(
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(ids::construction("surface_replica", id))
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::from(ids::construction("surface_replica", id)),
                     ProceduralSurfaceDefinition::Replica {
-                        source: SurfaceId::mint(ids::data("surface", parent_step))
-                            .expect("identity grammar"),
+                        source: SurfaceId::from(ids::data("surface", parent_step)),
                         transform,
                     },
                     None,
@@ -1851,7 +1832,7 @@ pub(super) fn decode(
             ));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", id)).expect("identity grammar"),
+                id: SurfaceId::from(ids::data("surface", id)),
                 geometry: SurfaceGeometry::Unknown {
                     record: exchange
                         .records
@@ -1894,7 +1875,7 @@ pub(super) fn decode(
         if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", curve_step)).expect("identity grammar"),
+                id: CurveId::from(ids::data("curve", curve_step)),
                 geometry: CurveGeometry::Unknown {
                     record: exchange
                         .records
@@ -1914,7 +1895,7 @@ pub(super) fn decode(
         "OFFSET_SURFACE",
         "RECTANGULAR_TRIMMED_SURFACE",
     ]) {
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+        let surface = SurfaceId::from(ids::data("surface", id));
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
@@ -1947,7 +1928,7 @@ pub(super) fn decode(
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
-                id: SurfaceId::mint(ids::data("surface", surface_step)).expect("identity grammar"),
+                id: SurfaceId::from(ids::data("surface", surface_step)),
                 geometry: SurfaceGeometry::Unknown {
                     record: exchange
                         .records
@@ -2023,7 +2004,7 @@ pub(super) fn decode(
             continue;
         }
         ir.model.pcurves.push(Pcurve {
-            id: PcurveId::mint(ids::data("pcurve", id)).expect("identity grammar"),
+            id: PcurveId::from(ids::data("pcurve", id)),
             geometry,
             metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
         });
@@ -2074,15 +2055,14 @@ pub(super) fn decode(
             }
             continue;
         };
-        let surface = SurfaceId::mint(ids::data("surface", id)).expect("identity grammar");
+        let surface = SurfaceId::from(ids::data("surface", id));
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
         let _attached = ir.model.add_procedural_surface(
             surface,
             match ProceduralSurface::new(
-                ProceduralSurfaceId::mint(ids::construction("degenerate_torus", id))
-                    .expect("identity grammar"),
+                ProceduralSurfaceId::from(ids::construction("degenerate_torus", id)),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
             ) {
@@ -2194,7 +2174,7 @@ fn decode_tessellated_curve_sets(
                 continue;
             };
             ir.model.curves.push(Curve {
-                id: CurveId::mint(ids::data("curve", curve_key)).expect("identity grammar"),
+                id: CurveId::from(ids::data("curve", curve_key)),
                 geometry: CurveGeometry::Polyline(polyline),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
@@ -2678,7 +2658,7 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref())
+        .filter_map(|edge| edge.curve().as_ref())
         .chain(
             ir.model
                 .coedges
@@ -4008,7 +3988,7 @@ fn composite_curve(
             decoded.curves.contains_key(&curve_step).then_some((
                 id,
                 CompositeCurveSegment {
-                    curve: CurveId::mint(ids::data("curve", curve_step)).expect("identity grammar"),
+                    curve: CurveId::from(ids::data("curve", curve_step)),
                     same_sense: parameters.get(1)?.logical()?,
                     transition,
                 },

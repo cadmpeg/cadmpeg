@@ -203,31 +203,35 @@ pub fn project_sketch_constraints(
         })
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
         .or_else(|| exact_text_relation(relation, scope, &projected))
-        .unwrap_or_else(|| Definition::Native {
-            native_kind: relation_kind_name(relation),
-            native_state: Some(relation.definition.state()),
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: native_entities(),
-            parameter: None,
-            operands: relation
-                .member_indices()
-                .into_iter()
-                .map(|record_index| native_operand(scope, "member", record_index))
-                .chain(
-                    relation
-                        .auxiliary_references()
-                        .values()
-                        .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
-                )
-                .chain(
-                    relation
-                        .return_member_indices()
-                        .into_iter()
-                        .map(|record_index| native_operand(scope, "return", record_index)),
-                )
-                .collect(),
-        });
+        .or_else(|| {
+            Some(Definition::Native {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(relation_kind_name(
+                    relation,
+                ))?,
+                native_state: Some(relation.definition.state()),
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: native_entities(),
+                parameter: None,
+                operands: relation
+                    .member_indices()
+                    .into_iter()
+                    .map(|record_index| native_operand(scope, "member", record_index))
+                    .chain(
+                        relation
+                            .auxiliary_references()
+                            .values()
+                            .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
+                    )
+                    .chain(
+                        relation
+                            .return_member_indices()
+                            .into_iter()
+                            .map(|record_index| native_operand(scope, "return", record_index)),
+                    )
+                    .collect(),
+            })
+        })?;
         Some(SketchConstraint {
             id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
             sketch,

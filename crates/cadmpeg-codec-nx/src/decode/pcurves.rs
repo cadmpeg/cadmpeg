@@ -111,7 +111,7 @@ fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
         .edges
         .iter()
         .enumerate()
-        .filter_map(|(index, edge)| Some((edge.curve.clone()?, index)))
+        .filter_map(|(index, edge)| Some((edge.curve().clone()?, index)))
         .fold(BTreeMap::new(), |mut indices, (curve, index)| {
             indices.entry(curve).or_default().push(index);
             indices
@@ -149,7 +149,7 @@ impl IntersectionIncidenceIndex {
                 .insert(face.id.clone(), face.surface.clone());
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
-            let Some(curve) = edge.curve.clone() else {
+            let Some(curve) = edge.curve().clone() else {
                 continue;
             };
             self.edge_curves.insert(edge.id.clone(), curve);
@@ -397,7 +397,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve().clone()?)))
         .collect::<BTreeMap<_, _>>();
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
     for coedge in ir.model.coedges.iter().skip(coedge_start) {
@@ -417,7 +417,11 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let candidates = incident
                 .entry((curve.clone(), surface.clone()))
                 .or_default();
-            let candidate = (use_.pcurve.clone(), use_.parameter_range);
+            let candidate = (
+                use_.pcurve.clone(),
+                use_.parameter_range
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            );
             if !candidates.contains(&candidate) {
                 candidates.push(candidate);
             }
@@ -518,7 +522,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             {
                 continue;
             }
-            if edge.param_range.is_some_and(|range| {
+            if edge.param_range().is_some_and(|range| {
                 !range
                     .iter()
                     .zip(first_range)
@@ -598,7 +602,8 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if edge_reversed {
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
-            edge.param_range = Some(range);
+            edge.set_param_range(Some(range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1068,7 +1073,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         .iter()
         .filter_map(|edge| {
             Some((
-                edge.curve.clone()?,
+                edge.curve().clone()?,
                 edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)?,
             ))
         })
@@ -1537,7 +1542,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             continue;
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
-            edge.param_range = Some(range);
+            edge.set_param_range(Some(range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -3331,7 +3337,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) else {
                 continue;
             };
-            if edge.curve.is_some() {
+            if edge.curve().is_some() {
                 continue;
             }
             let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| {
@@ -3456,7 +3462,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         else {
             continue;
         };
-        edge.curve = Some(curve_id.clone());
+        edge.set_curve(Some(curve_id.clone()))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
             .derived(&edge_id, "curve")
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -3807,10 +3814,11 @@ mod tests {
         });
         ir.model.edges.push(Edge {
             id: edge_id,
-            curve: Some(CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar")),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+                CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar"),
+            )),
             start: vertex_id.clone(),
             end: vertex_id,
-            param_range: None,
             tolerance: None,
         });
         ir.model.pcurves.push(Pcurve {

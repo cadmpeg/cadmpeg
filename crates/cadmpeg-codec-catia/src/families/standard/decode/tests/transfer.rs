@@ -346,7 +346,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_some()));
+        .all(|edge| edge.curve().is_some()));
     assert_eq!(
         decoded
             .ir()

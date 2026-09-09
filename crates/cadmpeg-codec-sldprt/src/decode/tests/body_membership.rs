@@ -59,7 +59,7 @@ fn decode_builds_valid_topology_and_plane() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
+        .all(|edge| edge.curve().is_none()));
 }
 
 #[test]

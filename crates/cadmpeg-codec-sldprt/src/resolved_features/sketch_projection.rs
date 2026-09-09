@@ -183,7 +183,7 @@ fn project_brep(
                         SketchEntity::new(id.clone(), sketch_id.clone(), geometry)
                             .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.as_str())))
                             .with_geometry_ref(
-                                edge.curve
+                                edge.curve()
                                     .as_ref()
                                     .map(|id| format!("{stream_ordinal}:{}", id.as_str())),
                             )
@@ -195,7 +195,7 @@ fn project_brep(
                     edge_entities.insert(&edge.id, id.clone());
                     id
                 };
-                if edge.curve.is_some() || edge.start != edge.end {
+                if edge.curve().is_some() || edge.start != edge.end {
                     profile.push(SketchEntityUse {
                         entity: entity_id,
                         reversed: coedge.sense == Sense::Reversed,

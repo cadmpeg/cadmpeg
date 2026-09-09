@@ -94,6 +94,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    diagnostics: &mut crate::decode::surfaces::BrepTransferDiagnostics,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -178,6 +179,32 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         }
         let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
         let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
+        let bottom_face = FaceId::mint(format!("{prefix}:face:bottom")).expect("identity grammar");
+        let top_face = FaceId::mint(format!("{prefix}:face:top")).expect("identity grammar");
+        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
+        for (profile_index, profile) in profiles.iter().enumerate() {
+            for index in 0..profile.entities().len() {
+                shell_faces.push(
+                    FaceId::mint(format!("{prefix}:face:{profile_index}:side:{index}"))
+                        .expect("identity grammar"),
+                );
+            }
+        }
+        let shell = match Shell::new(
+            shell_id.clone(),
+            region_id.clone(),
+            shell_faces,
+            Vec::new(),
+            Vec::new(),
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                diagnostics
+                    .rejected_extrusion_bodies
+                    .push((body_id, error.to_string()));
+                continue;
+            }
+        };
         let bottom_surface =
             SurfaceId::mint(format!("{prefix}:surface:bottom")).expect("identity grammar");
         let top_surface =
@@ -217,9 +244,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             });
         }
 
-        let bottom_face = FaceId::mint(format!("{prefix}:face:bottom")).expect("identity grammar");
-        let top_face = FaceId::mint(format!("{prefix}:face:top")).expect("identity grammar");
-        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
         let mut bottom_loops = Vec::new();
         let mut top_loops = Vec::new();
         for (profile_index, validated) in profiles.iter().enumerate() {
@@ -382,10 +406,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     };
                     ir.model.edges.push(Edge {
                         id: edge_id.clone(),
-                        curve: Some(curve_id),
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                            Some(curve_id),
+                            param_range,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                         start: vertices[index].clone(),
                         end: vertices[next].clone(),
-                        param_range,
                         tolerance: None,
                     });
                     arena.push(edge_id);
@@ -418,10 +445,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 });
                 ir.model.edges.push(Edge {
                     id: edge_id.clone(),
-                    curve: Some(curve_id),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        Some(curve_id),
+                        Some([0.0, length]),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                     start: bottom_vertices[index].clone(),
                     end: top_vertices[index].clone(),
-                    param_range: Some([0.0, length]),
                     tolerance: None,
                 });
                 vertical_edges.push(edge_id);
@@ -678,7 +708,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     color: None,
                     tolerance: None,
                 });
-                shell_faces.push(face_id);
             }
         }
         ir.model.faces.push(Face {
@@ -709,20 +738,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             color: None,
             tolerance: None,
         });
-        ir.model.shells.push(
-            match Shell::new(
-                shell_id.clone(),
-                region_id.clone(),
-                shell_faces,
-                Vec::new(),
-                Vec::new(),
-            ) {
-                Ok(shell) => shell,
-                Err(_) => {
-                    continue;
-                }
-            },
-        );
+        ir.model.shells.push(shell);
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),

@@ -871,7 +871,12 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
             panic!("standard line occurrence must retain its pcurve");
         };
-        assert_eq!(pcurve.parameter_range, reversed.then_some([1.0, 0.0]));
+        assert_eq!(
+            pcurve
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            reversed.then_some([1.0, 0.0])
+        );
     }
 }
 

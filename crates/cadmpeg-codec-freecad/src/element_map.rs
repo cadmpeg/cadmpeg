@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 
 use crate::native::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
-    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord,
+    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
 };
 use crate::topology_transfer::TopologyOccurrence;
 
@@ -40,7 +40,7 @@ pub(crate) fn parse(
     file_version: usize,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
-) -> Result<(Vec<StringTableRecord>, Vec<ElementMapRecord>), CodecError> {
+) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -179,7 +179,7 @@ pub(crate) fn parse(
             maps: parsed.maps,
         });
     }
-    Ok((tables, maps))
+    Ok((StringTables::try_from(tables)?, maps))
 }
 
 fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
@@ -1252,8 +1252,8 @@ mod tests {
             &[],
         )
         .expect("legacy string table carrier");
-        assert_eq!(tables.len(), 1);
-        assert_eq!(tables[0].entries()[0].payload, "legacy");
+        assert_eq!(tables.as_slice().len(), 1);
+        assert_eq!(tables.as_slice()[0].entries()[0].payload, "legacy");
         assert!(maps.is_empty());
     }
 
@@ -1750,7 +1750,7 @@ Co 1001000 +2 0 *
         );
         let (tables, maps) = parse(b"<Document/>", 0, &[custom], &[]).expect("unknown type");
 
-        assert!(tables.is_empty());
+        assert!(tables.as_slice().is_empty());
         assert!(maps.is_empty());
     }
 

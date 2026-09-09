@@ -197,6 +197,7 @@ impl FaceAdmissionDetail {
 
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
+    pub(in super::super) rejected_extrusion_bodies: Vec<(BodyId, String)>,
     pub(in super::super) candidate_face_count: usize,
     pub(in super::super) admitted_face_count: usize,
     pub(in super::super) emitted_face_count: usize,
@@ -1572,11 +1573,11 @@ pub(in super::super) fn transfer_native_brep(
         );
         ir.model.edges.push(Edge {
             id,
-            curve: Some(curve.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve.clone()), param_range)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             start: VertexId::mint(format!("creo:visibgeom:vertex#{start}"))
                 .expect("identity grammar"),
             end: VertexId::mint(format!("creo:visibgeom:vertex#{end}")).expect("identity grammar"),
-            param_range,
             tolerance: None,
         });
         if !ir.model.curves.iter().any(|item| item.id == curve) {
@@ -1989,7 +1990,7 @@ pub(in super::super) fn transfer_native_brep(
                                     })?;
                             Some((
                                 geometry,
-                                edge.param_range,
+                                edge.param_range(),
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
                                 tag,
                             ))

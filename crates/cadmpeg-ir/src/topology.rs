@@ -769,7 +769,7 @@ pub struct PcurveUse {
     pub isoparametric: Option<bool>,
     /// Interval on the pcurve's own parameterization used by this coedge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter_range: Option<[f64; 2]>,
+    pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
 }
 
 /// The mutually exclusive forms of a loop boundary.
@@ -808,6 +808,23 @@ pub struct LoopRing {
 }
 
 impl LoopRing {
+    /// Construct a ring containing one coedge.
+    pub fn single(coedge: CoedgeId) -> Self {
+        Self {
+            coedges: vec![coedge],
+            vertex_uses: Vec::new(),
+        }
+    }
+
+    /// Append a distinct coedge in traversal order.
+    pub fn try_push(&mut self, coedge: CoedgeId) -> Result<(), LoopRingError> {
+        if self.coedges.contains(&coedge) {
+            return Err(LoopRingError("loop ring coedges must be distinct".into()));
+        }
+        self.coedges.push(coedge);
+        Ok(())
+    }
+
     /// Build a nonempty ring of distinct coedges whose anchors belong to that ring.
     pub fn new(
         coedges: Vec<CoedgeId>,
@@ -1232,7 +1249,10 @@ impl Serialize for Coedge {
             sense: self.sense,
             pcurves: &self.pcurves,
             use_curve: self.use_curve.as_ref().map(|value| &value.curve),
-            use_curve_parameter_range: self.use_curve.as_ref().map(|value| value.parameter_range),
+            use_curve_parameter_range: self
+                .use_curve
+                .as_ref()
+                .map(|value| value.parameter_range.endpoints()),
         }
         .serialize(serializer)
     }
@@ -1245,7 +1265,7 @@ pub struct CoedgeUseCurve {
     /// Local 3D curve carrier.
     pub curve: CurveId,
     /// Interval on the carrier in loop-traversal order.
-    pub parameter_range: [f64; 2],
+    pub parameter_range: ParameterInterval,
 }
 
 #[cfg(feature = "schema")]
@@ -1278,7 +1298,8 @@ mod coedge_use_curve_wire {
         match (wire.use_curve, wire.use_curve_parameter_range) {
             (Some(curve), Some(parameter_range)) => Ok(Some(CoedgeUseCurve {
                 curve,
-                parameter_range,
+                parameter_range: super::ParameterInterval::new(parameter_range)
+                    .map_err(serde::de::Error::custom)?,
             })),
             (None, None) => Ok(None),
             _ => Err(serde::de::Error::custom(
@@ -1288,33 +1309,145 @@ mod coedge_use_curve_wire {
     }
 }
 
-/// An edge: a bounded segment of a 3D curve between two vertices.
+/// A finite ordered parameter interval.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
+pub struct ParameterInterval([f64; 2]);
+
+impl ParameterInterval {
+    /// Admit finite endpoints in increasing or equal order.
+    pub fn new(endpoints: [f64; 2]) -> Result<Self, &'static str> {
+        if endpoints.iter().all(|value| value.is_finite()) && endpoints[0] <= endpoints[1] {
+            Ok(Self(endpoints))
+        } else {
+            Err("parameter_range must be finite and ordered")
+        }
+    }
+    /// Return the interval endpoints.
+    pub const fn endpoints(self) -> [f64; 2] {
+        self.0
+    }
+}
+
+impl TryFrom<[f64; 2]> for ParameterInterval {
+    type Error = &'static str;
+    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<ParameterInterval> for [f64; 2] {
+    fn from(value: ParameterInterval) -> Self {
+        value.0
+    }
+}
+
+/// An edge carrier and its admitted parameter endpoints.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "EdgeCarrierWire", into = "EdgeCarrierWire")]
+pub struct EdgeCarrier {
+    curve: Option<CurveId>,
+    param_range: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct EdgeCarrierWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve: Option<CurveId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    param_range: Option<[f64; 2]>,
+}
+
+impl EdgeCarrier {
+    /// Construct a carrier without parameter endpoints.
+    pub fn unbounded(curve: Option<CurveId>) -> Self {
+        Self {
+            curve,
+            param_range: None,
+        }
+    }
+
+    /// Admit a carrier and finite endpoints, ordered when the carrier is present.
+    pub fn new(
+        curve: Option<CurveId>,
+        param_range: Option<[f64; 2]>,
+    ) -> Result<Self, &'static str> {
+        if let Some(range) = param_range {
+            if curve.is_some() {
+                ParameterInterval::new(range)
+                    .map_err(|_| "edge param_range must be finite and ordered")?;
+            } else if !range.iter().all(|value| value.is_finite()) {
+                return Err("edge param_range endpoints must be finite");
+            }
+        }
+        Ok(Self { curve, param_range })
+    }
+}
+
+impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
+    type Error = &'static str;
+    fn try_from(wire: EdgeCarrierWire) -> Result<Self, Self::Error> {
+        Self::new(wire.curve, wire.param_range)
+    }
+}
+
+impl From<EdgeCarrier> for EdgeCarrierWire {
+    fn from(value: EdgeCarrier) -> Self {
+        Self {
+            curve: value.curve,
+            param_range: value.param_range,
+        }
+    }
+}
+
+/// An edge between two vertices with an optional curve carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Edge {
     /// Arena id.
     pub id: EdgeId,
-    /// Underlying 3D curve carrier. `None` for a degenerate/tolerant edge with
-    /// no attributed curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve: Option<CurveId>,
+    /// Carrier and its admitted parameter range.
+    #[serde(flatten)]
+    pub carrier: EdgeCarrier,
     /// Start vertex.
     pub start: VertexId,
     /// End vertex.
     pub end: VertexId,
-    /// Parameter range `[t_start, t_end]` on the curve's own
-    /// parameterization, when known: the start vertex lies at `t_start`.
-    /// Conic parameters are angles from the reference direction; line
-    /// parameters are signed distances along the unit direction in the
-    /// document's length unit.
-    /// A carrier-less degenerate or tolerant edge has no canonical domain;
-    /// finite native endpoint values may still be retained without ordering.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub param_range: Option<[f64; 2]>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
     pub tolerance: Option<crate::units::PositiveScalar>,
+}
+
+impl Edge {
+    /// Map the carrier identity without changing its presence or parameter range.
+    pub fn map_curve(&mut self, map: impl FnOnce(&CurveId) -> CurveId) {
+        if let Some(curve) = &mut self.carrier.curve {
+            *curve = map(curve);
+        }
+    }
+
+    /// Replace the curve while retaining the range if it remains valid.
+    pub fn set_curve(&mut self, curve: Option<CurveId>) -> Result<(), &'static str> {
+        self.carrier = EdgeCarrier::new(curve, self.param_range())?;
+        Ok(())
+    }
+    /// Replace the parameter endpoints if valid for the carrier.
+    pub fn set_param_range(&mut self, range: Option<[f64; 2]>) -> Result<(), &'static str> {
+        self.carrier = EdgeCarrier::new(self.curve().clone(), range)?;
+        Ok(())
+    }
+    /// Return the underlying curve carrier.
+    pub fn curve(&self) -> &Option<CurveId> {
+        &self.carrier.curve
+    }
+    /// Return the parameter endpoints.
+    pub fn param_range(&self) -> Option<[f64; 2]> {
+        self.carrier.param_range
+    }
 }
 
 /// A vertex: a topological point referencing a position carrier.
@@ -1352,6 +1485,43 @@ fn deserialize_tolerance<'de, D: serde::Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parameter_interval_admission_preserves_direction_contracts() {
+        use super::{EdgeCarrier, ParameterInterval};
+        use crate::geometry::DirectedParameterRange;
+        assert!(ParameterInterval::new([2.0, 1.0]).is_err());
+        assert!(ParameterInterval::new([f64::INFINITY, 1.0]).is_err());
+        assert_eq!(
+            ParameterInterval::new([1.0, 1.0]).unwrap().endpoints(),
+            [1.0, 1.0]
+        );
+        assert_eq!(
+            DirectedParameterRange::new([2.0, 1.0]).unwrap().endpoints(),
+            [2.0, 1.0]
+        );
+        assert!(DirectedParameterRange::new([1.0, 1.0]).is_err());
+        assert!(serde_json::from_str::<ParameterInterval>("[2,1]").is_err());
+        assert!(serde_json::from_str::<DirectedParameterRange>("[1,1]").is_err());
+        let wire = serde_json::json!({"param_range": [2.0, 1.0]});
+        let carrier: EdgeCarrier = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(carrier).unwrap(), wire);
+        let attributed = serde_json::json!({"curve":"test:model:curve#1", "param_range":[2.0,1.0]});
+        assert!(serde_json::from_value::<EdgeCarrier>(attributed).is_err());
+    }
+
+    #[test]
+    fn edge_parameter_edits_commit_only_valid_pairs() {
+        let mut edge = crate::examples::unit_cube().model.edges.remove(0);
+        let original = edge.clone();
+        assert!(edge.set_param_range(Some([2.0, 1.0])).is_err());
+        assert_eq!(edge, original);
+        edge.set_curve(None).unwrap();
+        edge.set_param_range(Some([2.0, 1.0])).unwrap();
+        let carrierless = edge.clone();
+        assert!(edge.set_curve(original.curve().clone()).is_err());
+        assert_eq!(edge, carrierless);
+    }
+
     #[test]
     fn shell_admission_requires_one_topology_member_and_preserves_wire_fields() {
         let id = super::ShellId::mint("test:model:shell#1").unwrap();
@@ -1456,6 +1626,18 @@ mod tests {
     };
 
     #[test]
+    fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
+        let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
+        let second = super::CoedgeId::mint("test:model:coedge#1").unwrap();
+        let mut ring = LoopRing::single(first.clone());
+        ring.try_push(second.clone()).unwrap();
+        assert_eq!(ring.coedges(), &[first.clone(), second]);
+        let before = ring.clone();
+        assert!(ring.try_push(first).is_err());
+        assert_eq!(ring, before);
+    }
+
+    #[test]
     fn loop_ring_rejects_empty_or_duplicate_coedges_and_foreign_anchors() {
         assert!(LoopRing::new(Vec::new(), Vec::new()).is_err());
 
@@ -1519,7 +1701,7 @@ mod tests {
             coedge.use_curve,
             Some(CoedgeUseCurve {
                 curve: "test:model:curve#0".try_into().expect("valid identity"),
-                parameter_range: [0.25, 0.75],
+                parameter_range: crate::topology::ParameterInterval::new([0.25, 0.75]).unwrap(),
             })
         );
         let loop_ = Loop {

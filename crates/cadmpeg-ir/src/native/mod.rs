@@ -43,6 +43,9 @@ pub enum NativeConvertError {
     /// A typed child record references no record in its owning arena.
     #[error("native record has an invalid owner: {0}")]
     InvalidOwner(String),
+    /// A native collection violates its codec-owned admission contract.
+    #[error("native collection is invalid: {0}")]
+    InvalidCollection(String),
     /// A source-independent unknown record has no retained source counterpart.
     #[error("native unknown record has no retained source record: {0}")]
     MissingRetainedSourceRecord(String),
@@ -90,13 +93,20 @@ impl NativeRecord {
     /// Identity syntax is checked here; document validation checks uniqueness.
     pub fn new(
         id: impl Into<String>,
-        mut fields: Map<String, Value>,
+        fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
-        let id = id.into();
-        Self::require_identity(&id)?;
+        Ok(Self::from_identity(crate::ids::Identity::new(id)?, fields))
+    }
+
+    /// Build a record from an admitted identity and codec-owned fields.
+    pub fn from_identity(
+        id: impl Into<crate::ids::Identity>,
+        mut fields: Map<String, Value>,
+    ) -> Self {
+        let id = id.into().into_string();
         fields.remove("id");
         let json = Self::canonical_json(&id, &fields);
-        Ok(Self { id, json })
+        Self { id, json }
     }
 
     fn require_identity(id: &str) -> Result<(), NativeConvertError> {
@@ -247,6 +257,14 @@ pub struct NativeNamespace {
 }
 
 impl NativeNamespace {
+    /// Admit codec-owned aggregate state from this raw namespace.
+    pub fn admit<'a, T>(&'a self) -> Result<T, NativeConvertError>
+    where
+        T: TryFrom<&'a Self, Error = NativeConvertError>,
+    {
+        T::try_from(self)
+    }
+
     /// Return the record arenas keyed by stable arena name.
     #[must_use]
     pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {
@@ -284,6 +302,15 @@ impl NativeNamespace {
         converted.sort_by(|left, right| left.id().cmp(right.id()));
         self.arenas.insert(name.into(), converted);
         Ok(())
+    }
+
+    /// Admit an arena through a codec-owned collection constructor.
+    pub fn arena_as_collection<T, C>(&self, name: &str) -> Result<C, NativeConvertError>
+    where
+        T: DeserializeOwned,
+        C: TryFrom<Vec<T>, Error = NativeConvertError>,
+    {
+        C::try_from(self.arena_as(name)?)
     }
 
     /// Deserialize an arena into codec-owned typed records.

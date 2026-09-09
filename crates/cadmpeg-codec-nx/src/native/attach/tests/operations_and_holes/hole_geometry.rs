@@ -230,10 +230,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             });
             model.edges.push(Edge {
                 id: edge.clone(),
-                curve: Some(curve),
+                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
                 start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                 end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                param_range: None,
                 tolerance: None,
             });
             model.coedges.push(Coedge {
@@ -745,10 +744,9 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 });
                 chamfered.model.edges.push(Edge {
                     id: edge.clone(),
-                    curve: Some(curve),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
                     start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                    param_range: None,
                     tolerance: None,
                 });
                 chamfered.model.coedges.push(Coedge {

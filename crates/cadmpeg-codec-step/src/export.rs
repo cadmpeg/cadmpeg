@@ -2281,7 +2281,7 @@ impl<'a> Builder<'a> {
                 );
                 return None;
             };
-            let Some(curve_id) = edge.curve.as_ref() else {
+            let Some(curve_id) = edge.curve().as_ref() else {
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:curve"),
@@ -2443,7 +2443,7 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let Some(curve_id) = &edge.curve else {
+        let Some(curve_id) = &edge.curve() else {
             self.curveless_edges.insert(edge_id.to_string());
             self.topology_relation_loss(
                 format!("edge:{edge_id}:curve"),

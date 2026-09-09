@@ -72,10 +72,10 @@ fn add_bounded_curve(
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        curve: Some(curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         start: start_vertex,
         end: end_vertex,
-        param_range: Some(parameter_range),
         tolerance,
     });
     Ok(edge)

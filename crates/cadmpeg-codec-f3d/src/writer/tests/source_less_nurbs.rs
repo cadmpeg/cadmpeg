@@ -189,8 +189,12 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         geometry: expected.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
-    source_less.model.edges[0].param_range = Some([-1.0, 2.0]);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
+    source_less.model.edges[0]
+        .set_param_range(Some([-1.0, 2.0]))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -208,7 +212,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         &expected
     );
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range,
+        round_trip.ir().model.edges[0].param_range(),
         Some([-1.0, 2.0])
     );
 }
@@ -391,7 +395,9 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         geometry: expected_curve.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -409,7 +415,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     assert_eq!(round_trip.ir().model.surfaces.len(), 2);
     assert_eq!(round_trip.ir().model.surfaces[1].geometry, expected_surface);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
-    assert!(round_trip.ir().model.edges[0].curve.is_some());
+    assert!(round_trip.ir().model.edges[0].curve().is_some());
     let shared = round_trip
         .ir()
         .model
@@ -481,10 +487,9 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             EdgeId::mint(format!("generated:test:inner_edge#{index}")).expect("identity grammar");
         source_less.model.edges.push(cadmpeg_ir::topology::Edge {
             id: edge_id.clone(),
-            curve: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
             start: inner_vertices[index].clone(),
             end: inner_vertices[(index + 1) % 3].clone(),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let coedge_id = CoedgeId::mint(format!("generated:test:inner_coedge#{index}"))
@@ -595,7 +600,9 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         geometry: expected_curve.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
     let pcurve_id = PcurveId::mint("generated:test:pcurve#0").expect("identity grammar");
     let mut pcurve = pcurve;
     pcurve.id = pcurve_id.clone();
@@ -784,8 +791,12 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         geometry: expected_curve.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
-    source_less.model.edges[0].param_range = Some([0.25, 1.5]);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
+    source_less.model.edges[0]
+        .set_param_range(Some([0.25, 1.5]))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -798,7 +809,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     assert_eq!(round_trip.ir().model.surfaces[1].geometry, expected_surface);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range,
+        round_trip.ir().model.edges[0].param_range(),
         Some([0.25, 1.5])
     );
 }
@@ -854,7 +865,9 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         geometry: ellipse.clone(),
         source_object: None,
     });
-    source_less.model.edges[0].curve = Some(curve_id);
+    source_less.model.edges[0]
+        .set_curve(Some(curve_id))
+        .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec

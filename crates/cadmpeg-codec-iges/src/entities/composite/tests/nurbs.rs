@@ -109,10 +109,10 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
-        curve: Some(curve_id.clone()),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval))
+            .unwrap(),
         start: start_vertex,
         end: end_vertex,
-        param_range: Some(interval),
         tolerance: None,
     });
 

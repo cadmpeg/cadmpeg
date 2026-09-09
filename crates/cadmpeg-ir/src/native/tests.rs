@@ -48,6 +48,11 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
     let typed = NativeRecord::from_typed(&Record { id }).unwrap();
     let decoded =
         serde_json::from_value::<NativeRecord>(serde_json::to_value(&record).unwrap()).unwrap();
+    let admitted = NativeRecord::from_identity(
+        crate::ids::UnknownId::mint(id).unwrap(),
+        serde_json::Map::new(),
+    );
+    assert_eq!(record, admitted);
     assert_eq!(record, typed);
     assert_eq!(record, decoded);
     assert_eq!(record.id(), id);

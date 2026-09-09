@@ -1341,7 +1341,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         sketch: sketch_id.clone(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: "endpoint".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("endpoint").unwrap(),
                 native_state: None,
                 native_flags: None,
                 native_properties: BTreeMap::new(),

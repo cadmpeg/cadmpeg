@@ -148,10 +148,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         SketchConstraintDefinitionInput::Native {
             native_kind: match marker.kind {
                 SketchInputKind::Relation(kind) => {
-                    format!("sldprt:marker-relation:{}", kind.native_code())
+                    checked_nonempty_name(format!("sldprt:marker-relation:{}", kind.native_code()))
                 }
                 kind @ (SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)) => {
-                    format!("sldprt:marker-relation:{}", kind.native_code())
+                    checked_nonempty_name(format!("sldprt:marker-relation:{}", kind.native_code()))
                 }
                 _ => unreachable!("non-relation markers were rejected"),
             },

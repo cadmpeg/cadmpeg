@@ -7866,15 +7866,15 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .iter()
         .map(|body| &body.id)
         .collect::<HashSet<_>>();
-    let mut body_links = std::collections::BTreeMap::new();
+    let mut body_links: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if body_ids.contains(id) => {
-                Some(id.as_str().to_owned())
+                Some(link.target.clone())
             }
             _ => None,
         };
-        if target_key.is_none() {
+        let Some(target_key) = target_key else {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -7883,11 +7883,8 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(link.id.clone()),
             });
             continue;
-        }
-        body_links
-            .entry(target_key.expect("validated body target"))
-            .or_insert_with(Vec::new)
-            .push(link);
+        };
+        body_links.entry(target_key).or_default().push(link);
     }
     for links in body_links.values_mut() {
         links.sort_by_key(|link| link.ordinal);

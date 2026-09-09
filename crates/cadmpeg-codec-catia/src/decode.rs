@@ -193,13 +193,13 @@ fn finish_decode(
         &native,
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
-    );
+    )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
-    );
+    )?;
     let transferred_pmi_dimension_count = pmi::transfer_dimensions(
         &mut ir,
         &native,

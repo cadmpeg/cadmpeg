@@ -233,7 +233,11 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
         .flat_map(|coedge| &coedge.pcurves)
         .find(|use_| use_.pcurve == pcurve)
         .expect("stale trimmed pcurve use");
-    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
+    assert_eq!(
+        use_.parameter_range
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+        Some([0.0, 1.0])
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -881,7 +885,7 @@ fn intersection_curve_binds_its_basis_curve_and_pcurves() {
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
         .expect("intersection-curve edge");
     assert_eq!(
-        edge.curve.as_ref().map(CurveId::as_str),
+        edge.curve().as_ref().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
     assert!(decoded.ir().model.coedges.iter().any(|coedge| {

@@ -45,7 +45,7 @@ fn encoder_writes_source_less_datum_features() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let definitions = [
         FeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -116,7 +116,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("sldprt:model:configuration#generated:z")
             .expect("identity grammar"),
@@ -629,7 +629,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let feature_id =
         FeatureId::mint("sldprt:model:feature#generated:equation").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -700,7 +700,7 @@ fn encoder_bakes_rigid_body_transform() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let original_point = ir.model.points[0].position;
     let original_normal = ir
         .model
@@ -995,7 +995,9 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.edges[0].param_range = Some([0.0, 1.0]);
+    decoded.ir_mut().model.edges[0]
+        .set_param_range(Some([0.0, 1.0]))
+        .unwrap();
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),

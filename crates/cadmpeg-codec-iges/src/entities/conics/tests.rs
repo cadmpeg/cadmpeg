@@ -232,7 +232,7 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
     assert!((start.position.x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
     assert!((end.position.y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
     let range = result.ir().model.edges[0]
-        .param_range
+        .param_range()
         .expect("fixture has a bounded conic range");
     let geometry = &result.ir().model.curves[0].geometry;
     let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])
@@ -291,7 +291,9 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         .unwrap();
 
     assert_eq!(
-        result.ir().model.edges[0].param_range.map(|range| range[0]),
+        result.ir().model.edges[0]
+            .param_range()
+            .map(|range| range[0]),
         Some(0.0)
     );
     assert!(result.report().losses.is_empty());

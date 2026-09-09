@@ -795,11 +795,11 @@ pub(crate) fn validate_source_less_design_links(
         .iter()
         .map(|item| &item.id)
         .collect::<BTreeSet<_>>();
-    let mut groups: BTreeMap<String, Vec<&PersistentDesignLink>> = BTreeMap::new();
+    let mut groups: BTreeMap<AttributeTarget, Vec<&PersistentDesignLink>> = BTreeMap::new();
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
-                Some(id.as_str().to_owned())
+                Some(link.target.clone())
             }
             _ => None,
         };
@@ -933,7 +933,7 @@ pub(crate) fn validate_source_less_design_links(
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
                 if effective_range.iter().any(|value| !value.is_finite())
-                    || use_curve.parameter_range != effective_range
+                    || use_curve.parameter_range.endpoints() != effective_range
                 {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",

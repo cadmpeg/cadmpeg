@@ -361,18 +361,21 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let candidates = vec![
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([1.0, 2.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            param_range: Some([1.0, 2.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0]))
+                .unwrap(),
             start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ];
@@ -462,10 +465,13 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
         id: EdgeId::mint("test:model:edge#duplicate-occurrence").expect("identity grammar"),
-        curve: Some(CurveId::mint("test:model:curve#curve").expect("identity grammar")),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(CurveId::mint("test:model:curve#curve").expect("identity grammar")),
+            Some([0.0, 2.0]),
+        )
+        .unwrap(),
         start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
         end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-        param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
     assert!(matches!(

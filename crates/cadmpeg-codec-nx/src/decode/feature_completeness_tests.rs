@@ -1107,7 +1107,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         sketch: sketch_id,
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: "test".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("test").unwrap(),
                 entities: vec![entity_id],
                 parameter: None,
                 operands: Vec::new(),

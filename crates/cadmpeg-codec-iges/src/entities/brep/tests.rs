@@ -33,18 +33,24 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([10.0, 11.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
-            param_range: Some([10.0, 11.0]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 2.0]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
-            param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
@@ -87,18 +93,24 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     ir.model.edges.extend([
         Edge {
             id: EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, std::f64::consts::TAU]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
-            param_range: Some([0.0, std::f64::consts::TAU]),
             tolerance: None,
         },
         Edge {
             id: EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
             end: VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
-            param_range: Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
             tolerance: None,
         },
     ]);

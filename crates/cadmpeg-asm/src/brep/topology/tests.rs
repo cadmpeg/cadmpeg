@@ -180,7 +180,8 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         &carriers,
         &reach,
         IdFormat("f3d"),
-    );
+    )
+    .unwrap();
     assert_eq!(out.coedges.len(), 1);
     assert_eq!(out.coedges[0].pcurves.len(), 1);
     assert_eq!(out.coedges[0].pcurves[0].parameter_range, None);

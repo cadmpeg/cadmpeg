@@ -465,7 +465,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         else {
             panic!("untyped segment radius binding must remain native");
         };
-        assert_eq!(native_kind, &format!("creo:segtab:{field}"));
+        assert_eq!(native_kind.as_str(), format!("creo:segtab:{field}"));
         assert_eq!(native_properties["dimension_ordinal"], ordinal.to_string());
         assert_eq!(
             entities,

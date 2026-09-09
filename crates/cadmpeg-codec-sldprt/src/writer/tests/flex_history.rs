@@ -36,7 +36,7 @@ fn encoder_writes_source_less_curved_sketches() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let sketch_id = SketchId::mint("synthetic:test:sketch#curves").unwrap();
     let geometries = vec![
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -892,7 +892,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     for (ordinal, name) in ["Profile", "Profile"].into_iter().enumerate() {
         let sketch_id = SketchId::mint(format!("synthetic:test:sketch#named-{ordinal}")).unwrap();
         ir.model.sketches.push(Sketch {
@@ -989,7 +989,7 @@ fn encoder_writes_source_less_native_features() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let seed_id = FeatureId::mint("sldprt:model:feature#generated:0").expect("identity grammar");
     ir.model.features.push(Feature {
         id: seed_id.clone(),

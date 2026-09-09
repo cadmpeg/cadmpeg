@@ -1148,7 +1148,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: "dimension".into(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension").unwrap(),
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),

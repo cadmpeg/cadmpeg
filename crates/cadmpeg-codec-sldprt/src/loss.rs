@@ -61,6 +61,8 @@ pub(crate) enum SldprtLossCode {
     SketchNativeConstraint,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// A compact sketch profile failed neutral profile admission.
+    SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -145,6 +147,7 @@ impl SldprtLossCode {
         Self::FeatureIncoherentOutputs,
         Self::SketchNativeConstraint,
         Self::SketchNativeGeometry,
+        Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -196,6 +199,7 @@ impl SldprtLossCode {
             Self::FeatureIncoherentOutputs => "feature.incoherent-outputs",
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
+            Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -252,6 +256,7 @@ impl SldprtLossCode {
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
             | Self::SketchNativeGeometry
+            | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -320,6 +325,7 @@ impl SldprtLossCode {
             | Self::FeatureIncoherentOutputs
             | Self::SketchNativeConstraint
             | Self::SketchNativeGeometry
+            | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -404,6 +410,7 @@ mod tests {
                 "feature.incoherent-outputs",
                 "sketch.native-constraint",
                 "sketch.native-geometry",
+                "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",

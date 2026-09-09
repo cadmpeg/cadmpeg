@@ -22,20 +22,22 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     );
 
     let mut ir = unit_cube();
-    let curve_id = ir.model.edges[0].curve.clone().unwrap();
+    let curve_id = ir.model.edges[0].curve().clone().unwrap();
     ir.model
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
         .geometry = geometry;
-    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    ir.model.edges[0].set_param_range(Some([0.5, 2.5])).unwrap();
     assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
-    ir.model.edges[0].param_range = Some([0.5, 2.500_001]);
+    ir.model.edges[0]
+        .set_param_range(Some([0.5, 2.500_001]))
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -52,7 +54,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         unreachable!()
     };
     nurbs.set_periodic(false);
-    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    ir.model.edges[0].set_param_range(Some([0.5, 2.5])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

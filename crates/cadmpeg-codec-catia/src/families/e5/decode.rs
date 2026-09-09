@@ -1653,10 +1653,13 @@ fn emit_e5_curves_and_edges(
         }
         ir.model.edges.push(Edge {
             id,
-            curve: edge_curve_ids.get(&record_id).cloned(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                edge_curve_ids.get(&record_id).cloned(),
+                edge_curve_plan.get(&record_id).map(|(_, range)| *range),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             start: vertex_for_ref[&edge.start_vertex].clone(),
             end: vertex_for_ref[&edge.end_vertex].clone(),
-            param_range: edge_curve_plan.get(&record_id).map(|(_, range)| *range),
             tolerance: None,
         });
     }
@@ -1965,7 +1968,13 @@ fn emit_e5_faces_loops_coedges(
                         pcurve: PcurveId::mint(format!("catia:e5:pcurve#{pcurve_ref}"))
                             .expect("identity grammar"),
                         isoparametric: None,
-                        parameter_range: pcurve_parameter_range,
+                        parameter_range: match pcurve_parameter_range
+                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .transpose()
+                        {
+                            Ok(range) => range,
+                            Err(_) => return false,
+                        },
                     }],
                     use_curve: None,
                 });
@@ -3613,7 +3622,9 @@ mod route_tests {
             &[surface],
         ));
         assert_eq!(
-            ir.model.coedges[0].pcurves[0].parameter_range,
+            ir.model.coedges[0].pcurves[0]
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             Some([1.0, 0.0])
         );
         let [vertex_use] = ir.model.loops[0].anchored_vertex_uses() else {

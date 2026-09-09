@@ -2236,6 +2236,8 @@ fn parse_constraints(
         };
         let midpoint =
             || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
+        let native_kind = cadmpeg_ir::products::NonEmptyString::new(native_kind)
+            .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()

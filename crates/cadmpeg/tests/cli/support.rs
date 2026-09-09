@@ -191,7 +191,7 @@ pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     ir
 }
 

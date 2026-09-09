@@ -371,24 +371,28 @@ fn project_all_dimension_constraints(
                              source_kind: &str,
                              state: Option<u64>,
                              operands: &[(&'static str, Option<u32>, u32)],
-                             parameter| Definition::Native {
-        native_kind: source_kind.to_owned(),
-        native_state: state,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities: operands
-            .iter()
-            .filter_map(|(_, _, record_index)| {
-                projected
-                    .get(&(scope, *record_index))
-                    .map(|entity| entity.id().clone())
-            })
-            .collect(),
-        parameter: Some(parameter),
-        operands: operands
-            .iter()
-            .map(|(field, role, record_index)| native_operand(scope, field, *role, *record_index))
-            .collect(),
+                             parameter| {
+        Some(Definition::Native {
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(source_kind)?,
+            native_state: state,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
+            entities: operands
+                .iter()
+                .filter_map(|(_, _, record_index)| {
+                    projected
+                        .get(&(scope, *record_index))
+                        .map(|entity| entity.id().clone())
+                })
+                .collect(),
+            parameter: Some(parameter),
+            operands: operands
+                .iter()
+                .map(|(field, role, record_index)| {
+                    native_operand(scope, field, *role, *record_index)
+                })
+                .collect(),
+        })
     };
     let exact_definition = |scope: &str,
                             source_parameter: &DesignParameter,
@@ -734,7 +738,7 @@ fn project_all_dimension_constraints(
                         linear_tolerance,
                     )
                 })
-                .unwrap_or_else(|| {
+                .or_else(|| {
                     native_definition(
                         scope,
                         parameter.source_kind(),
@@ -745,7 +749,7 @@ fn project_all_dimension_constraints(
                         ],
                         parameter_id,
                     )
-                });
+                })?;
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -783,7 +787,7 @@ fn project_all_dimension_constraints(
                 .cloned()
                 .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
             let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
-                .unwrap_or_else(|| {
+                .or_else(|| {
                     let mut operands = group
                         .loci
                         .iter()
@@ -803,7 +807,7 @@ fn project_all_dimension_constraints(
                         &operands,
                         parameter_id,
                     )
-                });
+                })?;
             Some(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index)?,
                 sketch,
@@ -844,7 +848,7 @@ fn project_all_dimension_constraints(
                         linear_tolerance,
                     )
                 })
-                .unwrap_or_else(|| {
+                .or_else(|| {
                     let operands = frame
                         .operands()
                         .iter()
@@ -863,8 +867,10 @@ fn project_all_dimension_constraints(
                             }
                         })
                         .collect();
-                    Definition::Native {
-                        native_kind: parameter.source_kind().to_owned(),
+                    Some(Definition::Native {
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            parameter.source_kind(),
+                        )?,
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -878,8 +884,8 @@ fn project_all_dimension_constraints(
                             .collect(),
                         parameter: Some(parameter_id),
                         operands,
-                    }
-                });
+                    })
+                })?;
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -962,7 +968,9 @@ fn project_all_dimension_constraints(
                 sketch,
                 definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                     Definition::Native {
-                        native_kind: parameter.source_kind().to_owned(),
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            parameter.source_kind(),
+                        )?,
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1067,19 +1075,21 @@ fn project_all_dimension_constraints(
                 &parameter_id,
                 linear_tolerance,
             );
-            let definition = radial.unwrap_or_else(|| {
+            let definition = radial.or_else(|| {
                 match (
                     linear_candidates.as_slice(),
                     repeated,
                     extension,
                     concentric,
                 ) {
-                    ([definition], _, _, _) => definition.clone(),
+                    ([definition], _, _, _) => Some(definition.clone()),
                     (_, Some(definition), _, _)
                     | (_, _, Some(definition), _)
-                    | (_, _, _, Some(definition)) => definition,
-                    _ => Definition::Native {
-                        native_kind: parameter.source_kind().to_owned(),
+                    | (_, _, _, Some(definition)) => Some(definition),
+                    _ => Some(Definition::Native {
+                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                            parameter.source_kind(),
+                        )?,
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1099,9 +1109,9 @@ fn project_all_dimension_constraints(
                                 native_ref: Some(record.id.clone()),
                             })
                             .collect(),
-                    },
+                    }),
                 }
-            });
+            })?;
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -1261,23 +1271,25 @@ fn project_all_dimension_constraints(
         if exact_definition.is_none() && companion.payload_byte_length == 0 {
             return None;
         }
-        let definition = exact_definition.unwrap_or_else(|| Definition::Native {
-            native_kind: parameter.source_kind().to_owned(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: Some(parameter_id.clone()),
-            operands: vec![SketchNativeOperand {
-                native_kind: crate::design::literals::nonempty("dimension_companion"),
-                field: Some(NativeOperandField {
-                    name: crate::design::literals::nonempty("companion_payload"),
-                    role: None,
-                }),
-                object_index: companion.record_index,
-                native_ref: Some(companion.id.clone()),
-            }],
-        });
+        let definition = exact_definition.or_else(|| {
+            Some(Definition::Native {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new(parameter.source_kind())?,
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: Vec::new(),
+                parameter: Some(parameter_id.clone()),
+                operands: vec![SketchNativeOperand {
+                    native_kind: crate::design::literals::nonempty("dimension_companion"),
+                    field: Some(NativeOperandField {
+                        name: crate::design::literals::nonempty("companion_payload"),
+                        role: None,
+                    }),
+                    object_index: companion.record_index,
+                    native_ref: Some(companion.id.clone()),
+                }],
+            })
+        })?;
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
             sketch,
@@ -2373,7 +2385,7 @@ pub(crate) fn bind_offset_dimension_parameters(
         let [entity] = entities.as_slice() else {
             continue;
         };
-        if !native_kind.starts_with("Linear Dimension")
+        if !native_kind.as_str().starts_with("Linear Dimension")
             || operands.len() != 2
             || operands[0].native_kind != "null_locus"
             || operands[1].native_kind != "curve"
@@ -2556,7 +2568,7 @@ pub fn project_spatial_dimension_constraints(
                     ..
                 } => {
                     let symmetry = spatial_reflection_symmetry(
-                        &native_kind,
+                        native_kind.as_str(),
                         native_state,
                         &operands,
                         constraint.native_ref.as_deref(),
@@ -2568,7 +2580,7 @@ pub fn project_spatial_dimension_constraints(
                         let parameter = parameters_by_id.get(parameter_id)?;
                         let signed = design_length(parameter)?.get();
                         spatial_counted_offset_dimension_definition(
-                            &native_kind,
+                            native_kind.as_str(),
                             native_state,
                             &operands,
                             parameter_id,
@@ -2598,7 +2610,7 @@ pub fn project_spatial_dimension_constraints(
                         let [first, second] = measured.as_slice() else {
                             return None;
                         };
-                        if !native_kind.starts_with("Linear Dimension")
+                        if !native_kind.as_str().starts_with("Linear Dimension")
                             || first.sketch != sketch
                             || second.sketch != sketch
                             || first.id() == second.id()
@@ -2679,7 +2691,7 @@ pub fn project_spatial_dimension_constraints(
                     });
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinitionInput::Native {
-                            native_kind,
+                            native_kind: native_kind.to_string(),
                             native_state,
                             parameter,
                             operands,

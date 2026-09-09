@@ -834,7 +834,7 @@ fn linear_boundary_model_points(
         let mut curve_points = match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Line(_) => vec![item.start, item.end],
             CurveGeometry::Nurbs(nurbs) => {
-                linear_model_nurbs_points(nurbs, item.source_edge.param_range?)?
+                linear_model_nurbs_points(nurbs, item.source_edge.param_range()?)?
             }
             _ => return None,
         };
@@ -1446,13 +1446,13 @@ fn edge_range_matches_curve(
     end: Point3,
     tolerance: f64,
 ) -> bool {
-    let Some(curve_id) = edge.curve.as_ref() else {
+    let Some(curve_id) = edge.curve().as_ref() else {
         return false;
     };
     let Some(curve) = carrier_index.curves(curve_id.as_str()) else {
         return false;
     };
-    let Some(range) = edge.param_range else {
+    let Some(range) = edge.param_range() else {
         return false;
     };
     if !range.iter().all(|parameter| parameter.is_finite()) {
@@ -1563,7 +1563,7 @@ pub(super) fn project(
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<CurveId, Vec<Edge>>::new();
     for edge in &ir.model.edges {
-        if let Some(curve) = &edge.curve {
+        if let Some(curve) = &edge.curve() {
             edges_by_curve
                 .entry(curve.clone())
                 .or_default()
@@ -2206,12 +2206,22 @@ pub(super) fn project(
                 .expect("identity grammar");
                 let start_vertex = vertex_ids[segment_index * 2].clone();
                 let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
+                let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
+                    Some(item.model_curve),
+                    item.source_edge.param_range(),
+                ) {
+                    Ok(carrier) => carrier,
+                    Err(error) => {
+                        losses.push(entity_loss(entry, error));
+                        valid = false;
+                        break;
+                    }
+                };
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
-                    curve: Some(item.model_curve),
+                    carrier,
                     start: start_vertex,
                     end: end_vertex,
-                    param_range: item.source_edge.param_range,
                     tolerance: Some(checked_sewing_tolerance),
                 });
                 let pcurve_uses = match item
