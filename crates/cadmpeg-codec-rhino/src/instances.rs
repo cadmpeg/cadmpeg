@@ -350,6 +350,7 @@ fn unit_detail<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<UnitDetail, FramingError> {
     let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
     let unit = i32::try_from(payload.u32()?)
@@ -367,9 +368,9 @@ fn unit_detail<'a>(
             || crate::settings::standard_scale(unit)
                 .is_some_and(|scale| scale / 1000.0 != meters_per_unit))
     {
-        warnings.push(format!(
+        losses.push(crate::loss::RhinoLossCode::RedundantFieldRepaired.note(format!(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
-        ));
+        )));
     }
     finish(&mut payload, "unit detail")?;
     Ok(UnitDetail {
@@ -669,6 +670,7 @@ fn parse_v5(
     range: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
@@ -723,7 +725,7 @@ fn parse_v5(
     } else {
         String::new()
     };
-    let units = unit_detail(data, &mut reader, archive, warnings)?;
+    let units = unit_detail(data, &mut reader, archive, warnings, losses)?;
     let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
     let mut linked_appearance = reader.u32()?;
@@ -766,6 +768,7 @@ fn parse_v6(
     range: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     let (outer_chunk, mut reader, outer_version) = anonymous_versioned(
@@ -795,7 +798,7 @@ fn parse_v6(
     }
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
-    let units = unit_detail(data, &mut reader, archive, warnings)?;
+    let units = unit_detail(data, &mut reader, archive, warnings, losses)?;
     outer_children.push(units_start..reader.position());
     let description = utf16(&mut reader)?;
     let url = utf16(&mut reader)?;
@@ -897,7 +900,7 @@ fn extract_member_ids(
     finish(&mut outer, "instance-definition wrapper")?;
     let _component = model_component(data, &mut reader, archive, &mut Vec::new())?;
     let _kind = reader.u32()?;
-    let _units = unit_detail(data, &mut reader, archive, &mut Vec::new())?;
+    let _units = unit_detail(data, &mut reader, archive, &mut Vec::new(), &mut Vec::new())?;
     let _description = utf16(&mut reader)?;
     let _url = utf16(&mut reader)?;
     let _url_tag = utf16(&mut reader)?;
@@ -1056,6 +1059,7 @@ pub(crate) fn parse_definitions(
                     class.class_data_range,
                     archive,
                     &mut warnings,
+                    &mut result.scan.losses,
                 )
             } else {
                 parse_v6(
@@ -1064,6 +1068,7 @@ pub(crate) fn parse_definitions(
                     class.class_data_range,
                     archive,
                     &mut warnings,
+                    &mut result.scan.losses,
                 )
             }?;
             let userdata_degraded = apply_idef_alternative_path(
@@ -1074,13 +1079,6 @@ pub(crate) fn parse_definitions(
                 &mut warnings,
             );
             for warning in warnings {
-                if warning.starts_with("redundant instance unit detail ") {
-                    result
-                        .scan
-                        .losses
-                        .push(crate::loss::RhinoLossCode::RedundantFieldRepaired.note(warning));
-                    continue;
-                }
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: warning,
                     source_range: record.range.clone(),

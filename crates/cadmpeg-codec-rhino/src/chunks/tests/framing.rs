@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::chunks::{
-    anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
-    parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
+    anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_header,
+    validate_eof, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
     TCODE_CRC, TCODE_SHORT,
 };
 use crate::layout::endoffile_record_wide as eof_wide;
@@ -160,7 +160,7 @@ fn keeps_packed_and_anonymous_versions_distinct() {
 }
 
 #[test]
-fn validates_eof_width_size_and_truncation() {
+fn validates_eof_width_and_truncation() {
     for archive in [ArchiveVersion::V4, ArchiveVersion::V5] {
         let mut bytes = vec![0; file_header::LEN];
         let marker = eof(
@@ -178,7 +178,7 @@ fn validates_eof_width_size_and_truncation() {
         let marker_start = file_header::LEN;
         let replacement = eof(archive, size);
         bytes[marker_start..].copy_from_slice(&replacement);
-        parse_eof(&bytes, marker_start, archive).expect("valid EOF");
+        validate_eof(&bytes, marker_start, archive).expect("valid EOF");
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
@@ -187,13 +187,13 @@ fn validates_eof_width_size_and_truncation() {
                 8
             };
         mismatch[size_offset] ^= 1;
-        parse_eof(&mismatch, marker_start, archive).expect("size is informational");
-        assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
+        validate_eof(&mismatch, marker_start, archive).expect("size is informational");
+        assert!(validate_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
     let bytes = vec![0; file_header::LEN];
-    parse_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("optional EOF");
+    validate_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("optional EOF");
     assert!(matches!(
-        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
+        validate_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
         Err(FramingError::MissingEof)
     ));
 }
