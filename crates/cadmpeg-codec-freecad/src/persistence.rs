@@ -634,7 +634,7 @@ fn parse_link_targets(
             })
             .collect(),
         LinkGrammar::XLink => Ok(vec![xlink(root)?]),
-        LinkGrammar::XLinkList => counted_children(root, "XLink", type_name)?
+        LinkGrammar::XLinkSubList => counted_children(root, "XLink", type_name)?
             .map(xlink)
             .collect(),
     }
@@ -656,7 +656,7 @@ enum LinkGrammar {
     LinkSub,
     LinkSubList,
     XLink,
-    XLinkList,
+    XLinkSubList,
 }
 
 impl LinkGrammar {
@@ -667,7 +667,7 @@ impl LinkGrammar {
             Self::LinkSub => "LinkSub",
             Self::LinkSubList => "LinkSubList",
             Self::XLink => "XLink",
-            Self::XLinkList => "XLinkSubList",
+            Self::XLinkSubList => "XLinkSubList",
         }
     }
 }
@@ -693,7 +693,7 @@ fn link_grammar(type_name: &str) -> Option<LinkGrammar> {
         "App::PropertyXLink" | "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden" => {
             LinkGrammar::XLink
         }
-        "App::PropertyXLinkSubList" | "App::PropertyXLinkList" => LinkGrammar::XLinkList,
+        "App::PropertyXLinkSubList" | "App::PropertyXLinkList" => LinkGrammar::XLinkSubList,
         _ => return None,
     };
     Some(grammar)
