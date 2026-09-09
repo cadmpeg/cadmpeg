@@ -320,12 +320,15 @@ fn emit_carrier_surface(
                     geometry: second,
                     source_object: None,
                 });
-                ProceduralSurfaceDefinition::Sum {
-                    first: first_id,
-                    second: second_id,
-                    basepoint,
-                    revision_form,
-                }
+                ProceduralSurfaceDefinition::Sum(
+                    cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                        first_id,
+                        second_id,
+                        basepoint,
+                        revision_form,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                )
             }
             DecodedProceduralSurfaceDefinition::Revolution {
                 directrix,
@@ -2916,9 +2919,9 @@ fn emit_silhouette_curve(
         geometry: embedded.cast_surface,
         source_object: None,
     });
-    Ok(
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+    Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(
+        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                 std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: support_ids[side].clone(),
                     pcurve: pcurves[side].clone(),
@@ -2926,11 +2929,12 @@ fn emit_silhouette_curve(
                 embedded.parameter_range,
                 embedded.discontinuities,
             )?,
-            silhouette: embedded.silhouette,
+            embedded.silhouette,
             cast_surface,
-            light_direction: embedded.light_direction,
-        },
-    )
+            embedded.light_direction,
+        )
+        .map_err(|_| "silhouette fields are not finite or the light direction is degenerate")?,
+    ))
 }
 
 fn emit_surface_offset_curve(

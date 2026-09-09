@@ -1270,12 +1270,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             .and_then(Value::reference)
                             .and_then(|vector| vectors.get(&vector).copied()),
                     )
-                    .map(
-                        |(directrix, direction)| ProceduralSurfaceDefinition::LinearSweep {
-                            directrix,
-                            direction,
-                        },
-                    )
+                    .map(|(directrix, direction)| {
+                        cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                            directrix, direction,
+                        )
+                        .map(ProceduralSurfaceDefinition::LinearSweep)
+                    })
             }
             Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
@@ -1287,11 +1287,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(|placement| placements.get(&placement).copied()),
                 )
                 .map(|(directrix, (axis_origin, axis_direction, _))| {
-                    ProceduralSurfaceDefinition::AxisRevolution {
+                    cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
                         directrix,
                         axis_origin,
                         axis_direction,
-                    }
+                    )
+                    .map(ProceduralSurfaceDefinition::AxisRevolution)
                 }),
             _ => continue,
         };
@@ -1305,6 +1306,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .expect("matched swept surface")
             ));
             continue;
+        };
+        let definition = match definition {
+            Ok(definition) => definition,
+            Err(error) => {
+                warnings.push(format!("procedural surface #{id}: {error}"));
+                continue;
+            }
         };
         let surface = SurfaceId::from(ids::data("surface", id));
         ir.model.surfaces.push(Surface {
@@ -4690,21 +4698,21 @@ fn procedural_definition_parameter_scales(
                 1.0,
             ])
         }
-        ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
+        ProceduralSurfaceDefinition::LinearSweep(definition_payload) => Some([
             directrix_parameter_scale(
                 ir,
-                directrix,
+                definition_payload.directrix(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
             )?,
             1.0,
         ]),
-        ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => Some([
+        ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => Some([
             angle_scale,
             directrix_parameter_scale(
                 ir,
-                directrix,
+                definition_payload.directrix(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,

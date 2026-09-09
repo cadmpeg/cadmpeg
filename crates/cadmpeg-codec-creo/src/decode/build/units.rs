@@ -1598,8 +1598,14 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.revision_form().clone(),
                     )?;
             }
-            ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
-                scale_vector3(direction, scale);
+            ProceduralSurfaceDefinition::LinearSweep(payload) => {
+                let mut direction = *payload.direction();
+                scale_vector3(&mut direction, scale);
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        direction,
+                    )?;
             }
             ProceduralSurfaceDefinition::Revolution(payload) => {
                 let mut origin = *payload.axis_origin();
@@ -1615,11 +1621,24 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.revision_form().clone(),
                     )?;
             }
-            ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
-                scale_point3(axis_origin, scale);
+            ProceduralSurfaceDefinition::AxisRevolution(payload) => {
+                let mut axis_origin = *payload.axis_origin();
+                scale_point3(&mut axis_origin, scale);
+                *payload = cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
+                    payload.directrix().clone(),
+                    axis_origin,
+                    *payload.axis_direction(),
+                )?;
             }
-            ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
-                scale_vector3(basepoint, scale);
+            ProceduralSurfaceDefinition::Sum(payload) => {
+                let mut basepoint = *payload.basepoint();
+                scale_vector3(&mut basepoint, scale);
+                *payload = cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                    payload.first().clone(),
+                    payload.second().clone(),
+                    basepoint,
+                    payload.revision_form().clone(),
+                )?;
             }
             _ => {}
         }

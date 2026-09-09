@@ -159,9 +159,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             crate::geometry::ProceduralCurveDefinition::Intersection { context, .. } => {
                 (std::borrow::Cow::Borrowed(context), None)
             }
-            crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. } => {
-                (std::borrow::Cow::Borrowed(context), None)
-            }
+            crate::geometry::ProceduralCurveDefinition::Silhouette(definition_payload) => (
+                std::borrow::Cow::Borrowed(definition_payload.context()),
+                None,
+            ),
             crate::geometry::ProceduralCurveDefinition::Projection { context, .. } => {
                 (std::borrow::Cow::Borrowed(context), None)
             }

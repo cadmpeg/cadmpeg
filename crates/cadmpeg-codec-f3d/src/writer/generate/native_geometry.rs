@@ -788,13 +788,11 @@ fn native_procedural_surface_definition(
             }
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Sum {
-            first,
-            second,
-            basepoint,
-            revision_form,
-        } => {
-            if let Some(form) = revision_form {
+        ProceduralSurfaceDefinition::Sum(definition_payload) => {
+            let first = definition_payload.first();
+            let second = definition_payload.second();
+            let basepoint = definition_payload.basepoint();
+            if let Some(form) = definition_payload.revision_form() {
                 if form.revision <= 0 {
                     return Err(CodecError::Malformed(
                         "revision-gated sum_spl_sur requires a positive revision".into(),
@@ -1984,33 +1982,36 @@ fn native_cacheless_procedural_surface_definition(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let ProceduralSurfaceDefinition::Sum {
-        first,
-        second,
-        basepoint,
-        revision_form: None,
-    } = procedural.definition()
-    {
-        if procedural.cache_fit_tolerance().is_some() {
-            return Err(CodecError::Malformed(
-                "cacheless sum surface cannot carry a cache-fit tolerance".into(),
-            ));
+    if let ProceduralSurfaceDefinition::Sum(definition_payload) = procedural.definition() {
+        if definition_payload.revision_form().is_none() {
+            if procedural.cache_fit_tolerance().is_some() {
+                return Err(CodecError::Malformed(
+                    "cacheless sum surface cannot carry a cache-fit tolerance".into(),
+                ));
+            }
+            let basepoint = definition_payload.basepoint();
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "sum_spl_sur")?;
+            native_nurbs_curve(
+                bytes,
+                &native_loft_curve(target, definition_payload.first())?,
+            )?;
+            native_nurbs_curve(
+                bytes,
+                &native_loft_curve(target, definition_payload.second())?,
+            )?;
+            native_point(
+                bytes,
+                [
+                    basepoint.x / LEN_TO_MM,
+                    basepoint.y / LEN_TO_MM,
+                    basepoint.z / LEN_TO_MM,
+                ],
+            );
+            bytes.push(0x10);
+            return Ok(true);
         }
-        native_surface_base(bytes, "spline")?;
-        bytes.push(0x0f);
-        native_ident(bytes, "sum_spl_sur")?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, first)?)?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, second)?)?;
-        native_point(
-            bytes,
-            [
-                basepoint.x / LEN_TO_MM,
-                basepoint.y / LEN_TO_MM,
-                basepoint.z / LEN_TO_MM,
-            ],
-        );
-        bytes.push(0x10);
-        return Ok(true);
     }
     if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } =
         procedural.definition()
@@ -4915,18 +4916,17 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-        context,
-        silhouette,
-        cast_surface,
-        light_direction,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(definition_payload) =
+        procedural.definition()
     {
-        let (name, draft_factor) = match silhouette {
+        let context = definition_payload.context();
+        let cast_surface = definition_payload.cast_surface();
+        let light_direction = definition_payload.light_direction();
+        let (name, draft_factor) = match definition_payload.silhouette() {
             cadmpeg_ir::geometry::SilhouetteKind::Standard => ("silh_int_cur", None),
             cadmpeg_ir::geometry::SilhouetteKind::Parametric => ("para_silh_int_cur", None),
             cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
-                ("taper_silh_int_cur", Some(*draft_factor))
+                ("taper_silh_int_cur", Some(draft_factor.get()))
             }
         };
         let cast_surface = target

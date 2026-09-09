@@ -134,8 +134,8 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                         resolved_curves.contains(directrix)
                     }
                 }
-                ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => {
-                    resolved_curves.contains(directrix)
+                ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                    resolved_curves.contains(definition_payload.directrix())
                 }
                 _ => false,
             };

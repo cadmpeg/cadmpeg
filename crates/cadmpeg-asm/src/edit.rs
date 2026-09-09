@@ -672,17 +672,15 @@ impl AsmEditSet {
             ProceduralCurveDefinition::SurfaceCurve { family, .. } => {
                 patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }
-            ProceduralCurveDefinition::Silhouette {
-                silhouette,
-                light_direction,
-                ..
-            } => patch_silhouette_definition(
-                bytes,
-                self.ref_width,
-                record,
-                silhouette,
-                *light_direction,
-            ),
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                patch_silhouette_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    definition_payload.silhouette(),
+                    *definition_payload.light_direction(),
+                )
+            }
             ProceduralCurveDefinition::Exact => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
@@ -1465,14 +1463,7 @@ fn patch_silhouette_definition(
     let draft_factor = match silhouette {
         cadmpeg_ir::geometry::SilhouetteKind::Standard
         | cadmpeg_ir::geometry::SilhouetteKind::Parametric => None,
-        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
-            if !draft_factor.is_finite() {
-                return Err(CodecError::Malformed(
-                    "silhouette draft factor must be finite".into(),
-                ));
-            }
-            Some(*draft_factor)
-        }
+        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => Some(draft_factor.get()),
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;
     let layout =

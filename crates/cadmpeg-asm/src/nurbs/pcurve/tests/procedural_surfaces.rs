@@ -1421,7 +1421,9 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
             ("para_silh_int_cur", SilhouetteKind::Parametric),
             (
                 "taper_silh_int_cur",
-                SilhouetteKind::Taper { draft_factor: 0.5 },
+                SilhouetteKind::Taper {
+                    draft_factor: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                },
             ),
         ] {
             let mut bytes = vec![0x0f, 0x0d, name.len() as u8];

@@ -3708,22 +3708,12 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: before_context,
-                    silhouette: before_silhouette,
-                    cast_surface: before_cast,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
-                    context: after_context,
-                    silhouette: after_silhouette,
-                    cast_surface: after_cast,
-                    ..
-                },
-            ) if before_context == after_context
-                && std::mem::discriminant(before_silhouette)
-                    == std::mem::discriminant(after_silhouette)
-                && before_cast == after_cast
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(after_payload),
+            ) if before_payload.context() == after_payload.context()
+                && std::mem::discriminant(before_payload.silhouette())
+                    == std::mem::discriminant(after_payload.silhouette())
+                && before_payload.cast_surface() == after_payload.cast_surface()
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

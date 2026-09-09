@@ -353,10 +353,13 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::LinearSweep {
-                    directrix: directrix_id,
-                    direction: Vector3::new(0.0, 0.0, 1.0),
-                },
+                definition: ProceduralSurfaceDefinition::LinearSweep(
+                    crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                        directrix_id,
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .expect("valid linear sweep"),
+                ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1253,10 +1256,13 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::LinearSweep {
-                    directrix: directrix_id,
-                    direction: Vector3::new(0.0, 0.0, 1.0),
-                },
+                definition: ProceduralSurfaceDefinition::LinearSweep(
+                    crate::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                        directrix_id,
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .expect("valid linear sweep"),
+                ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1477,11 +1483,14 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::AxisRevolution {
-                    directrix: directrix_id,
-                    axis_origin: Point3::new(0.0, 0.0, 0.0),
-                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                },
+                definition: ProceduralSurfaceDefinition::AxisRevolution(
+                    crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
+                        directrix_id,
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .expect("valid axis revolution"),
+                ),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
