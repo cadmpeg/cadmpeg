@@ -20,32 +20,37 @@ pub(crate) struct DisplayJtGraph(DisplayJtGraphWire);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct DisplayJtGraphWire {
-    pub(crate) display_jt_documents: Vec<DisplayJtDocument>,
-    pub(crate) display_jt_segments: Vec<DisplayJtSegment>,
-    pub(crate) display_jt_shape_lod_elements: Vec<DisplayJtShapeLodElement>,
-    pub(crate) display_jt_compressed_elements: Vec<DisplayJtCompressedElement>,
-    pub(crate) display_jt_compressed_element_sequences: Vec<DisplayJtCompressedElementSequence>,
+    #[serde(rename = "display_jt_documents")]
+    pub(crate) documents: Vec<DisplayJtDocument>,
+    #[serde(rename = "display_jt_segments")]
+    pub(crate) segments: Vec<DisplayJtSegment>,
+    #[serde(rename = "display_jt_shape_lod_elements")]
+    pub(crate) shape_lod_elements: Vec<DisplayJtShapeLodElement>,
+    #[serde(rename = "display_jt_compressed_elements")]
+    pub(crate) compressed_elements: Vec<DisplayJtCompressedElement>,
+    #[serde(rename = "display_jt_compressed_element_sequences")]
+    pub(crate) compressed_element_sequences: Vec<DisplayJtCompressedElementSequence>,
 }
 
 impl DisplayJtGraph {
     pub(crate) fn documents(&self) -> &[DisplayJtDocument] {
-        &self.0.display_jt_documents
+        &self.0.documents
     }
 
     pub(crate) fn segments(&self) -> &[DisplayJtSegment] {
-        &self.0.display_jt_segments
+        &self.0.segments
     }
 
     pub(crate) fn shape_lod_elements(&self) -> &[DisplayJtShapeLodElement] {
-        &self.0.display_jt_shape_lod_elements
+        &self.0.shape_lod_elements
     }
 
     pub(crate) fn compressed_elements(&self) -> &[DisplayJtCompressedElement] {
-        &self.0.display_jt_compressed_elements
+        &self.0.compressed_elements
     }
 
     pub(crate) fn compressed_element_sequences(&self) -> &[DisplayJtCompressedElementSequence] {
-        &self.0.display_jt_compressed_element_sequences
+        &self.0.compressed_element_sequences
     }
 }
 
@@ -53,33 +58,25 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
-        let documents = by_id(
-            &wire.display_jt_documents,
-            |item| item.id.as_str(),
-            "documents",
-        )?;
-        let segments = by_id(
-            &wire.display_jt_segments,
-            |item| item.id.as_str(),
-            "segments",
-        )?;
+        let documents = by_id(&wire.documents, |item| item.id.as_str(), "documents")?;
+        let segments = by_id(&wire.segments, |item| item.id.as_str(), "segments")?;
         let elements = by_id(
-            &wire.display_jt_compressed_elements,
+            &wire.compressed_elements,
             |item| item.id.as_str(),
             "compressed_elements",
         )?;
         by_id(
-            &wire.display_jt_shape_lod_elements,
+            &wire.shape_lod_elements,
             |item| item.id.as_str(),
             "shape_lod_elements",
         )?;
         by_id(
-            &wire.display_jt_compressed_element_sequences,
+            &wire.compressed_element_sequences,
             |item| item.id.as_str(),
             "compressed_element_sequences",
         )?;
         let mut toc_entries = BTreeMap::new();
-        for document in &wire.display_jt_documents {
+        for document in &wire.documents {
             for entry in &document.toc_entries {
                 if toc_entries
                     .insert((document.id.as_str(), entry.id.as_str()), entry)
@@ -92,7 +89,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                 }
             }
         }
-        for segment in &wire.display_jt_segments {
+        for segment in &wire.segments {
             let document = documents
                 .get(segment.document.as_str())
                 .ok_or_else(|| invalid(&segment.id, "document does not resolve"))?;
@@ -125,7 +122,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                 ));
             }
         }
-        for element in &wire.display_jt_shape_lod_elements {
+        for element in &wire.shape_lod_elements {
             let segment = segments
                 .get(element.segment.as_str())
                 .ok_or_else(|| invalid(&element.id, "segment does not resolve"))?;
@@ -133,7 +130,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                 return Err(invalid(&element.id, "segment is not a type-7 shape LOD"));
             }
         }
-        for element in &wire.display_jt_compressed_elements {
+        for element in &wire.compressed_elements {
             admit_compressed_owner(
                 &segments,
                 &element.id,
@@ -142,7 +139,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                 element.source_offset,
             )?;
         }
-        for sequence in &wire.display_jt_compressed_element_sequences {
+        for sequence in &wire.compressed_element_sequences {
             admit_compressed_owner(
                 &segments,
                 &sequence.id,
@@ -179,11 +176,11 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
 
     fn try_from(namespace: &NativeNamespace) -> Result<Self, Self::Error> {
         DisplayJtGraphWire {
-            display_jt_documents: namespace.arena_as("display_jt_documents")?,
-            display_jt_segments: namespace.arena_as("display_jt_segments")?,
-            display_jt_shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
-            display_jt_compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-            display_jt_compressed_element_sequences: namespace
+            documents: namespace.arena_as("display_jt_documents")?,
+            segments: namespace.arena_as("display_jt_segments")?,
+            shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
+            compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
+            compressed_element_sequences: namespace
                 .arena_as("display_jt_compressed_element_sequences")?,
         }
         .try_into()

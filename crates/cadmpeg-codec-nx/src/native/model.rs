@@ -1108,11 +1108,11 @@ impl NativeModel {
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
                 graph: DisplayJtGraphWire {
-                    display_jt_documents,
-                    display_jt_segments,
-                    display_jt_shape_lod_elements,
-                    display_jt_compressed_elements,
-                    display_jt_compressed_element_sequences,
+                    documents: display_jt_documents,
+                    segments: display_jt_segments,
+                    shape_lod_elements: display_jt_shape_lod_elements,
+                    compressed_elements: display_jt_compressed_elements,
+                    compressed_element_sequences: display_jt_compressed_element_sequences,
                 }
                 .try_into()?,
                 display_jt_indices,
