@@ -1508,6 +1508,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let shifted_thicken_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             byte_offset: shifted_thicken_at as u64,
+            reference_count_offset: (shifted_thicken_at + 9) as u64,
             frame_length: 312,
             reference_members: crate::records::ReferenceRun::unlocated(vec![74, 200, 201, 202]),
             ..thicken_scope.clone().into_draft()
@@ -1738,6 +1739,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut compact_shell_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             byte_offset: compact_shell_at as u64,
+            reference_count_offset: (compact_shell_at + 9) as u64,
             frame_length: 268,
             reference_members: crate::records::ReferenceRun::unlocated(vec![200, 201, 9_000]),
             ..shell_scope.clone().into_draft()
@@ -1768,6 +1770,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let shifted_shell_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             byte_offset: shifted_shell_at as u64,
+            reference_count_offset: (shifted_shell_at + 9) as u64,
             frame_length: 278,
             reference_members: crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]),
             ..shell_scope.clone().into_draft()
