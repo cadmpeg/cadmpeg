@@ -584,8 +584,6 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             face: None,
             placements: None,
             shape,
-
-
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
         } if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {

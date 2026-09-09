@@ -1592,8 +1592,6 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
                 face,
                 placements,
                 shape,
-
-
                 extent,
                 ..
             } => {
