@@ -40,8 +40,8 @@ fn graph_wire() -> Value {
         }],
         "display_jt_compressed_element_sequences": [{
             "id": "nx:display-jt:sequence#0", "segment": "nx:display-jt:segment#1", "segment_type": 31,
-            "elements": ["nx:display-jt:compressed-element#0"], "framed_byte_len": 22,
-            "tail": [], "tail_sha256": "tail", "source_offset": 388
+            "elements": ["nx:display-jt:compressed-element#0"], "framed_byte_len": 46,
+            "tail": [], "tail_sha256": cadmpeg_ir::hash::sha256_hex(&[]), "source_offset": 388
         }]
     })
 }
@@ -142,6 +142,21 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
             json!(1),
             "ordinal",
         ),
+        (
+            "/display_jt_compressed_elements/0/body_byte_len",
+            json!(2),
+            "body_byte_len",
+        ),
+        (
+            "/display_jt_compressed_elements/0/inflated_offset",
+            json!(1),
+            "inflated_offset",
+        ),
+        (
+            "/display_jt_compressed_element_sequences/0/framed_byte_len",
+            json!(47),
+            "framed_byte_len",
+        ),
     ] {
         let mut wire = graph_wire();
         *wire.pointer_mut(path).unwrap() = value;
@@ -174,5 +189,33 @@ fn aggregate_admission_rejects_missing_owners_and_repeated_field_disagreement() 
         let findings = crate::NxCodec::validate_native(&ir);
         assert_eq!(findings.len(), 1, "{path}");
         assert!(findings[0].message.contains(field), "{path}");
+    }
+}
+
+#[test]
+fn compressed_element_wire_rejects_invalid_lengths_and_tail_hash() {
+    for (path, value, field) in [
+        (
+            "/display_jt_compressed_elements/0/body_byte_len",
+            json!(u32::MAX),
+            "body_byte_len",
+        ),
+        (
+            "/display_jt_compressed_element_sequences/0/framed_byte_len",
+            json!(19),
+            "framed_byte_len",
+        ),
+        (
+            "/display_jt_compressed_element_sequences/0/tail_sha256",
+            json!(cadmpeg_ir::hash::sha256_hex(&[1])),
+            "tail_sha256",
+        ),
+    ] {
+        let mut wire = graph_wire();
+        *wire.pointer_mut(path).unwrap() = value;
+        assert!(serde_json::from_value::<DisplayJtGraph>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
 }

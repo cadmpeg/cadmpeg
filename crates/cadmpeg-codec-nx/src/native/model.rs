@@ -727,7 +727,7 @@ impl NativeModel {
             &display_jt_coordinate_array_headers,
         );
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-            display_jt_compressed_element_sequences(budget, container, &display_jt_segments);
+            display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
             display_jt_string_property_atoms(budget, container, &display_jt_segments);
         let display_jt_shape_lod_bindings =
