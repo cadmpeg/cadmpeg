@@ -449,3 +449,48 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
         Some(&1)
     );
 }
+
+#[test]
+fn procedural_curve_admission_failures_keep_the_carrier() {
+    use super::super::ProceduralCurveSource;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    for (source, cause) in [
+        (
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Exact),
+                cache_fit_tolerance: Some(-1.0),
+                parsed_domain: Some([0.0, 1.0]),
+            },
+            "invalid procedural curve cache tolerance",
+        ),
+        (
+            ProceduralCurveSource::Cacheless(Box::new(ProceduralCurveDefinition::Subset {
+                source: CurveId::mint("f3d:brep:entity#source").unwrap(),
+                parameter_range: [2.0, 1.0],
+                sense: true,
+            })),
+            "subset-curve range is not finite and ordered",
+        ),
+    ] {
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        carriers
+            .curve_geo
+            .insert(4, CurveGeometry::Unknown { record: None });
+        carriers.procedural_curve_defs.insert(4, source);
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            IdFormat("f3d"),
+        )
+        .unwrap();
+        assert_eq!(out.curves.len(), 1);
+        assert_eq!(out.curves[0].id.as_str(), "f3d:brep:entity#4");
+        assert!(out.procedural_curves.is_empty());
+        assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
+    }
+}
