@@ -8,7 +8,7 @@ pub(crate) enum Admission {
     Schema1,
     /// Any other declaration is read with the schema-1 vocabulary without a
     /// verified declaration match.
-    Unverified { declaration: String },
+    Unverified { declaration: Option<String> },
 }
 
 impl Admission {
@@ -30,11 +30,9 @@ pub(crate) fn classify(schema_version: Option<&str>) -> Admission {
     match schema_version {
         Some("1") => Admission::Schema1,
         Some(value) => Admission::Unverified {
-            declaration: value.to_owned(),
+            declaration: Some(value.to_owned()),
         },
-        None => Admission::Unverified {
-            declaration: "missing".into(),
-        },
+        None => Admission::Unverified { declaration: None },
     }
 }
 
@@ -47,23 +45,18 @@ mod tests {
         let admitted = classify(Some("1"));
         assert_eq!(admitted, Admission::Schema1);
         assert_eq!(admitted.neutral_schema_version(), Some(1));
-        for declaration in ["01", "2", "not-an-integer"] {
+        for declaration in ["01", "2", "not-an-integer", "missing"] {
             let admission = classify(Some(declaration));
             assert_eq!(
                 admission,
                 Admission::Unverified {
-                    declaration: declaration.to_owned(),
+                    declaration: Some(declaration.to_owned()),
                 }
             );
             assert_eq!(admission.neutral_schema_version(), None);
         }
         let missing = classify(None);
-        assert_eq!(
-            missing,
-            Admission::Unverified {
-                declaration: "missing".to_string(),
-            }
-        );
+        assert_eq!(missing, Admission::Unverified { declaration: None });
         assert_eq!(missing.neutral_schema_version(), None);
     }
 }
