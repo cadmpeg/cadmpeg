@@ -11,24 +11,30 @@ fn signature_uses_three_component_grammar() {
 
 #[test]
 fn data_and_opaque_preserve_existing_forms() {
-    assert_eq!(ids::data("surface", 12u64), "step:data:surface#12");
-    assert!(is_valid_identity(&ids::data("edge", "3-shell-4")));
+    assert_eq!(ids::data("surface", 12u64).as_str(), "step:data:surface#12");
+    assert!(is_valid_identity(ids::data("edge", "3-shell-4").as_str()));
 }
 
 #[test]
 fn scoped_builders_preserve_existing_forms() {
     assert_eq!(
-        ids::product("occurrence", "definition-9"),
+        ids::product("occurrence", "definition-9").as_str(),
         "step:product:occurrence#definition-9"
     );
-    assert_eq!(ids::presentation("pmi", 4u64), "step:presentation:pmi#4");
     assert_eq!(
-        ids::construction("trimmed_curve", 9u64),
+        ids::presentation("pmi", 4u64).as_str(),
+        "step:presentation:pmi#4"
+    );
+    assert_eq!(
+        ids::construction("trimmed_curve", 9u64).as_str(),
         "step:construction:trimmed_curve#9"
     );
-    assert_eq!(ids::tessellation("mesh", 1u64), "step:tessellation:mesh#1");
     assert_eq!(
-        ids::drawing("drawing_definition", 2u64),
+        ids::tessellation("mesh", 1u64).as_str(),
+        "step:tessellation:mesh#1"
+    );
+    assert_eq!(
+        ids::drawing("drawing_definition", 2u64).as_str(),
         "step:drawing:drawing_definition#2"
     );
 }

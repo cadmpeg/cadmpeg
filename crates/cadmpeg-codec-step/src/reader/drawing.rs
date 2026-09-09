@@ -136,7 +136,7 @@ pub(super) fn decode(
         target_identities
             .entry(id)
             .or_default()
-            .insert(identity.clone());
+            .insert(identity.as_str().to_owned());
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
@@ -205,8 +205,8 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::mint(identity.clone()).expect("identity grammar"),
-                object: identity.clone(),
+                id: DrawingId::from(identity.clone()),
+                object: identity.as_str().to_owned(),
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
                 order: u32::try_from(order).unwrap_or(u32::MAX),
@@ -219,7 +219,7 @@ pub(super) fn decode(
                 rotation_degrees: None,
                 parameters: stored_parameters,
                 assets: Vec::new(),
-                native_ref: identity,
+                native_ref: identity.into_string(),
             },
         );
     }
@@ -323,7 +323,7 @@ fn add_source_typed_targets(
         {
             continue;
         }
-        let identity = opaque_record_id(id, record).into_string();
+        let identity = opaque_record_id(id, record);
         let source_type = record
             .partials
             .iter()
@@ -336,11 +336,8 @@ fn add_source_typed_targets(
             serde_json::Value::String(format!("#{id}")),
         );
         fields.insert("source_type".into(), serde_json::Value::String(source_type));
-        native_targets.push(
-            NativeRecord::new(identity.clone(), fields)
-                .expect("opaque_record_id checked the identity"),
-        );
-        target_identities.insert(id, BTreeSet::from([identity]));
+        native_targets.push(NativeRecord::from_identity(identity.clone(), fields));
+        target_identities.insert(id, BTreeSet::from([identity.into_string()]));
     }
     if native_targets.is_empty() {
         return;
@@ -377,7 +374,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
     }
 }
 
-fn drawing_identity(id: u64, name: &str) -> String {
+fn drawing_identity(id: u64, name: &str) -> cadmpeg_ir::ids::Identity {
     ids::drawing(&name.to_ascii_lowercase(), id)
 }
 

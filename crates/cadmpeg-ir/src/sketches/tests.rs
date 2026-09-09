@@ -1009,7 +1009,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .model
         .spatial_sketch_constraints
         .iter_mut()
-        .find(|constraint| constraint.id.0.ends_with("#offset"))
+        .find(|constraint| constraint.id.as_str().ends_with("#offset"))
         .expect("spatial offset constraint")
         .definition
         .edit(|definition| {
