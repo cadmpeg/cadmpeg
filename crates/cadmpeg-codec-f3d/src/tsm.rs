@@ -713,6 +713,22 @@ fn build_secondary_layouts(
     Ok(layouts)
 }
 
+enum EditorSelectionKind {
+    Edges,
+    Vertices,
+    Grips,
+}
+
+impl EditorSelectionKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Edges => "100edges",
+            Self::Vertices => "100verts",
+            Self::Grips => "50000grip",
+        }
+    }
+}
+
 fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
@@ -748,7 +764,31 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut unknown_record_kinds = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
-        match fields.next() {
+        let record_kind = fields.next();
+        let selection = match record_kind {
+            Some("100edges") => Some(EditorSelectionKind::Edges),
+            Some("100verts") => Some(EditorSelectionKind::Vertices),
+            Some("50000grip") => Some(EditorSelectionKind::Grips),
+            _ => None,
+        };
+        if let Some(selection) = selection {
+            let label = selection.as_str();
+            if !matches!(selection, EditorSelectionKind::Grips)
+                && !editor_declarations.insert(label)
+            {
+                return Err(malformed(name, format!("duplicate {label} record")));
+            }
+            let values = fields
+                .map(|value| parse_usize(name, Some(value), label))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            match selection {
+                EditorSelectionKind::Edges => selected_edges = values,
+                EditorSelectionKind::Vertices => selected_vertices = values,
+                EditorSelectionKind::Grips => selected_grips.extend(values),
+            }
+            continue;
+        }
+        match record_kind {
             Some("#TS0200") => require_end(name, fields, "header")?,
             Some("degree") => {
                 if parse_usize(name, fields.next(), "degree")? != 3 {
@@ -920,20 +960,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     grip_points.push(Some(GripPoint { point, weight }));
                 }
             },
-            Some(selection @ ("100edges" | "100verts" | "50000grip")) => {
-                if selection != "50000grip" && !editor_declarations.insert(selection) {
-                    return Err(malformed(name, format!("duplicate {selection} record")));
-                }
-                let values = fields
-                    .map(|value| parse_usize(name, Some(value), selection))
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-                match selection {
-                    "100edges" => selected_edges = values,
-                    "100verts" => selected_vertices = values,
-                    "50000grip" => selected_grips.extend(values),
-                    _ => unreachable!("selection is exhaustive"),
-                }
-            }
             Some("105sym") => {
                 let mode = match parse_i64(name, fields.next(), "symmetry flags")? {
                     0 => SymmetryMode::Correspondence,
@@ -1025,7 +1051,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                             Some(parse_f64(name, fields.next(), "radial symmetry sweep")?);
                         require_end(name, fields, "radial symmetry sweep")?;
                     }
-                    kind @ ("ef" | "er" | "ff" | "fr" | "vf" | "vr") => {
+                    kind => {
                         let selector = match kind {
                             "ef" => SubdRadialMapSelector::Ef,
                             "er" => SubdRadialMapSelector::Er,
@@ -1033,18 +1059,17 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                             "fr" => SubdRadialMapSelector::Fr,
                             "vf" => SubdRadialMapSelector::Vf,
                             "vr" => SubdRadialMapSelector::Vr,
-                            _ => unreachable!("radial selector is matched above"),
+                            _ => {
+                                return Err(malformed(
+                                    name,
+                                    format!("unknown radial symmetry record {kind}"),
+                                ))
+                            }
                         };
                         let pairs = parse_radial_pairs(name, fields)?;
                         block
                             .radial_maps
                             .push(SubdRadialSymmetryMap { selector, pairs });
-                    }
-                    _ => {
-                        return Err(malformed(
-                            name,
-                            format!("unknown radial symmetry record {kind}"),
-                        ));
                     }
                 }
             }
