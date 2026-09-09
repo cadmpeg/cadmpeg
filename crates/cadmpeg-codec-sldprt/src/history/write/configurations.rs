@@ -154,12 +154,17 @@ pub(crate) fn sync_configuration_design_state(
     )?;
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
-    project_configuration_sketch_states(
+    let projection_losses = project_configuration_sketch_states(
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut current_annotations,
     )?;
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
     let current_feature_hash =
@@ -226,12 +231,17 @@ pub(crate) fn sync_configuration_design_state(
     )?;
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
-    project_configuration_sketch_states(
+    let projection_losses = project_configuration_sketch_states(
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
         &mut projected_annotations,
     )?;
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)
         || configuration_feature_state_hash(&projected.model.configurations)

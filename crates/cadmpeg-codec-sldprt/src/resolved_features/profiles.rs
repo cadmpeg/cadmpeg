@@ -303,6 +303,7 @@ pub(crate) fn project_compact_sketch_profiles(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -493,6 +494,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
+            let entity_start = sketch_entities.len();
             if dimensioned_rectangle.is_some() {
                 let points = markers
                     .iter()
@@ -553,10 +555,15 @@ pub(crate) fn project_compact_sketch_profiles(
                     );
                 }
                 let mut sketch = sketch;
-                sketch
-                    .profiles
-                    .try_push(profile)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                if let Err(error) = sketch.profiles.try_push(profile) {
+                    sketch_entities.truncate(entity_start);
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                            "Sketch {sketch_id} profile was not transferred: {error}"
+                        )),
+                    );
+                    continue;
+                }
                 sketches.push(sketch);
                 features[feature_index]
                     .evaluation
@@ -688,10 +695,15 @@ pub(crate) fn project_compact_sketch_profiles(
                     profile
                 };
                 let mut sketch = sketch;
-                sketch
-                    .profiles
-                    .try_push(profile)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                if let Err(error) = sketch.profiles.try_push(profile) {
+                    sketch_entities.truncate(entity_start);
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                            "Sketch {sketch_id} profile was not transferred: {error}"
+                        )),
+                    );
+                    continue;
+                }
                 sketches.push(sketch);
                 features[feature_index]
                     .evaluation
@@ -749,10 +761,15 @@ pub(crate) fn project_compact_sketch_profiles(
                 );
             }
             let mut sketch = sketch;
-            sketch
-                .profiles
-                .try_push(profile)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            if let Err(error) = sketch.profiles.try_push(profile) {
+                sketch_entities.truncate(entity_start);
+                losses.push(
+                    crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                        "Sketch {sketch_id} profile was not transferred: {error}"
+                    )),
+                );
+                continue;
+            }
             sketches.push(sketch);
             features[feature_index]
                 .evaluation
@@ -1036,11 +1053,11 @@ pub(crate) fn project_marker_backed_sketches(
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
-                let native_kind = cadmpeg_ir::products::NonEmptyString::new(format!(
+                // The fixed prefix makes this generated label nonempty.
+                let native_kind = super::names::checked_nonempty_name(format!(
                     "sldprt:marker-geometry:{}",
                     marker.kind.native_code()
-                ))
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty marker geometry kind"))?;
+                ));
                 let entity = (|| {
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?;
