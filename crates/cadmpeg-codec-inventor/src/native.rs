@@ -1684,7 +1684,7 @@ mod tests {
             nonempty_suffix["suffix_len"] = serde_json::json!(len);
             assert_eq!(
                 serde_json::from_value::<super::AssemblyPlacementRecord>(nonempty_suffix)
-                    .unwrap()
+                    .expect("nonempty placement suffix")
                     .suffix_len
                     .get(),
                 len
