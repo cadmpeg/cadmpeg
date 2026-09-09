@@ -1249,8 +1249,7 @@ fn patch_spring_definition(
         cadmpeg_ir::geometry::SpringLayout::CacheFirst { .. } => false,
     };
     let record_bytes = record_slice(bytes, record, "spring")?;
-    let int_width = stream_width;
-    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
+    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     patch_intcurve_context(
         bytes,
@@ -1265,7 +1264,7 @@ fn patch_spring_definition(
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.direction,
-        int_width,
+        stream_width,
         direction,
     )?;
     Ok(())
@@ -1365,9 +1364,10 @@ fn patch_three_surface_intersection_definition(
     selector: i64,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
-    let int_width = stream_width;
-    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
-        .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
+    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+        CodecError::Malformed("three-surface construction is malformed".into())
+    })?;
     patch_intcurve_context(
         bytes,
         record,
@@ -1381,7 +1381,7 @@ fn patch_three_surface_intersection_definition(
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.selector,
-        int_width,
+        stream_width,
         selector,
     )?;
     Ok(())
@@ -1466,11 +1466,12 @@ fn patch_nurbs_surface_record(
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
     let record_bytes = record_slice(bytes, record, "NURBS surface")?;
-    let int_width = stream_width;
     let layout = surface_ordinal
         .map_or_else(
-            || crate::nurbs::core::final_surface_patch_layout(record_bytes, int_width),
-            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal, int_width),
+            || crate::nurbs::core::final_surface_patch_layout(record_bytes, stream_width),
+            |ordinal| {
+                crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal, stream_width)
+            },
         )
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1496,14 +1497,14 @@ fn patch_nurbs_surface_record(
         record.offset,
         &layout.u_knots,
         surface.u_knots(),
-        layout.int_width,
+        stream_width,
     )?;
     AsmEditSet::patch_knot_structure(
         bytes,
         record.offset,
         &layout.v_knots,
         surface.v_knots(),
-        layout.int_width,
+        stream_width,
     )?;
     for (offset, degree) in layout
         .degree_value_offsets
@@ -1511,13 +1512,13 @@ fn patch_nurbs_surface_record(
         .zip([surface.u_degree(), surface.v_degree()])
     {
         let at = record.offset + offset;
-        AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(degree))?;
+        AsmEditSet::patch_layout_integer(bytes, at, stream_width, i64::from(degree))?;
     }
     if let Some(periodic) = edit.periodic {
         for (offset, periodic) in layout.periodic_value_offsets.into_iter().zip(periodic) {
             let at = record.offset + offset;
             let value = if periodic { 2i64 } else { 0i64 };
-            AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
+            AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
         }
     }
     let components = if layout.surface.weights().is_some() {
@@ -1555,10 +1556,13 @@ fn patch_nurbs_curve_record(
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
-    let int_width = stream_width;
     let layout = match target {
-        CacheTarget::Final => crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width),
-        CacheTarget::First => crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width),
+        CacheTarget::Final => {
+            crate::nurbs::core::final_curve_patch_layout(record_bytes, stream_width)
+        }
+        CacheTarget::First => {
+            crate::nurbs::core::first_curve_patch_layout(record_bytes, stream_width)
+        }
     }
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1579,19 +1583,14 @@ fn patch_nurbs_curve_record(
         record.offset,
         &layout.knots,
         curve.knots(),
-        layout.int_width,
+        stream_width,
     )?;
     let degree_at = record.offset + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(
-        bytes,
-        degree_at,
-        layout.int_width,
-        i64::from(curve.degree()),
-    )?;
+    AsmEditSet::patch_layout_integer(bytes, degree_at, stream_width, i64::from(curve.degree()))?;
     if let Some(periodic) = edit.periodic {
         let periodic = if periodic { 2i64 } else { 0i64 };
         let periodic_at = record.offset + layout.periodic_value_offset;
-        AsmEditSet::patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
+        AsmEditSet::patch_layout_integer(bytes, periodic_at, stream_width, periodic)?;
     }
     let components = if layout.curve.weights().is_some() {
         4
@@ -1628,18 +1627,19 @@ impl PcurvePatchCarrier {
     fn admit(
         bytes: &[u8],
         record: &Record,
-        ref_width: RefWidth,
+        stream_width: RefWidth,
         edit: &InlinePcurveEdit<'_>,
     ) -> Result<Self, CodecError> {
         match record.head() {
             "pcurve" => {
-                let scope = sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur")
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "pcurve record {} has no exp_par_cur payload",
-                            record.index
-                        ))
-                    })?;
+                let scope =
+                    sab::payload_subtype_range(bytes, record, 5, stream_width, "exp_par_cur")
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "pcurve record {} has no exp_par_cur payload",
+                                record.index
+                            ))
+                        })?;
                 Ok(Self::Pcurve(scope))
             }
             "intcurve" => match (
@@ -1686,14 +1686,13 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let ref_width = stream_width;
-    let carrier = PcurvePatchCarrier::admit(bytes, record, ref_width, edit)?;
+    let carrier = PcurvePatchCarrier::admit(bytes, record, stream_width, edit)?;
     let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
         bytes.get(scope.clone()).ok_or_else(|| {
             CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
         })?,
-        ref_width,
+        stream_width,
     )
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1714,19 +1713,19 @@ fn patch_nurbs_pcurve_record(
         scope.start,
         &layout.knots,
         nurbs.knots(),
-        layout.int_width,
+        stream_width,
     )?;
     let at = scope.start + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(nurbs.degree()))?;
+    AsmEditSet::patch_layout_integer(bytes, at, stream_width, i64::from(nurbs.degree()))?;
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
-        AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
+        AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
     }
     if let PcurvePatchCarrier::Pcurve(_) = &carrier {
         if let Some(reversed) = edit.wrapper_reversed {
             let offset =
-                sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
+                sab::payload_token_offset(bytes, record, stream_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve record {} lacks wrapper-reversal carrier",
                         record.index
@@ -1755,7 +1754,7 @@ fn patch_nurbs_pcurve_record(
         })?;
         let suffix_offsets = (suffix_start..record.chunk_len())
             .map(|index| {
-                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete native metadata suffix",
                         record.index
@@ -1833,10 +1832,9 @@ fn patch_ref_pcurve_contract(
     let Some(range) = parameter_range else {
         return Ok(());
     };
-    let ref_width = stream_width;
     for (index, value) in [5usize, 6].into_iter().zip(range) {
         let offset =
-            sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+            sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "ref-form pcurve record {} lacks parameter-range field {index}",
                     record.index
