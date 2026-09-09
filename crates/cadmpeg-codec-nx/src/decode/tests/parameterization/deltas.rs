@@ -9,7 +9,7 @@ const EPS_CONE_ANGLE: f64 = 1.0e-12;
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
     assert_eq!(
-        crate::deltas::walk(&stream).bytes_decoded(),
+        crate::deltas::census::walk(&stream).bytes_decoded(),
         stream.len() - DELTAS_PREAMBLE.len()
     );
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -223,7 +223,7 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
 fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let partition = offset_surface_topology_partition_stream();
     let deltas = deltas_offset_surface_partition_stream();
-    let census = crate::deltas::walk(&deltas);
+    let census = crate::deltas::census::walk(&deltas);
     assert_eq!(census.full_counts().get("OFFSET_SURF"), Some(&1));
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(

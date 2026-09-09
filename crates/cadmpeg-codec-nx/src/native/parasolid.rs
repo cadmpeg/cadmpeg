@@ -8,8 +8,8 @@ use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 use serde::{Deserialize, Serialize};
 
+use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
-use crate::deltas::Census;
 use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
@@ -133,7 +133,10 @@ pub(crate) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::walk(&stream.inflated).into_events().records {
+        for record in crate::deltas::census::walk(&stream.inflated)
+            .into_events()
+            .records
+        {
             let crate::deltas::record_family::RecordFamily::Group {
                 node_id,
                 selector,
@@ -289,7 +292,7 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
         Record(crate::deltas::Record),
         Tombstone(u32),
     }
-    let census = crate::deltas::walk(bytes).into_events();
+    let census = crate::deltas::census::walk(bytes).into_events();
     let mut events = census
         .records
         .into_iter()
@@ -914,7 +917,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .iter()
         .map(|stream| {
             (stream.kind() == crate::parasolid::StreamKind::Deltas)
-                .then(|| crate::deltas::walk(&stream.inflated))
+                .then(|| crate::deltas::census::walk(&stream.inflated))
         })
         .collect();
     parasolid_deltas_events_with_censuses(streams, delta_censuses)
@@ -953,7 +956,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         let census = delta_censuses
             .get_mut(stream_ordinal)
             .and_then(Option::take)
-            .unwrap_or_else(|| crate::deltas::walk(&stream.inflated));
+            .unwrap_or_else(|| crate::deltas::census::walk(&stream.inflated));
         let mut residual_start = 0;
         for (covered_start, covered_end) in census.covered_spans() {
             if residual_start < covered_start {
@@ -3778,7 +3781,7 @@ mod tests {
             },
         }];
 
-        let census = crate::deltas::walk(&streams[0].inflated);
+        let census = crate::deltas::census::walk(&streams[0].inflated);
         let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
 
         assert_eq!(events.body_revisions.len(), 1);
