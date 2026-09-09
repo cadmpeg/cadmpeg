@@ -79,90 +79,39 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Vec::new();
     };
-    let objects = match namespace.arena_as::<native::ObjectRecord>("objects") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let properties = match namespace.arena_as::<native::PropertyRecord>("properties") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let extensions = match namespace.arena_as::<native::ExtensionRecord>("extensions") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let entries = match namespace.arena_as::<native::EntryRecord>("entries") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let physical = match namespace.arena_as::<native::ArchiveSpan>("physical_ledger") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let logical = match namespace.arena_as::<native::LogicalSpan>("logical_ledger") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let coverage_records = match namespace.arena_as::<native::ByteCoverageRecord>("byte_coverage") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let string_tables = match namespace
-        .arena_as_collection::<native::StringTableRecord, native::StringTables>("string_tables")
-    {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let string_tables = string_tables.as_slice();
-    let element_maps = match namespace.arena_as::<native::ElementMapRecord>("element_maps") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let gui_providers =
-        match namespace.arena_as::<native::GuiViewProviderRecord>("gui_view_providers") {
-            Ok(records) => records,
-            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    macro_rules! arena {
+        ($read:expr) => {
+            match $read {
+                Ok(records) => records,
+                Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+            }
         };
-    let gui_documents = match namespace.arena_as::<native::GuiDocumentRecord>("gui_documents") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let gui_properties = match namespace.arena_as::<native::GuiPropertyRecord>("gui_properties") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let product_nodes = match namespace.arena_as::<native::ProductNodeRecord>("product_nodes") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let joints = match namespace.arena_as::<native::joint::JointRecord>("joints") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let drawings = match namespace.arena_as::<native::DrawingRecord>("drawings") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let annotations = match namespace.arena_as::<native::SemanticAnnotationRecord>("annotations") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let attachments = match namespace.arena_as::<native::AttachmentRecord>("attachments") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let shape_payloads = match namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let carrier_census = match namespace.arena_as::<native::CarrierCensusRecord>("carrier_census") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
-    let design_census = match namespace.arena_as::<native::DesignCensusRecord>("design_census") {
-        Ok(records) => records,
-        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
-    };
+    }
+    let objects = arena!(namespace.arena_as::<native::ObjectRecord>("objects"));
+    let properties = arena!(namespace.arena_as::<native::PropertyRecord>("properties"));
+    let extensions = arena!(namespace.arena_as::<native::ExtensionRecord>("extensions"));
+    let entries = arena!(namespace.arena_as::<native::EntryRecord>("entries"));
+    let physical = arena!(namespace.arena_as::<native::ArchiveSpan>("physical_ledger"));
+    let logical = arena!(namespace.arena_as::<native::LogicalSpan>("logical_ledger"));
+    let coverage_records =
+        arena!(namespace.arena_as::<native::ByteCoverageRecord>("byte_coverage"));
+    let string_tables = arena!(namespace
+        .arena_as_collection::<native::StringTableRecord, native::StringTables>("string_tables"));
+    let string_tables = string_tables.as_slice();
+    let element_maps = arena!(namespace.arena_as::<native::ElementMapRecord>("element_maps"));
+    let gui_providers =
+        arena!(namespace.arena_as::<native::GuiViewProviderRecord>("gui_view_providers"));
+    let gui_documents = arena!(namespace.arena_as::<native::GuiDocumentRecord>("gui_documents"));
+    let gui_properties = arena!(namespace.arena_as::<native::GuiPropertyRecord>("gui_properties"));
+    let product_nodes = arena!(namespace.arena_as::<native::ProductNodeRecord>("product_nodes"));
+    let joints = arena!(namespace.arena_as::<native::joint::JointRecord>("joints"));
+    let drawings = arena!(namespace.arena_as::<native::DrawingRecord>("drawings"));
+    let annotations = arena!(namespace.arena_as::<native::SemanticAnnotationRecord>("annotations"));
+    let attachments = arena!(namespace.arena_as::<native::AttachmentRecord>("attachments"));
+    let shape_payloads = arena!(namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads"));
+    let carrier_census =
+        arena!(namespace.arena_as::<native::CarrierCensusRecord>("carrier_census"));
+    let design_census = arena!(namespace.arena_as::<native::DesignCensusRecord>("design_census"));
 
     let mut findings = Vec::new();
     if carrier_census != brep::carrier_census(&shape_payloads) {
@@ -256,7 +205,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for attachment in &attachments {
         let missing_support = attachment.supports.iter().any(|support| {
-            support.document.is_none()
+            support.document().is_none()
                 && support
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
@@ -378,7 +327,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for joint in &joints {
         let missing_link = !object_ids.contains(joint.object.as_str())
             || joint.references().iter().any(|reference| {
-                reference.document.is_none()
+                reference.document().is_none()
                     && reference
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
@@ -397,7 +346,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for drawing in &drawings {
         let missing_object = !object_ids.contains(drawing.object.as_str())
             || drawing.sources.iter().any(|source| {
-                source.document.is_none()
+                source.document().is_none()
                     && source
                         .object()
                         .is_some_and(|object| !object_ids.contains(object))
@@ -407,7 +356,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
         let missing_relationship = drawing.relationships.values().flatten().any(|link| {
-            link.document.is_none()
+            link.document().is_none()
                 && link
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
@@ -423,7 +372,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for annotation in &annotations {
         let object = object_by_id.get(annotation.object.as_str());
         let missing_reference = annotation.references.values().flatten().any(|reference| {
-            reference.document.is_none()
+            reference.document().is_none()
                 && reference
                     .object()
                     .is_some_and(|object| !object_ids.contains(object))
@@ -861,6 +810,7 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        let mut topology_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
@@ -987,8 +937,13 @@ impl CodecBackend for FcstdCodec {
             }
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            let topology_occurrences =
-                topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
+            let topology_occurrences = topology_transfer::transfer(
+                ctx,
+                &mut ir,
+                &shape_payloads,
+                &graph.properties,
+                &mut topology_losses,
+            )?;
             cycle_affected_design_objects = design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1122,6 +1077,7 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
+        losses.extend(topology_losses);
         losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
         ctx.admit_entities(
             ir.model.entity_count() as u64,

@@ -983,12 +983,7 @@ pub enum LocationRef {
 
 impl From<usize> for LocationRef {
     fn from(index: usize) -> Self {
-        std::num::NonZeroUsize::new(index).map_or(Self::Identity, |index| {
-            Self::Table(TableRef {
-                index,
-                table: std::marker::PhantomData,
-            })
-        })
+        TableRef::optional(index).map_or(Self::Identity, Self::Table)
     }
 }
 
@@ -1042,12 +1037,15 @@ impl<T> Clone for TableRef<T> {
 impl<T> TableRef<T> {
     /// Admits a nonzero table index.
     pub fn new(index: usize) -> Result<Self, String> {
-        std::num::NonZeroUsize::new(index)
-            .map(|index| Self {
-                index,
-                table: std::marker::PhantomData,
-            })
-            .ok_or_else(|| "table reference must be nonzero".to_owned())
+        Self::optional(index).ok_or_else(|| "table reference must be nonzero".to_owned())
+    }
+
+    /// Admits an optional one-based table index.
+    pub fn optional(index: usize) -> Option<Self> {
+        std::num::NonZeroUsize::new(index).map(|index| Self {
+            index,
+            table: std::marker::PhantomData,
+        })
     }
 
     /// Returns the one-based wire index.
@@ -1280,10 +1278,7 @@ impl TryFrom<TextTShapeWire> for TextTShape {
             ) => TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-                    index,
-                    table: std::marker::PhantomData,
-                }),
+                surface: TableRef::optional(surface),
                 location: location.into(),
                 triangulation: triangulation
                     .map(TableRef::new)
@@ -1676,7 +1671,7 @@ fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, Codec
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
 pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::CarrierCensusRecord> {
-    payloads
+    let mut census = payloads
         .iter()
         .filter_map(|payload| {
             let facts = payload.payload.shape_set()?;
@@ -1731,7 +1726,9 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
             }
             Some(record)
         })
-        .collect()
+        .collect::<Vec<_>>();
+    census.sort_by(|left, right| left.id.cmp(&right.id));
+    census
 }
 
 fn increment(counts: &mut BTreeMap<String, u64>, family: &str) {
@@ -2131,11 +2128,6 @@ pub(crate) fn parse_binary_prefix(
                     *node = u32::try_from(value).map_err(|_| {
                         CodecError::Malformed("negative binary triangle node".into())
                     })?;
-                    if *node == 0 || usize::try_from(*node).is_ok_and(|node| node > node_count) {
-                        return Err(CodecError::Malformed(
-                            "binary triangle node index is out of bounds".into(),
-                        ));
-                    }
                 }
                 Ok(triangle)
             })
@@ -2394,10 +2386,7 @@ fn parse_binary_tshape(
             TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-                    index,
-                    table: std::marker::PhantomData,
-                }),
+                surface: TableRef::optional(surface),
                 location: location.into(),
                 triangulation: triangulation
                     .map(TableRef::new)
@@ -4101,10 +4090,7 @@ fn parse_face_geometry(
     Ok(TextTShapeGeometry::Face {
         natural_restriction,
         tolerance,
-        surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-            index,
-            table: std::marker::PhantomData,
-        }),
+        surface: TableRef::optional(surface),
         location: location.into(),
         triangulation: triangulation
             .map(TableRef::new)
@@ -5967,7 +5953,7 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
         assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
-        assert_eq!(facts.triangulations[0].triangles, [[1, 2, 3]]);
+        assert_eq!(facts.triangulations[0].triangles(), [[0, 1, 2]]);
         assert!(facts.tshapes.is_empty());
         assert!(facts.roots.is_empty());
     }
@@ -6024,7 +6010,7 @@ pub(crate) mod tests {
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         let triangulation = &facts.triangulations[0];
         assert_eq!(triangulation.nodes().len(), 3);
-        assert_eq!(triangulation.triangles, [[1, 2, 3]]);
+        assert_eq!(triangulation.triangles(), [[0, 1, 2]]);
         assert_eq!(triangulation.uv_nodes().map(<[_]>::len), Some(3));
         assert_eq!(triangulation.normals().map(<[_]>::len), Some(3));
     }

@@ -229,7 +229,9 @@ impl FcstdDocumentBuilder {
             .map(|result| result.into_parts().0)
             .map_err(|failure| match failure {
                 DecodeFailure::Codec(error) => error,
-                _ => unreachable!("the fixed salvage decode cannot produce a strict refusal"),
+                failure => CodecError::malformed(format_args!(
+                    "source-less FCStd graph was refused: {failure:?}"
+                )),
             })
     }
 

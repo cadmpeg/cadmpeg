@@ -76,26 +76,20 @@ fn mutate_property(
     };
     let namespace = ir.native.namespace_mut("fcstd");
     let mut properties = namespace.arena_as::<PropertyRecord>("properties")?;
-    let matches = properties
-        .iter()
-        .enumerate()
-        .filter(|(_, property)| property.owner == owner_id && property.name == property_name)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let index = match matches.as_slice() {
-        [index] => *index,
-        [] => {
-            return Err(CodecError::malformed(format_args!(
-                "missing FCStd property {owner_id}.{property_name}"
-            )))
-        }
-        _ => {
-            return Err(CodecError::malformed(format_args!(
-                "ambiguous FCStd property {owner_id}.{property_name}"
-            )))
-        }
-    };
-    mutation(&mut properties[index])?;
+    let property = crate::native::unique_property(properties.iter_mut(), |property| {
+        property.owner == owner_id && property.name == property_name
+    })
+    .map_err(|_| {
+        CodecError::malformed(format_args!(
+            "ambiguous FCStd property {owner_id}.{property_name}"
+        ))
+    })?
+    .ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "missing FCStd property {owner_id}.{property_name}"
+        ))
+    })?;
+    mutation(property)?;
     namespace.set_arena("properties", &properties)?;
     Ok(())
 }

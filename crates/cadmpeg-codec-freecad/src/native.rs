@@ -51,6 +51,17 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn link_targets_reserve_absence_for_wire_admission() {
+        assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
+        let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
+        let target = serde_json::from_value::<super::LinkTarget>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
+        assert!(target.into_optional().is_none());
+        let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
+        assert!(target.into_optional().is_some());
+    }
+
+    #[test]
     fn design_census_neutral_is_derived_and_checked_on_the_wire() {
         for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
             let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
@@ -195,9 +206,27 @@ mod tests {
     }
 
     #[test]
+    fn attachment_accepts_accumulated_rigid_tolerance() {
+        let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+        rows[0][0] += 4.0e-10;
+        let frame = super::FiniteFrame::try_from(rows).unwrap();
+        let product = frame.transform().compose(frame.transform()).unwrap();
+        assert!(!product.is_proper_rigid());
+        assert!(super::AttachmentRecord::try_new(
+            "attachment".into(),
+            "object".into(),
+            vec![],
+            None,
+            Some(frame),
+            Some(frame)
+        )
+        .is_ok());
+    }
+
+    #[test]
     fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut matrix = crate::product::identity();
+            let mut matrix = cadmpeg_ir::transform::Transform::identity().rows();
             matrix[0][3] = bad;
             for offset in [false, true] {
                 let wire = super::AttachmentRecordWire {
@@ -532,25 +561,23 @@ impl AttachmentRecord {
         object: String,
         supports: Vec<LinkTarget>,
         map_mode: Option<MapModeIndex>,
-        placement: Option<[[f64; 4]; 4]>,
-        offset: Option<[[f64; 4]; 4]>,
+        placement: Option<FiniteFrame>,
+        offset: Option<FiniteFrame>,
     ) -> Result<Self, String> {
         let record = Self {
             id,
             object,
             supports,
             map_mode,
-            placement: placement
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("placement: {error}"))?,
-            offset: offset
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("offset: {error}"))?,
+            placement,
+            offset,
         };
-        FiniteFrame::try_from(record.effective_frame())
-            .map_err(|error| format!("effective_frame: {error}"))?;
+        if let (Some(placement), Some(offset)) = (record.placement, record.offset) {
+            placement
+                .transform()
+                .compose(offset.transform())
+                .map_err(|error| format!("effective_frame: {error}"))?;
+        }
         Ok(record)
     }
     pub(crate) fn placement(&self) -> Option<FiniteFrame> {
@@ -604,8 +631,14 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
             wire.object,
             wire.supports,
             wire.map_mode,
-            wire.placement,
-            wire.offset,
+            wire.placement
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("placement: {error}"))?,
+            wire.offset
+                .map(FiniteFrame::try_from)
+                .transpose()
+                .map_err(|error| format!("offset: {error}"))?,
         )?;
         if wire.effective_frame != record.effective_frame() {
             return Err(
@@ -1113,25 +1146,23 @@ pub struct LinkOccurrence {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkArray {
     count: Option<u64>,
-    transforms: Vec<[[f64; 4]; 4]>,
-    scales: Vec<[f64; 3]>,
+    transforms: Vec<FiniteFrame>,
+    scales: Vec<FiniteVec3>,
     objects: Vec<String>,
 }
 
 impl LinkArray {
     pub(crate) fn try_new(
         count: Option<u64>,
-        transforms: Vec<[[f64; 4]; 4]>,
+        transforms: Vec<FiniteFrame>,
         scales: Vec<[f64; 3]>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
-        for transform in &transforms {
-            FiniteFrame::try_from(*transform)
-                .map_err(|error| format!("element_transforms: {error}"))?;
-        }
-        for scale in &scales {
-            FiniteVec3::try_from(*scale).map_err(|error| format!("element_scales: {error}"))?;
-        }
+        let scales = scales
+            .into_iter()
+            .map(FiniteVec3::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("element_scales: {error}"))?;
         let lengths = [
             transforms.len() as u64,
             scales.len() as u64,
@@ -1210,14 +1241,14 @@ impl ProductNodeRecord {
     }
 
     /// Local placement matrix when stored on the node.
-    pub fn local_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub fn local_transform(&self) -> Option<FiniteFrame> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
             | ProductNode::LinkGroup {
                 container: node, ..
-            } => node.local_transform.map(FiniteFrame::rows),
-            ProductNode::Occurrence(node) => node.local_transform.map(FiniteFrame::rows),
+            } => node.local_transform,
+            ProductNode::Occurrence(node) => node.local_transform,
         }
     }
 
@@ -1263,13 +1294,13 @@ impl ProductNodeRecord {
     }
 
     /// Ordered per-element placements for a link array.
-    pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
+    pub fn element_transforms(&self) -> &[FiniteFrame] {
         self.occurrence()
             .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub fn element_scales(&self) -> &[[f64; 3]] {
+    pub fn element_scales(&self) -> &[FiniteVec3] {
         self.occurrence()
             .map_or(&[], |node| node.array.scales.as_slice())
     }
@@ -1372,12 +1403,22 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
                 .external_document()
                 .and_then(ExternalDocument::attribute)
                 .map(str::to_owned),
-            local_transform: value.local_transform(),
+            local_transform: value.local_transform().map(FiniteFrame::rows),
             placement_property: value.placement_property().map(str::to_owned),
             element_count: value.element_count(),
             link_transform: value.link_transform(),
-            element_transforms: value.element_transforms().to_vec(),
-            element_scales: value.element_scales().to_vec(),
+            element_transforms: value
+                .element_transforms()
+                .iter()
+                .copied()
+                .map(FiniteFrame::rows)
+                .collect(),
+            element_scales: value
+                .element_scales()
+                .iter()
+                .copied()
+                .map(FiniteVec3::values)
+                .collect(),
             linked_subelements: value.linked_subelements().to_vec(),
             claim_child: value.claim_child(),
             copy_on_change: value.copy_on_change().map(str::to_owned),
@@ -1460,7 +1501,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                 placement_property: wire.placement_property,
                 array: LinkArray::try_new(
                     wire.element_count,
-                    wire.element_transforms,
+                    wire.element_transforms
+                        .into_iter()
+                        .map(FiniteFrame::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("element_transforms: {error}"))?,
                     wire.element_scales,
                     wire.element_objects,
                 )?,
@@ -1567,6 +1612,36 @@ pub enum ArchiveSpanRole {
     ArchivePadding,
 }
 
+impl TryFrom<&cadmpeg_container::SpanRole> for ArchiveSpanRole {
+    type Error = String;
+
+    fn try_from(role: &cadmpeg_container::SpanRole) -> Result<Self, Self::Error> {
+        use cadmpeg_container::{SpanRole, ZipSpanRole};
+        let role = match role {
+            SpanRole::Zip(role) => role,
+            SpanRole::Cfb(_) => return Err("FCStd archive span cannot have a CFB role".to_owned()),
+        };
+        Ok(match role {
+            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
+            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
+            ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
+            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry.clone()),
+            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry.clone()),
+            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry.clone()),
+            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry.clone()),
+            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry.clone()),
+            ZipSpanRole::CentralName(entry) => Self::CentralName(entry.clone()),
+            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry.clone()),
+            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry.clone()),
+            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry.clone()),
+            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
+            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
+            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
+            ZipSpanRole::EndRecord => Self::EndRecord,
+        })
+    }
+}
+
 impl ArchiveSpanRole {
     /// Stable physical-ledger label retained on the CADIR wire.
     pub fn as_str(&self) -> &'static str {
@@ -1611,7 +1686,7 @@ impl ArchiveSpanRole {
         }
     }
 
-    pub(crate) fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
+    fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
         let named = |entry: Option<String>, ctor: fn(String) -> Self| {
             entry
                 .map(ctor)
@@ -2000,10 +2075,6 @@ impl ExternalDocument {
         }
     }
 
-    pub(crate) fn from_file_attr(file: Option<String>) -> Option<Self> {
-        file.and_then(NonEmptyString::new).map(Self::File)
-    }
-
     fn from_wire(
         document: Option<String>,
         attribute: Option<&str>,
@@ -2030,14 +2101,60 @@ impl ExternalDocument {
 #[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
 pub struct LinkTarget {
     /// External document, when the target is not local.
-    pub document: Option<ExternalDocument>,
+    document: Option<ExternalDocument>,
     /// Target object identity. Empty source names are absent.
-    pub object: Option<NonEmptyString>,
+    object: Option<NonEmptyString>,
     /// Ordered subelement selectors.
-    pub subelements: Vec<String>,
+    subelements: Vec<String>,
 }
 
 impl LinkTarget {
+    /// Admits a target with a document, object, or subelement selection.
+    pub fn try_new(
+        document: Option<ExternalDocument>,
+        object: Option<NonEmptyString>,
+        subelements: Vec<String>,
+    ) -> Result<Self, String> {
+        if document.is_none() && object.is_none() && subelements.is_empty() {
+            return Err("link target requires document, object, or subelements".to_owned());
+        }
+        Ok(Self {
+            document,
+            object,
+            subelements,
+        })
+    }
+
+    #[doc(hidden)]
+    fn empty_link_target() -> Self {
+        Self {
+            document: None,
+            object: None,
+            subelements: Vec::new(),
+        }
+    }
+
+    /// External document when the target is not local.
+    pub fn document(&self) -> Option<&ExternalDocument> {
+        self.document.as_ref()
+    }
+
+    /// Ordered subelement selectors.
+    pub fn subelements(&self) -> &[String] {
+        &self.subelements
+    }
+
+    /// Sets a nonempty object identity.
+    pub(crate) fn set_object(&mut self, object: NonEmptyString) {
+        self.object = Some(object);
+    }
+
+    /// Converts a wire null target to absence.
+    pub(crate) fn into_optional(self) -> Option<Self> {
+        (self.document.is_some() || self.object.is_some() || !self.subelements.is_empty())
+            .then_some(self)
+    }
+
     /// Document token retained on the CADIR wire.
     pub fn document_name(&self) -> Option<&str> {
         self.document.as_ref().map(ExternalDocument::as_str)
@@ -2054,12 +2171,13 @@ impl LinkTarget {
     }
 }
 
+/// The persisted link target fields.
 #[derive(Serialize, Deserialize)]
-struct LinkTargetWire {
-    document: Option<String>,
-    document_attribute: Option<String>,
-    object: Option<String>,
-    subelements: Vec<String>,
+pub(crate) struct LinkTargetWire {
+    pub(crate) document: Option<String>,
+    pub(crate) document_attribute: Option<String>,
+    pub(crate) object: Option<String>,
+    pub(crate) subelements: Vec<String>,
 }
 
 impl From<LinkTarget> for LinkTargetWire {
@@ -2093,14 +2211,13 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     type Error = String;
 
     fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            document: ExternalDocument::from_wire(
-                wire.document,
-                wire.document_attribute.as_deref(),
-            )?,
-            object: wire.object.and_then(NonEmptyString::new),
-            subelements: wire.subelements,
-        })
+        let document =
+            ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
+        let object = wire.object.and_then(NonEmptyString::new);
+        match (document, object, wire.subelements) {
+            (None, None, subelements) if subelements.is_empty() => Ok(Self::empty_link_target()),
+            (document, object, subelements) => Self::try_new(document, object, subelements),
+        }
     }
 }
 
@@ -2159,6 +2276,28 @@ pub struct PropertyRecord {
     pub order: usize,
     /// Retained XML and its byte span.
     pub xml: RetainedXml,
+}
+
+/// More than one property matches a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DuplicateProperty;
+
+/// Returns the sole property selected by a predicate.
+pub(crate) fn unique_property<P>(
+    properties: impl IntoIterator<Item = P>,
+    predicate: impl Fn(&PropertyRecord) -> bool,
+) -> Result<Option<P>, DuplicateProperty>
+where
+    P: std::ops::Deref<Target = PropertyRecord>,
+{
+    let mut matches = properties
+        .into_iter()
+        .filter(|property| predicate(property));
+    let property = matches.next();
+    if matches.next().is_some() {
+        return Err(DuplicateProperty);
+    }
+    Ok(property)
 }
 
 impl PropertyRecord {
