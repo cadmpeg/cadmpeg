@@ -1313,12 +1313,7 @@ fn patch_projection_definition(
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
             )?;
-            AsmEditSet::patch_bytes_at(
-                bytes,
-                record.offset,
-                role_range.range().start,
-                role.as_str().as_bytes(),
-            )?;
+            role_range.write(&mut bytes[record.offset..], *role)?;
         }
         _ => {
             return Err(CodecError::NotImplemented(
@@ -1934,6 +1929,42 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn ascii_field_patch_rejects_a_truncated_payload() {
+        let original = b"\x0d\x01x\x07\x05surf1\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let mut bytes = original[..7].to_vec();
+        let before = bytes.clone();
+        let error = edits
+            .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn truecolor_field_patch_rejects_truncated_payloads() {
+        for (tag, width, payload_width) in [
+            (0x17, RefWidth::Eight, 8),
+            (0x04, RefWidth::Four, 4),
+            (0x04, RefWidth::Eight, 8),
+        ] {
+            let mut original = vec![0x0d, 1, b'x', tag];
+            original.extend_from_slice(&[0; 8][..payload_width]);
+            original.push(0x11);
+            let records = crate::sab::frame(&original, 0, original.len(), width).unwrap();
+            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let mut bytes = original[..4].to_vec();
+            let before = bytes.clone();
+            let error = edits
+                .patch_truecolor_field(&mut bytes, &records[0], 0, 1)
+                .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+            assert_eq!(bytes, before);
+        }
+    }
 
     #[test]
     fn byte_payload_patch_rejects_truncation_and_overflow_without_writing() {
