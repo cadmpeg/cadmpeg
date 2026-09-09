@@ -16,7 +16,6 @@ use crate::native::om::object_uuid::ObjectUuidValue;
 use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
-use std::collections::BTreeMap;
 
 use serde::Serialize;
 
@@ -751,18 +750,9 @@ fn note_parasolid_parasolid_attribute_class_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
-    for entity in &m.parasolid.parasolid_entity_51_records {
-        // Preserve slice-find semantics if a malformed input repeats an id.
-        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
-    }
     for class_use in &m.parasolid.parasolid_attribute_class_uses {
-        let entity = entities_by_id
-            .get(class_use.entity_51_record.as_str())
-            .copied()
-            .expect("class use owns a type-81 entity");
         let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
-        a.note(&class_use.id, &source_stream, entity.inflated_offset)
+        a.note(&class_use.id, &source_stream, class_use.inflated_offset)
             .tag("ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
     }
@@ -774,30 +764,9 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let mut references_by_id: BTreeMap<&str, &ParasolidTopologyAttributeListReference> =
-        BTreeMap::new();
-    for reference in &m.parasolid.parasolid_topology_attribute_list_references {
-        // Preserve slice-find semantics if a malformed input repeats an id.
-        references_by_id
-            .entry(reference.id.as_str())
-            .or_insert(reference);
-    }
-    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
-    for entity in &m.parasolid.parasolid_entity_51_records {
-        // Preserve slice-find semantics if a malformed input repeats an id.
-        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
-    }
     for class_use in &m.parasolid.parasolid_topology_attribute_class_uses {
-        let reference = references_by_id
-            .get(class_use.topology_attribute_reference.as_str())
-            .copied()
-            .expect("class use owns a topology attribute reference");
-        let source_stream = a.stream(format!("nx:s{}", reference.stream_ordinal));
-        let entity = entities_by_id
-            .get(class_use.entity_51_record.as_str())
-            .copied()
-            .expect("class use owns a type-81 entity");
-        a.note(&class_use.id, &source_stream, entity.inflated_offset)
+        let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
+        a.note(&class_use.id, &source_stream, class_use.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
     }
@@ -3682,3 +3651,35 @@ pub(crate) const NATIVE_CATALOGUE: Catalogue<
     NativeNamespace,
     Exactness,
 > = Catalogue::new(CATALOGUE);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn class_use_annotation_survives_absent_entity_record() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_ir::native::catalogue::NotePhase;
+        let bytes = crate::test_support::prt_with_partition(
+            &crate::test_support::parasolid_entity_records_stream(),
+        );
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let mut parsed = crate::native::ParsedStreams::parse(&scan);
+        let mut model = super::NativeModel::extract(
+            &ctx,
+            root,
+            &scan.container,
+            &scan.streams,
+            &mut parsed,
+            None,
+        )
+        .unwrap();
+        assert!(!model.parasolid.parasolid_attribute_class_uses.is_empty());
+        let id = model.parasolid.parasolid_attribute_class_uses[0].id.clone();
+        model.parasolid.parasolid_entity_51_records = Vec::new();
+        let mut annotations = super::AnnotationBuilder::new();
+        super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
+        assert!(annotations.annotations().exactness().contains_key(&id));
+    }
+}
