@@ -807,7 +807,9 @@ mod tests {
             let record = serde_json::from_value::<ExternalReferenceRecord>(wire.clone());
             if accepted {
                 if document_id.chars().all(|character| character == '0') {
-                    wire.as_object_mut().unwrap().remove("document_id");
+                    wire.as_object_mut()
+                        .expect("external-reference object fixture")
+                        .remove("document_id");
                 }
                 assert_eq!(
                     serde_json::to_value(record.expect("valid native record fixture"))
