@@ -158,7 +158,7 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform);
+                apply_occurrence_transform(&mut component_ir.model, transform.rows());
             }
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let mut scope = OccurrenceScope {
