@@ -1460,7 +1460,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
-        let census = crate::deltas::walk(&stream.inflated);
+        let census = crate::deltas::census::walk(&stream.inflated);
         if census.transmit_header.is_some() {
             attributes.insert(format!("deltas.{index}.transmit_headers"), "1".to_string());
         }
@@ -1469,7 +1469,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
             "typed_status_framed_records".to_string(),
         );
         attributes.insert(
-            format!("deltas.{index}.bytes_decoded"),
+            format!("deltas.{index}.bytes_decoded()"),
             census.bytes_decoded().to_string(),
         );
         if !census.body_revisions.is_empty() {

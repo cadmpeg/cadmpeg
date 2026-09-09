@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use crate::decode::Scan;
-use crate::deltas::Census;
+use crate::deltas::census::Census;
 use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
@@ -56,7 +56,7 @@ fn prepare_topology_streams<'a>(
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            let census = crate::deltas::walk(&stream.inflated);
+            let census = crate::deltas::census::walk(&stream.inflated);
             if !census.records.is_empty() || !census.tombstones.is_empty() {
                 let merged = crate::deltas::merge_full_records_with_census(
                     &[],
@@ -72,7 +72,7 @@ fn prepare_topology_streams<'a>(
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            let census = crate::deltas::walk(&semantic[delta].bytes);
+            let census = crate::deltas::census::walk(&semantic[delta].bytes);
             let merged = crate::deltas::merge_full_records_with_census(
                 &semantic[partition].bytes,
                 &semantic[delta].bytes,
