@@ -158,8 +158,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::CompoundLoft { construction } => {
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
-                scales.extend(construction.fifth_scale.iter().map(Box::as_ref));
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
@@ -196,7 +195,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
-                let mut scales = construction.scales.iter().flatten().collect::<Vec<_>>();
+                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
@@ -565,7 +564,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            ProceduralSurfaceDefinition::RollingBallJet(_)
             | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -597,7 +596,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             curves.insert(curve.as_str());
         }
         match procedural.definition() {
-            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
+            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
                 context,
                 primary,
@@ -620,7 +619,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -631,7 +630,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Compound { components, .. } => {
+            ProceduralCurveDefinition::Compound(compound) => {
+                let (_, components) = compound.parts();
+
                 curves.extend(
                     components
                         .iter()
@@ -639,24 +640,29 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 );
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
                 }
             }
-            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+            ProceduralCurveDefinition::TolerantIntersection {
+                construction: intersection,
+                ..
+            } => {
+                let (supports, _, _) = intersection.parts();
+
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
-                for side in context.sides.iter().chain(std::iter::once(third)) {
+                for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
                 }
             }
             ProceduralCurveDefinition::SurfaceCurve { family } => {
-                for side in &family.context().sides {
+                for side in family.context().sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -668,7 +674,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ..
             } => {
                 surfaces.insert(cast_surface.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -676,7 +682,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
                 curves.insert(base.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -691,7 +697,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 crate::geometry::SpringLayout::CacheFirst { context, .. } => {
-                    for side in &context.sides {
+                    for side in context.sides() {
                         if let Some(surface) = &side.surface {
                             surfaces.insert(surface.as_str());
                         }
@@ -704,7 +710,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
                     curves.insert(curve.as_str());
                 }
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -714,7 +720,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 context, source, ..
             } => {
                 curves.insert(source.as_str());
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -747,7 +753,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(source.as_str());
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                for side in &context.sides {
+                for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }
@@ -864,7 +870,20 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+                CurveGeometry::Circle(_) => {
+                    // Canonical periodic domain: the start angle wrapped into
+                    // one turn, the sweep at most a full turn. An arc crossing
+                    // the seam ends past `τ`. A full-period edge retains
+                    // its serialized phase, which may use any equivalent
+                    // angular branch.
+                    let sweep = end - start;
+                    let full_period = (sweep - tau).abs()
+                        < EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9;
+                    valid &= sweep
+                        <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+                        && (full_period || (0.0..tau).contains(&start));
+                }
+                CurveGeometry::Ellipse(_) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains
@@ -994,17 +1013,17 @@ fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
     match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
         PcurveGeometry::Transformed { basis, .. } => pcurve_requires_bounded_domain(basis),
-        PcurveGeometry::Line { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. }
-        | PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Harmonic { .. }
-        | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::Hyperbolic { .. }
-        | PcurveGeometry::Trimmed { .. }
-        | PcurveGeometry::Offset { .. }
-        | PcurveGeometry::PolarHarmonic { .. } => false,
+        PcurveGeometry::Line(_) => false,
+        PcurveGeometry::SphericalGreatCircle(_) => false,
+        PcurveGeometry::Circle(_) => false,
+        PcurveGeometry::Ellipse(_) => false,
+        PcurveGeometry::Harmonic(_) => false,
+        PcurveGeometry::Parabola(_) => false,
+        PcurveGeometry::Hyperbola(_) => false,
+        PcurveGeometry::Hyperbolic(_) => false,
+        PcurveGeometry::Trimmed(_) => false,
+        PcurveGeometry::Offset(_) => false,
+        PcurveGeometry::PolarHarmonic(_) => false,
     }
 }
 

@@ -38,15 +38,15 @@ pub(super) struct WritableEdge<'a> {
 
 #[derive(Clone, Copy)]
 pub(super) enum WritableEdgeCurve<'a> {
-    Line { origin: Point3, direction: Vector3 },
+    Line(cadmpeg_ir::geometry::LineCurve),
     Nurbs(&'a NurbsCurve),
 }
 
 impl WritableEdgeCurve<'_> {
     pub(super) fn point(self, parameter: f64) -> Option<Point3> {
         match self {
-            Self::Line { origin, direction } => {
-                cadmpeg_ir::eval::curve_point(&CurveGeometry::Line { origin, direction }, parameter)
+            Self::Line(line) => {
+                cadmpeg_ir::eval::curve_point(&CurveGeometry::Line(line), parameter)
             }
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point(
                 nurbs.degree(),
@@ -105,11 +105,8 @@ impl<'a> WritableFaceSurface<'a> {
             )));
         }
         match &surface.geometry {
-            SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } => {
+            SurfaceGeometry::Plane(plane) => {
+                let (origin, normal, u_axis) = plane.parts();
                 check_frame(surface.id.as_str(), *origin, *normal, *u_axis, "plane")?;
                 Ok(Self::Plane {
                     origin: *origin,
@@ -373,7 +370,8 @@ impl<'a> WritableModel<'a> {
                 )));
             }
             let (geometry, expected_start, expected_end) = match &curve.geometry {
-                CurveGeometry::Line { origin, direction } => {
+                CurveGeometry::Line(line) => {
+                    let (origin, direction) = line.parts();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
                         return Err(CodecError::malformed(format_args!(
                             "edge {} has an invalid line parameterization",
@@ -381,10 +379,7 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                     (
-                        WritableEdgeCurve::Line {
-                            origin: *origin,
-                            direction: *direction,
-                        },
+                        WritableEdgeCurve::Line(*line),
                         Point3::new(
                             origin.x + direction.x * lo,
                             origin.y + direction.y * lo,

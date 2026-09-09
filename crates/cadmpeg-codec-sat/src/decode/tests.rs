@@ -25,9 +25,10 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 
 fn sphere_radius(result: &DecodeResult) -> f64 {
     let surface = &result.ir().model.surfaces[0];
-    let SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
+    let SurfaceGeometry::Sphere(sphere_surface) = &surface.geometry else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
+    let (_, _, _, radius) = sphere_surface.parts();
     *radius
 }
 

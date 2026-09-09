@@ -138,10 +138,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
     )?;
     diagnostics.record_coverage(coverage);
     *brep_diagnostics = diagnostics;
-    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
+    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations)?;
     let feature_circular_extrusion_brep_count =
-        transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
-    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations);
+        transfer_resolved_circular_extrusion_breps(scan, ir, annotations)?;
+    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations)?;
     retain_unresolved_surface_carriers(scan, ir, annotations)?;
     let transferred_part_product = transfer_part_product(scan, ir, annotations);
     let decoded_feature_skamp_count = scan
@@ -735,22 +735,28 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 4.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 5.0,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 4.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            ),
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 5.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            ),
             source_object: None,
         });
 
@@ -781,15 +787,10 @@ mod tests {
                         .expect("identity grammar")
             })
             .expect("plane-cylinder intersection curve");
-        let CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } = &curve.geometry
-        else {
+        let CurveGeometry::Circle(circle_curve) = &curve.geometry else {
             panic!("expected exact plane-cylinder circle");
         };
+        let (center, axis, _, radius) = circle_curve.parts();
         assert_eq!(*center, Point3::new(0.0, 0.0, 4.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(*radius, 5.0);

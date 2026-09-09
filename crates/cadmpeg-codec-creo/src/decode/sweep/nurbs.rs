@@ -26,29 +26,35 @@ pub(in super::super) fn extruded_geometry_surface(
             let end = section_point_in_model(transform, [end.u, end.v]);
             let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             let normal = normalize(cross(line, transform.normal()))?;
-            Some(SurfaceGeometry::Plane {
-                origin: Point3::new(start[0], start[1], start[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(line[0], line[1], line[2]),
-            })
+            Some(SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(start[0], start[1], start[2]),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(line[0], line[1], line[2]),
+                )
+                .ok()?,
+            ))
         }
         SketchGeometryDefinition::Arc { center, radius, .. }
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
-            Some(SurfaceGeometry::Cylinder {
-                origin: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(
-                    transform.normal()[0],
-                    transform.normal()[1],
-                    transform.normal()[2],
-                ),
-                ref_direction: Vector3::new(
-                    transform.u_axis()[0],
-                    transform.u_axis()[1],
-                    transform.u_axis()[2],
-                ),
-                radius: radius.get(),
-            })
+            Some(SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(center[0], center[1], center[2]),
+                    Vector3::new(
+                        transform.normal()[0],
+                        transform.normal()[1],
+                        transform.normal()[2],
+                    ),
+                    Vector3::new(
+                        transform.u_axis()[0],
+                        transform.u_axis()[1],
+                        transform.u_axis()[2],
+                    ),
+                    radius.get(),
+                )
+                .ok()?,
+            ))
         }
         _ => None,
     }

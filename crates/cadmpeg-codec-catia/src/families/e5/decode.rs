@@ -173,7 +173,7 @@ pub(crate) fn try_decode_e5(
             "e5_0d_03",
             surface.pos as u64,
             "analytic_surface",
-            if matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
+            if matches!(surface.geometry, SurfaceGeometry::Plane(_)) {
                 Exactness::Derived
             } else {
                 Exactness::ByteExact
@@ -222,11 +222,9 @@ pub(crate) fn try_decode_e5(
             .ok()?
             .derived(&procedural_id, "definition")
             .ok()?;
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            jet.definition(),
-            None,
-        ));
+        ir.model
+            .procedural_surfaces
+            .push(ProceduralSurface::new(procedural_id, jet.definition()?, None).ok()?);
     }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -343,11 +341,22 @@ pub(crate) fn append_e5_planes(
     let carrier_axes: HashMap<u32, Vector3> = surfaces
         .iter()
         .filter_map(|surface| {
-            let (SurfaceGeometry::Cylinder { axis, .. }
-            | SurfaceGeometry::Cone { axis, .. }
-            | SurfaceGeometry::Torus { axis, .. }) = surface.geometry
-            else {
-                return None;
+            let (axis,) = match surface.geometry {
+                SurfaceGeometry::Cylinder(cylinder_surface) => {
+                    let (_, &axis, _, _) = cylinder_surface.parts();
+                    (axis,)
+                }
+                SurfaceGeometry::Cone(cone_surface) => {
+                    let (_, &axis, _, _, _, _) = cone_surface.parts();
+                    (axis,)
+                }
+                SurfaceGeometry::Torus(torus_surface) => {
+                    let (_, &axis, _, _, _) = torus_surface.parts();
+                    (axis,)
+                }
+                _ => {
+                    return None;
+                }
             };
             Some((surface.record_id, axis))
         })
@@ -410,14 +419,17 @@ pub(crate) fn append_e5_planes(
         ) else {
             continue;
         };
+        let Ok(payload) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            normal,
+            u_axis,
+        ) else {
+            continue;
+        };
         surfaces.push(crate::families::e5::records::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal,
-                u_axis,
-            },
+            geometry: SurfaceGeometry::Plane(payload),
             uv_scale,
         });
     }
@@ -1371,17 +1383,18 @@ fn plan_e5_boundary(
         edge_curve_plan.insert(edge_ref, (left.curve.clone(), left.curve_range));
         intersection_plan.insert(
             edge_ref,
-            IntcurveSupportContext {
-                sides: [left, right].map(|side| IntcurveSupportSide {
+            IntcurveSupportContext::try_new(
+                [left, right].map(|side| IntcurveSupportSide {
                     surface: Some(side.surface.clone()),
                     pcurve: Some(SupportPcurve::new(
                         side.pcurve.clone(),
                         DirectedParameterRange::new(side.pcurve_range).ok(),
                     )),
                 }),
-                parameter_range: left.curve_range,
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
+                left.curve_range,
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .ok()?,
         );
     }
     for (&edge_ref, sides) in &occurrence_intersection_sides {
@@ -1441,11 +1454,12 @@ fn prune_e5_unused_surfaces(
         .iter()
         .filter_map(|face| surface_for_ref.get(&face.surface))
         .map(|(id, _)| id.clone())
-        .chain(
-            intersection_plan
-                .values()
-                .flat_map(|context| context.sides.iter().filter_map(|side| side.surface.clone())),
-        )
+        .chain(intersection_plan.values().flat_map(|context| {
+            context
+                .sides()
+                .iter()
+                .filter_map(|side| side.surface.clone())
+        }))
         .chain(
             surface_curve_plan
                 .values()
@@ -1563,7 +1577,8 @@ fn emit_e5_curves_and_edges(
                     context: context.clone(),
                     discontinuity_flag: false,
                 },
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
@@ -1592,8 +1607,8 @@ fn emit_e5_curves_and_edges(
                 id,
                 ProceduralCurveDefinition::SurfaceCurve {
                     family: SurfaceCurveFamily::Parametric {
-                        context: IntcurveSupportContext {
-                            sides: [
+                        context: IntcurveSupportContext::try_new(
+                            [
                                 IntcurveSupportSide {
                                     surface: Some(surface.clone()),
                                     pcurve: Some(SupportPcurve::new(pcurve.clone(), None)),
@@ -1603,13 +1618,15 @@ fn emit_e5_curves_and_edges(
                                     pcurve: None,
                                 },
                             ],
-                            parameter_range: *range,
-                            discontinuities: std::array::from_fn(|_| Vec::new()),
-                        },
+                            *range,
+                            std::array::from_fn(|_| Vec::new()),
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                         tail: None,
                     },
                 },
-            ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
     for (&record_id, edge) in &topology.edges {
@@ -1668,7 +1685,8 @@ fn emit_e5_pcurves(
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(*range), None),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some(*range), None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         });
     }
     Ok(())
@@ -2034,7 +2052,9 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             Some((
-                PcurveGeometry::Line { origin, direction },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).ok()?,
+                ),
                 *range,
                 endpoints,
             ))
@@ -2216,14 +2236,11 @@ pub(crate) fn e5_boundary_curve(
         return None;
     }
     if let (
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        },
+        SurfaceGeometry::Plane(plane_surface),
         crate::families::e5::graph::E5Pcurve::Circle { center, radius, .. },
     ) = (surface, native_pcurve)
     {
+        let (origin, normal, u_axis) = plane_surface.parts();
         let v_axis = (*normal).cross(*u_axis);
         let center = (*origin)
             .translated(*u_axis, center[0] * uv_scale[0])
@@ -2238,25 +2255,25 @@ pub(crate) fn e5_boundary_curve(
             return None;
         }
         return Some((
-            CurveGeometry::Circle {
-                center,
-                axis: *normal,
-                ref_direction: u_axis.scale(uv_scale[0]),
-                radius: *radius,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    center,
+                    *normal,
+                    u_axis.scale(uv_scale[0]),
+                    *radius,
+                )
+                .ok()?,
+            ),
             crate::nurbs::canonical_periodic_range(range)?,
         ));
     }
     if let (
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        },
+        SurfaceGeometry::Plane(plane_surface),
         crate::families::e5::graph::E5Pcurve::Jet { .. },
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
+        let (origin, normal, u_axis) = plane_surface.parts();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2295,15 +2312,12 @@ pub(crate) fn e5_boundary_curve(
         ));
     }
     if let (
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        },
+        SurfaceGeometry::Plane(plane_surface),
         crate::families::e5::graph::E5Pcurve::Nurbs { .. },
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
+        let (origin, normal, u_axis) = plane_surface.parts();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2341,9 +2355,10 @@ pub(crate) fn e5_boundary_curve(
             range,
         ));
     }
-    let PcurveGeometry::Line { origin, direction } = pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
+    let (origin, direction) = line_pcurve.parts();
     if !finite_point2(*origin) || !finite_point2(*direction) {
         return None;
     }
@@ -2395,21 +2410,19 @@ pub(crate) fn e5_boundary_curve(
             return None;
         };
         return Some((
-            CurveGeometry::Circle {
-                center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
+                    .ok()?,
+            ),
             *curve_range,
         ));
     }
 
-    if !(matches!(surface, SurfaceGeometry::Plane { .. })
+    if !(matches!(surface, SurfaceGeometry::Plane(_))
         || (direction.u == 0.0
             && matches!(
                 surface,
-                SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+                SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_)
             )))
     {
         return None;
@@ -2421,10 +2434,9 @@ pub(crate) fn e5_boundary_curve(
     }
     let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
     finite_vector(direction).then_some((
-        CurveGeometry::Line {
-            origin: endpoints[0],
-            direction,
-        },
+        CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(endpoints[0], direction).ok()?,
+        ),
         [0.0, length],
     ))
 }
@@ -2440,14 +2452,15 @@ pub(crate) fn e5_occurrence_intersection_context(
     if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
-    Some(IntcurveSupportContext {
-        sides: [left, right].map(|side| IntcurveSupportSide {
+    IntcurveSupportContext::try_new(
+        [left, right].map(|side| IntcurveSupportSide {
             surface: Some(side.0.clone()),
             pcurve: Some(SupportPcurve::new(side.1.clone(), None)),
         }),
-        parameter_range: left.2,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    })
+        left.2,
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .ok()
 }
 
 fn e5_support_occurrence_intersection_context(
@@ -2468,17 +2481,18 @@ fn e5_support_occurrence_intersection_context(
     {
         return None;
     }
-    Some(IntcurveSupportContext {
-        sides: [left, right].map(|side| IntcurveSupportSide {
+    IntcurveSupportContext::try_new(
+        [left, right].map(|side| IntcurveSupportSide {
             surface: Some(side.surface.clone()),
             pcurve: Some(SupportPcurve::new(
                 side.pcurve.clone(),
                 DirectedParameterRange::new(side.pcurve_range).ok(),
             )),
         }),
-        parameter_range: solved_range,
-        discontinuities: std::array::from_fn(|_| Vec::new()),
-    })
+        solved_range,
+        std::array::from_fn(|_| Vec::new()),
+    )
+    .ok()
 }
 
 fn e5_occurrence_intersection_cache(
@@ -2518,10 +2532,7 @@ fn e5_occurrence_intersection_cache(
 }
 
 fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {
-    matches!(
-        curve,
-        CurveGeometry::Line { .. } | CurveGeometry::Circle { .. }
-    )
+    matches!(curve, CurveGeometry::Line(_) | CurveGeometry::Circle(_))
 }
 
 fn is_e5_nurbs_curve(curve: &CurveGeometry) -> bool {
@@ -2574,23 +2585,13 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     right: &CurveGeometry,
     right_range: [f64; 2],
 ) -> bool {
-    let (
-        CurveGeometry::Circle {
-            center: left_center,
-            axis: left_axis,
-            radius: left_radius,
-            ..
-        },
-        CurveGeometry::Circle {
-            center: right_center,
-            axis: right_axis,
-            radius: right_radius,
-            ..
-        },
-    ) = (left, right)
+    let (CurveGeometry::Circle(circle_curve), CurveGeometry::Circle(circle_curve_2)) =
+        (left, right)
     else {
         return false;
     };
+    let (left_center, left_axis, _, left_radius) = circle_curve.parts();
+    let (right_center, right_axis, _, right_radius) = circle_curve_2.parts();
     if (*left_center).distance(*right_center) > E5_ENDPOINT_MATCH_TOLERANCE
         || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
         || (*left_axis).dot(*right_axis) < 1.0 - E5_CARRIER_AXIS_COSINE_TOLERANCE
@@ -2622,33 +2623,16 @@ fn e5_circle_carriers_have_same_ordered_sweep(
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
     match (left, right) {
-        (
-            CurveGeometry::Line {
-                origin: left_origin,
-                direction: left_direction,
-            },
-            CurveGeometry::Line {
-                origin: right_origin,
-                direction: right_direction,
-            },
-        ) => {
+        (CurveGeometry::Line(line_curve), CurveGeometry::Line(line_curve_2)) => {
+            let (left_origin, left_direction) = line_curve.parts();
+            let (right_origin, right_direction) = line_curve_2.parts();
             (*left_origin).distance(*right_origin) <= 2e-3
                 && (*left_direction).dot(*right_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
         }
-        (
-            CurveGeometry::Circle {
-                center: left_center,
-                axis: left_axis,
-                ref_direction: left_ref_direction,
-                radius: left_radius,
-            },
-            CurveGeometry::Circle {
-                center: right_center,
-                axis: right_axis,
-                ref_direction: right_ref_direction,
-                radius: right_radius,
-            },
-        ) => {
+        (CurveGeometry::Circle(circle_curve), CurveGeometry::Circle(circle_curve_2)) => {
+            let (left_center, left_axis, left_ref_direction, left_radius) = circle_curve.parts();
+            let (right_center, right_axis, right_ref_direction, right_radius) =
+                circle_curve_2.parts();
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
                 && (*left_axis).dot(*right_axis) >= 1.0 - EPS_E5_DECODE_GEOMETRY
@@ -2664,44 +2648,34 @@ pub(crate) fn e5_constant_v_circle(
     v: f64,
 ) -> Option<(Point3, f64, Vector3)> {
     match surface {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } => Some(((*origin).translated(*axis, v), *radius, *axis)),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            radius,
-            half_angle,
-            ..
-        } => Some((
-            (*origin).translated(*axis, v),
-            (radius + v * half_angle.tan()).abs(),
-            *axis,
-        )),
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            radius,
-            ..
-        } => Some((
-            (*center).translated(*axis, radius * v.sin()),
-            radius * v.cos().abs(),
-            *axis,
-        )),
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            major_radius,
-            minor_radius,
-            ..
-        } => Some((
-            (*center).translated(*axis, minor_radius * v.sin()),
-            (major_radius + minor_radius * v.cos()).abs(),
-            *axis,
-        )),
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, _, radius) = cylinder_surface.parts();
+            Some(((*origin).translated(*axis, v), *radius, *axis))
+        }
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, _, radius, _, half_angle) = cone_surface.parts();
+            Some((
+                (*origin).translated(*axis, v),
+                (radius + v * half_angle.tan()).abs(),
+                *axis,
+            ))
+        }
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, _, radius) = sphere_surface.parts();
+            Some((
+                (*center).translated(*axis, radius * v.sin()),
+                radius * v.cos().abs(),
+                *axis,
+            ))
+        }
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, _, major_radius, minor_radius) = torus_surface.parts();
+            Some((
+                (*center).translated(*axis, minor_radius * v.sin()),
+                (major_radius + minor_radius * v.cos()).abs(),
+                *axis,
+            ))
+        }
         _ => None,
     }
 }
@@ -2711,23 +2685,14 @@ pub(crate) fn e5_constant_u_circle(
     u: f64,
 ) -> Option<(Point3, f64, Vector3)> {
     match surface {
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            radius,
-            ref_direction,
-        } => {
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((*center, *radius, (*axis).cross(radial)))
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((
@@ -3135,11 +3100,14 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 100,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal,
-                u_axis,
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    normal,
+                    u_axis,
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale,
         };
         let (pcurve, range, endpoints) = e5_pcurve_on_surface(
@@ -3156,10 +3124,11 @@ mod route_tests {
             endpoints,
             [Point3::new(0.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0)]
         );
-        let PcurveGeometry::Line { direction, .. } = pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = pcurve else {
             panic!("expected reflected line pcurve");
         };
-        assert_eq!(direction, Point2::new(-1.0, 0.0));
+        let (_, direction) = line_pcurve.parts();
+        assert_eq!(*direction, Point2::new(-1.0, 0.0));
         let (curve, _) = e5_boundary_curve(
             &surface.geometry,
             &E5Pcurve::Line {
@@ -3168,20 +3137,23 @@ mod route_tests {
                 direction: [1.0, 0.0],
                 range: [0.0, 1.0],
             },
-            &PcurveGeometry::Line {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(-1.0, 0.0),
-            },
+            &PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(-1.0, 0.0),
+                )
+                .expect("valid LinePcurve fixture"),
+            ),
             range,
             endpoints,
             uv_scale,
         )
         .expect("reflected plane boundary");
-        assert!(matches!(
-            curve,
-            CurveGeometry::Line { direction, .. }
-                if direction == Vector3::new(-1.0, 0.0, 0.0)
-        ));
+        assert!(matches!(curve, CurveGeometry::Line(line_curve)
+        if {
+            let (_, direction) = line_curve.parts();
+            *direction == Vector3::new(-1.0, 0.0, 0.0)
+        }));
     }
 
     #[test]
@@ -3259,11 +3231,14 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 100,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let topology = E5Topology {
@@ -3358,11 +3333,14 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 100,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let line = || E5Pcurve::Line {
@@ -3421,11 +3399,14 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 100,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let topology = E5Topology {
@@ -3614,11 +3595,14 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 100,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let mut annotations = AnnotationBuilder::new();
@@ -3745,16 +3729,22 @@ mod route_tests {
 
     #[test]
     fn e5_cylinder_isoparametric_boundary_lifts_to_circle_carrier() {
-        let surface = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        };
-        let pcurve = PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        );
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 3.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
             origin: [0.0, 3.0],
@@ -3770,14 +3760,11 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
-        assert!(matches!(
-            curve,
-            CurveGeometry::Circle {
-                center,
-                radius,
-                ..
-            } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
-        ));
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, _, _, radius) = circle_curve.parts();
+            *center == Point3::new(0.0, 0.0, 3.0) && *radius == 2.0
+        }));
         assert!(
             (range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs()
                 < EPS_E5_DECODE_EXACT_GEOMETRY
@@ -3786,17 +3773,23 @@ mod route_tests {
 
     #[test]
     fn e5_nearly_isoparametric_boundary_lifts_to_circle_carrier() {
-        let surface = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        };
+        let surface = SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        );
         let transverse_noise = f64::EPSILON;
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 3.0),
-            direction: Point2::new(1.0, transverse_noise),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.0, 3.0),
+                Point2::new(1.0, transverse_noise),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
             origin: [0.0, 3.0],
@@ -3812,23 +3805,31 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("near-isoparametric cylinder boundary circle");
-        assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
+        assert!(
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+        );
     }
 
     #[test]
     fn e5_boundary_classification_is_scale_independent() {
-        let surface = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        };
+        let surface = SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        );
         let direction = 1e-200;
         let parameter_end = 1e200;
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 3.0),
-            direction: Point2::new(direction, 0.0),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.0, 3.0),
+                Point2::new(direction, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
             origin: [0.0, 3.0],
@@ -3847,17 +3848,25 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
-        assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
+        assert!(
+            matches!(curve, CurveGeometry::Circle(circle_curve) if { *circle_curve.parts().3 == 2.0 })
+        );
 
-        let plane = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
-        let plane_pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(direction, 0.0),
-        };
+        let plane = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
+        let plane_pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(direction, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let plane_native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
             origin: [0.0, 0.0],
@@ -3874,27 +3883,33 @@ mod route_tests {
             [1.0, 1.0],
         )
         .expect("finite nonzero plane line");
-        assert!(matches!(curve, CurveGeometry::Line { .. }));
+        assert!(matches!(curve, CurveGeometry::Line(_)));
         assert_eq!(range, [0.0, direction]);
     }
 
     #[test]
     fn e5_boundary_line_rejects_overflowing_uv_start() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let native = E5Pcurve::Line {
             surface: 0,
             origin: [f64::MAX, 0.0],
             direction: [f64::MAX, 0.0],
             range: [1.0, 2.0],
         };
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(f64::MAX, 0.0),
-            direction: Point2::new(f64::MAX, 0.0),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(f64::MAX, 0.0),
+                Point2::new(f64::MAX, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         assert!(e5_boundary_curve(
             &surface,
             &native,
@@ -3908,11 +3923,14 @@ mod route_tests {
 
     #[test]
     fn e5_boundary_circle_rejects_nonfinite_radius() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let native = E5Pcurve::Circle {
             surface: 0,
             center: [0.0, 0.0],
@@ -3921,10 +3939,10 @@ mod route_tests {
             range: [0.0, 1.0],
             tail: [0.0, 0.0],
         };
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(1.0, 0.0),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("valid LinePcurve fixture"),
+        );
         assert!(e5_boundary_curve(
             &surface,
             &native,
@@ -3938,11 +3956,14 @@ mod route_tests {
 
     #[test]
     fn e5_boundary_line_normalizes_subnormal_chord() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let tiny = f64::from_bits(1);
         let native = E5Pcurve::Line {
             surface: 0,
@@ -3950,10 +3971,13 @@ mod route_tests {
             direction: [tiny, 0.0],
             range: [0.0, 1.0],
         };
-        let pcurve = PcurveGeometry::Line {
-            origin: Point2::new(0.0, 0.0),
-            direction: Point2::new(tiny, 0.0),
-        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(tiny, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
         let (curve, range) = e5_boundary_curve(
             &surface,
             &native,
@@ -3964,20 +3988,23 @@ mod route_tests {
         )
         .expect("subnormal line chord");
         assert_eq!(range, [0.0, tiny]);
-        assert!(matches!(
-            curve,
-            CurveGeometry::Line { direction, .. }
-                if direction == Vector3::new(1.0, 0.0, 0.0)
-        ));
+        assert!(matches!(curve, CurveGeometry::Line(line_curve)
+        if {
+            let (_, direction) = line_curve.parts();
+            *direction == Vector3::new(1.0, 0.0, 0.0)
+        }));
     }
 
     #[test]
     fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
             center: [4.0, 5.0],
@@ -3998,18 +4025,14 @@ mod route_tests {
         )
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
-        assert!(matches!(
-            curve,
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if center == Point3::new(5.0, 7.0, 3.0)
-                && axis == Vector3::new(0.0, 0.0, 1.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 2.0
-        ));
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *center == Point3::new(5.0, 7.0, 3.0)
+                && *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        }));
 
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4021,27 +4044,26 @@ mod route_tests {
         )
         .expect("reflected plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
-        assert!(matches!(
-            curve,
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if center == Point3::new(-3.0, -3.0, 3.0)
-                && axis == Vector3::new(0.0, 0.0, 1.0)
-                && ref_direction == Vector3::new(-1.0, 0.0, 0.0)
-                && radius == 2.0
-        ));
+        assert!(matches!(curve, CurveGeometry::Circle(circle_curve)
+        if {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *center == Point3::new(-3.0, -3.0, 3.0)
+                && *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+                && *radius == 2.0
+        }));
     }
 
     #[test]
     fn e5_plane_jet_boundary_lifts_control_net_affinely() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let points = vec![[0.0, 0.0], [1.0, 2.0]];
         let first = vec![[1.0, 2.0], [1.0, 2.0]];
         let second = vec![[0.0, 0.0], [0.0, 0.0]];
@@ -4082,11 +4104,14 @@ mod route_tests {
     #[test]
     fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
         let large = f64::MAX * 0.75;
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(large, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(large, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let native = E5Pcurve::Jet {
             surface: 0,
             sites: Vec::new(),
@@ -4118,32 +4143,44 @@ mod route_tests {
 
     #[test]
     fn e5_intersection_requires_equivalent_two_sided_carriers() {
-        let left = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
-        let right = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
+        let left = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
+        let right = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         assert!(equivalent_e5_curve_carriers(&left, &right));
-        let reversed_axis = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
+        let reversed_axis = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         assert!(!equivalent_e5_curve_carriers(&left, &reversed_axis));
-        let shifted_reference = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
-        };
+        let shifted_reference = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
         assert!(e5_circle_carriers_have_same_ordered_sweep(
             &left,
@@ -4157,27 +4194,39 @@ mod route_tests {
             &shifted_reference,
             [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
         ));
-        let displaced = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.01),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
+        let displaced = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.01),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         assert!(!equivalent_e5_curve_carriers(&left, &displaced));
 
-        let line = CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        };
-        let parallel_line = CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let line = CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        );
+        let parallel_line = CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        );
         assert!(equivalent_e5_curve_carriers(&line, &parallel_line));
-        let reversed_line = CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(-1.0, 0.0, 0.0),
-        };
+        let reversed_line = CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        );
         assert!(!equivalent_e5_curve_carriers(&line, &reversed_line));
     }
 
@@ -4186,12 +4235,15 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            ),
             uv_scale: [0.5, 1.0],
         };
         let pcurve = jet_pcurve(
@@ -4287,14 +4339,17 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Cone {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 2.0,
-                ratio: 1.0,
-                half_angle,
-            },
+            geometry: SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    1.0,
+                    half_angle,
+                )
+                .expect("valid ConeSurface fixture"),
+            ),
             uv_scale: [0.5, half_angle.cos() / 4.0],
         };
         let pcurve = jet_pcurve(
@@ -4354,11 +4409,14 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [f64::MAX, 1.0],
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Line {
@@ -4375,11 +4433,14 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [f64::MAX, 1.0],
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
@@ -4398,11 +4459,14 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let pcurve = jet_pcurve(
@@ -4419,11 +4483,14 @@ mod route_tests {
 
     #[test]
     fn e5_boundary_circle_rejects_nonfinite_center() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(f64::MAX, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
             center: [f64::MAX, 0.0],
@@ -4453,13 +4520,16 @@ mod route_tests {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 5.0,
-                minor_radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    5.0,
+                    2.0,
+                )
+                .expect("valid TorusSurface fixture"),
+            ),
             uv_scale: [0.2, 0.5],
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
@@ -4499,25 +4569,31 @@ mod route_tests {
         let sides = vec![
             (
                 SurfaceId::mint("catia:test:surface#left".to_string()).expect("identity grammar"),
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 [-2.0, 3.0],
             ),
             (
                 SurfaceId::mint("catia:test:surface#right".to_string()).expect("identity grammar"),
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 1.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 1.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 [-2.0 - 1e-14, 3.0 + 1e-14],
             ),
         ];
         let context = e5_occurrence_intersection_context(&sides).expect("intersection context");
-        assert_eq!(context.parameter_range, [-2.0, 3.0]);
+        assert_eq!(context.parameter_range(), [-2.0, 3.0]);
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .surface
                 .as_ref()
                 .expect("left surface")
@@ -4525,7 +4601,7 @@ mod route_tests {
             "catia:test:surface#left"
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .surface
                 .as_ref()
                 .expect("right surface")
@@ -4554,20 +4630,26 @@ mod route_tests {
             E5OccurrenceIntersectionSide {
                 surface: SurfaceId::mint("catia:test:surface#left".to_string())
                     .expect("identity grammar"),
-                pcurve: PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                pcurve: PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 pcurve_range: [100.0, 200.0],
                 curve: None,
             },
             E5OccurrenceIntersectionSide {
                 surface: SurfaceId::mint("catia:test:surface#right".to_string())
                     .expect("identity grammar"),
-                pcurve: PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 1.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                pcurve: PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 1.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 pcurve_range: [-5.0, 5.0],
                 curve: None,
             },
@@ -4575,27 +4657,27 @@ mod route_tests {
         let context =
             e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
                 .expect("support intersection context");
-        assert_eq!(context.parameter_range, [10.0, 20.0]);
+        assert_eq!(context.parameter_range(), [10.0, 20.0]);
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .pcurve_parameter_range()
                 .expect("left local range"),
             [100.0, 200.0]
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .pcurve_parameter_range()
                 .expect("right local range"),
             [-5.0, 5.0]
         );
         assert_eq!(
-            context.sides[0]
+            context.sides()[0]
                 .pcurve_parameter([10.0, 20.0], 15.0)
                 .expect("left mapped parameter"),
             150.0
         );
         assert_eq!(
-            context.sides[1]
+            context.sides()[1]
                 .pcurve_parameter([10.0, 20.0], 15.0)
                 .expect("right mapped parameter"),
             0.0
@@ -4604,10 +4686,13 @@ mod route_tests {
 
     #[test]
     fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
-        let line = CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let line = CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        );
         let nurbs = CurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
@@ -4622,20 +4707,26 @@ mod route_tests {
             E5OccurrenceIntersectionSide {
                 surface: SurfaceId::mint("catia:test:surface#left".to_string())
                     .expect("identity grammar"),
-                pcurve: PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                pcurve: PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 0.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 pcurve_range: [10.0, 20.0],
                 curve: Some((line.clone(), [0.0, 1.0])),
             },
             E5OccurrenceIntersectionSide {
                 surface: SurfaceId::mint("catia:test:surface#right".to_string())
                     .expect("identity grammar"),
-                pcurve: PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 1.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
+                pcurve: PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                        Point2::new(0.0, 1.0),
+                        Point2::new(1.0, 0.0),
+                    )
+                    .expect("valid LinePcurve fixture"),
+                ),
                 pcurve_range: [-4.0, 6.0],
                 curve: Some((nurbs, [100.0, 110.0])),
             },
@@ -4645,28 +4736,37 @@ mod route_tests {
         assert_eq!(range, [0.0, 1.0]);
 
         sides[1].curve = Some((
-            CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            ),
             [0.0, 1.0],
         ));
         assert!(e5_occurrence_intersection_cache(&sides).is_none());
 
-        let left_circle = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
-        let right_circle = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
-        };
+        let left_circle = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
+        let right_circle = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         sides[0].curve = Some((left_circle.clone(), [0.0, std::f64::consts::PI]));
         sides[1].curve = Some((
             right_circle,

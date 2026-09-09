@@ -155,7 +155,7 @@ fn append_oriented_wire_curve(
                     cache,
                 }
             }
-            Err(_) => geometry,
+            Err(error) => return Err(cadmpeg_core::CodecError::malformed(error)),
         }
     } else {
         geometry
@@ -439,10 +439,11 @@ fn transfer_closed_wire_loops(
                                             .find(|candidate| {
                                                 candidate.id == source_procedural.construction_id
                                             })
-                                            .map(|candidate| {
-                                                candidate.replace_definition(definition.clone());
+                                            .is_some_and(|candidate| {
+                                                candidate
+                                                    .replace_definition(definition.clone())
+                                                    .is_ok()
                                             })
-                                            .is_some()
                                     } else {
                                         ir.model
                                             .curves
@@ -760,8 +761,8 @@ pub(crate) fn try_decode_zero_entity(
                     (
                         ProceduralCurveDefinition::SurfaceCurve {
                             family: SurfaceCurveFamily::Parametric {
-                                context: IntcurveSupportContext {
-                                    sides: [
+                                context: IntcurveSupportContext::try_new(
+                                    [
                                         IntcurveSupportSide {
                                             surface: Some(surface.clone()),
                                             pcurve: Some(pcurve.into()),
@@ -772,8 +773,9 @@ pub(crate) fn try_decode_zero_entity(
                                         },
                                     ],
                                     parameter_range,
-                                    discontinuities: std::array::from_fn(|_| Vec::new()),
-                                },
+                                    std::array::from_fn(|_| Vec::new()),
+                                )
+                                .ok()?,
                                 tail: None,
                             },
                         },
@@ -810,7 +812,7 @@ pub(crate) fn try_decode_zero_entity(
             });
             ir.model
                 .procedural_curves
-                .push(ProceduralCurve::new(construction_id, definition));
+                .push(ProceduralCurve::new(construction_id, definition).ok()?);
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -1020,10 +1022,10 @@ mod tests {
         });
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line {
-                origin: corner,
-                direction: Vector3::new(-1.0, 0.0, 0.0),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(corner, Vector3::new(-1.0, 0.0, 0.0))
+                    .expect("valid LineCurve fixture"),
+            ),
             source_object: None,
         });
         let support_runs = vec![
@@ -1106,7 +1108,10 @@ mod tests {
         {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
-                geometry: CurveGeometry::Line { origin, direction },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
+                        .expect("valid LineCurve fixture"),
+                ),
                 source_object: None,
             });
         }
@@ -1225,15 +1230,17 @@ mod tests {
             ir.model.edges[1].curve,
             Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
-        assert!(matches!(
-            ir.model
-                .curves
-                .iter()
-                .find(|curve| curve.id == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
-                .map(|curve| &curve.geometry),
-            Some(CurveGeometry::Line { origin, direction })
-                if *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
-        ));
+        assert!(matches!(ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id
+            == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Line(line_curve))
+            if {
+                let (origin, direction) = line_curve.parts();
+                *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
+            }));
         assert_eq!(
             ir.model.edges[2].curve,
             Some(
@@ -1261,20 +1268,26 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid CircleCurve fixture"),
+            ),
             source_object: None,
         });
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
-            geometry: CurveGeometry::Line {
-                origin: corner,
-                direction: first.vector_from(corner).scale(1.0 / chord),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    corner,
+                    first.vector_from(corner).scale(1.0 / chord),
+                )
+                .expect("valid LineCurve fixture"),
+            ),
             source_object: None,
         });
         let support_runs = vec![
@@ -1362,15 +1375,18 @@ mod tests {
         let construction_id =
             ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
                 .expect("identity grammar");
-        let definition = ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: Point3::new(0.0, 0.0, 0.0),
-            major: Vector3::new(1.0, 0.0, 0.0),
-            minor: Vector3::new(0.0, 1.0, 0.0),
-            pitch: Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 0.2,
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        };
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                0.2,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
@@ -1383,7 +1399,7 @@ mod tests {
         ir.model
             .add_procedural_curve(
                 curve_id.clone(),
-                ProceduralCurve::new(construction_id.clone(), definition.clone()),
+                ProceduralCurve::new(construction_id.clone(), definition.clone()).unwrap(),
             )
             .unwrap();
         let support_runs = vec![

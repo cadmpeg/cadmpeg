@@ -106,12 +106,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     assert!(result.ir().model.bodies.is_empty());
     assert!(result.ir().model.shells.is_empty());
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
             assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
@@ -175,14 +171,14 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert_eq!(
-        context.sides[0].surface.as_ref(),
+        context.sides()[0].surface.as_ref(),
         Some(&result.ir().model.surfaces[0].id)
     );
-    assert!(context.sides[0].pcurve.is_some());
-    assert_eq!(context.sides[1].surface, None);
-    assert_eq!(context.sides[1].pcurve, None);
+    assert!(context.sides()[0].pcurve.is_some());
+    assert_eq!(context.sides()[1].surface, None);
+    assert_eq!(context.sides()[1].pcurve, None);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -476,15 +472,18 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_model_construction = native.clone();
     invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
-        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-            angle_range: [0.0, 1.0],
-            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            apex_factor: 1.0,
-            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        });
+        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                1.0,
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ));
     let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_construction
         .store(&mut invalid_model_construction_namespace)

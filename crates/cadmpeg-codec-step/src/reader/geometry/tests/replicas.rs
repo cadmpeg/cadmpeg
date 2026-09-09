@@ -56,14 +56,10 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
         .expect("circle");
-    let CurveGeometry::Circle {
-        axis,
-        ref_direction,
-        ..
-    } = circle.geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle")
     };
+    let (_, &axis, &ref_direction, _) = circle_curve.parts();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(dot.abs() < 1.0e-12);
     assert!(result
@@ -102,9 +98,10 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#4")
         .expect("circle");
-    let CurveGeometry::Circle { ref_direction, .. } = circle.geometry else {
+    let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle");
     };
+    let (_, _, &ref_direction, _) = circle_curve.parts();
     assert!((ref_direction.x - 0.8).abs() < 1.0e-12);
     assert!((ref_direction.y + 0.6).abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -130,14 +127,10 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#13")
         .expect("circle");
-    let CurveGeometry::Circle {
-        axis,
-        ref_direction,
-        ..
-    } = circle.geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = circle.geometry else {
         panic!("decoded carrier is not a circle");
     };
+    let (_, &axis, &ref_direction, _) = circle_curve.parts();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
@@ -167,9 +160,10 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
             .iter()
             .find(|curve| curve.id.as_str() == format!("step:data:curve{source_id}"))
             .expect("witness circle");
-        let CurveGeometry::Circle { ref_direction, .. } = curve.geometry else {
+        let CurveGeometry::Circle(circle_curve) = curve.geometry else {
             panic!("witness carrier is not a circle");
         };
+        let (_, _, &ref_direction, _) = circle_curve.parts();
         assert!((ref_direction.x - x).abs() < 1.0e-12);
         assert!((ref_direction.y - y).abs() < 1.0e-12);
         assert!((ref_direction.z - z).abs() < 1.0e-12);
@@ -182,9 +176,10 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#15")
         .expect("near-axis witness circle");
-    let CurveGeometry::Circle { ref_direction, .. } = near_axis.geometry else {
+    let CurveGeometry::Circle(circle_curve) = near_axis.geometry else {
         panic!("near-axis witness carrier is not a circle");
     };
+    let (_, _, &ref_direction, _) = circle_curve.parts();
     assert!(ref_direction.y > 0.999_999_999);
 
     let parallel_reference = decoded
@@ -194,9 +189,10 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#18")
         .expect("parallel-reference witness circle");
-    let CurveGeometry::Circle { ref_direction, .. } = parallel_reference.geometry else {
+    let CurveGeometry::Circle(circle_curve) = parallel_reference.geometry else {
         panic!("parallel-reference witness carrier is not a circle");
     };
+    let (_, _, &ref_direction, _) = circle_curve.parts();
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -316,18 +312,24 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     ])
     .expect("affine transform");
     let curve_geometry = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform,
     };
     let surface_geometry = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        basis: Box::new(SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform,
     };
     let mut source = CadIr::empty();
@@ -509,10 +511,13 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
-    let base_curve = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let base_curve = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let expected_curve = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Transformed {
             basis: Box::new(base_curve),
@@ -522,11 +527,14 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     };
     let expected_surface = SurfaceGeometry::Transformed {
         basis: Box::new(SurfaceGeometry::Transformed {
-            basis: Box::new(SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            }),
+            basis: Box::new(SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
             transform,
         }),
         transform,

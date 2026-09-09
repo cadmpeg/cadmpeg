@@ -377,10 +377,10 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
             continue;
         };
         let expected_range = samples.parameter_range();
-        if context.parameter_range != expected_range {
+        if context.parameter_range() != expected_range {
             continue;
         }
-        for (side, support) in context.sides.iter().enumerate() {
+        for (side, support) in context.sides().iter().enumerate() {
             if !validated_lanes.contains(&(procedural_id.clone(), side))
                 || pcurve_requires_completion(
                     support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
@@ -399,7 +399,7 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
                 .or_default()
                 .push((
                     pcurve.geometry,
-                    context.parameter_range,
+                    context.parameter_range(),
                     samples.endpoints(),
                 ));
         }
@@ -420,9 +420,12 @@ pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
                 || missing_support_parameter(point.u)
                 || missing_support_parameter(point.v)
         }),
-        Some(PcurveGeometry::Line { origin, direction }) => [origin, direction]
-            .into_iter()
-            .any(|point| !point.u.is_finite() || !point.v.is_finite()),
+        Some(PcurveGeometry::Line(line_pcurve)) => {
+            let (&origin, &direction) = line_pcurve.parts();
+            [origin, direction]
+                .into_iter()
+                .any(|point| !point.u.is_finite() || !point.v.is_finite())
+        }
         Some(_) => false,
     }
 }
@@ -573,13 +576,13 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         };
         let (surfaces, missing) = match procedural.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                let [Some(first), Some(second)] = &context.sides.clone().map(|side| side.surface)
+                let [Some(first), Some(second)] = &context.sides().clone().map(|side| side.surface)
                 else {
                     continue;
                 };
                 (
                     [first.clone(), second.clone()],
-                    context.sides.each_ref().map(|side| {
+                    context.sides().each_ref().map(|side| {
                         pcurve_requires_completion(
                             side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
                         )
@@ -647,11 +650,11 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         else {
             continue;
         };
-        procedural.edit_definition(|definition| {
-            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                context.sides[side].pcurve = Some(replacement.into());
-            }
-        });
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
+        context.set_unmapped_pcurve(side, Some(replacement));
     }
 }
 
@@ -786,7 +789,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             else {
                 continue;
             };
-            for (side, support) in context.sides.iter().enumerate() {
+            for (side, support) in context.sides().iter().enumerate() {
                 if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                     break;
                 }
@@ -864,7 +867,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                             .or_default()
                             .push((
                                 pcurve.geometry.clone(),
-                                context.parameter_range,
+                                context.parameter_range(),
                                 [first, last],
                             ));
                     }
@@ -882,11 +885,11 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         else {
             continue;
         };
-        procedural.edit_definition(|definition| {
-            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                context.sides[side].pcurve = None;
-            }
-        });
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
+        context.set_unmapped_pcurve(side, None);
     }
     SupportUvValidationResult {
         endpoint_witnesses,
@@ -909,7 +912,7 @@ pub(crate) fn pending_support_lanes_requiring_completion(
             };
             Some(
                 context
-                    .sides
+                    .sides()
                     .iter()
                     .filter(|side| {
                         pcurve_requires_completion(
@@ -969,19 +972,19 @@ fn complete_support_uv_wave(
                     break;
                 }
                 if !pcurve_requires_completion(
-                    context.sides[side]
+                    context.sides()[side]
                         .pcurve
                         .as_ref()
                         .map(|pcurve| &pcurve.geometry),
                 ) {
                     continue;
                 }
-                let Some(surface_id) = &context.sides[side].surface else {
+                let Some(surface_id) = &context.sides()[side].surface else {
                     continue;
                 };
                 let attempt_key = (procedural_id.clone(), side);
-                let source_pcurve = context.sides[1 - side].pcurve.as_ref();
-                let other_surface_id = context.sides[1 - side].surface.as_ref();
+                let source_pcurve = context.sides()[1 - side].pcurve.as_ref();
+                let other_surface_id = context.sides()[1 - side].surface.as_ref();
                 if failed_attempts.get(&attempt_key).is_some_and(|previous| {
                     previous.as_ref() == source_pcurve.map(|pcurve| &pcurve.geometry)
                 }) {
@@ -1012,7 +1015,7 @@ fn complete_support_uv_wave(
                     *fit_tolerance,
                 );
                 let other_support = {
-                    let other_side = &context.sides[1 - side];
+                    let other_side = &context.sides()[1 - side];
                     other_side
                         .surface
                         .as_ref()
@@ -1081,7 +1084,7 @@ fn complete_support_uv_wave(
                         );
                         let continuation_seed = uv.last().copied();
                         let retained_pcurve_seed = pcurve_control_point_seed(
-                            context.sides[side]
+                            context.sides()[side]
                                 .pcurve
                                 .as_ref()
                                 .map(|pcurve| &pcurve.geometry),
@@ -1299,10 +1302,10 @@ fn complete_support_uv_wave(
                 };
                 if matches!(
                     surface.geometry,
-                    SurfaceGeometry::Cylinder { .. }
-                        | SurfaceGeometry::Cone { .. }
-                        | SurfaceGeometry::Sphere { .. }
-                        | SurfaceGeometry::Torus { .. }
+                    SurfaceGeometry::Cylinder(_)
+                        | SurfaceGeometry::Cone(_)
+                        | SurfaceGeometry::Sphere(_)
+                        | SurfaceGeometry::Torus(_)
                 ) {
                     for index in 1..uv.len() {
                         let turns =
@@ -1341,7 +1344,11 @@ fn complete_support_uv_wave(
                     }
                     reproduces
                 };
-                if reproduces_chart {
+                let admitted_fit_tolerance =
+                    cadmpeg_ir::geometry::FitTolerance::try_new(effective_fit_tolerance).ok();
+                if let Some(admitted_fit_tolerance) =
+                    admitted_fit_tolerance.filter(|_| reproduces_chart)
+                {
                     if all_parameters_certified {
                         endpoint_values = [
                             uv.first().and_then(|sample_uv| {
@@ -1389,7 +1396,7 @@ fn complete_support_uv_wave(
                         procedural_id.clone(),
                         side,
                         pcurve,
-                        effective_fit_tolerance,
+                        admitted_fit_tolerance,
                     ));
                 } else {
                     failed_attempts.insert(
@@ -1421,22 +1428,24 @@ fn complete_support_uv_wave(
             else {
                 continue;
             };
-            let completed = procedural.edit_definition(|definition| {
+            let Ok(completed) = procedural.edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     return false;
                 };
                 if pcurve_requires_completion(
-                    context.sides[side]
+                    context.sides()[side]
                         .pcurve
                         .as_ref()
                         .map(|pcurve| &pcurve.geometry),
                 ) {
-                    context.sides[side].pcurve = Some(pcurve.into());
+                    context.set_unmapped_pcurve(side, Some(pcurve));
                     true
                 } else {
                     false
                 }
-            });
+            }) else {
+                continue;
+            };
             if completed && cache_backed_constructions.contains(&procedural.id) {
                 procedural.raise_cache_fit_tolerance(effective_fit_tolerance);
             }
@@ -1573,18 +1582,18 @@ fn complete_coupled_support_uv(
         else {
             continue;
         };
-        let lane_state = context.sides.each_ref().map(|side| side.pcurve.clone());
+        let lane_state = context.sides().each_ref().map(|side| side.pcurve.clone());
         if failed_attempts
             .get(procedural_id)
             .is_some_and(|previous| previous == &lane_state)
         {
             continue;
         }
-        let missing = context.sides.each_ref().map(|side| {
+        let missing = context.sides().each_ref().map(|side| {
             pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
         });
         let [Some(first_surface), Some(second_surface)] =
-            context.sides.each_ref().map(|side| side.surface.as_ref())
+            context.sides().each_ref().map(|side| side.surface.as_ref())
         else {
             continue;
         };
@@ -1600,7 +1609,7 @@ fn complete_coupled_support_uv(
         let seeded_procedural_support = (0..2).any(|side| {
             missing[side]
                 && pcurve_control_point_seed(
-                    context.sides[side]
+                    context.sides()[side]
                         .pcurve
                         .as_ref()
                         .map(|pcurve| &pcurve.geometry),
@@ -1615,7 +1624,7 @@ fn complete_coupled_support_uv(
         });
         let sourced_procedural_support = (0..2).any(|side| {
             missing[side]
-                && context.sides[1 - side]
+                && context.sides()[1 - side]
                     .pcurve
                     .as_ref()
                     .is_some_and(|pcurve| !pcurve_requires_completion(Some(&pcurve.geometry)))
@@ -1636,7 +1645,7 @@ fn complete_coupled_support_uv(
             break;
         }
         let seeds = std::array::from_fn(|side| {
-            let support = &context.sides[side];
+            let support = &context.sides()[side];
             pcurve_control_point_seed(support.pcurve.as_ref().map(|pcurve| &pcurve.geometry), 0)
                 .or_else(|| {
                     model_index
@@ -1740,19 +1749,18 @@ fn complete_coupled_support_uv(
         else {
             continue;
         };
-        procedural.edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                return;
-            };
-            if pcurve_requires_completion(
-                context.sides[side]
-                    .pcurve
-                    .as_ref()
-                    .map(|pcurve| &pcurve.geometry),
-            ) {
-                context.sides[side].pcurve = Some(pcurve.into());
-            }
-        });
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
+        if pcurve_requires_completion(
+            context.sides()[side]
+                .pcurve
+                .as_ref()
+                .map(|pcurve| &pcurve.geometry),
+        ) {
+            context.set_unmapped_pcurve(side, Some(pcurve));
+        }
     }
     lane_geometry_exhausted
 }
@@ -1801,7 +1809,7 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                 else {
                     return None;
                 };
-                let missing = context.sides.each_ref().map(|side| {
+                let missing = context.sides().each_ref().map(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
                 });
                 let target = match missing {
@@ -1810,10 +1818,10 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                     _ => return None,
                 };
                 let source = 1 - target;
-                let (Some(target_surface), Some(source_surface), Some(source_pcurve)) = (
-                    context.sides[target].surface.as_ref(),
-                    context.sides[source].surface.as_ref(),
-                    context.sides[source].pcurve.as_ref(),
+                let (Some(target_surface), Some(source_surface), Some(_)) = (
+                    context.sides()[target].surface.as_ref(),
+                    context.sides()[source].surface.as_ref(),
+                    context.sides()[source].pcurve.as_ref(),
                 ) else {
                     return None;
                 };
@@ -1822,23 +1830,24 @@ pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                     target_surface,
                     source_surface,
                 )
-                .then(|| (procedural_index, target, source_pcurve.clone()))
+                .then_some((procedural_index, target, source))
             })
             .collect::<Vec<_>>()
     };
-    for (procedural_index, side, pcurve) in replacements {
-        ir.model.procedural_curves[procedural_index].edit_definition(|definition| {
-            if let ProceduralCurveDefinition::Intersection { context, .. } = definition {
-                if pcurve_requires_completion(
-                    context.sides[side]
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| &pcurve.geometry),
-                ) {
-                    context.sides[side].pcurve = Some(pcurve);
-                }
-            }
-        });
+    for (procedural_index, side, source) in replacements {
+        let Some(context) = ir.model.procedural_curves[procedural_index].intersection_context_mut()
+        else {
+            continue;
+        };
+
+        if pcurve_requires_completion(
+            context.sides()[side]
+                .pcurve
+                .as_ref()
+                .map(|pcurve| &pcurve.geometry),
+        ) {
+            context.copy_pcurve(source, side);
+        }
     }
 }
 
@@ -2078,7 +2087,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
             continue;
         };
-        for side in &context.sides {
+        for side in context.sides() {
             let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
@@ -2089,7 +2098,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let values = candidates.entry(key).or_default();
             let candidate = (
                 pcurve.geometry.clone(),
-                context.parameter_range,
+                context.parameter_range(),
                 procedural.cache_fit_tolerance(),
             );
             if !values.contains(&candidate) {
@@ -2215,14 +2224,22 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     Some((
                         coedge_id,
                         source_index,
-                        (candidate.0.clone(), candidate.1, fit_tolerance),
+                        (
+                            candidate.0.clone(),
+                            cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                                None,
+                                Some(candidate.1),
+                                fit_tolerance,
+                            )
+                            .ok()?,
+                        ),
                     ))
                 },
             )
             .collect::<Vec<_>>();
         replacements
     };
-    for (coedge_id, source_index, (geometry, parameter_range, fit_tolerance)) in replacements {
+    for (coedge_id, source_index, (geometry, metadata)) in replacements {
         let source = &sources[source_index];
         let Some(fin_xmt) = coedge_id
             .as_str()
@@ -2252,7 +2269,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         annotations
             .derived(&pcurve_id, "parameter_range")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        if fit_tolerance.is_some() {
+        if metadata.fit_tolerance().is_some() {
             annotations
                 .derived(&pcurve_id, "fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2260,11 +2277,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry,
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
-                None,
-                Some(parameter_range),
-                fit_tolerance,
-            ),
+            metadata,
         });
         if let Some(coedge) = ir
             .model
@@ -2330,11 +2343,14 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

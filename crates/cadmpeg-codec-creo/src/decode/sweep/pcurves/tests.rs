@@ -7,13 +7,16 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
 fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 5.0,
-    };
+    let surface = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            5.0,
+        )
+        .expect("valid TorusSurface fixture"),
+    );
     let axis = RevolutionAxis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite point fixture"),

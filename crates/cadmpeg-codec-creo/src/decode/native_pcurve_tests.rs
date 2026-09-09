@@ -13,6 +13,8 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::BTreeMap;
 
+const EPS_LATITUDE_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
     let mut ir = CadIr::empty();
@@ -22,11 +24,14 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
     ] {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             source_object: None,
         });
     }
@@ -48,79 +53,110 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
 
 #[test]
 fn maps_linear_pcurves_to_exact_analytic_carriers() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: 0.25,
-    };
-    let sphere = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    );
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            0.25,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
+    let sphere = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    );
 
     assert!(matches!(
         linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]),
-        Some(CurveGeometry::Line { .. })
+        Some(CurveGeometry::Line(_))
     ));
     assert!(matches!(
         linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]),
-        Some(CurveGeometry::Line { .. })
+        Some(CurveGeometry::Line(_))
     ));
-    assert!(matches!(
-        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]),
-        Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0
-    ));
+    assert!(
+        matches!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 2.0
+        })
+    );
     assert!(matches!(
         linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]),
-        Some(CurveGeometry::Line { .. })
+        Some(CurveGeometry::Line(_))
     ));
-    assert!(matches!(
-        linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]),
-        Some(CurveGeometry::Ellipse { major_radius, minor_radius, .. })
-            if major_radius > minor_radius
-    ));
+    assert!(
+        matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Ellipse(ellipse_curve))
+        if {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            major_radius > minor_radius
+        })
+    );
     assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).is_none());
-    assert!(matches!(
-        linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]),
-        Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0
-    ));
-    assert!(matches!(
-        linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]),
-        Some(CurveGeometry::Circle { radius, .. })
-            if (radius - 2.0 * 0.25_f64.cos()).abs() <= 1.0e-12
-    ));
+    assert!(
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 2.0
+        })
+    );
+    assert!(
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            (radius - 2.0 * 0.25_f64.cos()).abs() <= EPS_LATITUDE_RADIUS
+        })
+    );
 
-    let torus = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 3.0,
-        minor_radius: 1.0,
-    };
-    assert!(matches!(
-        linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]),
-        Some(CurveGeometry::Circle { radius, .. }) if radius == 1.0
-    ));
-    assert!(matches!(
-        linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]),
-        Some(CurveGeometry::Circle { radius, .. }) if radius == 4.0
-    ));
+    let torus = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            1.0,
+        )
+        .expect("valid TorusSurface fixture"),
+    );
+    assert!(
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 1.0
+        })
+    );
+    assert!(
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]), Some(CurveGeometry::Circle(circle_curve))
+        if {
+            let (_, _, _, radius) = circle_curve.parts();
+            *radius == 4.0
+        })
+    );
 }
 
 #[test]
@@ -153,10 +189,13 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
     )
     .is_empty());
 
-    let line = CurveGeometry::Line {
-        origin: Point3::new(a[0], a[1], a[2]),
-        direction: Vector3::new(0.0, 1.0, 0.0),
-    };
+    let line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(a[0], a[1], a[2]),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert_eq!(
         solve_pcurve_vertex_domains(
             &constraints[..1],
@@ -190,10 +229,13 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
 fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
     let witness = [1.0, 0.0, 0.0];
     let adjacent = [2.0, 0.0, 0.0];
-    let inferred = CurveGeometry::Line {
-        origin: Point3::new(9.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let inferred = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(9.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     let constraints = [([1, 2], [witness, adjacent])];
     let analytic_domains = BTreeMap::from([(1, vec![[9.0, 0.0, 0.0]])]);
     let incident_curves = BTreeMap::from([(1, vec![&inferred])]);
@@ -274,11 +316,14 @@ fn pcurve_direction_flags_assign_endpoint_order() {
 }
 
 fn plane() -> SurfaceGeometry {
-    SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    }
+    SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    )
 }
 
 fn assert_pcurve_matches_curve(
@@ -339,12 +384,15 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
         Some((endpoints, 20))
     );
 
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     assert_eq!(
         unique_oriented_native_pcurve(
             &cylinder,
@@ -366,20 +414,25 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
 
 #[test]
 fn projects_exact_planar_carriers_without_changing_parameters() {
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(2.0, 4.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius: 2.0,
-    };
-    assert!(matches!(
-        planar_curve_pcurve(&plane(), &circle),
-        Some(PcurveGeometry::Circle { center, x_axis, y_axis, radius })
-            if center == Point2::new(2.0, 4.0)
-                && x_axis == Point2::new(0.0, 1.0)
-                && y_axis == Point2::new(-1.0, 0.0)
-                && radius == 2.0
-    ));
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(2.0, 4.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
+    assert!(
+        matches!(planar_curve_pcurve(&plane(), &circle), Some(PcurveGeometry::Circle(circle_pcurve))
+        if {
+            let (center, x_axis, y_axis, radius) = circle_pcurve.parts();
+            *center == Point2::new(2.0, 4.0)
+                && *x_axis == Point2::new(0.0, 1.0)
+                && *y_axis == Point2::new(-1.0, 0.0)
+                && *radius == 2.0
+        })
+    );
 
     let nurbs = CurveGeometry::Nurbs(
         NurbsCurve::new(
@@ -402,75 +455,87 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
                 && !nurbs.periodic()
     ));
 
-    let off_plane = CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 3.1),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let off_plane = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 3.1),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert!(planar_curve_pcurve(&plane(), &off_plane).is_none());
 }
 
 #[test]
 fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(1.0, 2.0, 8.0),
-        axis: Vector3::new(0.0, 0.0, -1.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 8.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cylinder pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("cylinder-circle pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert!((origin.v - 5.0).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(-1.0, 0.0));
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-2.0, 0.0, 1.25, 4.0]);
 
-    let off_axis = CurveGeometry::Circle {
-        center: Point3::new(1.1, 2.0, 8.0),
-        axis: Vector3::new(0.0, 0.0, -1.0),
-        ref_direction: Vector3::new(0.0, 1.0, 0.0),
-        radius: 2.0,
-    };
+    let off_axis = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.1, 2.0, 8.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     assert!(surface_of_revolution_parallel_pcurve(&surface, &off_axis).is_none());
-
-    let scaled_frame = SurfaceGeometry::Cylinder {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 2.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    assert!(surface_of_revolution_parallel_pcurve(&scaled_frame, &circle).is_none());
 }
 
 #[test]
 fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
-    let surface = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let surface = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
     for (height, radius, expected_phase) in [(3.0, 5.0, 0.0), (-3.0, 1.0, std::f64::consts::PI)] {
-        let circle = CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, height),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        };
+        let circle = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, height),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         let pcurve =
             surface_of_revolution_parallel_pcurve(&surface, &circle).expect("cone section pcurve");
-        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
             panic!("cone-circle pcurve: {pcurve:#?}");
         };
+        let (origin, direction) = line_pcurve.parts();
         assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
         assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
         assert!((origin.v - height).abs() <= 1.0e-12);
@@ -478,36 +543,46 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
         assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
     }
 
-    let elliptical = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+    let elliptical = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     assert!(surface_of_revolution_parallel_pcurve(&elliptical, &circle).is_none());
     for (height, major_radius, minor_radius, expected_phase) in
         [(3.0, 5.0, 2.5, 0.0), (-3.0, 1.0, 0.5, std::f64::consts::PI)]
     {
-        let ellipse = CurveGeometry::Ellipse {
-            center: Point3::new(0.0, 0.0, height),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius,
-            minor_radius,
-        };
+        let ellipse = CurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                Point3::new(0.0, 0.0, height),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                major_radius,
+                minor_radius,
+            )
+            .expect("valid EllipseCurve fixture"),
+        );
         let pcurve = surface_of_revolution_parallel_pcurve(&elliptical, &ellipse)
             .expect("elliptical cone parallel pcurve");
-        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
             panic!("cone-ellipse pcurve: {pcurve:#?}");
         };
+        let (origin, direction) = line_pcurve.parts();
         assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
         assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
         assert!((origin.v - height).abs() <= 1.0e-12);
@@ -518,36 +593,46 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
 
 #[test]
 fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
+    let surface = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    );
     for axial in [-3.0, 3.0] {
-        let circle = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.0 + axial),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
-        };
+        let circle = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(1.0, 2.0, 3.0 + axial),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                4.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
             .expect("sphere latitude pcurve");
-        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
             panic!("sphere-circle pcurve: {pcurve:#?}");
         };
+        let (origin, direction) = line_pcurve.parts();
         assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
         assert!((origin.v - axial.atan2(4.0)).abs() <= 1.0e-12);
         assert_eq!(*direction, Point2::new(1.0, 0.0));
         assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
     }
 
-    let invalid_circle = CurveGeometry::Circle {
-        center: Point3::new(1.0, 2.0, 6.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.1,
-    };
+    let invalid_circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 6.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.1,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     assert!(surface_of_revolution_parallel_pcurve(&surface, &invalid_circle).is_none());
 }
 
@@ -557,24 +642,31 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
         (4.0, 1.0, std::f64::consts::FRAC_PI_2, 4.0, 0.0),
         (1.0, 2.0, std::f64::consts::PI, 1.0, std::f64::consts::PI),
     ] {
-        let surface = SurfaceGeometry::Torus {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius,
-            minor_radius,
-        };
-        let circle = CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, minor_radius * polar.sin()),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: circle_radius,
-        };
+        let surface = SurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::TorusSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                major_radius,
+                minor_radius,
+            )
+            .expect("valid TorusSurface fixture"),
+        );
+        let circle = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, minor_radius * polar.sin()),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                circle_radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        );
         let pcurve = surface_of_revolution_parallel_pcurve(&surface, &circle)
             .expect("torus parallel pcurve");
-        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+        let PcurveGeometry::Line(line_pcurve) = &pcurve else {
             panic!("torus-circle pcurve: {pcurve:#?}");
         };
+        let (origin, direction) = line_pcurve.parts();
         assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
         assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
         assert!((origin.v - polar).sin().abs() <= 1.0e-12);
@@ -586,55 +678,72 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
 
 #[test]
 fn projects_torus_meridian_circles_with_native_angle_phase() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 4.0,
-        minor_radius: 1.5,
-    };
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(1.0, 6.0, 3.0),
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 1.5,
-    };
+    let surface = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            1.5,
+        )
+        .expect("valid TorusSurface fixture"),
+    );
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 6.0, 3.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.5,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     let pcurve = meridian_circle_pcurve(&surface, &circle).expect("meridian pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("torus-meridian pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(0.0, 1.0));
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
 
-    let displaced = CurveGeometry::Circle {
-        center: Point3::new(1.1, 6.0, 3.0),
-        axis: Vector3::new(1.0, 0.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 1.5,
-    };
+    let displaced = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.1, 6.0, 3.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.5,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     assert!(meridian_circle_pcurve(&surface, &displaced).is_none());
 }
 
 #[test]
 fn projects_sphere_meridians_through_both_poles() {
-    let surface = SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 5.0,
-    };
-    let circle = CurveGeometry::Circle {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 5.0,
-    };
+    let surface = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .expect("valid SphereSurface fixture"),
+    );
+    let circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            5.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     let pcurve = meridian_circle_pcurve(&surface, &circle).expect("sphere meridian pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("sphere-meridian pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!(origin.u.abs() <= 1.0e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(0.0, -1.0));
@@ -651,86 +760,121 @@ fn projects_sphere_meridians_through_both_poles() {
         ],
     );
 
-    let small_circle = CurveGeometry::Circle {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(0.0, 0.0, 1.0),
-        radius: 4.0,
-    };
+    let small_circle = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            4.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     assert!(meridian_circle_pcurve(&surface, &small_circle).is_none());
 }
 
 #[test]
 fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
-    let cylinder_line = CurveGeometry::Line {
-        origin: Point3::new(1.0, 4.0, 8.0),
-        direction: Vector3::new(0.0, 0.0, -2.0),
-    };
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
+    let cylinder_line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(1.0, 4.0, 8.0),
+            Vector3::new(0.0, 0.0, -2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     let pcurve =
         ruled_generator_line_pcurve(&cylinder, &cylinder_line).expect("cylinder generator pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("cylinder-generator pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert!((origin.v - 5.0).abs() <= 1.0e-12);
-    assert_eq!(*direction, Point2::new(0.0, -2.0));
+    assert_eq!(*direction, Point2::new(0.0, -1.0));
     assert_pcurve_matches_curve(&cylinder, &cylinder_line, &pcurve, &[-1.0, 0.0, 2.0]);
-    let tiny_skew = CurveGeometry::Line {
-        origin: Point3::new(1.0, 4.0, 8.0),
-        direction: Vector3::new(1e-13, 0.0, 1e-13),
-    };
+    let tiny_skew = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(1.0, 4.0, 8.0),
+            Vector3::new(1e-13, 0.0, 1e-13)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert!(ruled_generator_line_pcurve(&cylinder, &tiny_skew).is_none());
 
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
-    let cone_line = CurveGeometry::Line {
-        origin: Point3::new(0.0, 5.0, 3.0),
-        direction: Vector3::new(0.0, 2.0, 2.0),
-    };
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
+    let cone_line = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(0.0, 5.0, 3.0),
+            Vector3::new(0.0, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     let pcurve = ruled_generator_line_pcurve(&cone, &cone_line).expect("cone generator pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("cone-generator pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert!((origin.v - 3.0).abs() <= 1.0e-12);
     assert!(direction.u.abs() <= 1.0e-12);
-    assert!((direction.v - 2.0).abs() <= 1.0e-12);
+    assert!((direction.v - std::f64::consts::FRAC_1_SQRT_2).abs() <= 1.0e-12);
     assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
 
-    let elliptical_cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let elliptical_cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid ConeSurface fixture"),
+    );
     let root_half = std::f64::consts::FRAC_1_SQRT_2;
-    let elliptical_generator = CurveGeometry::Line {
-        origin: Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
-        direction: Vector3::new(2.0 * root_half, root_half, 2.0),
-    };
+    let elliptical_generator = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
+            Vector3::new(2.0 * root_half, root_half, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     let pcurve = ruled_generator_line_pcurve(&elliptical_cone, &elliptical_generator)
         .expect("elliptical cone generator pcurve");
-    let PcurveGeometry::Line { origin, direction } = &pcurve else {
+    let PcurveGeometry::Line(line_pcurve) = &pcurve else {
         panic!("elliptical-cone generator pcurve: {pcurve:#?}");
     };
+    let (origin, direction) = line_pcurve.parts();
     assert!((origin.u - std::f64::consts::FRAC_PI_4).abs() <= 1.0e-12);
     assert!((origin.v - 3.0).abs() <= 1.0e-12);
     assert!(direction.u.abs() <= 1.0e-12);
-    assert!((direction.v - 2.0).abs() <= 1.0e-12);
+    assert!((direction.v - 2.0 / 6.5_f64.sqrt()).abs() <= 1.0e-12);
     assert_pcurve_matches_curve(
         &elliptical_cone,
         &elliptical_generator,
@@ -738,9 +882,14 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
         &[-3.0, 0.0, 2.0],
     );
 
-    let skew = CurveGeometry::Line {
-        origin: Point3::new(0.0, 5.0, 3.0),
-        direction: Vector3::new(0.1, 2.0, 2.0),
-    };
+    let skew = CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(
+            Point3::new(0.0, 5.0, 3.0),
+            Vector3::new(0.1, 2.0, 2.0)
+                .unit()
+                .expect("nonzero fixture direction"),
+        )
+        .expect("valid LineCurve fixture"),
+    );
     assert!(ruled_generator_line_pcurve(&cone, &skew).is_none());
 }

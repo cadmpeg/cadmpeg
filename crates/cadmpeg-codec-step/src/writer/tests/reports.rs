@@ -60,11 +60,14 @@ fn edgeless_doc() -> CadIr {
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.coedges.push(Coedge {
@@ -924,11 +927,14 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Harmonic {
-        center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-        cosine: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        sine: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-    };
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Harmonic(
+        cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+            cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        )
+        .unwrap(),
+    );
 
     let mut output = Vec::new();
     let report = write_step(
@@ -957,10 +963,13 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Transformed {
-        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        }),
+        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        )),
         transform: cadmpeg_ir::transform::Transform2::from_rows([
             [2.0, 0.0, 0.0],
             [0.0, 3.0, 0.0],
@@ -1247,10 +1256,13 @@ fn edge_without_curve_is_reported_and_omitted() {
     .unwrap();
     let curve = Curve {
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let _ = curve; // silence unused import path
@@ -1444,15 +1456,16 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model
-        .procedural_surfaces
-        .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+    ir.model.procedural_surfaces.push(
+        cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
                 components: Vec::new(),
             },
             None,
-        ));
+        )
+        .unwrap(),
+    );
 
     let report = write_step(
         &ir,
@@ -1482,12 +1495,13 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model
-        .procedural_curves
-        .push(cadmpeg_ir::geometry::ProceduralCurve::new(
+    ir.model.procedural_curves.push(
+        cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
-        ));
+        )
+        .unwrap(),
+    );
 
     let report = write_step(
         &ir,
@@ -1506,12 +1520,15 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
 #[test]
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: -2.0,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -2.0,
+        )
+        .unwrap(),
+    );
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1531,14 +1548,17 @@ fn signed_analytic_radius_normalization_is_reported() {
 #[test]
 fn elliptical_cone_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.4,
-        half_angle: 0.5,
-    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            0.4,
+            0.5,
+        )
+        .unwrap(),
+    );
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1563,14 +1583,15 @@ fn procedural_construction_reduction_is_reported() {
         ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
             .expect("identity grammar"),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-            context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
                 }),
-                parameter_range: [0.0, 1.0],
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-            },
+                [0.0, 1.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap(),
             discontinuity_flag: false,
         },
         Some(0.01),

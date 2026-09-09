@@ -54,12 +54,15 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
 fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
     cadmpeg_ir::geometry::Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.0,
-        },
+        geometry: CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        ),
         source_object: None,
     }
 }
@@ -67,11 +70,14 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
 fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: origin.into(),
-            normal: [0.0, 0.0, 1.0].into(),
-            u_axis: [1.0, 0.0, 0.0].into(),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                origin.into(),
+                [0.0, 0.0, 1.0].into(),
+                [1.0, 0.0, 0.0].into(),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     }
 }
@@ -205,12 +211,15 @@ fn counterbore_dimension_tuple_restricts_source_radii() {
 
 #[test]
 fn counterbore_source_patches_require_a_complete_carrier_pair() {
-    let carrier = SurfaceGeometry::Cylinder {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 0.3125,
-    };
+    let carrier = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.3125,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     let sources = vec![vec![10, 11], vec![30, 31]];
     let existing = BTreeMap::from([(30, carrier)]);
 
@@ -243,16 +252,24 @@ fn corner_envelopes_construct_dimensioned_source_cylinders() {
         8.0,
     )
     .expect("complete paired corner envelopes select one counterbore assignment");
-    let expected = |radius| SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 820.0, -140.0),
-        axis: Vector3::new(0.0, -1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius,
+    let expected = |radius| {
+        SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 820.0, -140.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CylinderSurface fixture"),
+        )
     };
     assert_eq!(
         geometries
             .into_iter()
-            .map(|(id, geometry)| (id, SurfaceGeometry::from(geometry)))
+            .map(|(id, geometry)| (
+                id,
+                SurfaceGeometry::try_from(geometry).expect("valid hole cylinder fixture")
+            ))
             .collect::<Vec<_>>(),
         vec![
             (2636, expected(20.0)),

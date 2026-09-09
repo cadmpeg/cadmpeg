@@ -177,38 +177,53 @@ fn inconsistent_auxiliary_count_invalidates_the_table() {
 
 #[test]
 fn analytic_surface_residuals_measure_normal_distance() {
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 2.0),
-        normal: Vector3::new(0.0, 0.0, 2.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let cylinder = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 2.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-    };
-    let sphere = SurfaceGeometry::Sphere {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.0,
-    };
-    let torus = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 5.0,
-        minor_radius: 2.0,
-    };
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let plane = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let cylinder = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+        )
+        .unwrap(),
+    );
+    let sphere = SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+        )
+        .unwrap(),
+    );
+    let torus = SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+            2.0,
+        )
+        .unwrap(),
+    );
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    );
 
     for (surface, point, displaced) in [
         (
@@ -297,7 +312,9 @@ fn add_face(
         let direction = corners[next].vector_from(origin).unit().unwrap();
         model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Line { origin, direction },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).unwrap(),
+            ),
             source_object: None,
         });
         model.edges.push(Edge {
@@ -344,11 +361,14 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
     add_face(
         model,
         name,
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         [
             Point3::new(x, -1.0, 0.0),
             Point3::new(x + 2.0, -1.0, 0.0),
@@ -427,12 +447,15 @@ fn add_cylindrical_patch_face(
         .expect("identity grammar");
     model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -464,26 +487,32 @@ fn add_cylindrical_patch_face(
         })
         .collect::<Vec<_>>();
     let curve_geometries = [
-        CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, min_z),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        },
-        CurveGeometry::Line {
-            origin: corners[1],
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        },
-        CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, max_z),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        },
-        CurveGeometry::Line {
-            origin: corners[3],
-            direction: Vector3::new(0.0, 0.0, -1.0),
-        },
+        CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, min_z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(corners[1], Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
+        ),
+        CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, max_z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        ),
+        CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(corners[3], Vector3::new(0.0, 0.0, -1.0))
+                .unwrap(),
+        ),
     ];
     for (index, geometry) in curve_geometries.into_iter().enumerate() {
         let next = (index + 1) % 4;
@@ -1019,14 +1048,17 @@ fn cylindrical_trim_accepts_quantized_points_within_boundary_tolerance() {
 #[test]
 fn cone_support_binds_display_list_face() {
     let mut model = model_with_body();
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    );
     let v = 2.0;
     let local_radius = 3.0 + v * std::f64::consts::FRAC_PI_4.tan();
     let face = add_face(
@@ -1072,14 +1104,17 @@ fn cone_support_binds_display_list_face() {
 #[test]
 fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     let mut model = model_with_body();
-    let cone = SurfaceGeometry::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 3.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let cone = SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .unwrap(),
+    );
     let axial = 2.0;
     let surface_radius = 3.0 + axial * std::f64::consts::FRAC_PI_4.tan();
     let face = add_face(
@@ -1308,11 +1343,14 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     let plane_face = add_face(
         &mut model,
         "plane-coincident",
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         corners,
     );
     {
@@ -1720,19 +1758,25 @@ fn decode_rejects_nonfinite_display_list_values() {
 #[test]
 fn planar_boundary_accepts_bounded_ellipse_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let frame = plane_frame(&surface).unwrap();
-    let curve = CurveGeometry::Ellipse {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 1.0,
-    };
+    let curve = CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+        )
+        .unwrap(),
+    );
     let (samples, boundary_tolerance) = planar_boundary_samples(
         &curve,
         Point3::new(2.0, 0.0, 0.0),
@@ -1753,18 +1797,24 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
 #[test]
 fn planar_boundary_accepts_bounded_circle_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
     let frame = plane_frame(&surface).unwrap();
-    let curve = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let curve = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
     let (samples, boundary_tolerance) = planar_boundary_samples(
         &curve,
         Point3::new(2.0, 0.0, 0.0),
@@ -1788,11 +1838,14 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     let competitor = add_face(
         &mut model,
         "arc-competitor",
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         [
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(0.0, 2.0, 0.0),
@@ -1809,12 +1862,15 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             .iter_mut()
             .find(|curve| curve.id.as_str() == curve_id)
             .unwrap()
-            .geometry = CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        };
+            .geometry = CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        );
     }
     set_shell_faces(&mut model, vec![target.clone(), competitor]);
     model.tessellations.push(

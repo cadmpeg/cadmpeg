@@ -109,11 +109,12 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
         .expect("valid source object identity"),
         1
     );
-    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } =
+    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere(sphere_surface) =
         &ir.model.surfaces[0].geometry
     else {
         panic!("zero-major positional frame must transfer as a sphere");
     };
+    let (_, _, _, radius) = sphere_surface.parts();
     assert_eq!(*radius, 2.0);
 }
 

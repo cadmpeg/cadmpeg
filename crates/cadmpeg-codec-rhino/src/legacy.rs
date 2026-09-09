@@ -1748,11 +1748,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
                         Some(pcurve_domain),
                         (trim.tolerance_2d > 0.0).then_some(trim.tolerance_2d),
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 let coedge_id: cadmpeg_ir::ids::CoedgeId = format!(
                     "rhino:object:coedge#{suffix}.face-{face_index}-{loop_index}-{trim_index}"

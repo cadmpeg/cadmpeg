@@ -184,9 +184,10 @@ pub fn cylinder_from_complementary_outline_bounds(
     plane: &SurfaceGeometry,
     bounds: [[[f64; 2]; 2]; 2],
 ) -> Option<SurfaceGeometry> {
-    let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
+    let SurfaceGeometry::Plane(plane_surface) = plane else {
         return None;
     };
+    let (origin, normal, _) = plane_surface.parts();
     let axis = normalize([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
@@ -237,12 +238,15 @@ pub fn cylinder_from_complementary_outline_bounds(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(SurfaceGeometry::Cylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        radius: 0.5 * spans[0],
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(center[0], center[1], center[2]),
+            Vector3::new(axis[0], axis[1], axis[2]),
+            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            0.5 * spans[0],
+        )
+        .ok()?,
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -253,14 +257,17 @@ pub struct HoleCylinder {
     pub radius: f64,
 }
 
-impl From<HoleCylinder> for SurfaceGeometry {
-    fn from(cylinder: HoleCylinder) -> Self {
-        Self::Cylinder {
-            origin: cylinder.origin,
-            axis: cylinder.axis,
-            ref_direction: cylinder.ref_direction,
-            radius: cylinder.radius,
-        }
+impl TryFrom<HoleCylinder> for SurfaceGeometry {
+    type Error = &'static str;
+
+    fn try_from(cylinder: HoleCylinder) -> Result<Self, Self::Error> {
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cylinder.origin,
+            cylinder.axis,
+            cylinder.ref_direction,
+            cylinder.radius,
+        )
+        .map(Self::Cylinder)
     }
 }
 

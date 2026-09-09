@@ -199,50 +199,57 @@ fn transform_surface(
     transform: Transform,
 ) -> Result<(), CodecError> {
     match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            *origin = transform.apply_point(*origin);
-            *normal = transform.apply_vector(*normal);
-            *u_axis = transform.apply_vector(*u_axis);
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
+            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
+                transform.apply_point(*origin),
+                transform.apply_vector(*normal),
+                transform.apply_vector(*u_axis),
+            )
+            .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            ..
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+            *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
+                transform.apply_point(*origin),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*ref_direction),
+                *radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        | SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            ..
-        } => {
-            *origin = transform.apply_point(*origin);
-            *axis = transform.apply_vector(*axis);
-            *ref_direction = transform.apply_vector(*ref_direction);
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (origin, axis, ref_direction, radius, ratio, half_angle) = cone_surface.parts();
+            *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+                transform.apply_point(*origin),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*ref_direction),
+                *radius,
+                *ratio,
+                *half_angle,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => {
-            *center = transform.apply_point(*center);
-            *axis = transform.apply_vector(*axis);
-            *ref_direction = transform.apply_vector(*ref_direction);
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (center, axis, ref_direction, radius) = sphere_surface.parts();
+            *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
+                transform.apply_point(*center),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*ref_direction),
+                *radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => {
-            *center = transform.apply_point(*center);
-            *axis = transform.apply_vector(*axis);
-            *ref_direction = transform.apply_vector(*ref_direction);
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (center, axis, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
+                transform.apply_point(*center),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*ref_direction),
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
             .edit_control_points(|points| {
@@ -254,9 +261,12 @@ fn transform_surface(
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
         SurfaceGeometry::Polygonal(surface) => surface
-            .vertices_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
+            .edit_vertices(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform a non-explicit surface".into(),
@@ -275,23 +285,34 @@ fn transform_surface(
 
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
-        CurveGeometry::Line { origin, direction } => {
-            *origin = transform.apply_point(*origin);
-            *direction = transform.apply_vector(*direction);
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
+            *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+                transform.apply_point(*origin),
+                transform.apply_vector(*direction),
+            )
+            .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Circle { center, axis, .. } => {
-            *center = transform.apply_point(*center);
-            *axis = transform.apply_vector(*axis);
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+                transform.apply_point(*center),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*ref_direction),
+                *radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => {
-            *center = transform.apply_point(*center);
-            *axis = transform.apply_vector(*axis);
-            *major_direction = transform.apply_vector(*major_direction);
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
+                transform.apply_point(*center),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*major_direction),
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
             .edit_control_points(|points| {
@@ -303,31 +324,39 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
         CurveGeometry::Polyline(polyline) => polyline
-            .points_mut()
-            .iter_mut()
-            .for_each(|point| *point = transform.apply_point(*point)),
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            ..
-        } => {
-            *vertex = transform.apply_point(*vertex);
-            *axis = transform.apply_vector(*axis);
-            *major_direction = transform.apply_vector(*major_direction);
+            .edit_points(|points| {
+                for point in points {
+                    *point = transform.apply_point(*point);
+                }
+            })
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                transform.apply_point(*vertex),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*major_direction),
+                *focal_distance,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => {
-            *center = transform.apply_point(*center);
-            *axis = transform.apply_vector(*axis);
-            *major_direction = transform.apply_vector(*major_direction);
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                hyperbola_curve.parts();
+            *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                transform.apply_point(*center),
+                transform.apply_vector(*axis),
+                transform.apply_vector(*major_direction),
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Degenerate { point } => {
-            *point = transform.apply_point(*point);
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (point,) = degenerate_curve.parts();
+            *degenerate_curve =
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(*point))
+                    .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Composite { .. } => {}
         CurveGeometry::Transformed {
@@ -357,5 +386,33 @@ mod tests {
             transform_curve(&mut geometry, Transform::identity()),
             Err(CodecError::NotImplemented(_))
         ));
+    }
+
+    #[test]
+    fn circle_body_rotation_transforms_the_zero_angle_direction() {
+        use cadmpeg_ir::geometry::CircleCurve;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let mut geometry = CurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        );
+        let rotation = Transform::from_rows([
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .unwrap();
+        transform_curve(&mut geometry, rotation).unwrap();
+        assert_eq!(
+            cadmpeg_ir::eval::curve_point(&geometry, 0.0),
+            Some(Point3::new(0.0, 0.0, -2.0))
+        );
     }
 }

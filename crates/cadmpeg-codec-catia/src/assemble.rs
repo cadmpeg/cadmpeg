@@ -115,7 +115,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
             let resolved = match procedural.definition() {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet { .. } => true,
+                | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     resolved_surfaces.contains(support)
                 }
@@ -136,9 +136,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         }
         for procedural in &ir.model.procedural_curves {
             let resolved = match procedural.definition() {
-                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
+                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => true,
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    context.sides.iter().all(|side| {
+                    context.sides().iter().all(|side| {
                         side.surface
                             .as_ref()
                             .is_some_and(|surface| resolved_surfaces.contains(surface))
@@ -147,7 +147,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 ProceduralCurveDefinition::SurfaceCurve { family } => {
                     let (has_side, all_resolved) = family
                         .context()
-                        .sides
+                        .sides()
                         .iter()
                         .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
                         .fold((false, true), |(_, all_resolved), (surface, _)| {
@@ -400,11 +400,11 @@ pub(crate) struct TypedCounts {
 impl TypedCounts {
     pub(crate) fn record(&mut self, g: &SurfaceGeometry) {
         match g {
-            SurfaceGeometry::Plane { .. } => self.plane += 1,
-            SurfaceGeometry::Cylinder { .. } => self.cylinder += 1,
-            SurfaceGeometry::Cone { .. } => self.cone += 1,
-            SurfaceGeometry::Sphere { .. } => self.sphere += 1,
-            SurfaceGeometry::Torus { .. } => self.torus += 1,
+            SurfaceGeometry::Plane(_) => self.plane += 1,
+            SurfaceGeometry::Cylinder(_) => self.cylinder += 1,
+            SurfaceGeometry::Cone(_) => self.cone += 1,
+            SurfaceGeometry::Sphere(_) => self.sphere += 1,
+            SurfaceGeometry::Torus(_) => self.torus += 1,
             _ => {}
         }
     }
@@ -843,11 +843,14 @@ mod route_tests {
     #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let range = circle_parameter_range_from_surface_branch(
             &surface,
             Point3::new(0.0, 0.0, 0.0),
@@ -865,11 +868,14 @@ mod route_tests {
 
     #[test]
     fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
-        let surface = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
+        let surface = SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        );
         let args = || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -982,10 +988,13 @@ mod route_tests {
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
-                geometry: CurveGeometry::Line {
-                    origin: Point3::new(0.0, 0.0, f64::from(key)),
-                    direction: Vector3::new(1.0, 0.0, 0.0),
-                },
+                geometry: CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, f64::from(key)),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .expect("valid LineCurve fixture"),
+                ),
                 source_object: None,
             });
         }
@@ -1044,7 +1053,8 @@ mod route_tests {
                         native_kind: None,
                         record: Some(record_id.clone()),
                     },
-                ),
+                )
+                .unwrap(),
             )
             .unwrap();
         let unknowns = [UnknownRecord::retained(
@@ -1098,7 +1108,8 @@ mod route_tests {
                                 .expect("identity grammar"),
                         ),
                     },
-                ),
+                )
+                .expect("valid ProceduralCurve fixture"),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1116,7 +1127,8 @@ mod route_tests {
                         ),
                     },
                     None,
-                ),
+                )
+                .expect("valid ProceduralSurface fixture"),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1138,18 +1150,23 @@ mod route_tests {
                         ),
                     },
                     None,
-                ),
+                )
+                .expect("valid ProceduralSurface fixture"),
             )
             .expect("attach construction to its fixture carrier");
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
-        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact {
-            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                ranges: [[0.0, 1.0], [0.0, 1.0]],
-                extension: 0,
-            },
-        });
+        ir.model.procedural_curves[0]
+            .replace_definition(ProceduralCurveDefinition::Exact)
+            .expect("valid replacement fixture definition");
+        ir.model.procedural_surfaces[0]
+            .replace_definition(ProceduralSurfaceDefinition::Exact {
+                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
+                },
+            })
+            .expect("valid replacement fixture definition");
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

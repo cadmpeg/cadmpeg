@@ -140,7 +140,7 @@ pub(crate) fn build_geometry_report(
             };
             Some(
                 context
-                    .sides
+                    .sides()
                     .iter()
                     .filter(|side| {
                         pcurve_requires_completion(

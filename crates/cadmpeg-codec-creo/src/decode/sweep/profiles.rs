@@ -148,11 +148,14 @@ pub(in super::super) fn forward_arc_sweep(start: f64, end: f64) -> f64 {
     }
 }
 
-pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> PcurveGeometry {
-    PcurveGeometry::Line {
-        origin: Point2::new(start[0], start[1]),
-        direction: Point2::new(end[0] - start[0], end[1] - start[1]),
-    }
+pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> Option<PcurveGeometry> {
+    Some(PcurveGeometry::Line(
+        cadmpeg_ir::geometry::LinePcurve::try_new(
+            Point2::new(start[0], start[1]),
+            Point2::new(end[0] - start[0], end[1] - start[1]),
+        )
+        .ok()?,
+    ))
 }
 
 pub(in super::super) fn circular_pcurve(
@@ -160,7 +163,7 @@ pub(in super::super) fn circular_pcurve(
     radius: f64,
     start_angle: f64,
     end_angle: f64,
-) -> PcurveGeometry {
+) -> Option<PcurveGeometry> {
     let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
         .ceil()
         .max(1.0) as usize;
@@ -196,10 +199,8 @@ pub(in super::super) fn circular_pcurve(
     }
     knots.extend([1.0; 3]);
     cadmpeg_ir::geometry::PcurveNurbs::new(2, knots, control_points, Some(weights), false)
-        .map_or_else(
-            |_| line_pcurve(center, center),
-            |nurbs| PcurveGeometry::Nurbs { nurbs },
-        )
+        .ok()
+        .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
@@ -207,7 +208,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
-) -> PcurveGeometry {
+) -> Option<PcurveGeometry> {
     match geometry.definition() {
         SketchGeometryDefinition::Arc {
             center,
@@ -226,9 +227,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve([center.u, center.v], radius.get(), start_angle, end_angle)
         }
-        SketchGeometryDefinition::Nurbs { .. } => {
-            sketch_nurbs_pcurve(geometry, reversed).unwrap_or_else(|| line_pcurve(start, end))
-        }
+        SketchGeometryDefinition::Nurbs { .. } => sketch_nurbs_pcurve(geometry, reversed),
         _ => line_pcurve(start, end),
     }
 }

@@ -3,7 +3,6 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
-use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,
@@ -37,10 +36,6 @@ fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
         message: message.into(),
         entity: Some(id.into()),
     });
-}
-
-fn finite3(point: crate::math::Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
 
 fn spatial_oriented_endpoints(
@@ -583,34 +578,17 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "spatial sketch entity references a missing spatial sketch",
             );
         }
-        match entity.geometry.definition() {
-            SpatialSketchGeometryDefinition::Point { .. }
-            | SpatialSketchGeometryDefinition::Line { .. }
-            | SpatialSketchGeometryDefinition::Circle { .. }
-            | SpatialSketchGeometryDefinition::Arc { .. }
-            | SpatialSketchGeometryDefinition::Nurbs { .. } => {}
-            SpatialSketchGeometryDefinition::NurbsSurface { surface } => {
-                if surface.u_degree() == 0
-                    || surface.v_degree() == 0
-                    || surface.u_knots().iter().any(|value| !value.is_finite())
-                    || surface.v_knots().iter().any(|value| !value.is_finite())
-                    || !knots_nondecreasing(surface.u_knots())
-                    || !knots_nondecreasing(surface.v_knots())
-                    || surface
-                        .control_points()
-                        .iter()
-                        .flatten()
-                        .any(|point| !finite3(*point))
-                {
-                    finding(
-                        findings,
-                        Check::ParameterDomain,
-                        id,
-                        "invalid spatial sketch NURBS surface",
-                    );
-                }
+        if let SpatialSketchGeometryDefinition::NurbsSurface { surface } =
+            entity.geometry.definition()
+        {
+            if surface.u_degree() == 0 || surface.v_degree() == 0 {
+                finding(
+                    findings,
+                    Check::ParameterDomain,
+                    id,
+                    "invalid spatial sketch NURBS surface",
+                );
             }
-            SpatialSketchGeometryDefinition::Native { .. } => {}
         }
     }
 

@@ -166,7 +166,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end);
+        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end).unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
@@ -605,11 +605,14 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1089,11 +1092,14 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, z),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     };
     let mut ir = CadIr::empty();
@@ -1293,11 +1299,14 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     });
 
@@ -1762,6 +1771,7 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
     );
     let mut off_axis = cylinder;
     off_axis.axis = Vector3::new(1.0, 0.0, 0.0);
+    off_axis.ref_direction = Vector3::new(0.0, 0.0, 1.0);
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None

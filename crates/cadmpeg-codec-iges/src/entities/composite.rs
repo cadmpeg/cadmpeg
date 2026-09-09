@@ -326,7 +326,7 @@ fn select_composite_edge(
             let Some(range) = edge.param_range else {
                 return false;
             };
-            if !matches!(geometry, CurveGeometry::Line { .. }) {
+            if !matches!(geometry, CurveGeometry::Line(_)) {
                 return true;
             }
             let (Some(start), Some(end)) = (
@@ -1055,7 +1055,7 @@ fn bounded_nurbs_for_id(
     let interval = edge.param_range?;
     match geometry {
         CurveGeometry::Nurbs(nurbs) => Some((trim_nurbs_to_interval(nurbs, interval)?, interval)),
-        CurveGeometry::Line { .. } => Some((
+        CurveGeometry::Line(_) => Some((
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1069,12 +1069,8 @@ fn bounded_nurbs_for_id(
             .ok()?,
             [0.0, 1.0],
         )),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
             let mut nurbs = circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?;
             anchor_analytic_nurbs_endpoint_poles(
                 &mut nurbs,
@@ -1086,13 +1082,8 @@ fn bounded_nurbs_for_id(
             )?;
             Some((nurbs, interval))
         }
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => {
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
             let mut nurbs = elliptical_arc_nurbs(
                 *center,
                 *axis,
@@ -1111,12 +1102,8 @@ fn bounded_nurbs_for_id(
             )?;
             Some((nurbs, interval))
         }
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => {
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
             let mut nurbs =
                 parabolic_arc_nurbs(*vertex, *axis, *major_direction, *focal_distance, interval)?;
             anchor_analytic_nurbs_endpoint_poles(
@@ -1308,7 +1295,7 @@ fn project_native_composite(
                 CompositeCurveTransition::Discontinuous
             },
         })
-        .collect();
+        .collect::<Vec<_>>();
     let stem = format!("D{}", entry.sequence);
     let start_point =
         PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
@@ -1347,7 +1334,7 @@ fn project_native_composite(
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Composite {
-            segments,
+            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()?,
             self_intersect: None,
         },
         source_object: Some(source_object(entry).ok()?),
@@ -1787,11 +1774,14 @@ fn project_with_type_130_policy(
             ProceduralCurve::new(
                 ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
                     .expect("identity grammar"),
-                ProceduralCurveDefinition::Compound {
-                    parameters: boundaries,
-                    components,
-                },
-            ),
+                ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        boundaries, components,
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         wire_edges.push(edge);
         decoded.insert(entry.sequence);

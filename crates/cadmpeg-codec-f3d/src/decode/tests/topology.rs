@@ -73,11 +73,8 @@ fn decode_builds_valid_topology_and_geometry() {
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir().model.surfaces[0].geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, u_axis) = plane_surface.parts();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -272,13 +269,13 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .model
         .curves
         .iter()
-        .find(|curve| matches!(curve.geometry, CurveGeometry::Degenerate { .. }))
+        .find(|curve| matches!(curve.geometry, CurveGeometry::Degenerate(_)))
         .expect("degenerate curve carrier");
     assert_eq!(
         curve.geometry,
-        CurveGeometry::Degenerate {
-            point: Point3::new(0.0, 0.0, 0.0)
-        }
+        CurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0)).unwrap()
+        )
     );
     let curve_id = curve.id.clone();
 
@@ -289,9 +286,9 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .expect("editable degenerate curve");
-    edited_curve.geometry = CurveGeometry::Degenerate {
-        point: Point3::new(2.0, 3.0, 4.0),
-    };
+    edited_curve.geometry = CurveGeometry::Degenerate(
+        cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+    );
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("degenerate curve regeneration");
@@ -300,17 +297,17 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .expect("regenerated degenerate curve decode");
     assert!(regenerated.ir().model.curves.iter().any(|curve| {
         curve.geometry
-            == CurveGeometry::Degenerate {
-                point: Point3::new(2.0, 3.0, 4.0),
-            }
+            == CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+            )
     }));
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected = CurveGeometry::Degenerate {
-        point: Point3::new(0.0, 0.0, 0.0),
-    };
+    let expected = CurveGeometry::Degenerate(
+        cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -924,12 +921,8 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(2.0),              // r1 = 2 cm
     ]);
     match decode_surface(&rec("cone", cyl)).unwrap().0 {
-        SurfaceGeometry::Cylinder {
-            radius,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SurfaceGeometry::Cylinder(cylinder_surface) => {
+            let (_, &axis, &ref_direction, &radius) = cylinder_surface.parts();
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -947,15 +940,14 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(1.0),
         Token::Double(2.0),
     ]);
-    assert!(matches!(
-        decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0,
-        SurfaceGeometry::Cone {
-            radius: 20.0,
-            ratio: 0.4,
-            half_angle: 0.0,
-            ..
-        }
-    ));
+    assert!(
+        matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SurfaceGeometry::Cone(cone_surface)
+        if {
+            (*cone_surface.parts().3 == 20.0)
+                && (*cone_surface.parts().4 == 0.4)
+                && (*cone_surface.parts().5 == 0.0)
+        })
+    );
 
     // cone with nonzero sine keeps the acute half-angle atan2(|sine|, |cosine|).
     // A both-negative sine/cosine pair has a positive slope (the radius still
@@ -974,15 +966,14 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inward) = decode_surface(&rec("cone", cone)).unwrap();
     assert!(inward, "negative cosine points the native normal inward");
     match geo {
-        SurfaceGeometry::Cone {
-            half_angle,
-            axis,
-            ref_direction,
-            ..
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (_, axis, ref_direction, _, _, half_angle) = cone_surface.parts();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected cone, got {other:?}"),
     }
@@ -1004,12 +995,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inward) = decode_surface(&rec("cone", shrinking)).unwrap();
     assert!(!inward, "positive cosine keeps the outward normal");
     match geo {
-        SurfaceGeometry::Cone {
-            half_angle,
-            axis,
-            radius,
-            ..
-        } => {
+        SurfaceGeometry::Cone(cone_surface) => {
+            let (_, axis, _, radius, _, half_angle) = cone_surface.parts();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1.0e-12);
@@ -1028,15 +1015,14 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, signed) = decode_surface(&rec("sphere", sph)).unwrap();
     assert!(!signed);
     match geo {
-        SurfaceGeometry::Sphere {
-            radius,
-            axis,
-            ref_direction,
-            ..
-        } => {
-            assert_eq!(radius, -10.0);
-            assert_eq!(axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+        SurfaceGeometry::Sphere(sphere_surface) => {
+            let (_, axis, ref_direction, radius) = sphere_surface.parts();
+            assert_eq!(*radius, -10.0);
+            assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected sphere, got {other:?}"),
     }
@@ -1053,15 +1039,14 @@ fn analytic_carrier_decode_covers_each_shape() {
     let (geo, inside_out) = decode_surface(&rec("torus", tor)).unwrap();
     assert!(!inside_out);
     match geo {
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ref_direction,
-            ..
-        } => {
-            assert_eq!(major_radius, 10.0);
-            assert_eq!(minor_radius, -20.0);
-            assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+        SurfaceGeometry::Torus(torus_surface) => {
+            let (_, _, ref_direction, major_radius, minor_radius) = torus_surface.parts();
+            assert_eq!(*major_radius, 10.0);
+            assert_eq!(*minor_radius, -20.0);
+            assert_eq!(
+                *ref_direction,
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            );
         }
         other => panic!("expected torus, got {other:?}"),
     }
@@ -1075,7 +1060,10 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(1.0),
     ]);
     match decode_curve(&rec("ellipse", circ)).unwrap() {
-        CurveGeometry::Circle { radius, .. } => assert_eq!(radius, 30.0),
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, _, _, radius) = circle_curve.parts();
+            assert_eq!(*radius, 30.0)
+        }
         other => panic!("expected circle, got {other:?}"),
     }
 
@@ -1088,13 +1076,10 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Double(0.5),
     ]);
     match decode_curve(&rec("ellipse", ell)).unwrap() {
-        CurveGeometry::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            assert_eq!(major_radius, 40.0);
-            assert_eq!(minor_radius, 20.0);
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
+            assert_eq!(*major_radius, 40.0);
+            assert_eq!(*minor_radius, 20.0);
         }
         other => panic!("expected ellipse, got {other:?}"),
     }
@@ -1106,7 +1091,8 @@ fn analytic_carrier_decode_covers_each_shape() {
         Token::Vector3([0.0, 1.0, 0.0]),
     ]);
     match decode_curve(&rec("straight", line)).unwrap() {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             assert_eq!(origin.x, 10.0);
             assert_eq!(direction.y, 1.0);
         }

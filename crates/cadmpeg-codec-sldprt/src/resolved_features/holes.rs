@@ -1776,144 +1776,128 @@ pub(crate) fn project_spatial_hole_position_sketches(
             else {
                 break 'feature_edit;
             };
-            shape
-                .try_edit(|_, _, selected_diameter| {
-                    let Some(diameter) = selected_diameter else {
-                        return;
-                    };
-                    let diameter = diameter.get();
+            let Some(diameter) = shape.diameter() else {
+                break 'feature_edit;
+            };
+            let diameter = diameter.get();
 
-                    if placements.is_some() || !diameter.is_finite() || diameter <= 0.0 {
-                        return;
-                    }
-                    let Some(native) = feature
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| native_features.get(native).copied())
-                    else {
-                        return;
-                    };
-                    let Some(position_feature) = hole_position_feature(native, histories, lanes)
-                    else {
-                        return;
-                    };
-                    let Some(sketch_id) = model_sketches.get(position_feature.id.as_str()) else {
-                        return;
-                    };
-                    let Some(sketch) = spatial_sketches
-                        .iter()
-                        .find(|sketch| sketch.id == *sketch_id)
-                    else {
-                        return;
-                    };
-                    let authored_markers = lanes
-                        .iter()
-                        .filter(|lane| lane.configuration == sketch.configuration)
-                        .flat_map(|lane| &lane.sketch_entities)
-                        .filter(|marker| {
-                            marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                                && marker.object_index.is_some()
-                        })
-                        .collect::<Vec<_>>();
-                    let radius = diameter * 0.5;
-                    let radius_tolerance =
-                        (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-                    let axis_tolerance_squared = EPS_HOLE_EXACT_GEOMETRY;
-                    let mut resolved = Vec::with_capacity(authored_markers.len());
-                    let mut ambiguous = false;
-                    for marker in &authored_markers {
-                        let mut points = spatial_entities.iter().filter_map(|entity| {
-                            (entity.sketch == *sketch_id
-                                && entity.native_ref.as_deref() == Some(marker.id.as_str()))
-                            .then_some(&entity.geometry)
-                            .and_then(|geometry| match geometry.definition() {
-                                SpatialSketchGeometryDefinition::Point { position } => {
-                                    Some(*position)
-                                }
-                                _ => None,
-                            })
-                        });
-                        let Some(point) = points.next() else {
-                            continue;
-                        };
-                        if points.next().is_some() {
-                            ambiguous = true;
-                            break;
-                        }
-                        let mut axes = surfaces
-                            .iter()
-                            .filter_map(|surface| match &surface.geometry {
-                                SurfaceGeometry::Cylinder {
-                                    origin,
-                                    axis,
-                                    radius: candidate,
-                                    ..
-                                } if (*candidate - radius).abs() <= radius_tolerance
-                                    && point_axis_distance_squared(point, *origin, *axis)
-                                        <= axis_tolerance_squared =>
-                                {
-                                    Some((*origin, *axis))
-                                }
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        if axes.is_empty() {
-                            let mut support_axes = surfaces
-                                .iter()
-                                .filter_map(|surface| cylindrical_support_normal(surface, point))
-                                .map(canonical_axis)
-                                .collect::<Vec<_>>();
-                            support_axes.sort_by_key(|axis| {
-                                [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]
-                            });
-                            support_axes.dedup_by(|left, right| {
-                                left.dot(*right) >= 1.0 - EPS_HOLE_GEOMETRY
-                            });
-                            if let [axis] = support_axes.as_slice() {
-                                axes.push((point, *axis));
-                            }
-                        }
-                        let Some(axes) = carrier_placements(axes) else {
-                            continue;
-                        };
-                        let [placement] = axes.as_slice() else {
-                            ambiguous = true;
-                            break;
-                        };
-                        resolved.push(placement.clone());
-                    }
-                    if resolved.is_empty() && !ambiguous {
-                        let points = spatial_entities
-                            .iter()
-                            .filter(|entity| entity.sketch == *sketch_id)
-                            .filter_map(|entity| match entity.geometry.definition() {
-                                SpatialSketchGeometryDefinition::Point { position } => {
-                                    Some(*position)
-                                }
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        if let Some(inferred) = coplanar_spatial_position_placements(&points) {
-                            resolved = inferred;
-                        }
-                    }
-                    resolved.sort_by_key(|placement| match placement {
-                        HolePlacement::Axis { origin, axis } => [
-                            origin.x.to_bits(),
-                            origin.y.to_bits(),
-                            origin.z.to_bits(),
-                            axis.x.to_bits(),
-                            axis.y.to_bits(),
-                            axis.z.to_bits(),
-                        ],
-                        HolePlacement::Directed { .. } => [0; 6],
-                    });
-                    resolved.dedup();
-                    if !ambiguous && !resolved.is_empty() {
-                        *placements = Some(resolved);
-                    }
+            if placements.is_some() {
+                break 'feature_edit;
+            }
+            let Some(native) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| native_features.get(native).copied())
+            else {
+                break 'feature_edit;
+            };
+            let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+                break 'feature_edit;
+            };
+            let Some(sketch_id) = model_sketches.get(position_feature.id.as_str()) else {
+                break 'feature_edit;
+            };
+            let Some(sketch) = spatial_sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+            else {
+                break 'feature_edit;
+            };
+            let authored_markers = lanes
+                .iter()
+                .filter(|lane| lane.configuration == sketch.configuration)
+                .flat_map(|lane| &lane.sketch_entities)
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
+                        && marker.object_index.is_some()
                 })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                .collect::<Vec<_>>();
+            let radius = diameter * 0.5;
+            let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+            let axis_tolerance_squared = EPS_HOLE_EXACT_GEOMETRY;
+            let mut resolved = Vec::with_capacity(authored_markers.len());
+            let mut ambiguous = false;
+            for marker in &authored_markers {
+                let mut points = spatial_entities.iter().filter_map(|entity| {
+                    (entity.sketch == *sketch_id
+                        && entity.native_ref.as_deref() == Some(marker.id.as_str()))
+                    .then_some(&entity.geometry)
+                    .and_then(|geometry| match geometry.definition() {
+                        SpatialSketchGeometryDefinition::Point { position } => Some(*position),
+                        _ => None,
+                    })
+                });
+                let Some(point) = points.next() else {
+                    continue;
+                };
+                if points.next().is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                let mut axes = surfaces
+                    .iter()
+                    .filter_map(|surface| match &surface.geometry {
+                        SurfaceGeometry::Cylinder(cylinder_surface) => {
+                            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
+                            ((candidate - radius).abs() <= radius_tolerance
+                                && point_axis_distance_squared(point, origin, axis)
+                                    <= axis_tolerance_squared)
+                                .then_some((origin, axis))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                if axes.is_empty() {
+                    let mut support_axes = surfaces
+                        .iter()
+                        .filter_map(|surface| cylindrical_support_normal(surface, point))
+                        .map(canonical_axis)
+                        .collect::<Vec<_>>();
+                    support_axes
+                        .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
+                    support_axes
+                        .dedup_by(|left, right| left.dot(*right) >= 1.0 - EPS_HOLE_GEOMETRY);
+                    if let [axis] = support_axes.as_slice() {
+                        axes.push((point, *axis));
+                    }
+                }
+                let Some(axes) = carrier_placements(axes) else {
+                    continue;
+                };
+                let [placement] = axes.as_slice() else {
+                    ambiguous = true;
+                    break;
+                };
+                resolved.push(placement.clone());
+            }
+            if resolved.is_empty() && !ambiguous {
+                let points = spatial_entities
+                    .iter()
+                    .filter(|entity| entity.sketch == *sketch_id)
+                    .filter_map(|entity| match entity.geometry.definition() {
+                        SpatialSketchGeometryDefinition::Point { position } => Some(*position),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(inferred) = coplanar_spatial_position_placements(&points) {
+                    resolved = inferred;
+                }
+            }
+            resolved.sort_by_key(|placement| match placement {
+                HolePlacement::Axis { origin, axis } => [
+                    origin.x.to_bits(),
+                    origin.y.to_bits(),
+                    origin.z.to_bits(),
+                    axis.x.to_bits(),
+                    axis.y.to_bits(),
+                    axis.z.to_bits(),
+                ],
+                HolePlacement::Directed { .. } => [0; 6],
+            });
+            resolved.dedup();
+            if !ambiguous && !resolved.is_empty() {
+                *placements = Some(resolved);
+            }
         }
         feature
             .evaluation
@@ -2040,126 +2024,116 @@ pub(crate) fn project_generated_hole_axes(
             else {
                 break 'feature_edit;
             };
-            shape
-                .try_edit(|_, _, selected_diameter| {
-                    let Some(diameter) = selected_diameter else {
-                        return;
-                    };
-                    let diameter = diameter.get();
+            let Some(diameter) = shape.diameter() else {
+                break 'feature_edit;
+            };
+            let diameter = diameter.get();
 
-                    if placements.is_some() {
-                        return;
+            if placements.is_some() {
+                break 'feature_edit;
+            }
+            let Some(source) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| native_features.get(native))
+                .and_then(|native| native.source_id.as_deref())
+                .and_then(|source| source.parse::<u32>().ok())
+                .and_then(|source| FeatureSourceId::try_from(source).ok())
+            else {
+                break 'feature_edit;
+            };
+            let radius = diameter * 0.5;
+            let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+            let mut lane_solutions = Vec::new();
+            for lane in lanes {
+                let local_identities = lane
+                    .generated_surface_identities
+                    .iter()
+                    .filter(|identity| identity.feature_source_id == source.value())
+                    .map(|identity| identity.local_identity)
+                    .collect::<HashSet<_>>();
+                if local_identities.is_empty() {
+                    continue;
+                }
+                let mut axes = HashMap::<[i64; 6], HolePlacement>::new();
+                for (face, identity) in face_identities {
+                    if identity.feature_source_id != source
+                        || !local_identities.contains(&identity.local_id)
+                    {
+                        continue;
                     }
-                    let Some(source) = feature
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| native_features.get(native))
-                        .and_then(|native| native.source_id.as_deref())
-                        .and_then(|source| source.parse::<u32>().ok())
-                        .and_then(|source| FeatureSourceId::try_from(source).ok())
+                    let Some(surface) = faces_by_id
+                        .get(face.as_str())
+                        .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
                     else {
-                        return;
+                        continue;
                     };
-                    let radius = diameter * 0.5;
-                    let radius_tolerance =
-                        (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-                    let mut lane_solutions = Vec::new();
-                    for lane in lanes {
-                        let local_identities = lane
-                            .generated_surface_identities
-                            .iter()
-                            .filter(|identity| identity.feature_source_id == source.value())
-                            .map(|identity| identity.local_identity)
-                            .collect::<HashSet<_>>();
-                        if local_identities.is_empty() {
-                            continue;
-                        }
-                        let mut axes = HashMap::<[i64; 6], HolePlacement>::new();
-                        for (face, identity) in face_identities {
-                            if identity.feature_source_id != source
-                                || !local_identities.contains(&identity.local_id)
-                            {
-                                continue;
-                            }
-                            let Some(surface) = faces_by_id
-                                .get(face.as_str())
-                                .and_then(|face| surfaces_by_id.get(face.surface.as_str()))
-                            else {
-                                continue;
-                            };
-                            let SurfaceGeometry::Cylinder {
-                                origin,
-                                axis,
-                                radius: candidate_radius,
-                                ..
-                            } = surface.geometry
-                            else {
-                                continue;
-                            };
-                            if (candidate_radius - radius).abs() > radius_tolerance {
-                                continue;
-                            }
-                            let axis = canonical_axis(axis);
-                            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
-                            let closest = Point3::new(
-                                origin.x - station * axis.x,
-                                origin.y - station * axis.y,
-                                origin.z - station * axis.z,
-                            );
-                            let (Some(closest), Some(axis)) = (
-                                cadmpeg_ir::features::FinitePoint3::new(closest),
-                                cadmpeg_ir::features::FeatureDirection3::new(axis),
-                            ) else {
-                                axes.clear();
-                                break;
-                            };
-                            axes.entry([
-                                quantize(closest.x),
-                                quantize(closest.y),
-                                quantize(closest.z),
-                                quantize(axis.x),
-                                quantize(axis.y),
-                                quantize(axis.z),
-                            ])
-                            .or_insert(HolePlacement::Axis {
-                                origin: closest,
-                                axis,
-                            });
-                        }
-                        if axes.is_empty() {
-                            continue;
-                        }
-                        let mut solution = axes.into_iter().collect::<Vec<_>>();
-                        solution.sort_by_key(|(key, _)| *key);
-                        lane_solutions.push(
-                            solution
-                                .into_iter()
-                                .map(|(_, placement)| placement)
-                                .collect::<Vec<_>>(),
-                        );
+                    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
+                        continue;
+                    };
+                    let (&origin, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    if (candidate_radius - radius).abs() > radius_tolerance {
+                        continue;
                     }
-                    lane_solutions.sort_by_key(|solution| {
-                        solution
-                            .iter()
-                            .map(|placement| match placement {
-                                HolePlacement::Axis { origin, axis } => [
-                                    quantize(origin.x),
-                                    quantize(origin.y),
-                                    quantize(origin.z),
-                                    quantize(axis.x),
-                                    quantize(axis.y),
-                                    quantize(axis.z),
-                                ],
-                                HolePlacement::Directed { .. } => [0; 6],
-                            })
-                            .collect::<Vec<_>>()
+                    let axis = canonical_axis(axis);
+                    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
+                    let closest = Point3::new(
+                        origin.x - station * axis.x,
+                        origin.y - station * axis.y,
+                        origin.z - station * axis.z,
+                    );
+                    let (Some(closest), Some(axis)) = (
+                        cadmpeg_ir::features::FinitePoint3::new(closest),
+                        cadmpeg_ir::features::FeatureDirection3::new(axis),
+                    ) else {
+                        axes.clear();
+                        break;
+                    };
+                    axes.entry([
+                        quantize(closest.x),
+                        quantize(closest.y),
+                        quantize(closest.z),
+                        quantize(axis.x),
+                        quantize(axis.y),
+                        quantize(axis.z),
+                    ])
+                    .or_insert(HolePlacement::Axis {
+                        origin: closest,
+                        axis,
                     });
-                    lane_solutions.dedup();
-                    if let [solution] = lane_solutions.as_slice() {
-                        *placements = Some(solution.clone());
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                }
+                if axes.is_empty() {
+                    continue;
+                }
+                let mut solution = axes.into_iter().collect::<Vec<_>>();
+                solution.sort_by_key(|(key, _)| *key);
+                lane_solutions.push(
+                    solution
+                        .into_iter()
+                        .map(|(_, placement)| placement)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            lane_solutions.sort_by_key(|solution| {
+                solution
+                    .iter()
+                    .map(|placement| match placement {
+                        HolePlacement::Axis { origin, axis } => [
+                            quantize(origin.x),
+                            quantize(origin.y),
+                            quantize(origin.z),
+                            quantize(axis.x),
+                            quantize(axis.y),
+                            quantize(axis.z),
+                        ],
+                        HolePlacement::Directed { .. } => [0; 6],
+                    })
+                    .collect::<Vec<_>>()
+            });
+            lane_solutions.dedup();
+            if let [solution] = lane_solutions.as_slice() {
+                *placements = Some(solution.clone());
+            }
         }
         feature
             .evaluation
@@ -2439,17 +2413,15 @@ fn drilled_hole_topology_candidates(
     let cone_keys = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cone {
-                origin,
-                axis,
-                radius: candidate_radius,
-                ratio,
-                half_angle,
-                ..
-            } if (candidate_radius - radius).abs() <= radius_tolerance
-                && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
-                && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY =>
+            SurfaceGeometry::Cone(cone_surface)
+                if {
+                    let (_, _, _, &candidate_radius, &ratio, &half_angle) = cone_surface.parts();
+                    (candidate_radius - radius).abs() <= radius_tolerance
+                        && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
+                        && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY
+                } =>
             {
+                let (&origin, &axis, _, _, _, _) = cone_surface.parts();
                 hole_axis_key(&HolePlacement::Axis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
                     axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
@@ -2519,12 +2491,7 @@ fn expand_seeded_drilled_hole_topology_axes(
             continue;
         };
         if placements.is_empty()
-            || !diameter.is_finite()
-            || diameter <= 0.0
-            || !length.is_finite()
             || length <= 0.0
-            || !drill_point_angle.is_finite()
-            || drill_point_angle <= 0.0
             || (bottom_angle - drill_point_angle).abs() > EPS_HOLE_GEOMETRY
         {
             continue;
@@ -2754,13 +2721,6 @@ fn counterbore_topology_candidates(
     let diameter = diameter.get();
     let counterbore_diameter = counterbore_diameter.get();
 
-    if !diameter.is_finite()
-        || diameter <= 0.0
-        || !counterbore_diameter.is_finite()
-        || counterbore_diameter <= diameter
-    {
-        return None;
-    }
     let primary = cylindrical_surface_placements(diameter * 0.5, topology.surfaces)?;
     let counterbores =
         cylindrical_surface_placements(counterbore_diameter * 0.5, topology.surfaces)?;
@@ -2842,18 +2802,10 @@ fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
 }
 
 fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector3> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        radius,
-        ..
-    } = surface.geometry
-    else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
         return None;
     };
-    if !radius.is_finite() || radius <= 0.0 {
-        return None;
-    }
+    let (&origin, &axis, _, &radius) = cylinder_surface.parts();
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     let along = delta.dot(axis);
     let radial = Vector3::new(
@@ -3069,121 +3021,113 @@ pub(crate) fn project_hole_axes(
             else {
                 break 'feature_edit;
             };
-            shape
-                .try_edit(|_, _, selected_diameter| {
-                    let Some(diameter) = selected_diameter else {
-                        return;
-                    };
-                    let diameter = diameter.get();
+            let Some(diameter) = shape.diameter() else {
+                break 'feature_edit;
+            };
+            let diameter = diameter.get();
 
-                    if placements.is_some() || !diameter.is_finite() || diameter <= 0.0 {
-                        return;
-                    }
-                    let radius = diameter / 2.0;
-                    let Some(native_feature) = feature
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| native_features.get(native).copied())
-                    else {
-                        return;
+            if placements.is_some() {
+                break 'feature_edit;
+            }
+            let radius = diameter / 2.0;
+            let Some(native_feature) = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| native_features.get(native).copied())
+            else {
+                break 'feature_edit;
+            };
+            let Some(position_feature) = hole_positions.get(native_feature.id.as_str()).copied()
+            else {
+                break 'feature_edit;
+            };
+            let mut frames = lanes.iter().filter_map(|lane| {
+                feature_frames
+                    .get(&(lane.id.as_str(), position_feature.id.as_str()))
+                    .copied()
+            });
+            if hole_diameter_counts.get(&diameter.to_bits()) == Some(&1) {
+                if let Some(frame) = frames.next() {
+                    let same_frame = |candidate: (Point3, Vector3, Vector3)| {
+                        frame.1.dot(candidate.1).abs() >= 1.0 - EPS_HOLE_GEOMETRY
+                            && Vector3::new(
+                                candidate.0.x - frame.0.x,
+                                candidate.0.y - frame.0.y,
+                                candidate.0.z - frame.0.z,
+                            )
+                            .dot(frame.1)
+                            .abs()
+                                <= EPS_HOLE_POSITION
                     };
-                    let Some(position_feature) =
-                        hole_positions.get(native_feature.id.as_str()).copied()
-                    else {
-                        return;
-                    };
-                    let mut frames = lanes.iter().filter_map(|lane| {
-                        feature_frames
-                            .get(&(lane.id.as_str(), position_feature.id.as_str()))
-                            .copied()
-                    });
-                    if hole_diameter_counts.get(&diameter.to_bits()) == Some(&1) {
-                        if let Some(frame) = frames.next() {
-                            let same_frame = |candidate: (Point3, Vector3, Vector3)| {
-                                frame.1.dot(candidate.1).abs() >= 1.0 - EPS_HOLE_GEOMETRY
-                                    && Vector3::new(
-                                        candidate.0.x - frame.0.x,
-                                        candidate.0.y - frame.0.y,
-                                        candidate.0.z - frame.0.z,
-                                    )
-                                    .dot(frame.1)
-                                    .abs()
-                                        <= EPS_HOLE_POSITION
-                            };
-                            if frames.all(same_frame) {
-                                if let Some(bore_placements) =
-                                    plane_owned_bore_placements(frame.0, frame.1, radius, topology)
-                                {
-                                    *placements = Some(bore_placements);
-                                    return;
-                                }
-                            }
-                        }
-                        if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
-                            *placements = Some(bore_placements);
-                            return;
-                        }
-                    }
-                    let mut solutions = Vec::new();
-                    for lane in lanes {
-                        let Some(&frame) =
-                            feature_frames.get(&(lane.id.as_str(), position_feature.id.as_str()))
-                        else {
-                            continue;
-                        };
-                        let relations =
-                            compact_position_relations(lane, position_feature.id.as_str());
-                        if relations.is_empty() {
-                            continue;
-                        }
-                        if let Some(solution) =
-                            constrained_bore_axes(frame, radius, surfaces, &relations)
+                    if frames.all(same_frame) {
+                        if let Some(bore_placements) =
+                            plane_owned_bore_placements(frame.0, frame.1, radius, topology)
                         {
-                            solutions.push(solution);
+                            *placements = Some(bore_placements);
+                            break 'feature_edit;
                         }
                     }
-                    if solutions.is_empty() {
-                        for lane in lanes {
-                            let temporary_axis = feature_ranges
-                                .get(lane.id.as_str())
-                                .and_then(|ranges| ranges.get(position_feature.id.as_str()))
-                                .and_then(|(_, start, end)| {
-                                    hole_temporary_axis(&lane.native_payload, *start, *end)
-                                })
-                                .map(|(_, direction)| direction);
-                            if let Some(solution) = marker_pattern_bore_axes(
-                                lane,
-                                position_feature.id.as_str(),
-                                radius,
-                                surfaces,
-                                temporary_axis,
-                            ) {
-                                solutions.push(solution);
-                            }
-                        }
+                }
+                if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
+                    *placements = Some(bore_placements);
+                    break 'feature_edit;
+                }
+            }
+            let mut solutions = Vec::new();
+            for lane in lanes {
+                let Some(&frame) =
+                    feature_frames.get(&(lane.id.as_str(), position_feature.id.as_str()))
+                else {
+                    continue;
+                };
+                let relations = compact_position_relations(lane, position_feature.id.as_str());
+                if relations.is_empty() {
+                    continue;
+                }
+                if let Some(solution) = constrained_bore_axes(frame, radius, surfaces, &relations) {
+                    solutions.push(solution);
+                }
+            }
+            if solutions.is_empty() {
+                for lane in lanes {
+                    let temporary_axis = feature_ranges
+                        .get(lane.id.as_str())
+                        .and_then(|ranges| ranges.get(position_feature.id.as_str()))
+                        .and_then(|(_, start, end)| {
+                            hole_temporary_axis(&lane.native_payload, *start, *end)
+                        })
+                        .map(|(_, direction)| direction);
+                    if let Some(solution) = marker_pattern_bore_axes(
+                        lane,
+                        position_feature.id.as_str(),
+                        radius,
+                        surfaces,
+                        temporary_axis,
+                    ) {
+                        solutions.push(solution);
                     }
-                    solutions.sort_by_key(|placements| {
-                        placements
-                            .iter()
-                            .map(|placement| match placement {
-                                HolePlacement::Axis { origin, axis } => [
-                                    origin.x.to_bits(),
-                                    origin.y.to_bits(),
-                                    origin.z.to_bits(),
-                                    axis.x.to_bits(),
-                                    axis.y.to_bits(),
-                                    axis.z.to_bits(),
-                                ],
-                                HolePlacement::Directed { .. } => [0; 6],
-                            })
-                            .collect::<Vec<_>>()
-                    });
-                    solutions.dedup();
-                    if let [solution] = solutions.as_slice() {
-                        *placements = Some(solution.clone());
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                }
+            }
+            solutions.sort_by_key(|placements| {
+                placements
+                    .iter()
+                    .map(|placement| match placement {
+                        HolePlacement::Axis { origin, axis } => [
+                            origin.x.to_bits(),
+                            origin.y.to_bits(),
+                            origin.z.to_bits(),
+                            axis.x.to_bits(),
+                            axis.y.to_bits(),
+                            axis.z.to_bits(),
+                        ],
+                        HolePlacement::Directed { .. } => [0; 6],
+                    })
+                    .collect::<Vec<_>>()
+            });
+            solutions.dedup();
+            if let [solution] = solutions.as_slice() {
+                *placements = Some(solution.clone());
+            }
         }
         feature
             .evaluation
@@ -3206,15 +3150,11 @@ fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point
         .iter()
         .filter(|face| face.sense == Sense::Reversed)
         .filter_map(|face| {
-            let SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius: candidate,
-                ..
-            } = surfaces.get(&face.surface)?.geometry
+            let SurfaceGeometry::Cylinder(cylinder_surface) = surfaces.get(&face.surface)?.geometry
             else {
                 return None;
             };
+            let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
             ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
         })
         .collect::<Vec<_>>();
@@ -3292,15 +3232,10 @@ fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<V
 fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<Vec<HolePlacement>> {
     let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     carrier_placements(surfaces.iter().filter_map(|surface| {
-        let SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius: candidate,
-            ..
-        } = surface.geometry
-        else {
+        let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             return None;
         };
+        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
         ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
     }))
 }
@@ -3384,15 +3319,10 @@ fn cylindrical_bore_face_spans(
         .iter()
         .filter_map(|face| {
             let surface = surfaces.get(&face.surface)?;
-            let SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius,
-                ..
-            } = surface.geometry
-            else {
+            let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
                 return None;
             };
+            let (&origin, &axis, _, &radius) = cylinder_surface.parts();
             let mut stations = face
                 .loops
                 .iter()
@@ -3422,7 +3352,7 @@ fn cylindrical_bore_face_spans(
                     (minimum.min(station), maximum.max(station))
                 });
             let span = maximum - minimum;
-            (radius.is_finite() && radius > 0.0 && span.is_finite() && span > 0.0).then_some((
+            (span.is_finite() && span > 0.0).then_some((
                 origin,
                 axis,
                 radius,
@@ -3625,18 +3555,23 @@ pub(crate) fn project_bore_backed_position_sketches(
         let mut frames = surfaces
             .iter()
             .filter_map(|surface| match surface.geometry {
-                SurfaceGeometry::Plane {
-                    origin,
-                    normal,
-                    u_axis,
-                } if normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
-                    && axes.iter().all(|(point, _)| {
-                        Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
-                            .dot(normal)
-                            .abs()
-                            <= EPS_HOLE_POSITION
-                    }) =>
+                SurfaceGeometry::Plane(plane_surface)
+                    if {
+                        let (&origin, &normal, _) = plane_surface.parts();
+                        normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
+                            && axes.iter().all(|(point, _)| {
+                                Vector3::new(
+                                    point.x - origin.x,
+                                    point.y - origin.y,
+                                    point.z - origin.z,
+                                )
+                                .dot(normal)
+                                .abs()
+                                    <= EPS_HOLE_POSITION
+                            })
+                    } =>
                 {
+                    let (&origin, &normal, &u_axis) = plane_surface.parts();
                     Some((origin, normal, u_axis))
                 }
                 _ => None,
@@ -3829,15 +3764,10 @@ fn match_marker_loci_to_bore_axes(
     let quantize_scalar = |value: f64| (value / QUANTUM).round() as i64;
     let mut grouped = HashMap::<[i64; 3], HashMap<[i64; 3], Vec<(Point3, Vector3)>>>::new();
     for surface in surfaces {
-        let SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius: candidate,
-            ..
-        } = surface.geometry
-        else {
+        let SurfaceGeometry::Cylinder(cylinder_surface) = surface.geometry else {
             continue;
         };
+        let (&origin, &axis, _, &candidate) = cylinder_surface.parts();
         if (candidate - radius).abs() > radius_tolerance {
             continue;
         }
@@ -4389,14 +4319,14 @@ fn constrained_bore_axes(
     let mut axes = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Cylinder {
-                origin: candidate,
-                axis,
-                radius: candidate_radius,
-                ..
-            } if (candidate_radius - radius).abs() <= radius_tolerance
-                && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY =>
+            SurfaceGeometry::Cylinder(cylinder_surface)
+                if {
+                    let (_, &axis, _, &candidate_radius) = cylinder_surface.parts();
+                    (candidate_radius - radius).abs() <= radius_tolerance
+                        && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY
+                } =>
             {
+                let (&candidate, _, _, _) = cylinder_surface.parts();
                 let delta = Vector3::new(
                     candidate.x - origin.x,
                     candidate.y - origin.y,

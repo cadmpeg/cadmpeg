@@ -398,12 +398,15 @@ fn closed_component_counts_two_uses_of_one_face() {
 
 #[test]
 fn native_parameter_loops_order_non_planar_cylindrical_face() {
-    let surface = SurfaceGeometry::Cylinder {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let surface = SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CylinderSurface fixture"),
+    );
     let make_loop = |first_curve| crate::topology::Loop {
         face_id: std::num::NonZeroU32::new(5),
         half_edges: (0_u32..4)
@@ -482,11 +485,14 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
 
 #[test]
 fn native_parameter_loops_admit_proven_two_edge_circles() {
-    let surface = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
+    let surface = SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    );
     let outer = crate::topology::Loop {
         face_id: std::num::NonZeroU32::new(5),
         half_edges: [10_u32, 11]
@@ -538,12 +544,15 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
     ]);
     let circle = |id, radius| Curve {
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
-        geometry: CurveGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius,
-        },
+        geometry: CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        ),
         source_object: None,
     };
     let model_curves = vec![
@@ -722,11 +731,14 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     });
     for (id, origin, direction) in [
@@ -740,7 +752,13 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ] {
         let curve = Curve {
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
-            geometry: CurveGeometry::Line { origin, direction },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    origin,
+                    direction.unit().expect("valid LineCurve fixture"),
+                )
+                .expect("valid LineCurve fixture"),
+            ),
             source_object: None,
         };
         ir.model.curves.extend([curve.clone(), curve]);
@@ -810,20 +828,26 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     }
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        ),
         source_object: None,
     });
 

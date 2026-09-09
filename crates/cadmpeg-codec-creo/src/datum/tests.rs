@@ -17,6 +17,8 @@ fn ieee8(value: f64) -> Vec<u8> {
     raw[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
     raw.to_vec()
 }
+const EPS_DATUM_RADIUS: f64 = 1.0e-12;
+
 #[test]
 fn decodes_constant_outline_coordinate_as_a_model_plane() {
     let mut data = b"srf_array\0\xf8\x01".to_vec();
@@ -507,10 +509,13 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
         .expect("active datum cylinder surface");
-    assert!(matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1.0e-12
-    ));
+    assert!(
+        matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)
+        if {
+            let (_, _, _, radius) = cylinder_surface.parts();
+            (radius - 0.75).abs() < EPS_DATUM_RADIUS
+        })
+    );
     assert_eq!(
         surface
             .source_object

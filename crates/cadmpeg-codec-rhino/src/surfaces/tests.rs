@@ -284,14 +284,18 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
     )
     .expect("clipping plane");
     let DecodedSurface::Typed {
-        geometry: TypedSurface::Plane { origin, .. },
+        geometry: TypedSurface::Plane {
+            plane: plane_surface,
+            ..
+        },
         derived,
         ..
     } = decoded
     else {
         panic!("typed plane carrier");
     };
-    assert_eq!(origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
+    let (origin, _, _) = plane_surface.parts();
+    assert_eq!(*origin, Point3::new(25.4, 50.8, 76.199_999_999_999_99));
     assert!(derived);
 
     let invalid = clipping_plane_payload(false);

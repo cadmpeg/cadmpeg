@@ -242,13 +242,21 @@ pub(super) fn project(
                     raw_start_parameter
                 };
                 (sweep > 0.0).then_some((
-                    CurveGeometry::Ellipse {
-                        center: plane_origin,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    },
+                    CurveGeometry::Ellipse(
+                        match cadmpeg_ir::geometry::EllipseCurve::try_new(
+                            plane_origin,
+                            axis,
+                            major_direction,
+                            major_radius,
+                            minor_radius,
+                        ) {
+                            Ok(payload) => payload,
+                            Err(message) => {
+                                losses.push(entity_loss(entry, message));
+                                continue;
+                            }
+                        },
+                    ),
                     [start_parameter, start_parameter + sweep],
                 ))
             }
@@ -296,13 +304,21 @@ pub(super) fn project(
                     end_parameter = parameter(end, axis);
                 }
                 (end_parameter > start_parameter).then_some((
-                    CurveGeometry::Hyperbola {
-                        center: plane_origin,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    },
+                    CurveGeometry::Hyperbola(
+                        match cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                            plane_origin,
+                            axis,
+                            major_direction,
+                            major_radius,
+                            minor_radius,
+                        ) {
+                            Ok(payload) => payload,
+                            Err(message) => {
+                                losses.push(entity_loss(entry, message));
+                                continue;
+                            }
+                        },
+                    ),
                     [start_parameter, end_parameter],
                 ))
             }
@@ -329,12 +345,20 @@ pub(super) fn project(
                 end_parameter = parameter(end, axis);
             }
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola {
-                    vertex: plane_origin,
-                    axis,
-                    major_direction,
-                    focal_distance,
-                },
+                CurveGeometry::Parabola(
+                    match cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                        plane_origin,
+                        axis,
+                        major_direction,
+                        focal_distance,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                ),
                 [start_parameter, end_parameter],
             ))
         } else if zero(*coeff_a) && zero(*coeff_f) && !zero(*coeff_c) && !zero(*coeff_d) {
@@ -360,12 +384,20 @@ pub(super) fn project(
                 end_parameter = parameter(end, axis);
             }
             (focal_distance > 0.0 && end_parameter > start_parameter).then_some((
-                CurveGeometry::Parabola {
-                    vertex: plane_origin,
-                    axis,
-                    major_direction,
-                    focal_distance,
-                },
+                CurveGeometry::Parabola(
+                    match cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                        plane_origin,
+                        axis,
+                        major_direction,
+                        focal_distance,
+                    ) {
+                        Ok(payload) => payload,
+                        Err(message) => {
+                            losses.push(entity_loss(entry, message));
+                            continue;
+                        }
+                    },
+                ),
                 [start_parameter, end_parameter],
             ))
         } else {

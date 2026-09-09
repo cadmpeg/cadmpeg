@@ -57,12 +57,15 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 13.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                13.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
 
@@ -76,10 +79,15 @@ fn cylindrical_support_point_defines_its_radial_axis() {
 #[test]
 fn position_plane_owns_only_reversed_normal_cylinders() {
     let mut surfaces = [cylinder(0, -5.0), cylinder(1, 5.0), cylinder(2, -5.0)];
-    let SurfaceGeometry::Cylinder { origin, .. } = &mut surfaces[2].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[2].geometry else {
         unreachable!();
     };
+    let (origin, axis, ref_direction, radius) = cylinder_surface.parts();
+    let mut origin = *origin;
     origin.z = 20.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+            .unwrap();
     let mut faces = [
         Face {
             id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
@@ -192,10 +200,15 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         cylinder(2, 20.0),
         cylinder(3, 30.0),
     ];
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut surfaces[3].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surfaces[3].geometry else {
         unreachable!();
     };
-    *radius = 3.0;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 3.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .unwrap();
     let faces = surfaces
         .iter()
         .enumerate()
@@ -295,10 +308,15 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         cylinder(5, 20.0),
     ];
     for surface in &mut surfaces[3..] {
-        let SurfaceGeometry::Cylinder { radius, .. } = &mut surface.geometry else {
+        let SurfaceGeometry::Cylinder(cylinder_surface) = &mut surface.geometry else {
             unreachable!();
         };
-        *radius = 3.0;
+        let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+        let radius = 3.0;
+        *cylinder_surface =
+            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+                .unwrap();
     }
     let faces = surfaces
         .iter()
@@ -425,10 +443,15 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     assert!(placements.is_none());
 
     let mut unmatched_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut unmatched_surfaces[5].geometry else {
+    let SurfaceGeometry::Cylinder(cylinder_surface) = &mut unmatched_surfaces[5].geometry else {
         unreachable!();
     };
-    *radius = 4.0;
+    let (origin, axis, ref_direction, _) = cylinder_surface.parts();
+
+    let radius = 4.0;
+    *cylinder_surface =
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
+            .unwrap();
     let unmatched_topology = HoleTopology {
         surfaces: &unmatched_surfaces,
         faces: &faces,
@@ -473,24 +496,30 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 fn hole_topology_uses_exact_cylinder_spans() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        },
+        geometry: SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let cone = Surface {
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, -10.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-            ratio: 1.0,
-            half_angle: 1.0,
-        },
+        geometry: SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::ConeSurface::try_new(
+                Point3::new(0.0, 0.0, -10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                1.0,
+                1.0,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     };
     let face = Face {
@@ -662,10 +691,21 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut wrong_surfaces = surfaces.clone();
-    let SurfaceGeometry::Cone { half_angle, .. } = &mut wrong_surfaces[1].geometry else {
+    let SurfaceGeometry::Cone(cone_surface) = &mut wrong_surfaces[1].geometry else {
         unreachable!();
     };
-    *half_angle = 0.5;
+    let (origin, axis, ref_direction, radius, ratio, _) = cone_surface.parts();
+
+    let half_angle = 0.5;
+    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        *radius,
+        *ratio,
+        half_angle,
+    )
+    .unwrap();
     let wrong_topology = HoleTopology {
         surfaces: &wrong_surfaces,
         faces: &faces,
@@ -867,16 +907,19 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .map(|(index, (origin, axis))| Surface {
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
-            geometry: SurfaceGeometry::Cylinder {
-                origin: *origin,
-                axis: *axis,
-                ref_direction: if axis.z.abs() == 1.0 {
-                    Vector3::new(1.0, 0.0, 0.0)
-                } else {
-                    Vector3::new(0.0, 0.0, 1.0)
-                },
-                radius: 2.0,
-            },
+            geometry: SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    *origin,
+                    *axis,
+                    if axis.z.abs() == 1.0 {
+                        Vector3::new(1.0, 0.0, 0.0)
+                    } else {
+                        Vector3::new(0.0, 0.0, 1.0)
+                    },
+                    2.0,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         })
         .collect::<Vec<_>>();

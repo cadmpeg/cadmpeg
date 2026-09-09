@@ -39,7 +39,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .expect("trimmed surface carrier");
     assert!(matches!(
         *trimmed.geometry.solved_cache().unwrap_or(&trimmed.geometry),
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ));
     let procedural = decoded
         .ir()

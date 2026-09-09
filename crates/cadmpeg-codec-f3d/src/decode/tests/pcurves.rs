@@ -47,7 +47,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         panic!("expected surface-offset construction")
     };
     assert_eq!(*base_u_range, [-1.0, 2.0]);
-    assert_eq!(context.parameter_range, [0.0, 1.0]);
+    assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert!(*discontinuity_flag);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
     assert_eq!(*base_range, [-0.5, 1.5]);
@@ -60,28 +60,34 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .any(|curve| curve.id == *base));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::SurfaceOffset {
-            context,
-            discontinuity_flag,
-            base_u_range,
-            base_v_range,
-            base_range,
-            distance,
-            shift,
-            scale,
-            ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        context.parameter_range = [-1.5, 2.5];
-        *discontinuity_flag = false;
-        *base_u_range = [-2.0, 5.0];
-        *base_v_range = [-6.0, 7.0];
-        *base_range = [-0.75, 1.75];
-        (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
-    });
+    edited.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::SurfaceOffset {
+                context,
+                discontinuity_flag,
+                base_u_range,
+                base_v_range,
+                base_range,
+                distance,
+                shift,
+                scale,
+                ..
+            } = definition
+            else {
+                unreachable!()
+            };
+            context
+                .edit(|_, context_parameter_range, _| {
+                    (*context_parameter_range) = [-1.5, 2.5];
+                    *discontinuity_flag = false;
+                    *base_u_range = [-2.0, 5.0];
+                    *base_v_range = [-6.0, 7.0];
+                    *base_range = [-0.75, 1.75];
+                    (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+                })
+                .unwrap()
+        })
+        .unwrap();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("surface-offset scalar regeneration");
@@ -100,7 +106,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
             shift: -0.25,
             scale: 0.8,
             ..
-        } if context.parameter_range == [-1.5, 2.5]
+        } if context.parameter_range() == [-1.5, 2.5]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -153,32 +159,35 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     assert_eq!(*direction, -3);
     assert!(layout
         .support_context()
-        .sides
+        .unwrap()
+        .sides()
         .iter()
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
 
     let mut edited = result.ir().clone();
-    let expected_flag = edited.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Spring {
-            layout, direction, ..
-        } = definition
-        else {
-            unreachable!()
-        };
-        let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
-            parameter_range,
-            discontinuity_flag,
-            ..
-        } = layout
-        else {
-            panic!("expected context-first spring")
-        };
-        *parameter_range = [-2.0, 3.0];
-        let expected_flag = !*discontinuity_flag;
-        *discontinuity_flag = expected_flag;
-        *direction = 4;
-        expected_flag
-    });
+    let expected_flag = edited.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::Spring {
+                layout, direction, ..
+            } = definition
+            else {
+                unreachable!()
+            };
+            let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                parameter_range,
+                discontinuity_flag,
+                ..
+            } = layout
+            else {
+                panic!("expected context-first spring")
+            };
+            *parameter_range = [-2.0, 3.0];
+            let expected_flag = !*discontinuity_flag;
+            *discontinuity_flag = expected_flag;
+            *direction = 4;
+            expected_flag
+        })
+        .unwrap();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("spring tail regeneration");
@@ -304,7 +313,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision, 23100);
-        assert_eq!(context.parameter_range, [-1.0, 2.0]);
+        assert_eq!(context.parameter_range(), [-1.0, 2.0]);
         assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
         assert!(result
             .ir()
@@ -340,10 +349,19 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
+                    cadmpeg_ir::math::Point3::new(5.0, 2.0, 4.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -410,15 +428,17 @@ fn generated_deformable_curves_decode_and_write_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_curves[0].edit_definition(|definition| {
-        let ProceduralCurveDefinition::Deformable { source, .. } = definition else {
-            panic!("expected deformable construction")
-        };
-        *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
-            flag: false,
-            index: 10_000,
-        };
-    });
+    source_less.model.procedural_curves[0]
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::Deformable { source, .. } = definition else {
+                panic!("expected deformable construction")
+            };
+            *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                flag: false,
+                index: 10_000,
+            };
+        })
+        .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -476,11 +496,11 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_curves[0].replace_definition(
-        ProceduralCurveDefinition::BlendSpine {
+    source_less.model.procedural_curves[0]
+        .replace_definition(ProceduralCurveDefinition::BlendSpine {
             blend_surface: None,
-        },
-    );
+        })
+        .unwrap();
     let mut encoded = Vec::new();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -490,10 +510,12 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .to_string()
         .contains("lacks its native blend construction"));
 
-    source_less.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Unknown {
-        native_kind: None,
-        record: None,
-    });
+    source_less.model.procedural_curves[0]
+        .replace_definition(ProceduralCurveDefinition::Unknown {
+            native_kind: None,
+            record: None,
+        })
+        .unwrap();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -985,8 +1007,8 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     };
     inline.wrapper_reversed = true;
     inline.native_tail_flags = [false, true, false, true];
-    inline.parameter_range = [-2.0, 3.0];
-    inline.fit_tolerance = 0.0025;
+    inline.set_parameter_range([-2.0, 3.0]).unwrap();
+    inline.set_fit_tolerance(0.0025).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1016,7 +1038,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.fit_tolerance = 0.0025;
+    inline.set_fit_tolerance(0.0025).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1081,7 +1103,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
         panic!("decoded fixture uses general pcurve metadata")
     };
-    metadata.parameter_range = Some([-3.0, 5.0]);
+    metadata.set_parameter_range(Some([-3.0, 5.0])).unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1122,13 +1144,15 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")
     };
-    inline.metadata =
-        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(cadmpeg_ir::geometry::PcurveInlineForm {
-            wrapper_reversed: false,
-            native_tail_flags: [true, false, true, false],
+    inline.metadata = cadmpeg_ir::geometry::PcurveMetadata::AsmInline(
+        cadmpeg_ir::geometry::PcurveInlineForm::try_new(
+            false,
+            [true, false, true, false],
             parameter_range,
-            fit_tolerance: 0.002,
-        });
+            0.002,
+        )
+        .unwrap(),
+    );
     mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: inline.id.clone(),
         isoparametric: None,

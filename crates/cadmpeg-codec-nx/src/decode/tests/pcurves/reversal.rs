@@ -34,26 +34,35 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
 #[test]
 fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
     let carriers = [
-        PcurveGeometry::Ellipse {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Parabola {
-            vertex: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            focal_distance: 0.75,
-        },
-        PcurveGeometry::Hyperbola {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(1.0, 0.0),
-            y_axis: Point2::new(0.0, 1.0),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
+        PcurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Parabola(
+            cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                0.75,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
     ];
     let range = [-1.5, 1.5];
     for carrier in carriers {
@@ -71,20 +80,26 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
 #[test]
 fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     let carriers = [
-        PcurveGeometry::Ellipse {
-            center: Point2::new(2.0, 3.0),
-            x_axis: Point2::new(0.6, 0.8),
-            y_axis: Point2::new(-0.8, 0.6),
-            major_radius: 4.0,
-            minor_radius: 2.0,
-        },
-        PcurveGeometry::Hyperbola {
-            center: Point2::new(-3.0, 5.0),
-            x_axis: Point2::new(0.8, -0.6),
-            y_axis: Point2::new(0.6, 0.8),
-            major_radius: 2.5,
-            minor_radius: 1.25,
-        },
+        PcurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(0.6, 0.8),
+                Point2::new(-0.8, 0.6),
+                4.0,
+                2.0,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                Point2::new(-3.0, 5.0),
+                Point2::new(0.8, -0.6),
+                Point2::new(0.6, 0.8),
+                2.5,
+                1.25,
+            )
+            .unwrap(),
+        ),
     ];
     let range = [0.25, 1.75];
     for carrier in carriers {
@@ -92,13 +107,8 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
             .expect("a finite conic interval has an exact coefficient reflection");
         assert!(matches!(
             (&carrier, &reversed),
-            (
-                PcurveGeometry::Ellipse { .. },
-                PcurveGeometry::Harmonic { .. }
-            ) | (
-                PcurveGeometry::Hyperbola { .. },
-                PcurveGeometry::Hyperbolic { .. }
-            )
+            (PcurveGeometry::Ellipse(_), PcurveGeometry::Harmonic(_))
+                | (PcurveGeometry::Hyperbola(_), PcurveGeometry::Hyperbolic(_))
         ));
         for parameter in [0.25, 0.5, 1.0, 1.5, 1.75] {
             let expected =
@@ -121,12 +131,15 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
 
 #[test]
 fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
-    let pcurve = PcurveGeometry::Parabola {
-        vertex: Point2::new(2.0, 3.0),
-        x_axis: Point2::new(0.6, 0.8),
-        y_axis: Point2::new(-0.8, 0.6),
-        focal_distance: 0.75,
-    };
+    let pcurve = PcurveGeometry::Parabola(
+        cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+            Point2::new(2.0, 3.0),
+            Point2::new(0.6, 0.8),
+            Point2::new(-0.8, 0.6),
+            0.75,
+        )
+        .unwrap(),
+    );
     let range = [0.25, 2.75];
     let reversed = reverse_pcurve_over_range(&pcurve, range)
         .expect("a finite parabola interval has an exact quadratic reflection");
@@ -143,20 +156,20 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 
-    let offset = PcurveGeometry::Offset {
-        distance: 1.25,
-        basis: Box::new(pcurve.clone()),
-    };
-    let PcurveGeometry::Offset { distance, basis } = reverse_pcurve_over_range(&offset, range)
+    let offset = PcurveGeometry::Offset(
+        cadmpeg_ir::geometry::OffsetPcurve::try_new(1.25, Box::new(pcurve.clone())).unwrap(),
+    );
+    let PcurveGeometry::Offset(offset_pcurve) = reverse_pcurve_over_range(&offset, range)
         .expect("offset parabola reflection closes recursively")
     else {
         panic!("reversed offset parabola");
     };
-    assert_eq!(distance, -1.25);
+    let (distance, basis) = offset_pcurve.parts();
+    assert_eq!(*distance, -1.25);
     for parameter in [0.25, 1.0, 2.0, 2.75] {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
-        let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
         assert!((actual.u - expected.u).abs() < 1.0e-12);
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
@@ -164,23 +177,33 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
 
 #[test]
 fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
-    let pcurve = PcurveGeometry::Offset {
-        distance: 2.5,
-        basis: Box::new(PcurveGeometry::Line {
-            origin: Point2::new(1.0, 3.0),
-            direction: Point2::new(2.0, -1.0),
-        }),
-    };
+    let pcurve = PcurveGeometry::Offset(
+        cadmpeg_ir::geometry::OffsetPcurve::try_new(
+            2.5,
+            Box::new(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    Point2::new(1.0, 3.0),
+                    Point2::new(2.0, -1.0),
+                )
+                .unwrap(),
+            )),
+        )
+        .unwrap(),
+    );
     let reversed = reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
         .expect("offset construction is exactly reversible");
-    let PcurveGeometry::Offset { distance, basis } = &reversed else {
+    let PcurveGeometry::Offset(offset_pcurve) = &reversed else {
         panic!("reversed offset");
     };
+    let (distance, basis) = offset_pcurve.parts();
     assert_eq!(*distance, -2.5);
     for parameter in [2.0, 3.0, 5.0, 6.0] {
         let expected_basis = cadmpeg_ir::eval::pcurve_uv(
             match &pcurve {
-                PcurveGeometry::Offset { basis, .. } => basis,
+                PcurveGeometry::Offset(offset_pcurve) => {
+                    let (_, basis) = offset_pcurve.parts();
+                    basis
+                }
                 _ => unreachable!(),
             },
             8.0 - parameter,
@@ -199,11 +222,14 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();

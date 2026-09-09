@@ -62,7 +62,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<EndpointWitnesses, cadmpeg_core::CodecError> {
+) -> Result<EndpointWitnesses, CodecError> {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
     let valid_face_xmts: BTreeSet<u32> = body_shape_shells
@@ -368,8 +368,8 @@ pub(super) fn emit_topology(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {
                             family: SurfaceCurveFamily::Parametric {
-                                context: IntcurveSupportContext {
-                                    sides: [
+                                context: IntcurveSupportContext::try_new(
+                                    [
                                         IntcurveSupportSide {
                                             surface: Some(surface),
                                             pcurve: Some(pcurve.into()),
@@ -380,12 +380,14 @@ pub(super) fn emit_topology(
                                         },
                                     ],
                                     parameter_range,
-                                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                                },
+                                    [Vec::new(), Vec::new(), Vec::new()],
+                                )
+                                .map_err(CodecError::malformed)?,
                                 tail: None,
                             },
                         },
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 );
                 curve = Some(carrier);
                 param_range = None;
@@ -612,12 +614,12 @@ pub(super) fn emit_topology(
                 return None;
             };
             let owner = ir.model.procedural_curve_owner(&procedural.id)?.clone();
-            Some(context.sides.iter().filter_map(move |side| {
+            Some(context.sides().iter().filter_map(move |side| {
                 Some((
                     (owner.clone(), side.surface.clone()?),
                     (
                         side.pcurve.clone()?.geometry,
-                        context.parameter_range,
+                        context.parameter_range(),
                         procedural.cache_fit_tolerance(),
                     ),
                 ))
@@ -829,11 +831,12 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
                         Some(parameter_range),
                         fit_tolerance,
-                    ),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 pcurve = Some(pcurve_id);
             }
@@ -1015,11 +1018,11 @@ pub(crate) fn annotate_node(
 
 pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
     match geometry {
-        SurfaceGeometry::Plane { .. } => "PLANE",
-        SurfaceGeometry::Cylinder { .. } => "CYLINDER",
-        SurfaceGeometry::Cone { .. } => "CONE",
-        SurfaceGeometry::Sphere { .. } => "SPHERE",
-        SurfaceGeometry::Torus { .. } => "TORUS",
+        SurfaceGeometry::Plane(_) => "PLANE",
+        SurfaceGeometry::Cylinder(_) => "CYLINDER",
+        SurfaceGeometry::Cone(_) => "CONE",
+        SurfaceGeometry::Sphere(_) => "SPHERE",
+        SurfaceGeometry::Torus(_) => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
         SurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
@@ -1030,12 +1033,12 @@ pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
 
 pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     match geometry {
-        CurveGeometry::Line { .. } => "LINE",
-        CurveGeometry::Circle { .. } => "CIRCLE",
-        CurveGeometry::Ellipse { .. } => "ELLIPSE",
-        CurveGeometry::Parabola { .. } => "PARABOLA",
-        CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
-        CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
+        CurveGeometry::Line(_) => "LINE",
+        CurveGeometry::Circle(_) => "CIRCLE",
+        CurveGeometry::Ellipse(_) => "ELLIPSE",
+        CurveGeometry::Parabola(_) => "PARABOLA",
+        CurveGeometry::Hyperbola(_) => "HYPERBOLA",
+        CurveGeometry::Degenerate(_) => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
@@ -1110,7 +1113,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
 
 pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Line { .. } => {
+        CurveGeometry::Line(_) => {
             let range = [raw[0] * 1000.0, raw[1] * 1000.0];
             range.into_iter().all(f64::is_finite).then_some(range)
         }
@@ -1257,7 +1260,15 @@ fn orient_edge_range_for_geometry_with_budget(
         [range[1], range[0]]
     };
     let range = match geometry {
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+        CurveGeometry::Circle(_) => {
+            let sweep = range[1] - range[0];
+            (0.0..=std::f64::consts::TAU)
+                .contains(&sweep)
+                .then_some(())?;
+            let start = range[0].rem_euclid(std::f64::consts::TAU);
+            [start, start + sweep]
+        }
+        CurveGeometry::Ellipse(_) => {
             let sweep = range[1] - range[0];
             (0.0..=std::f64::consts::TAU)
                 .contains(&sweep)

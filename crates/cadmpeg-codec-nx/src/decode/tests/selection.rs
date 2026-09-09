@@ -34,10 +34,10 @@ fn decode_emits_both_intersection_support_pcurves() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].surface.is_some());
-    assert!(context.sides[0].pcurve.is_some());
-    assert!(context.sides[1].surface.is_some());
-    assert!(context.sides[1].pcurve.is_some());
+    assert!(context.sides()[0].surface.is_some());
+    assert!(context.sides()[0].pcurve.is_some());
+    assert!(context.sides()[1].surface.is_some());
+    assert!(context.sides()[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -53,8 +53,8 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     else {
         panic!("typed intersection");
     };
-    assert!(context.sides[0].pcurve.is_some());
-    let Some(support) = context.sides[1].pcurve.as_ref() else {
+    assert!(context.sides()[0].pcurve.is_some());
+    let Some(support) = context.sides()[1].pcurve.as_ref() else {
         panic!("completed second support pcurve");
     };
     let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
@@ -81,13 +81,15 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
 
     let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
+        construction: intersection,
         parameterization,
         ..
     } = procedural.definition()
     else {
         panic!("typed tolerant intersection");
     };
+    let (supports, _, _) = intersection.parts();
+
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());
     let owner = result
@@ -515,7 +517,7 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
                 .find(|curve| curve.id == *id)
         })
         .expect("edge carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Line { .. }));
+    assert!(matches!(carrier.geometry, CurveGeometry::Line(_)));
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -621,13 +623,13 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
         graph
             .get(NodeKind::Plane, 6)
             .and_then(crate::topology::Node::surface_geometry),
-        Some(SurfaceGeometry::Plane { .. })
+        Some(SurfaceGeometry::Plane(_))
     ));
     assert!(matches!(
         graph
             .get(NodeKind::Line, 9)
             .and_then(crate::topology::Node::curve_geometry),
-        Some(CurveGeometry::Line { .. })
+        Some(CurveGeometry::Line(_))
     ));
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -637,11 +639,11 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     assert_eq!(result.ir().model.edges.len(), 1);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Line(_)
     ));
 }
 
@@ -654,11 +656,11 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Plane { .. }
+        SurfaceGeometry::Plane(_)
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        CurveGeometry::Line { .. }
+        CurveGeometry::Line(_)
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

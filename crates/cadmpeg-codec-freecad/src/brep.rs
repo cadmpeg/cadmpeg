@@ -4915,7 +4915,7 @@ pub(crate) fn transfer_text_curves(
                 (index + 1).to_string(),
             ))
             .expect("identity grammar");
-            append_text_curve(curve, id, &association, &mut transfer);
+            append_text_curve(curve, id, &association, &mut transfer)?;
         }
     }
     Ok(transfer)
@@ -4926,73 +4926,83 @@ pub(crate) fn append_text_curve(
     id: CurveId,
     association: &SourceObjectAssociation,
     transfer: &mut CurveTransfer,
-) -> CurveGeometry {
+) -> Result<CurveGeometry, CodecError> {
     let geometry = match curve {
-        TextCurve::Line { origin, direction } => CurveGeometry::Line {
-            origin: *origin,
-            direction: *direction,
-        },
+        TextCurve::Line { origin, direction } => CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(*origin, *direction)
+                .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Circle {
             center,
             axis: _,
             ref_direction: _,
             radius,
-        } if *radius == 0.0 => CurveGeometry::Degenerate { point: *center },
+        } if *radius == 0.0 => CurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::DegenerateCurve::try_new(*center)
+                .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Circle {
             center,
             axis,
             ref_direction,
             radius,
-        } => CurveGeometry::Circle {
-            center: *center,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: *radius,
-        },
+        } => CurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, *radius)
+                .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Ellipse {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Ellipse {
-            center: *center,
-            axis: *axis,
-            major_direction: *major_direction,
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        },
+        } => CurveGeometry::Ellipse(
+            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                *center,
+                *axis,
+                *major_direction,
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Parabola {
             vertex,
             axis,
             major_direction,
             focal_distance,
-        } => CurveGeometry::Parabola {
-            vertex: *vertex,
-            axis: *axis,
-            major_direction: *major_direction,
-            focal_distance: *focal_distance,
-        },
+        } => CurveGeometry::Parabola(
+            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                *vertex,
+                *axis,
+                *major_direction,
+                *focal_distance,
+            )
+            .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Hyperbola {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => CurveGeometry::Hyperbola {
-            center: *center,
-            axis: *axis,
-            major_direction: *major_direction,
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        },
+        } => CurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                *center,
+                *axis,
+                *major_direction,
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?,
+        ),
         TextCurve::Nurbs(nurbs) => CurveGeometry::Nurbs(nurbs.clone()),
         TextCurve::Trimmed {
             parameter_range,
             basis,
         } => {
             let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
-            let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
+            let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 &basis_geometry,
                 Some(*parameter_range),
@@ -5008,7 +5018,8 @@ pub(crate) fn append_text_curve(
                         parameter_range,
                         sense: true,
                     },
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
         }
@@ -5018,7 +5029,7 @@ pub(crate) fn append_text_curve(
             basis,
         } => {
             let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
-            append_text_curve(basis, basis_id.clone(), association, transfer);
+            append_text_curve(basis, basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralCurve::new(
@@ -5033,7 +5044,8 @@ pub(crate) fn append_text_curve(
                         },
                         range: None,
                     },
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             CurveGeometry::Unknown { record: None }
         }
@@ -5043,7 +5055,7 @@ pub(crate) fn append_text_curve(
         geometry: geometry.clone(),
         source_object: Some(association.clone()),
     });
-    geometry
+    Ok(geometry)
 }
 
 #[derive(Default)]
@@ -5091,7 +5103,7 @@ pub(crate) fn transfer_text_surfaces(
                 &association,
                 curve_transfer,
                 &mut transfer,
-            );
+            )?;
         }
     }
     Ok(transfer)
@@ -5103,30 +5115,27 @@ pub(crate) fn append_text_surface(
     association: &SourceObjectAssociation,
     curve_transfer: &mut CurveTransfer,
     transfer: &mut SurfaceTransfer,
-) -> SurfaceGeometry {
+) -> Result<SurfaceGeometry, CodecError> {
     let geometry = match surface {
         TextSurface::Plane {
             origin,
             axis,
             u_axis,
             ..
-        } => SurfaceGeometry::Plane {
-            origin: *origin,
-            normal: *axis,
-            u_axis: *u_axis,
-        },
+        } => SurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::PlaneSurface::try_new(*origin, *axis, *u_axis)
+                .map_err(CodecError::malformed)?,
+        ),
         TextSurface::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Cylinder {
-            origin: *origin,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: *radius,
-        },
+        } => SurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, *radius)
+                .map_err(CodecError::malformed)?,
+        ),
         TextSurface::Cone {
             origin,
             axis,
@@ -5134,26 +5143,27 @@ pub(crate) fn append_text_surface(
             radius,
             half_angle,
             ..
-        } => SurfaceGeometry::Cone {
-            origin: *origin,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: *radius,
-            ratio: 1.0,
-            half_angle: *half_angle,
-        },
+        } => SurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::ConeSurface::try_new(
+                *origin,
+                *axis,
+                *ref_direction,
+                *radius,
+                1.0,
+                *half_angle,
+            )
+            .map_err(CodecError::malformed)?,
+        ),
         TextSurface::Sphere {
             center,
             axis,
             ref_direction,
             radius,
             ..
-        } => SurfaceGeometry::Sphere {
-            center: *center,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            radius: *radius,
-        },
+        } => SurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::SphereSurface::try_new(*center, *axis, *ref_direction, *radius)
+                .map_err(CodecError::malformed)?,
+        ),
         TextSurface::Torus {
             center,
             axis,
@@ -5161,20 +5171,23 @@ pub(crate) fn append_text_surface(
             major_radius,
             minor_radius,
             ..
-        } => SurfaceGeometry::Torus {
-            center: *center,
-            axis: *axis,
-            ref_direction: *ref_direction,
-            major_radius: *major_radius,
-            minor_radius: *minor_radius,
-        },
+        } => SurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::TorusSurface::try_new(
+                *center,
+                *axis,
+                *ref_direction,
+                *major_radius,
+                *minor_radius,
+            )
+            .map_err(CodecError::malformed)?,
+        ),
         TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
         TextSurface::Extrusion {
             direction,
             directrix,
         } => {
             let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
-            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -5188,7 +5201,8 @@ pub(crate) fn append_text_surface(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -5198,7 +5212,7 @@ pub(crate) fn append_text_surface(
             directrix,
         } => {
             let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
-            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -5215,7 +5229,8 @@ pub(crate) fn append_text_surface(
                         revision_form: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -5239,7 +5254,7 @@ pub(crate) fn append_text_surface(
                 association,
                 curve_transfer,
                 transfer,
-            );
+            )?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -5252,7 +5267,8 @@ pub(crate) fn append_text_surface(
                         v_sense: None,
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             basis_geometry
         }
@@ -5264,7 +5280,7 @@ pub(crate) fn append_text_surface(
                 association,
                 curve_transfer,
                 transfer,
-            );
+            )?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -5281,7 +5297,8 @@ pub(crate) fn append_text_surface(
                         ),
                     },
                     None,
-                ),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -5291,7 +5308,7 @@ pub(crate) fn append_text_surface(
         geometry: geometry.clone(),
         source_object: Some(association.clone()),
     });
-    geometry
+    Ok(geometry)
 }
 
 #[cfg(test)]
@@ -6015,17 +6032,21 @@ pub(crate) mod tests {
                 }),
             }),
         };
-        let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
+        let cadmpeg_ir::geometry::PcurveGeometry::Offset(offset_pcurve) =
             crate::topology_transfer::pcurve_geometry(&source).expect("valid recursive pcurve")
         else {
             panic!("expected offset pcurve");
         };
-        assert_eq!(distance, 0.25);
-        assert!(matches!(
-            basis.as_ref(),
-            cadmpeg_ir::geometry::PcurveGeometry::Trimmed { basis, .. }
-                if matches!(basis.as_ref(), cadmpeg_ir::geometry::PcurveGeometry::Circle { radius: 3.0, .. })
-        ));
+        let (distance, basis) = offset_pcurve.parts();
+        assert_eq!(*distance, 0.25);
+        assert!(
+            matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
+            if {
+                let (_, _, basis) = trimmed_pcurve.parts();
+                matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
+                        if { *circle_pcurve.parts().3 == 3.0 })
+            })
+        );
     }
 
     #[test]
@@ -6109,12 +6130,12 @@ pub(crate) mod tests {
         assert_eq!(result.ir().model.curves.len(), 1);
         assert!(matches!(
             result.ir().model.curves[0].geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+            cadmpeg_ir::geometry::CurveGeometry::Line(_)
         ));
         assert_eq!(result.ir().model.surfaces.len(), 1);
         assert!(matches!(
             result.ir().model.surfaces[0].geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane(_)
         ));
         assert_eq!(result.ir().model.tessellations.len(), 1);
         assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
@@ -6158,11 +6179,14 @@ pub(crate) mod tests {
             cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#1").expect("identity grammar"),
             &association,
             &mut transfer,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Degenerate { point: center }
+            cadmpeg_ir::geometry::CurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(center).unwrap()
+            )
         );
     }
 
@@ -6197,7 +6221,8 @@ pub(crate) mod tests {
             &association,
             &mut curves,
             &mut surfaces,
-        );
+        )
+        .unwrap();
         assert!(matches!(
             surfaces.procedural[0].1.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {

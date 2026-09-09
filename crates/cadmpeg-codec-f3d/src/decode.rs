@@ -2497,7 +2497,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_surfaces,
             &self.native.sketch_relations,
             self.ir.tolerances.linear.get(),
-        );
+        )?;
         crate::design::feature_project::bind_work_point_sketch_point_constructions(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,

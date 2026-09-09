@@ -89,46 +89,45 @@ pub(crate) fn curve_expression_helix_definition(
     } else {
         tangent_direction
     };
-    Some(ProceduralCurveDefinition::Helix {
-        angle_range: [0.0, helix.revolutions * std::f64::consts::TAU],
-        center: Point3::new(
-            origin.x + axis.x * helix.z_start,
-            origin.y + axis.y * helix.z_start,
-            origin.z + axis.z * helix.z_start,
-        ),
-        major: Vector3::new(
-            major_direction.x * helix.radius,
-            major_direction.y * helix.radius,
-            major_direction.z * helix.radius,
-        ),
-        minor: Vector3::new(
-            minor_direction.x * helix.radius,
-            minor_direction.y * helix.radius,
-            minor_direction.z * helix.radius,
-        ),
-        pitch: Vector3::new(
-            axis.x * helix.height / helix.revolutions,
-            axis.y * helix.height / helix.revolutions,
-            axis.z * helix.height / helix.revolutions,
-        ),
-        apex_factor: 0.0,
-        axis,
-    })
+    Some(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [0.0, helix.revolutions * std::f64::consts::TAU],
+            Point3::new(
+                origin.x + axis.x * helix.z_start,
+                origin.y + axis.y * helix.z_start,
+                origin.z + axis.z * helix.z_start,
+            ),
+            Vector3::new(
+                major_direction.x * helix.radius,
+                major_direction.y * helix.radius,
+                major_direction.z * helix.radius,
+            ),
+            Vector3::new(
+                minor_direction.x * helix.radius,
+                minor_direction.y * helix.radius,
+                minor_direction.z * helix.radius,
+            ),
+            Vector3::new(
+                axis.x * helix.height / helix.revolutions,
+                axis.y * helix.height / helix.revolutions,
+                axis.z * helix.height / helix.revolutions,
+            ),
+            0.0,
+            axis,
+        )
+        .ok()?,
+    ))
 }
 
 fn curve_expression_helix_feature_definition(
     helix: &crate::curve::CurveExpressionHelix,
     procedural: &ProceduralCurveDefinition,
 ) -> Option<IrFeatureDefinition> {
-    let ProceduralCurveDefinition::Helix {
-        center,
-        pitch,
-        axis,
-        ..
-    } = procedural
-    else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = procedural else {
         return None;
     };
+    let (_, center, _, _, pitch, _, axis) = helix_payload.parts();
+
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
     let pitch = cadmpeg_ir::features::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Helix {
@@ -541,7 +540,8 @@ pub(crate) fn transfer_curve_expression_features(
             });
             let _attached = ir.model.add_procedural_curve(
                 curve_id,
-                ProceduralCurve::new(procedural_id, procedural_definition),
+                ProceduralCurve::new(procedural_id, procedural_definition)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
         let definition = neutral_helix

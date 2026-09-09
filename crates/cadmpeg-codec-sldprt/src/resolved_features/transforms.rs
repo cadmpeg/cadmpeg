@@ -354,15 +354,10 @@ pub(super) fn dimensioned_circle_surface_transforms(
     );
     let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
     for surface in surfaces {
-        let SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius,
-            ..
-        } = &surface.geometry
-        else {
+        let SurfaceGeometry::Cylinder(cylinder_surface) = &surface.geometry else {
             continue;
         };
+        let (origin, axis, _, radius) = cylinder_surface.parts();
         let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
         if !alignment.is_finite()
             || (alignment.abs() - 1.0).abs()

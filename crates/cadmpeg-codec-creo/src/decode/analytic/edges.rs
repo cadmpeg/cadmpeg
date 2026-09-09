@@ -21,14 +21,17 @@ pub fn orient_line_edge_carrier(
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
     let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
     let length = dot(delta, delta).sqrt();
     let oriented = normalize(delta)?;
-    *origin = Point3::new(points[0][0], points[0][1], points[0][2]);
-    *direction = Vector3::new(oriented[0], oriented[1], oriented[2]);
+    *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+        Point3::new(points[0][0], points[0][1], points[0][2]),
+        Vector3::new(oriented[0], oriented[1], oriented[2]),
+    )
+    .ok()?;
     Some([0.0, length])
 }
 
@@ -39,9 +42,10 @@ pub fn exact_line_edge_parameter_range(
     if !curve_contains_points(geometry, points) {
         return None;
     }
-    let CurveGeometry::Line { origin, direction } = geometry else {
+    let CurveGeometry::Line(line_curve) = geometry else {
         return None;
     };
+    let (origin, direction) = line_curve.parts();
     let direction = [direction.x, direction.y, direction.z];
     let denominator = dot(direction, direction);
     if !denominator.is_finite() || denominator <= 0.0 {
@@ -456,33 +460,29 @@ pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEqua
 
 pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            focal_distance,
-        } => (
-            [vertex.x, vertex.y, vertex.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *focal_distance,
-            2.0 * *focal_distance,
-            NonperiodicConicFamily::Parabola,
-        ),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            *major_radius,
-            *minor_radius,
-            NonperiodicConicFamily::Hyperbola,
-        ),
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, focal_distance) = parabola_curve.parts();
+            (
+                [vertex.x, vertex.y, vertex.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                *focal_distance,
+                2.0 * *focal_distance,
+                NonperiodicConicFamily::Parabola,
+            )
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) =
+                hyperbola_curve.parts();
+            (
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                *major_radius,
+                *minor_radius,
+                NonperiodicConicFamily::Hyperbola,
+            )
+        }
         _ => return None,
     };
     let normal = normalize(normal)?;
@@ -508,29 +508,24 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
 
 pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [ref_direction.x, ref_direction.y, ref_direction.z],
-            [*radius, *radius],
-        ),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
-        } => (
-            [center.x, center.y, center.z],
-            [axis.x, axis.y, axis.z],
-            [major_direction.x, major_direction.y, major_direction.z],
-            [*major_radius, *minor_radius],
-        ),
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, radius) = circle_curve.parts();
+            (
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+                [*radius, *radius],
+            )
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, major_radius, minor_radius) = ellipse_curve.parts();
+            (
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                [*major_radius, *minor_radius],
+            )
+        }
         _ => return None,
     };
     let axis = normalize(axis)?;

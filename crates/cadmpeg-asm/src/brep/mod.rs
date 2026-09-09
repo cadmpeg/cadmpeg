@@ -515,8 +515,8 @@ pub fn decode_with_header(
         &reversed_curve_refs,
         &forward_curve_refs,
         format,
-    );
-    emit_pcurves(&mut out, records, &mut carriers, &reach, format);
+    )?;
+    emit_pcurves(&mut out, records, &mut carriers, &reach, format)?;
     emit_points(&mut out, records, &reach, format);
     emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(

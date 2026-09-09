@@ -180,7 +180,7 @@ fn transfer_reference_lines(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     let line3d_id_counts =
         scan.references
             .lines
@@ -219,10 +219,13 @@ fn transfer_reference_lines(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(line.start[0], line.start[1], line.start[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    Point3::new(line.start[0], line.start[1], line.start[2]),
+                    Vector3::new(direction[0], direction[1], direction[2]),
+                )
+                .map_err(CodecError::malformed)?,
+            ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -246,7 +249,7 @@ fn transfer_reference_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     let circle_id_counts =
         scan.references
             .circles
@@ -277,12 +280,15 @@ fn transfer_reference_circles(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Circle {
-                center: Point3::new(circle.center[0], circle.center[1], circle.center[2]),
-                axis: Vector3::new(circle.axis[0], circle.axis[1], circle.axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius: circle.radius,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(
+                    Point3::new(circle.center[0], circle.center[1], circle.center[2]),
+                    Vector3::new(circle.axis[0], circle.axis[1], circle.axis[2]),
+                    Vector3::new(reference[0], reference[1], reference[2]),
+                    circle.radius,
+                )
+                .map_err(CodecError::malformed)?,
+            ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -306,7 +312,7 @@ fn transfer_reference_ellipses(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     let ellipse_id_counts = scan.references.ellipses.iter().fold(
         BTreeMap::<u32, usize>::new(),
         |mut counts, ellipse| {
@@ -332,17 +338,20 @@ fn transfer_reference_ellipses(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Ellipse {
-                center: Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
-                axis: Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
-                major_direction: Vector3::new(
-                    ellipse.major_direction[0],
-                    ellipse.major_direction[1],
-                    ellipse.major_direction[2],
-                ),
-                major_radius: ellipse.major_radius,
-                minor_radius: ellipse.minor_radius,
-            },
+            geometry: CurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
+                    Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
+                    Vector3::new(
+                        ellipse.major_direction[0],
+                        ellipse.major_direction[1],
+                        ellipse.major_direction[2],
+                    ),
+                    ellipse.major_radius,
+                    ellipse.minor_radius,
+                )
+                .map_err(CodecError::malformed)?,
+            ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -421,7 +430,7 @@ fn transfer_datum_plane_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
         let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
@@ -436,17 +445,20 @@ fn transfer_datum_plane_surfaces(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(
-                    normal[0] * plane.plane.offset,
-                    normal[1] * plane.plane.offset,
-                    normal[2] * plane.plane.offset,
-                ),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                    normal[0], normal[1], normal[2],
-                )),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(
+                        normal[0] * plane.plane.offset,
+                        normal[1] * plane.plane.offset,
+                        normal[2] * plane.plane.offset,
+                    ),
+                    Vector3::new(normal[0], normal[1], normal[2]),
+                    cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+                        normal[0], normal[1], normal[2],
+                    )),
+                )
+                .map_err(CodecError::malformed)?,
+            ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
@@ -471,7 +483,7 @@ fn transfer_placed_plane_surfaces_into_ir(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), CodecError> {
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
             .expect("identity grammar");
@@ -505,11 +517,14 @@ fn transfer_placed_plane_surfaces_into_ir(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                    Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+                    Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                )
+                .map_err(CodecError::malformed)?,
+            ),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: cadmpeg_ir::products::NonEmptyString::new(format!(

@@ -180,7 +180,7 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
         .model
         .surfaces
         .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) }));
+        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder(_)) }));
     assert!(result
         .ir()
         .model
@@ -210,7 +210,7 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
         .model
         .curves
         .iter()
-        .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle { .. }) }));
+        .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle(_)) }));
     assert!(result.report().notes.iter().any(|note| note.contains("E5")));
     assert_valid(&result);
 }

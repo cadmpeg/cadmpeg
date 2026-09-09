@@ -220,10 +220,15 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == profile)
                 .expect("ruled profile")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
-                direction: cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -303,10 +308,15 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .iter_mut()
                 .find(|curve| curve.id == source)
                 .expect("sum source curve")
-                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
-                direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0),
-            };
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
+                    cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
+                        .unit()
+                        .unwrap(),
+                )
+                .unwrap(),
+            );
         }
         let mut encoded = Vec::new();
         F3dCodec
@@ -442,10 +452,19 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .iter_mut()
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
-            direction: cadmpeg_ir::math::Vector3::new(5.0, -2.0, 1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
+                    cadmpeg_ir::math::Point3::new(7.0, 1.0, 5.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -684,10 +703,19 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .iter_mut()
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -789,10 +817,19 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter_mut()
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
-            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point3::new(4.0, -1.0, 2.0),
-            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -1.0),
-        };
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![-1.0, -1.0, 2.0, 2.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -975,17 +1012,12 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
     assert_eq!(native.parameter_ranges, [[-20.0, 30.0], [-40.0, 50.0]]);
     assert_eq!((native.type_code, native.trailing_value), (7, 9));
-    let TSplineSubtransform::Inline {
-        program,
-        separator,
-        values,
-    } = &native.subtransform
-    else {
+    let TSplineSubtransform::Inline(inline) = &native.subtransform else {
         panic!("expected inline T-spline subtransform")
     };
-    assert!(program.contains("v 1 0 0 0"));
-    assert_eq!(*separator, Some(false));
-    assert_eq!(values, "100verts 1 2\n");
+    assert!(inline.program.as_str().contains("v 1 0 0 0"));
+    assert_eq!(inline.separator, Some(false));
+    assert_eq!(inline.values.as_str(), "100verts 1 2\n");
     let graph = native.program_graph().expect("parsed T-spline graph");
     assert_eq!(graph.headers.len(), 2);
     assert_eq!(graph.records.len(), 3);
@@ -1026,13 +1058,12 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         else {
             panic!("expected helix surface")
         };
-        assert_eq!(construction.angle_range, [-0.5, 0.5]);
-        assert_eq!(construction.path.center.z, 30.0);
-        assert_eq!(construction.path.pitch.z, 40.0);
-        assert_eq!(
-            circular,
-            matches!(construction.profile, HelixSurfaceProfile::Circle { .. })
-        );
+        let (angle_range, _, path, profile) = construction.parts();
+        let (_, center, _, _, pitch, _, _) = path.parts();
+        assert_eq!(*angle_range, [-0.5, 0.5]);
+        assert_eq!(center.z, 30.0);
+        assert_eq!(pitch.z, 40.0);
+        assert_eq!(circular, matches!(profile, HelixSurfaceProfile::Circle(_)));
 
         let surface_id = decoded
             .ir()

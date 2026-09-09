@@ -941,10 +941,10 @@ pub(crate) fn rolling_ball_jet_definition(
             },
         })
         .collect();
-    Some(ProceduralSurfaceDefinition::RollingBallJet {
-        degree: A8FreeformCurve::DEGREE,
-        stations,
-    })
+    Some(ProceduralSurfaceDefinition::RollingBallJet(
+        cadmpeg_ir::geometry::RollingBallJetStations::try_new(A8FreeformCurve::DEGREE, stations)
+            .ok()?,
+    ))
 }
 
 /// Decode framed `a8 <flag> 32` common-form rolling-ball jet records.

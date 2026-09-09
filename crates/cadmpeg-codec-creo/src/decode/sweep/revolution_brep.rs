@@ -36,7 +36,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -160,6 +160,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let Some(curve_geometry) = curve_geometry else {
                 continue;
             };
+            let Ok(curve_geometry) = cadmpeg_ir::geometry::CurveGeometry::try_from(curve_geometry)
+            else {
+                continue;
+            };
             let curve_id =
                 CurveId::mint(format!("{prefix}:curve:vertex:{index}")).expect("identity grammar");
             let point_id =
@@ -171,7 +175,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let position = section_point_in_model(transform, entity.start());
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
-                geometry: curve_geometry.into(),
+                geometry: curve_geometry,
                 source_object: None,
             });
             ir.model.points.push(Point {
@@ -246,7 +250,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         .expect("identity grammar"),
                     transform.offset,
                     pcurve_geometry,
-                );
+                )?;
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
@@ -315,5 +319,5 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }

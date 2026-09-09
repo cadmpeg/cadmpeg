@@ -251,11 +251,10 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin) {
         return None;
     }
-    Some(SurfaceGeometry::Plane {
-        origin: mm_point(origin),
-        normal: vec3(normal),
-        u_axis: vec3(x_axis),
-    })
+    Some(SurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::PlaneSurface::try_new(mm_point(origin), vec3(normal), vec3(x_axis))
+            .ok()?,
+    ))
 }
 
 fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -266,12 +265,15 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_radius(radius) {
         return None;
     }
-    Some(SurfaceGeometry::Cylinder {
-        origin: mm_point(origin),
-        axis: vec3(axis),
-        ref_direction: vec3(x_axis),
-        radius: radius * 1000.0,
-    })
+    Some(SurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::CylinderSurface::try_new(
+            mm_point(origin),
+            vec3(axis),
+            vec3(x_axis),
+            radius * 1000.0,
+        )
+        .ok()?,
+    ))
 }
 
 fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -295,14 +297,17 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Cone {
-        origin: mm_point(origin),
-        axis: vec3(axis),
-        ref_direction: vec3(x_axis),
-        radius: radius * 1000.0,
-        ratio: 1.0,
-        half_angle: sin_half.abs().atan2(cos_half.abs()),
-    })
+    Some(SurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::ConeSurface::try_new(
+            mm_point(origin),
+            vec3(axis),
+            vec3(x_axis),
+            radius * 1000.0,
+            1.0,
+            sin_half.abs().atan2(cos_half.abs()),
+        )
+        .ok()?,
+    ))
 }
 
 fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -313,12 +318,15 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
-    Some(SurfaceGeometry::Sphere {
-        center: mm_point(center),
-        axis: vec3(axis),
-        ref_direction: vec3(x_axis),
-        radius: radius * 1000.0,
-    })
+    Some(SurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::SphereSurface::try_new(
+            mm_point(center),
+            vec3(axis),
+            vec3(x_axis),
+            radius * 1000.0,
+        )
+        .ok()?,
+    ))
 }
 
 fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
@@ -336,13 +344,16 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(SurfaceGeometry::Torus {
-        center: mm_point(center),
-        axis: vec3(axis),
-        ref_direction: vec3(x_axis),
-        major_radius: major * 1000.0,
-        minor_radius: minor * 1000.0,
-    })
+    Some(SurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::TorusSurface::try_new(
+            mm_point(center),
+            vec3(axis),
+            vec3(x_axis),
+            major * 1000.0,
+            minor * 1000.0,
+        )
+        .ok()?,
+    ))
 }
 
 // --- Curve decoders ---
@@ -353,10 +364,9 @@ fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !is_unit(direction) || !valid_position(origin) {
         return None;
     }
-    Some(CurveGeometry::Line {
-        origin: mm_point(origin),
-        direction: vec3(direction),
-    })
+    Some(CurveGeometry::Line(
+        cadmpeg_ir::geometry::LineCurve::try_new(mm_point(origin), vec3(direction)).ok()?,
+    ))
 }
 
 fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
@@ -367,12 +377,15 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
-    Some(CurveGeometry::Circle {
-        center: mm_point(center),
-        axis: vec3(normal),
-        ref_direction: vec3(x_axis),
-        radius: radius * 1000.0,
-    })
+    Some(CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            mm_point(center),
+            vec3(normal),
+            vec3(x_axis),
+            radius * 1000.0,
+        )
+        .ok()?,
+    ))
 }
 
 fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
@@ -387,13 +400,16 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     if !valid_radius(major) || !valid_radius(minor) || minor > major {
         return None;
     }
-    Some(CurveGeometry::Ellipse {
-        center: mm_point(center),
-        axis: vec3(normal),
-        major_direction: vec3(x_axis),
-        major_radius: major * 1000.0,
-        minor_radius: minor * 1000.0,
-    })
+    Some(CurveGeometry::Ellipse(
+        cadmpeg_ir::geometry::EllipseCurve::try_new(
+            mm_point(center),
+            vec3(normal),
+            vec3(x_axis),
+            major * 1000.0,
+            minor * 1000.0,
+        )
+        .ok()?,
+    ))
 }
 
 // --- Primitives and gates ---

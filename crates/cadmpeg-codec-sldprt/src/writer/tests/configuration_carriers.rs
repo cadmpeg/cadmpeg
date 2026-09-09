@@ -707,7 +707,15 @@ fn encoder_bakes_rigid_body_transform() {
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry {
-            SurfaceGeometry::Plane { normal, .. } if normal.x == 1.0 => Some(normal),
+            SurfaceGeometry::Plane(plane_surface)
+                if {
+                    let (_, &normal, _) = plane_surface.parts();
+                    normal.x == 1.0
+                } =>
+            {
+                let (_, &normal, _) = plane_surface.parts();
+                Some(normal)
+            }
             _ => None,
         })
         .unwrap();
@@ -742,7 +750,11 @@ fn encoder_bakes_rigid_body_transform() {
             && (point.position.z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-        matches!(surface.geometry, SurfaceGeometry::Plane { normal, .. } if normal == expected_normal)
+        matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (_, normal, _) = plane_surface.parts();
+            *normal == expected_normal
+        })
     }));
     assert!(decoded
         .ir()
@@ -1027,87 +1039,31 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let major_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     for geometry in [
-        cadmpeg_ir::geometry::CurveGeometry::Parabola {
-            vertex: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis,
-            major_direction,
-            focal_distance: 1.0,
-        },
-        cadmpeg_ir::geometry::CurveGeometry::Hyperbola {
-            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis,
-            major_direction,
-            major_radius: 2.0,
-            minor_radius: 1.0,
-        },
+        cadmpeg_ir::geometry::CurveGeometry::Parabola(
+            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis,
+                major_direction,
+                1.0,
+            )
+            .unwrap(),
+        ),
+        cadmpeg_ir::geometry::CurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis,
+                major_direction,
+                2.0,
+                1.0,
+            )
+            .unwrap(),
+        ),
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
             Err(cadmpeg_core::CodecError::NotImplemented(_))
         ));
     }
-}
-
-#[test]
-fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Ellipse {
-        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        major_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 1.0,
-        minor_radius: 2.0,
-    };
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("ellipse major radius is smaller than its minor radius")
-    ));
-}
-
-#[test]
-pub(crate) fn semantic_writer_rejects_nonfinite_analytic_carriers() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
-            &mut ir_edit.model.curves[0].geometry
-        else {
-            panic!("closed cylinder edge must use a circle carrier");
-        };
-        center.x = f64::INFINITY;
-    }
-
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("circle center is not finite")
-    ));
 }
 
 #[test]
@@ -1123,44 +1079,45 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
     let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let cases = [
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction: reference,
-                radius: 2.0,
-                ratio: 0.5,
-                half_angle: std::f64::consts::FRAC_PI_4,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin,
+                    axis,
+                    reference,
+                    2.0,
+                    0.5,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            ),
             "elliptical cone ratio 0.5",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                origin,
-                axis,
-                ref_direction: reference,
-                radius: 2.0,
-                ratio: 1.0,
-                half_angle: -std::f64::consts::FRAC_PI_4,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    origin,
+                    axis,
+                    reference,
+                    2.0,
+                    1.0,
+                    -std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            ),
             "cone half-angle -0.7853981633974483",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-                center: origin,
-                axis,
-                ref_direction: reference,
-                radius: -2.0,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(origin, axis, reference, -2.0)
+                    .unwrap(),
+            ),
             "signed sphere radius -2",
         ),
         (
-            cadmpeg_ir::geometry::SurfaceGeometry::Torus {
-                center: origin,
-                axis,
-                ref_direction: reference,
-                major_radius: 2.0,
-                minor_radius: -0.5,
-            },
+            cadmpeg_ir::geometry::SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(origin, axis, reference, 2.0, -0.5)
+                    .unwrap(),
+            ),
             "torus radii (2, -0.5)",
         ),
     ];

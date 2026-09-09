@@ -132,11 +132,12 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 )
                 .expect("valid explicit pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 Some(false),
                 Some([2.0, 5.0]),
                 Some(0.001),
-            ),
+            )
+            .unwrap(),
         });
         ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -193,15 +194,19 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
             None,
             ir.model.edges[0].param_range,
             None,
-        ),
+        )
+        .unwrap(),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -239,11 +244,19 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
     ] {
         ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
             id,
-            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-                origin,
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 2.0]), None),
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::LinePcurve::try_new(
+                    origin,
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                None,
+                Some([0.0, 2.0]),
+                None,
+            )
+            .unwrap(),
         });
     }
     ir.model.coedges[0].pcurves = vec![
@@ -283,15 +296,19 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         .expect("valid identity");
     ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
-            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
             None,
             Some([0.0, 2.0]),
             Some(0.002),
-        ),
+        )
+        .unwrap(),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -554,12 +571,16 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         Point3::new(2.0, 3.0, 0.0),
     ]);
     make_planar_nurbs_trimmed_face(&mut ir);
-    let cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. } =
-        &mut ir.model.pcurves[0].geometry
+    let cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) = &mut ir.model.pcurves[0].geometry
     else {
         unreachable!()
     };
-    direction.v += 0.25;
+    let (origin, direction) = line_pcurve.parts();
+    *line_pcurve = cadmpeg_ir::geometry::LinePcurve::try_new(
+        *origin,
+        cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
+    )
+    .unwrap();
     let mut output = vec![0xaa];
     let error = RhinoCodec
         .plan(

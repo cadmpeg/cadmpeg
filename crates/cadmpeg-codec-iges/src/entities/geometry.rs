@@ -1107,34 +1107,30 @@ pub(super) fn curve_geometry_coplanar(
     let direction_valid =
         |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
     match geometry {
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (origin, direction) = line_curve.parts();
             point_valid(*origin) && direction_valid(*direction)
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Degenerate { point } => point_valid(*point),
+        CurveGeometry::Circle(circle_curve) => {
+            let (center, axis, ref_direction, _) = circle_curve.parts();
+            point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction)
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (center, axis, major_direction, _, _) = ellipse_curve.parts();
+            point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
+        }
+        CurveGeometry::Parabola(parabola_curve) => {
+            let (vertex, axis, major_direction, _) = parabola_curve.parts();
+            point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction)
+        }
+        CurveGeometry::Hyperbola(hyperbola_curve) => {
+            let (center, axis, major_direction, _, _) = hyperbola_curve.parts();
+            point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
+        }
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (point,) = degenerate_curve.parts();
+            point_valid(*point)
+        }
         CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
         CurveGeometry::Polyline(polyline) => polyline.points().iter().copied().all(point_valid),
         CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
@@ -1451,12 +1447,10 @@ pub(crate) fn project_geometry(
         ]);
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            },
+            geometry: CurveGeometry::Circle(
+                cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, ref_direction, radius)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
@@ -1675,10 +1669,13 @@ pub(crate) fn project_geometry(
         let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Line {
-                origin: start,
-                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-            },
+            geometry: CurveGeometry::Line(
+                cadmpeg_ir::geometry::LineCurve::try_new(
+                    start,
+                    Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             source_object: Some(source_object(entry)?),
         });
         if entry.form != 0 {

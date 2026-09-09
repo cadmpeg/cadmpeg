@@ -1360,7 +1360,10 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
     let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
     match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (origin, normal, _) = plane_surface.parts();
+            Some((*origin, *normal))
+        }
         _ => None,
     }
 }
@@ -1479,12 +1482,12 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
         return false;
     }
     match geometry {
-        CurveGeometry::Circle { radius, .. } => radius.is_finite() && *radius > 0.0,
-        CurveGeometry::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => {
+        CurveGeometry::Circle(circle_curve) => {
+            let (_, _, _, radius) = circle_curve.parts();
+            radius.is_finite() && *radius > 0.0
+        }
+        CurveGeometry::Ellipse(ellipse_curve) => {
+            let (_, _, _, major_radius, minor_radius) = ellipse_curve.parts();
             major_radius.is_finite()
                 && *major_radius > 0.0
                 && minor_radius.is_finite()
@@ -1510,18 +1513,17 @@ fn bounded_plane_curve_is_simple(
     active: &mut BTreeSet<CurveId>,
 ) -> bool {
     match geometry {
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Line { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Degenerate(_) => false,
+        CurveGeometry::Line(_) => false,
+        CurveGeometry::Parabola(_) => false,
+        CurveGeometry::Hyperbola(_) => false,
+        CurveGeometry::Procedural { .. } => false,
+        CurveGeometry::Unknown { .. } => false,
         CurveGeometry::Composite {
             segments,
             self_intersect,
         } => {
             self_intersect == &Some(false)
-                && !segments.is_empty()
                 && segments.iter().all(|segment| {
                     let Some(curve) = context.index.curves(segment.curve.as_str()) else {
                         return false;
@@ -1555,7 +1557,7 @@ fn bounded_plane_curve_is_simple(
                 active,
             )
         }),
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => {
             parameter_range.is_some_and(|range| analytic_curve_is_simple_closed(geometry, range))
         }
         CurveGeometry::Nurbs(nurbs) => {

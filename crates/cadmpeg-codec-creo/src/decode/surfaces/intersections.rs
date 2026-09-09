@@ -39,10 +39,13 @@ pub(in super::super) fn carrier_intersection_curve(
             let origin = point_numerator.map(|value| value / denominator);
             let direction = normalize(direction)?;
             Some((
-                CurveGeometry::Line {
-                    origin: Point3::new(origin[0], origin[1], origin[2]),
-                    direction: Vector3::new(direction[0], direction[1], direction[2]),
-                },
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(direction[0], direction[1], direction[2]),
+                    )
+                    .ok()?,
+                ),
                 "plane_intersection_line",
             ))
         }
@@ -64,10 +67,13 @@ pub(in super::super) fn carrier_intersection_curve(
                     cylinder.origin[index] - signed_distance * normal[index]
                 });
                 return Some((
-                    CurveGeometry::Line {
-                        origin: Point3::new(origin[0], origin[1], origin[2]),
-                        direction: Vector3::new(axis[0], axis[1], axis[2]),
-                    },
+                    CurveGeometry::Line(
+                        cadmpeg_ir::geometry::LineCurve::try_new(
+                            Point3::new(origin[0], origin[1], origin[2]),
+                            Vector3::new(axis[0], axis[1], axis[2]),
+                        )
+                        .ok()?,
+                    ),
                     "plane_cylinder_tangent_line",
                 ));
             }
@@ -80,12 +86,15 @@ pub(in super::super) fn carrier_intersection_curve(
             if (cosine.abs() - 1.0).abs() <= EPS_AXIS_ORTHO {
                 let reference = normalize(cylinder.ref_direction)?;
                 return Some((
-                    CurveGeometry::Circle {
-                        center: Point3::new(center[0], center[1], center[2]),
-                        axis: Vector3::new(normal[0], normal[1], normal[2]),
-                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                        radius: cylinder.radius,
-                    },
+                    CurveGeometry::Circle(
+                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                            Point3::new(center[0], center[1], center[2]),
+                            Vector3::new(normal[0], normal[1], normal[2]),
+                            Vector3::new(reference[0], reference[1], reference[2]),
+                            cylinder.radius,
+                        )
+                        .ok()?,
+                    ),
                     "plane_cylinder_circle",
                 ));
             }
@@ -93,17 +102,16 @@ pub(in super::super) fn carrier_intersection_curve(
                 axis[index] - cosine * normal[index]
             }))?;
             Some((
-                CurveGeometry::Ellipse {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(normal[0], normal[1], normal[2]),
-                    major_direction: Vector3::new(
-                        projected_axis[0],
-                        projected_axis[1],
-                        projected_axis[2],
-                    ),
-                    major_radius: cylinder.radius / cosine.abs(),
-                    minor_radius: cylinder.radius,
-                },
+                CurveGeometry::Ellipse(
+                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(normal[0], normal[1], normal[2]),
+                        Vector3::new(projected_axis[0], projected_axis[1], projected_axis[2]),
+                        cylinder.radius / cosine.abs(),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 "plane_cylinder_ellipse",
             ))
         }
@@ -133,12 +141,15 @@ pub(in super::super) fn carrier_intersection_curve(
                 [reference.x, reference.y, reference.z]
             });
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(normal[0], normal[1], normal[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: radius_squared.sqrt(),
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(normal[0], normal[1], normal[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius_squared.sqrt(),
+                    )
+                    .ok()?,
+                ),
                 "plane_sphere_circle",
             ))
         }
@@ -164,10 +175,13 @@ pub(in super::super) fn carrier_intersection_curve(
                         axis[index] - alignment * normal[index]
                     }))?;
                     return Some((
-                        CurveGeometry::Line {
-                            origin: Point3::new(apex[0], apex[1], apex[2]),
-                            direction: Vector3::new(direction[0], direction[1], direction[2]),
-                        },
+                        CurveGeometry::Line(
+                            cadmpeg_ir::geometry::LineCurve::try_new(
+                                Point3::new(apex[0], apex[1], apex[2]),
+                                Vector3::new(direction[0], direction[1], direction[2]),
+                            )
+                            .ok()?,
+                        ),
                         "plane_cone_tangent_line",
                     ));
                 }
@@ -193,23 +207,29 @@ pub(in super::super) fn carrier_intersection_curve(
                 let reference = normalize(cone.ref_direction())?;
                 let (geometry, tag) = if circular_cone(cone) {
                     (
-                        CurveGeometry::Circle {
-                            center: Point3::new(center[0], center[1], center[2]),
-                            axis: Vector3::new(normal[0], normal[1], normal[2]),
-                            ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                            radius,
-                        },
+                        CurveGeometry::Circle(
+                            cadmpeg_ir::geometry::CircleCurve::try_new(
+                                Point3::new(center[0], center[1], center[2]),
+                                Vector3::new(normal[0], normal[1], normal[2]),
+                                Vector3::new(reference[0], reference[1], reference[2]),
+                                radius,
+                            )
+                            .ok()?,
+                        ),
                         "plane_cone_circle",
                     )
                 } else {
                     (
-                        CurveGeometry::Ellipse {
-                            center: Point3::new(center[0], center[1], center[2]),
-                            axis: Vector3::new(normal[0], normal[1], normal[2]),
-                            major_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                            major_radius: radius,
-                            minor_radius: radius * cone.ratio(),
-                        },
+                        CurveGeometry::Ellipse(
+                            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                                Point3::new(center[0], center[1], center[2]),
+                                Vector3::new(normal[0], normal[1], normal[2]),
+                                Vector3::new(reference[0], reference[1], reference[2]),
+                                radius,
+                                radius * cone.ratio(),
+                            )
+                            .ok()?,
+                        ),
                         "plane_cone_parallel_ellipse",
                     )
                 };
@@ -236,12 +256,15 @@ pub(in super::super) fn carrier_intersection_curve(
                 std::array::from_fn(|index| torus.center[index] + axial * axis[index]);
             let reference = normalize(torus.ref_direction)?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(normal[0], normal[1], normal[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: torus.major_radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(normal[0], normal[1], normal[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        torus.major_radius,
+                    )
+                    .ok()?,
+                ),
                 "plane_torus_tangent_circle",
             ))
         }
@@ -279,10 +302,13 @@ pub(in super::super) fn carrier_intersection_curve(
                 first.origin[index] + first_fraction * transverse[index]
             });
             Some((
-                CurveGeometry::Line {
-                    origin: Point3::new(origin[0], origin[1], origin[2]),
-                    direction: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                },
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                    )
+                    .ok()?,
+                ),
                 "parallel_cylinder_tangent_line",
             ))
         }
@@ -310,12 +336,15 @@ pub(in super::super) fn carrier_intersection_curve(
                 axis[0], axis[1], axis[2],
             ));
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: reference,
-                    radius: radius_squared.sqrt(),
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        reference,
+                        radius_squared.sqrt(),
+                    )
+                    .ok()?,
+                ),
                 "sphere_intersection_circle",
             ))
         }
@@ -335,12 +364,15 @@ pub(in super::super) fn carrier_intersection_curve(
             }
             let reference = normalize(cylinder.ref_direction)?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: cylinder.radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_cylinder_sphere_circle",
             ))
         }
@@ -374,12 +406,15 @@ pub(in super::super) fn carrier_intersection_curve(
             }
             let reference = normalize(cylinder.ref_direction)?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
-                    axis: Vector3::new(cylinder_axis[0], cylinder_axis[1], cylinder_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: cylinder.radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+                        Vector3::new(cylinder_axis[0], cylinder_axis[1], cylinder_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_cylinder_torus_tangent_circle",
             ))
         }
@@ -426,12 +461,15 @@ pub(in super::super) fn carrier_intersection_curve(
             });
             let reference = normalize(cone.ref_direction())?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_cone_sphere_tangent_circle",
             ))
         }
@@ -475,12 +513,15 @@ pub(in super::super) fn carrier_intersection_curve(
                 std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
             let reference = normalize(torus.ref_direction)?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_sphere_torus_tangent_circle",
             ))
         }
@@ -530,12 +571,15 @@ pub(in super::super) fn carrier_intersection_curve(
                 std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
             let reference = normalize(first.ref_direction)?;
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_tori_tangent_circle",
             ))
         }

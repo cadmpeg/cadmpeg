@@ -212,10 +212,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ]);
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2_000_000.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(2_000_000.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        ),
         source_object: None,
     });
     ir.model.edges.push(Edge {
@@ -554,50 +557,65 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
 fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     let cases = [
         (
-            SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ),
             190,
         ),
         (
-            SurfaceGeometry::Cylinder {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            SurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid CylinderSurface fixture"),
+            ),
             192,
         ),
         (
-            SurfaceGeometry::Cone {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-                ratio: 1.0,
-                half_angle: std::f64::consts::FRAC_PI_6,
-            },
+            SurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                    1.0,
+                    std::f64::consts::FRAC_PI_6,
+                )
+                .expect("valid ConeSurface fixture"),
+            ),
             194,
         ),
         (
-            SurfaceGeometry::Sphere {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 1.0,
-            },
+            SurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::SphereSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .expect("valid SphereSurface fixture"),
+            ),
             196,
         ),
         (
-            SurfaceGeometry::Torus {
-                center: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                ref_direction: Vector3::new(1.0, 0.0, 0.0),
-                major_radius: 2.0,
-                minor_radius: 1.0,
-            },
+            SurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                    1.0,
+                )
+                .expect("valid TorusSurface fixture"),
+            ),
             198,
         ),
     ];
@@ -614,13 +632,16 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 
 #[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
-    let geometry = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        major_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 3.0,
-    };
+    let geometry = CurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            3.0,
+        )
+        .expect("valid HyperbolaCurve fixture"),
+    );
     let range = [0.2, 1.1];
     let span = CurveSpan {
         range,
@@ -737,12 +758,15 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 
 #[test]
 fn generated_full_circle_has_lexically_identical_endpoints() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let geometry = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameter_text()).expect("parameters are ASCII");
     let values = parameters
@@ -754,12 +778,15 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
 
 #[test]
 fn generated_circle_refuses_a_zero_length_edge_span() {
-    let geometry = CurveGeometry::Circle {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-    };
+    let geometry = CurveGeometry::Circle(
+        cadmpeg_ir::geometry::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid CircleCurve fixture"),
+    );
     let span = CurveSpan {
         range: [0.5, 0.5],
         start: Point3::new(0.0, 0.0, 0.0),

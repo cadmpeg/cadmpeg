@@ -1491,7 +1491,7 @@ fn support_points(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point;
-                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
+                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier)?, u, v)
                 })
                 .collect()
         }
@@ -1542,7 +1542,7 @@ fn support_points(
 
 fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
     cadmpeg_ir::eval::surface_point(
-        &b2_torus_geometry(torus),
+        &b2_torus_geometry(torus)?,
         u / torus.major_scale,
         v / torus.minor_scale,
     )
@@ -1659,8 +1659,11 @@ fn pcurve_endpoints_match_sphere(
     ) else {
         return false;
     };
+    let Some(geometry) = b2_sphere_geometry(sphere) else {
+        return false;
+    };
     [first, last].into_iter().all(|[u, v]| {
-        cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(sphere), u, v).is_some_and(|point| {
+        cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| point_distance(point, *vertex) < 2e-3)

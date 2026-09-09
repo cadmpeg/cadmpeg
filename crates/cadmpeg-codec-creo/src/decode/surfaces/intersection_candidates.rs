@@ -63,16 +63,19 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     let offset = offset_squared.sqrt();
     [-1.0, 1.0]
         .into_iter()
-        .map(|sense| {
+        .filter_map(|sense| {
             let origin: [f64; 3] =
                 std::array::from_fn(|index| closest[index] + sense * offset * transverse[index]);
-            (
-                CurveGeometry::Line {
-                    origin: Point3::new(origin[0], origin[1], origin[2]),
-                    direction: Vector3::new(axis[0], axis[1], axis[2]),
-                },
+            Some((
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                    )
+                    .ok()?,
+                ),
                 "plane_cylinder_secant_generator",
-            )
+            ))
         })
         .collect()
 }
@@ -123,16 +126,19 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     let height = height_squared.sqrt();
     [-height, height]
         .into_iter()
-        .map(|offset| {
+        .filter_map(|offset| {
             let origin: [f64; 3] =
                 std::array::from_fn(|index| base[index] + offset * perpendicular[index]);
-            (
-                CurveGeometry::Line {
-                    origin: Point3::new(origin[0], origin[1], origin[2]),
-                    direction: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                },
+            Some((
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(origin[0], origin[1], origin[2]),
+                        Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                    )
+                    .ok()?,
+                ),
                 "parallel_cylinder_secant_generator",
-            )
+            ))
         })
         .collect()
 }
@@ -181,18 +187,21 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
     };
     offsets
         .into_iter()
-        .map(|offset| {
+        .filter_map(|offset| {
             let center: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] + offset * axis[index]);
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: cylinder.radius,
-                },
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
-            )
+            ))
         })
         .collect()
 }
@@ -235,19 +244,22 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
     }
     [cylinder.radius, -cylinder.radius]
         .into_iter()
-        .map(|signed_radius| {
+        .filter_map(|signed_radius| {
             let parameter = (signed_radius - cone.radius()) / slope;
             let center: [f64; 3] =
                 std::array::from_fn(|index| cone.origin()[index] + parameter * cone_axis[index]);
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: cylinder.radius,
-                },
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_cone_cylinder_secant_circle",
-            )
+            ))
         })
         .collect()
 }
@@ -351,33 +363,39 @@ pub(in super::super) fn coaxial_cones_section_candidates(
     }
     parameters
         .into_iter()
-        .map(|parameter| {
+        .filter_map(|parameter| {
             let radius = (first.radius() + parameter * first_slope).abs();
             let center: [f64; 3] =
                 std::array::from_fn(|index| first.origin()[index] + parameter * first_axis[index]);
             let (geometry, tag) = if circular_cone(first) {
                 (
-                    CurveGeometry::Circle {
-                        center: Point3::new(center[0], center[1], center[2]),
-                        axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                        radius,
-                    },
+                    CurveGeometry::Circle(
+                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                            Point3::new(center[0], center[1], center[2]),
+                            Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                            Vector3::new(reference[0], reference[1], reference[2]),
+                            radius,
+                        )
+                        .ok()?,
+                    ),
                     "coaxial_cones_circle",
                 )
             } else {
                 (
-                    CurveGeometry::Ellipse {
-                        center: Point3::new(center[0], center[1], center[2]),
-                        axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                        major_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                        major_radius: radius,
-                        minor_radius: radius * first.ratio(),
-                    },
+                    CurveGeometry::Ellipse(
+                        cadmpeg_ir::geometry::EllipseCurve::try_new(
+                            Point3::new(center[0], center[1], center[2]),
+                            Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                            Vector3::new(reference[0], reference[1], reference[2]),
+                            radius,
+                            radius * first.ratio(),
+                        )
+                        .ok()?,
+                    ),
                     "coaxial_cones_ellipse",
                 )
             };
-            (geometry, tag)
+            Some((geometry, tag))
         })
         .collect()
 }
@@ -492,14 +510,17 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     };
     directions
         .into_iter()
-        .map(|direction| {
-            (
-                CurveGeometry::Line {
-                    origin: Point3::new(apex[0], apex[1], apex[2]),
-                    direction: Vector3::new(direction[0], direction[1], direction[2]),
-                },
+        .filter_map(|direction| {
+            Some((
+                CurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(apex[0], apex[1], apex[2]),
+                        Vector3::new(direction[0], direction[1], direction[2]),
+                    )
+                    .ok()?,
+                ),
                 tag,
-            )
+            ))
         })
         .collect()
 }
@@ -568,12 +589,15 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
             let center: [f64; 3] =
                 std::array::from_fn(|index| cone.origin()[index] + parameter * axis[index]);
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
             ))
         })
@@ -660,19 +684,22 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
     }
     parameters
         .into_iter()
-        .map(|parameter| {
+        .filter_map(|parameter| {
             let radius = (cone.radius() + parameter * slope).abs();
             let center: [f64; 3] =
                 std::array::from_fn(|index| cone.origin()[index] + parameter * cone_axis[index]);
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 "coaxial_cone_torus_circle",
-            )
+            ))
         })
         .collect()
 }
@@ -728,18 +755,21 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
     };
     offsets
         .into_iter()
-        .map(|offset| {
+        .filter_map(|offset| {
             let center: [f64; 3] =
                 std::array::from_fn(|index| torus.center[index] + offset * torus_axis[index]);
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(torus_axis[0], torus_axis[1], torus_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius: cylinder.radius,
-                },
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(torus_axis[0], torus_axis[1], torus_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        cylinder.radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
-            )
+            ))
         })
         .collect()
 }
@@ -789,16 +819,19 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
     radii
         .into_iter()
         .filter(|radius| *radius > EPS_POSITIVE_RADIUS * scale)
-        .map(|radius| {
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+        .filter_map(|radius| {
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
-            )
+            ))
         })
         .collect()
 }
@@ -874,19 +907,22 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     };
     [-1.0, 1.0]
         .into_iter()
-        .map(|sense| {
+        .filter_map(|sense| {
             let center: [f64; 3] = std::array::from_fn(|index| {
                 torus.center[index] + sense * torus.major_radius * radial[index]
             });
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(normal[0], normal[1], normal[2]),
-                    ref_direction: Vector3::new(axis[0], axis[1], axis[2]),
-                    radius: torus.minor_radius,
-                },
+            Some((
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(normal[0], normal[1], normal[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        torus.minor_radius,
+                    )
+                    .ok()?,
+                ),
                 "axis_containing_plane_torus_meridian_circle",
-            )
+            ))
         })
         .collect()
 }
@@ -938,12 +974,15 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
             let center: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(axis[0], axis[1], axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
             ))
         })
@@ -1003,12 +1042,15 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
             let center: [f64; 3] =
                 std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
             Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
+                CurveGeometry::Circle(
+                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                        Point3::new(center[0], center[1], center[2]),
+                        Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                        Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    )
+                    .ok()?,
+                ),
                 tag,
             ))
         })

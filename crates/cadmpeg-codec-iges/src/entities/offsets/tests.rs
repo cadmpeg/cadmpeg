@@ -155,10 +155,13 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        },
+        geometry: CurveGeometry::Line(
+            cadmpeg_ir::geometry::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.points.extend([
@@ -253,13 +256,14 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } = *offset
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact circular offset carrier");
     };
+    let (_, _, _, &radius) = circle_curve.parts();
     assert_eq!(radius, 1.5);
     let edge = result
         .ir()
@@ -293,18 +297,14 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = *offset
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact placed circular offset carrier");
     };
+    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -343,13 +343,14 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("placed line offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = *offset
+    let cadmpeg_ir::geometry::CurveGeometry::Line(line_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact placed line offset carrier");
     };
+    let (&origin, &direction) = line_curve.parts();
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     let end = result
@@ -383,18 +384,14 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
         .expect("reflected offset carrier");
-    let cadmpeg_ir::geometry::CurveGeometry::Circle {
-        center,
-        axis,
-        ref_direction,
-        radius,
-    } = *offset
+    let cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve) = *offset
         .geometry
         .solved_cache()
         .expect("solved offset carrier")
     else {
         panic!("expected an exact reflected circular offset carrier");
     };
+    let (&center, &axis, &ref_direction, &radius) = circle_curve.parts();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(ref_direction, Vector3::new(-1.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
@@ -612,7 +609,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         panic!("expected a retained coordinate-function offset law");
     };
     assert_eq!(function.as_str(), "iges:model:curve#D3");
-    assert_eq!(*coordinate, 2);
+    assert_eq!(coordinate.get(), 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
     assert_eq!(*function_parameter_offset, 0.0);
     assert_eq!(*function_parameter_scale, 0.1);

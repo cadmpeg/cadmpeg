@@ -1259,7 +1259,7 @@ impl<'a> DecodeContext<'a> {
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
                     candidate,
@@ -1269,9 +1269,10 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     None,
                     &format!("hatch-loop-{index}"),
-                );
+                )?;
             }
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -1433,7 +1434,7 @@ impl<'a> DecodeContext<'a> {
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
                 candidate_annotations,
@@ -1442,8 +1443,9 @@ impl<'a> DecodeContext<'a> {
                 &association,
                 None,
                 "detail-boundary",
-            );
+            )?;
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -1734,7 +1736,7 @@ impl<'a> DecodeContext<'a> {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
                 candidate_annotations,
@@ -1743,7 +1745,7 @@ impl<'a> DecodeContext<'a> {
                 &association,
                 None,
                 "curve-on-surface-c2",
-            );
+            )?;
             if let Some(model_curve) = model_curve {
                 commit_curve_tree(
                     candidate,
@@ -1753,7 +1755,7 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     None,
                     "curve-on-surface-c3",
-                );
+                )?;
             }
             candidate.model.surfaces.push(Surface {
                 id: surface_id.clone(),
@@ -1770,6 +1772,7 @@ impl<'a> DecodeContext<'a> {
                 },
             );
             candidate.model.features.push(feature);
+            Ok(())
         });
         match result {
             Ok(()) => {
@@ -2821,7 +2824,9 @@ impl<'a> DecodeContext<'a> {
                         .into_iter()
                         .map(|warning| format!("{}: {warning}", identity.source_id)),
                 );
-                let parent_id = commit_curve_tree(
+                let before = ArenaLengths::capture(&self.ir);
+                let annotation_checkpoint = self.annotations.clone();
+                let parent_id = match commit_curve_tree(
                     &mut self.ir,
                     &mut self.annotations,
                     curve,
@@ -2829,7 +2834,17 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     Some(unknown),
                     "root",
-                );
+                ) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        before.truncate(&mut self.ir);
+                        self.annotations = annotation_checkpoint;
+                        self.report
+                            .phase_warnings
+                            .push(format!("curve candidate rejected: {error}"));
+                        return false;
+                    }
+                };
                 self.append_link(source_order, parent_id.to_string());
             }
             crate::curves::DecodedGeometry::Surface { surface } => match surface {
@@ -2892,7 +2907,7 @@ impl<'a> DecodeContext<'a> {
         else {
             return false;
         };
-        let result = self.validate_candidate(|candidate, candidate_annotations| {
+        let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let ir_definition = definition.into_definition(|_, path, child| {
                 commit_curve_tree(
                     candidate,
@@ -2903,7 +2918,7 @@ impl<'a> DecodeContext<'a> {
                     Some(unknown.clone()),
                     path,
                 )
-            });
+            })?;
             let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
                 .try_into()
                 .expect("valid identity");
@@ -2918,12 +2933,13 @@ impl<'a> DecodeContext<'a> {
                     .expect("valid identity");
             let _attached = candidate.model.add_procedural_surface(
                 surface_id.clone(),
-                ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
+                ProceduralSurface::new(procedural_id.clone(), ir_definition, None)
+                    .map_err(|error| error.to_string())?,
             );
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 set_exactness(candidate_annotations, id, Exactness::Derived);
             }
-            vec![surface_id.to_string()]
+            Ok(vec![surface_id.to_string()])
         });
         let links = match result {
             Ok(links) => links,
@@ -2981,7 +2997,7 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     Some(unknown.clone()),
                     &format!("profile-{index}.start"),
-                );
+                )?;
                 boundaries.push(CommittedExtrusionBoundary {
                     boundary,
                     directrix: id,
@@ -3013,7 +3029,8 @@ impl<'a> DecodeContext<'a> {
                             revision_form: None,
                         },
                         None,
-                    ),
+                    )
+                    .map_err(|error| error.to_string())?,
                 );
                 annotate_derived(candidate_annotations, &surface_id.to_string());
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
@@ -3567,11 +3584,16 @@ fn stage_extrusion_caps(
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: extrusion.cap_origins[cap],
-                normal: extrusion.cap_normals[cap],
-                u_axis: extrusion.cap_u_axes[cap],
-            },
+            geometry: SurfaceGeometry::Plane(
+                match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    extrusion.cap_origins[cap],
+                    extrusion.cap_normals[cap],
+                    extrusion.cap_u_axes[cap],
+                ) {
+                    Ok(plane) => plane,
+                    Err(_) => return false,
+                },
+            ),
             source_object: Some(association.clone()),
         });
         let mut loop_ids = Vec::with_capacity(boundaries.len());
@@ -3671,11 +3693,14 @@ fn stage_extrusion_caps(
             ir.model.pcurves.push(Pcurve {
                 id: pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                metadata: match cadmpeg_ir::geometry::PcurveMetadata::try_general(
                     None,
                     Some(parameter_range),
                     None,
-                ),
+                ) {
+                    Ok(metadata) => metadata,
+                    Err(_) => return false,
+                },
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
@@ -3971,14 +3996,20 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                         .into_iter()
                         .map(|warning| format!("C3 slot {index}: {warning}")),
                 );
-                let id = stage_curve_tree(
+                let id = match stage_curve_tree(
                     &mut staged,
                     curve,
                     key,
                     &format!("c3-{index}"),
                     association,
                     unknown,
-                );
+                ) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        child_cause = Some(format!("C3 slot {index}: {error}"));
+                        continue;
+                    }
+                };
                 c3.insert(index as i32, id);
             }
             Ok(_) => {
@@ -4546,7 +4577,7 @@ fn scale_plane_pcurves(
         .model()
         .surfaces
         .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane(_)))
         .map(|surface| surface.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let plane_faces = staged
@@ -4640,7 +4671,7 @@ fn stage_brep_procedural_surface(
             context.association,
             context.unknown,
         )
-    });
+    })?;
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key)
             .try_into()
@@ -4661,7 +4692,8 @@ fn stage_brep_procedural_surface(
         .model_mut()
         .add_procedural_surface(
             surface_id.clone(),
-            ProceduralSurface::new(procedural_id.clone(), definition, None),
+            ProceduralSurface::new(procedural_id.clone(), definition, None)
+                .map_err(|error| crate::curves::error(0, &error.to_string()))?,
         )
         .map_err(|error| crate::curves::error(0, &error.to_string()))?;
     staged
@@ -4682,7 +4714,7 @@ fn stage_curve_tree(
     path: &str,
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
-) -> cadmpeg_ir::ids::CurveId {
+) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -4703,7 +4735,7 @@ fn stage_curve_tree(
                         &format!("{path}.component-{index}"),
                         association,
                         unknown,
-                    ),
+                    )?,
                 });
             }
             parameters.push(end_parameter);
@@ -4711,10 +4743,12 @@ fn stage_curve_tree(
                 CurveGeometry::Unknown {
                     record: Some(unknown.clone()),
                 },
-                Some(ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components,
-                }),
+                Some(ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        parameters, components,
+                    )
+                    .map_err(|message| crate::curves::error(0, message))?,
+                )),
             )
         }
     };
@@ -4737,12 +4771,13 @@ fn stage_curve_tree(
             .draft
             .exactness(procedure_id.to_string(), Exactness::Derived);
         staged.links.push(procedure_id.to_string());
-        let _attached = staged
-            .draft
-            .model_mut()
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
+        let _attached = staged.draft.model_mut().add_procedural_curve(
+            id.clone(),
+            ProceduralCurve::new(procedure_id, definition)
+                .map_err(|error| crate::curves::error(0, &error.to_string()))?,
+        );
     }
-    id
+    Ok(id)
 }
 
 fn decode_pcurves(
@@ -4840,11 +4875,17 @@ fn decode_pcurves(
         values.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+            metadata: match cadmpeg_ir::geometry::PcurveMetadata::try_general(
                 Some(trim.proxy_reversed),
                 Some(trim.domain.0),
                 finite_tolerance(trim.tolerances[0]),
-            ),
+            ) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    warnings.push(format!("trim {index}: {error}"));
+                    continue;
+                }
+            },
         });
         ids.insert(index as i32, id);
     }
@@ -5127,7 +5168,7 @@ fn commit_curve_tree(
     association: &SourceObjectAssociation,
     record: Option<UnknownId>,
     path: &str,
-) -> cadmpeg_ir::ids::CurveId {
+) -> Result<cadmpeg_ir::ids::CurveId, String> {
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -5150,16 +5191,18 @@ fn commit_curve_tree(
                         association,
                         None,
                         &child_path,
-                    ),
+                    )?,
                 });
             }
             parameters.push(end_parameter);
             (
                 CurveGeometry::Unknown { record },
-                Some(ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components,
-                }),
+                Some(ProceduralCurveDefinition::Compound(
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                        parameters, components,
+                    )
+                    .map_err(str::to_owned)?,
+                )),
             )
         }
     };
@@ -5188,11 +5231,12 @@ fn commit_curve_tree(
                 .try_into()
                 .expect("valid identity")
         };
-        let _attached = ir
-            .model
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
+        let _attached = ir.model.add_procedural_curve(
+            id.clone(),
+            ProceduralCurve::new(procedure_id, definition).map_err(|error| error.to_string())?,
+        );
     }
-    id
+    Ok(id)
 }
 
 fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {
@@ -5274,21 +5318,9 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let decoded = crate::curves::DecodedCurve::leaf(
-                CurveGeometry::Circle {
-                    center,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
-                Vec::new(),
-            );
+        CurveGeometry::Circle(circle_curve) => {
+            let decoded =
+                crate::curves::DecodedCurve::leaf(CurveGeometry::Circle(circle_curve), Vec::new());
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
@@ -5300,7 +5332,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Nurbs(nurbs)
         }
-        CurveGeometry::Line { origin, direction } => {
+        CurveGeometry::Line(line_curve) => {
+            let (&origin, &direction) = line_curve.parts();
             let transformed_origin = transform.apply_point(origin);
             let endpoint = transform.apply_point(Point3::new(
                 origin.x + direction.x,
@@ -5316,18 +5349,17 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             if !norm.is_finite() || norm == 0.0 {
                 return Err("instance line transform collapsed its direction".to_string());
             }
-            CurveGeometry::Line {
-                origin: transformed_origin,
-                direction: cadmpeg_ir::math::Vector3::new(
-                    value.x / norm,
-                    value.y / norm,
-                    value.z / norm,
-                ),
-            }
+            CurveGeometry::Line(cadmpeg_ir::geometry::LineCurve::try_new(
+                transformed_origin,
+                cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
+            )?)
         }
-        CurveGeometry::Degenerate { point } => CurveGeometry::Degenerate {
-            point: transform.apply_point(point),
-        },
+        CurveGeometry::Degenerate(degenerate_curve) => {
+            let (&point,) = degenerate_curve.parts();
+            CurveGeometry::Degenerate(cadmpeg_ir::geometry::DegenerateCurve::try_new(
+                transform.apply_point(point),
+            )?)
+        }
         CurveGeometry::Unknown { record } => {
             curve.geometry = CurveGeometry::Unknown { record };
             return Err("unknown free curve cannot be transformed exactly".to_string());
@@ -5358,11 +5390,8 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 .map_err(|error| error.to_string())?;
             SurfaceGeometry::Nurbs(nurbs)
         }
-        SurfaceGeometry::Plane {
-            origin: source_origin,
-            normal,
-            u_axis,
-        } => {
+        SurfaceGeometry::Plane(plane_surface) => {
+            let (&source_origin, &normal, &u_axis) = plane_surface.parts();
             let origin = transform.apply_point(source_origin);
             let normal = transform
                 .apply_normal(normal)
@@ -5387,15 +5416,15 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             if !length.is_finite() || length == 0.0 {
                 return Err("instance plane transform collapsed its frame".to_string());
             }
-            SurfaceGeometry::Plane {
+            SurfaceGeometry::Plane(cadmpeg_ir::geometry::PlaneSurface::try_new(
                 origin,
                 normal,
-                u_axis: cadmpeg_ir::math::Vector3::new(
+                cadmpeg_ir::math::Vector3::new(
                     value.x / length,
                     value.y / length,
                     value.z / length,
                 ),
-            }
+            )?)
         }
         SurfaceGeometry::Unknown { record } => {
             surface.geometry = SurfaceGeometry::Unknown { record };

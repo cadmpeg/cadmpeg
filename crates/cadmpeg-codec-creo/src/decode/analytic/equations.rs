@@ -773,15 +773,10 @@ pub fn intersect_plane_with_circle(
 }
 
 pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3], f64)> {
-    let CurveGeometry::Circle {
-        center,
-        axis,
-        radius,
-        ..
-    } = geometry
-    else {
+    let CurveGeometry::Circle(circle_curve) = geometry else {
         return None;
     };
+    let (center, axis, _, radius) = circle_curve.parts();
     Some((
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],
@@ -905,12 +900,15 @@ pub fn plane_cone_conic(
         }
         let direction = principal_u.map(|value| value * opening.signum());
         return Some((
-            CurveGeometry::Parabola {
-                vertex: point(vertex_u, vertex_v),
-                axis: axis_vector,
-                major_direction: Vector3::new(direction[0], direction[1], direction[2]),
-                focal_distance: opening.abs() / 4.0,
-            },
+            CurveGeometry::Parabola(
+                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    point(vertex_u, vertex_v),
+                    axis_vector,
+                    Vector3::new(direction[0], direction[1], direction[2]),
+                    opening.abs() / 4.0,
+                )
+                .ok()?,
+            ),
             "plane_cone_parabola",
         ));
     }
@@ -936,17 +934,16 @@ pub fn plane_cone_conic(
             (principal_v, v_radius, u_radius)
         };
         return Some((
-            CurveGeometry::Ellipse {
-                center,
-                axis: axis_vector,
-                major_direction: Vector3::new(
-                    major_direction[0],
-                    major_direction[1],
-                    major_direction[2],
-                ),
-                major_radius,
-                minor_radius,
-            },
+            CurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    center,
+                    axis_vector,
+                    Vector3::new(major_direction[0], major_direction[1], major_direction[2]),
+                    major_radius,
+                    minor_radius,
+                )
+                .ok()?,
+            ),
             "plane_cone_ellipse",
         ));
     }
@@ -964,17 +961,16 @@ pub fn plane_cone_conic(
         )
     };
     Some((
-        CurveGeometry::Hyperbola {
-            center,
-            axis: axis_vector,
-            major_direction: Vector3::new(
-                major_direction[0],
-                major_direction[1],
-                major_direction[2],
-            ),
-            major_radius,
-            minor_radius,
-        },
+        CurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                center,
+                axis_vector,
+                Vector3::new(major_direction[0], major_direction[1], major_direction[2]),
+                major_radius,
+                minor_radius,
+            )
+            .ok()?,
+        ),
         "plane_cone_hyperbola",
     ))
 }

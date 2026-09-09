@@ -299,22 +299,29 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             .model
             .surfaces
             .iter_mut()
-            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane(_)))
             .unwrap();
-        let SurfaceGeometry::Plane { origin, .. } = &mut plane.geometry else {
+        let SurfaceGeometry::Plane(plane_surface) = &mut plane.geometry else {
             unreachable!()
         };
+        let (origin, normal, u_axis) = plane_surface.parts();
+        let mut origin = *origin;
         origin.x = 25.0;
+        *plane_surface =
+            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
         let line = ir_edit
             .model
             .curves
             .iter_mut()
-            .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
+            .find(|curve| matches!(curve.geometry, CurveGeometry::Line(_)))
             .unwrap();
-        let CurveGeometry::Line { origin, .. } = &mut line.geometry else {
+        let CurveGeometry::Line(line_curve) = &mut line.geometry else {
             unreachable!()
         };
+        let (origin, direction) = line_curve.parts();
+        let mut origin = *origin;
         origin.y = 12.0;
+        *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
     }
 
     let mut encoded = Vec::new();
@@ -328,25 +335,26 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| matches!(
-            surface.geometry,
-            SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
-        )));
+    assert!(regenerated.ir().model.surfaces.iter().any(
+        |surface| matches!(surface.geometry, SurfaceGeometry::Plane(plane_surface)
+        if {
+            let (origin, _, _) = plane_surface.parts();
+            origin.x == 25.0
+        })
+    ));
     assert!(regenerated
         .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
-    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Line { origin, .. } if origin.y == 12.0
-    )));
+    assert!(regenerated.ir().model.curves.iter().any(
+        |curve| matches!(curve.geometry, CurveGeometry::Line(line_curve)
+        if {
+            let (origin, _) = line_curve.parts();
+            origin.y == 12.0
+        })
+    ));
 }
 
 #[test]

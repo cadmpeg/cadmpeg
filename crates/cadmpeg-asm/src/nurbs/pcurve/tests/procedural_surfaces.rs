@@ -46,13 +46,13 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 panic!("expected legacy offset surface");
             };
 
-            assert!(matches!(
-                support,
-                SurfaceGeometry::Plane { origin, .. }
-                    if (origin.x - 5.0).abs() < f64::EPSILON
-                        && (origin.y - 10.0).abs() < f64::EPSILON
-                        && (origin.z - 15.0).abs() < f64::EPSILON
-            ));
+            assert!(matches!(support, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 5.0).abs() < f64::EPSILON
+                    && (origin.y - 10.0).abs() < f64::EPSILON
+                    && (origin.z - 15.0).abs() < f64::EPSILON
+            }));
             assert!((distance - -2.5).abs() < f64::EPSILON);
             assert_eq!(u_sense, 2);
             assert_eq!(v_sense, 3);
@@ -353,20 +353,24 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         assert!((components[0].parameter - 0.25).abs() < f64::EPSILON);
         assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
-        assert!(matches!(
-            components[0].component,
-            SurfaceGeometry::Plane { origin, .. }
-                if (origin.x - 10.0).abs() < f64::EPSILON
+        assert!(
+            matches!(components[0].component, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 10.0).abs() < f64::EPSILON
                     && (origin.y - 20.0).abs() < f64::EPSILON
                     && (origin.z - 30.0).abs() < f64::EPSILON
-        ));
-        assert!(matches!(
-            components[1].component,
-            SurfaceGeometry::Plane { origin, .. }
-                if (origin.x - 40.0).abs() < f64::EPSILON
+            })
+        );
+        assert!(
+            matches!(components[1].component, SurfaceGeometry::Plane(plane_surface)
+            if {
+                let (origin, _, _) = plane_surface.parts();
+                (origin.x - 40.0).abs() < f64::EPSILON
                     && (origin.y - 50.0).abs() < f64::EPSILON
                     && (origin.z - 60.0).abs() < f64::EPSILON
-        ));
+            })
+        );
         assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
     }
 }
@@ -1074,7 +1078,7 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
-            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane { .. })
+            crate::nurbs::proc_curve::SupportSlot::Surface(SurfaceGeometry::Plane(_))
         ));
         assert!(matches!(
             context.surfaces[1],
@@ -1371,16 +1375,17 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                         );
                         let definition =
                             cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                                context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                                    sides: std::array::from_fn(|_| {
+                                context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                                    std::array::from_fn(|_| {
                                         cadmpeg_ir::geometry::IntcurveSupportSide {
                                             surface: None,
                                             pcurve: None,
                                         }
                                     }),
-                                    parameter_range: [-2.0, 3.0],
-                                    discontinuities: [vec![0.25], vec![], vec![0.5, 0.75]],
-                                },
+                                    [-2.0, 3.0],
+                                    [vec![0.25], vec![], vec![0.5, 0.75]],
+                                )
+                                .expect("valid projection support fixture"),
                                 discontinuity_flag: true,
                                 source: cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
                                     .unwrap(),

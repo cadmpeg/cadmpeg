@@ -73,12 +73,14 @@ impl E5RollingBallJet {
     pub const DEGREE: u32 = 5;
 
     /// Convert the admitted carrier payload to the exact neutral jet form.
-    #[must_use]
-    pub fn definition(&self) -> ProceduralSurfaceDefinition {
-        ProceduralSurfaceDefinition::RollingBallJet {
-            degree: Self::DEGREE,
-            stations: self.stations.clone(),
-        }
+    pub fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
+        Some(ProceduralSurfaceDefinition::RollingBallJet(
+            cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                Self::DEGREE,
+                self.stations.clone(),
+            )
+            .ok()?,
+        ))
     }
 }
 
@@ -205,16 +207,19 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
             {
                 if radius.is_finite() && radius > 0.0 {
                     if let Some(axis) = frame_u.cross(frame_v).unit() {
+                        let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
+                            origin,
+                            axis,
+                            frame_u.unit().unwrap_or_else(|| {
+                                cadmpeg_ir::geometry::derive_reference_direction(axis)
+                            }),
+                            radius,
+                        ) else {
+                            continue;
+                        };
                         out.push(E5Circle {
                             pos,
-                            geometry: CurveGeometry::Circle {
-                                center: origin,
-                                axis,
-                                ref_direction: frame_u.unit().unwrap_or_else(|| {
-                                    cadmpeg_ir::geometry::derive_reference_direction(axis)
-                                }),
-                                radius,
-                            },
+                            geometry: CurveGeometry::Circle(payload),
                         });
                     }
                 }
@@ -824,12 +829,8 @@ mod tests {
         );
         assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
         assert!(matches!(
-            jet.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
-                degree: 5,
-                ref stations,
-            } if stations.len() == 2 && stations.iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
-        ));
+            jet.definition().expect("valid rolling-ball jet fixture"),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
     }
 
     #[test]

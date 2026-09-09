@@ -1151,18 +1151,13 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = helix_payload.parts();
+
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, -2.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
@@ -1183,17 +1178,13 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        center,
-        major,
-        minor,
-        pitch,
-        axis,
-        ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
+    let (_, center, major, minor, pitch, _, axis) = helix_payload.parts();
+
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(0.0, 5.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));

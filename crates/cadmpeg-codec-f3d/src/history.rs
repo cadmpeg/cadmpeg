@@ -8743,9 +8743,18 @@ pub(crate) fn historical_topology(
         .filter_map(|surface| {
             use cadmpeg_ir::geometry::SurfaceGeometry;
             let radius = match &surface.geometry {
-                SurfaceGeometry::Cylinder { radius, .. }
-                | SurfaceGeometry::Sphere { radius, .. } => *radius,
-                SurfaceGeometry::Torus { minor_radius, .. } => *minor_radius,
+                SurfaceGeometry::Cylinder(cylinder_surface) => {
+                    let (_, _, _, radius) = cylinder_surface.parts();
+                    *radius
+                }
+                SurfaceGeometry::Sphere(sphere_surface) => {
+                    let (_, _, _, radius) = sphere_surface.parts();
+                    *radius
+                }
+                SurfaceGeometry::Torus(torus_surface) => {
+                    let (_, _, _, _, minor_radius) = torus_surface.parts();
+                    *minor_radius
+                }
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceRadius {
@@ -8777,15 +8786,12 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius,
-                ..
-            } = surface.geometry
+            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder(cylinder_surface) =
+                surface.geometry
             else {
                 return None;
             };
+            let (&origin, &axis, _, &radius) = cylinder_surface.parts();
             Some(crate::history_records::AsmHistoricalCylinder {
                 surface: entity_ref(surface.id.as_str())?,
                 origin,
@@ -8799,11 +8805,11 @@ pub(crate) fn historical_topology(
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, normal, .. } =
-                surface.geometry
+            let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = surface.geometry
             else {
                 return None;
             };
+            let (&origin, &normal, _) = plane_surface.parts();
             Some(crate::history_records::AsmHistoricalPlane {
                 surface: entity_ref(surface.id.as_str())?,
                 origin,
@@ -8818,9 +8824,18 @@ pub(crate) fn historical_topology(
         .filter_map(|surface| {
             use cadmpeg_ir::geometry::SurfaceGeometry;
             let (origin, direction) = match surface.geometry {
-                SurfaceGeometry::Cylinder { origin, axis, .. }
-                | SurfaceGeometry::Cone { origin, axis, .. } => (origin, axis),
-                SurfaceGeometry::Torus { center, axis, .. } => (center, axis),
+                SurfaceGeometry::Cylinder(cylinder_surface) => {
+                    let (&origin, &axis, _, _) = cylinder_surface.parts();
+                    (origin, axis)
+                }
+                SurfaceGeometry::Cone(cone_surface) => {
+                    let (&origin, &axis, _, _, _, _) = cone_surface.parts();
+                    (origin, axis)
+                }
+                SurfaceGeometry::Torus(torus_surface) => {
+                    let (&center, &axis, _, _, _) = torus_surface.parts();
+                    (center, axis)
+                }
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceAxis {
@@ -8854,9 +8869,18 @@ pub(crate) fn historical_topology(
             .filter_map(|curve| {
                 use cadmpeg_ir::geometry::CurveGeometry;
                 let (origin, direction) = match curve.geometry {
-                    CurveGeometry::Line { origin, direction } => (origin, direction),
-                    CurveGeometry::Circle { center, axis, .. }
-                    | CurveGeometry::Ellipse { center, axis, .. } => (center, axis),
+                    CurveGeometry::Line(line_curve) => {
+                        let (&origin, &direction) = line_curve.parts();
+                        (origin, direction)
+                    }
+                    CurveGeometry::Circle(circle_curve) => {
+                        let (&center, &axis, _, _) = circle_curve.parts();
+                        (center, axis)
+                    }
+                    CurveGeometry::Ellipse(ellipse_curve) => {
+                        let (&center, &axis, _, _, _) = ellipse_curve.parts();
+                        (center, axis)
+                    }
                     _ => return None,
                 };
                 Some(crate::history_records::AsmHistoricalCurveAxis {

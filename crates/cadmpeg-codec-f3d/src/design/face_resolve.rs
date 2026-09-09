@@ -2052,11 +2052,11 @@ fn extrude_target_plane_candidate(
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)?;
-            let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, normal, .. } =
-                &surface.geometry
+            let cadmpeg_ir::geometry::SurfaceGeometry::Plane(plane_surface) = &surface.geometry
             else {
                 return None;
             };
+            let (origin, normal, _) = plane_surface.parts();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
                 return None;
             }
@@ -2138,9 +2138,10 @@ pub(crate) fn face_coincident_with_sketch(
     let Some(surface) = surfaces.iter().find(|surface| surface.id == face.surface) else {
         return false;
     };
-    let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
+    let SurfaceGeometry::Plane(plane_surface) = &surface.geometry else {
         return false;
     };
+    let (origin, normal, _) = plane_surface.parts();
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };
@@ -3106,11 +3107,14 @@ mod tests {
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin,
+                    normal.unit().unwrap(),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         };
         let faces = [
@@ -3250,11 +3254,14 @@ mod tests {
         };
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
-            geometry: SurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
+            geometry: SurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    origin,
+                    normal,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             source_object: None,
         };
         let faces = [
