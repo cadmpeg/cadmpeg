@@ -483,7 +483,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
                 .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(|edge| edge.param_range()),
+            .and_then(cadmpeg_ir::topology::Edge::param_range),
         Some([0.0, 1000.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
@@ -523,7 +523,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
                 .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(|edge| edge.param_range()),
+            .and_then(cadmpeg_ir::topology::Edge::param_range),
         Some([-500.0, 500.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());

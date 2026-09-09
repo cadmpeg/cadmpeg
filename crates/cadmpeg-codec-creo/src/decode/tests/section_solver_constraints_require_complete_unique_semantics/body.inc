@@ -3053,7 +3053,7 @@ offset: 30,
     }
     assert_eq!(*(constraints[2].0.definition).kind(),
         SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:skamp:7").unwrap(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:skamp:7").expect("nonempty native kind"),
             native_state: Some(1),
             native_flags: Some(0),
             native_properties: std::collections::BTreeMap::new(),
@@ -4914,7 +4914,7 @@ offset: 30,
         section_dimension_constraints(&definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"));
     assert_eq!(*(relations[0].0.definition).kind(),
         SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:relation:99").unwrap(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:relation:99").expect("nonempty native kind"),
             native_state: Some(1),
             native_flags: None,
             native_properties: std::collections::BTreeMap::from([

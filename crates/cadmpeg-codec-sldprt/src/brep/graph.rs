@@ -5501,10 +5501,10 @@ fn synthesize_sphere_seams(
             pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
-                parameter_range: (Some([0.0, std::f64::consts::TAU]))
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
-                    .transpose()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                parameter_range: Some(
+                    cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             }],
         });
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {

@@ -2538,7 +2538,7 @@ fn build_one(
                             })
                             .collect::<Result<Vec<_>, cadmpeg_ir::geometry::ParameterRangeError>>()
                             .map_err(|error| {
-                                warnings.push(format!("coedge pcurve parameter_range: {error}"))
+                                warnings.push(format!("coedge pcurve parameter_range: {error}"));
                             })
                             .ok()?,
                         use_curve: None,

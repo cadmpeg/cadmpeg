@@ -1231,10 +1231,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             pcurves: vec![PcurveUse {
                 pcurve: pcurves[index].clone(),
                 isoparametric: None,
-                parameter_range: (Some([0.0, 10.0]))
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
-                    .transpose()
-                    .unwrap(),
+                parameter_range: Some(
+                    cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 10.0]).unwrap(),
+                ),
             }],
             use_curve: None,
         });
