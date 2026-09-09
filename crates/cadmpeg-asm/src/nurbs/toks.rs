@@ -497,6 +497,7 @@ impl SubtypeTable {
 /// # Panics
 ///
 /// Panics when `bytes` fails to lex as one record payload.
+#[cfg(any(test, feature = "test-support"))]
 pub fn lex_test_span(bytes: &[u8], ref_width: RefWidth) -> std::sync::Arc<[Token]> {
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
@@ -507,6 +508,7 @@ pub fn lex_test_span(bytes: &[u8], ref_width: RefWidth) -> std::sync::Arc<[Token
 }
 
 /// Build a [`SubtypeTable`] over a bare byte span, for tests.
+#[cfg(any(test, feature = "test-support"))]
 pub fn test_table(bytes: &[u8], ref_width: RefWidth) -> SubtypeTable {
     let record = crate::sab::Record {
         index: 0,
