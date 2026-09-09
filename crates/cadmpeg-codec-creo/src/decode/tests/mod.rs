@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 
 mod admission;
 mod blind_circular;
+mod blind_extent;
 mod carrier_solver;
 mod chamfer;
+mod circular_profile;
 mod equation_constraints;
 mod equation_scalar_propagation;
 mod generated_nurbs;
@@ -30,6 +32,7 @@ mod saved_line;
 mod schema;
 mod section_solver_constraints_require_complete_unique_semantics;
 mod sketch_curve;
+mod transfer_coverage;
 mod zero_orientation;
 
 pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
