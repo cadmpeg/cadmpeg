@@ -1663,10 +1663,10 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ]);
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#normalized-profile-edge").expect("valid identity"),
-        curve: Some(directrix_id.clone()),
+        carrier: crate::topology::EdgeCarrier::new(Some(directrix_id.clone()), Some([0.0, 10.0]))
+            .unwrap(),
         start: start_vertex_id,
         end: end_vertex_id,
-        param_range: Some([0.0, 10.0]),
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {

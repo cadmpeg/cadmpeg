@@ -206,10 +206,9 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     };
     let edge = Edge {
         id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
         end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     };
     let vertex = Vertex {

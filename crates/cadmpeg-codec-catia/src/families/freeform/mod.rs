@@ -861,7 +861,10 @@ fn attach_standalone_wires(
                 .geometry;
             let start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
             let end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
-            Some((index, curve_id.clone(), *range, *pos, start, end))
+            let carrier =
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(*range))
+                    .ok()?;
+            Some((index, carrier, *pos, start, end))
         })
         .collect::<Option<Vec<_>>>();
     let Some(plans) = plans else {
@@ -872,6 +875,21 @@ fn attach_standalone_wires(
         RegionId::mint("catia:freeform:wire-region#0".to_string()).expect("identity grammar");
     let shell_id =
         ShellId::mint("catia:freeform:wire-shell#0".to_string()).expect("identity grammar");
+    let edge_ids = plans
+        .iter()
+        .map(|(index, ..)| {
+            EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar")
+        })
+        .collect();
+    let Ok(shell) = Shell::new(
+        shell_id.clone(),
+        region_id.clone(),
+        Vec::new(),
+        edge_ids,
+        Vec::new(),
+    ) else {
+        return false;
+    };
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
@@ -882,8 +900,7 @@ fn attach_standalone_wires(
             Exactness::Inferred,
         );
     }
-    let mut edge_ids = Vec::with_capacity(plans.len());
-    for (index, curve_id, range, pos, start, end) in plans {
+    for (index, carrier, pos, start, end) in plans {
         let point_ids = [
             PointId::mint(format!("catia:freeform:wire-point#{index}:start"))
                 .expect("identity grammar"),
@@ -940,13 +957,11 @@ fn attach_standalone_wires(
         ]);
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier,
             start: vertex_ids[0].clone(),
             end: vertex_ids[1].clone(),
-            param_range: Some(range),
             tolerance: None,
         });
-        edge_ids.push(edge_id);
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -962,14 +977,7 @@ fn attach_standalone_wires(
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(
-        match Shell::new(shell_id, region_id, Vec::new(), edge_ids, Vec::new()) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return false;
-            }
-        },
-    );
+    ir.model.shells.push(shell);
     true
 }
 
@@ -1671,7 +1679,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .iter()
         .enumerate()
         .filter_map(|(edge_index, edge)| {
-            let curve_id = edge.curve.as_ref()?;
+            let curve_id = edge.curve().as_ref()?;
             let curve_index = *curve_indices.get(curve_id)?;
             let CurveGeometry::Procedural {
                 construction,
@@ -2401,7 +2409,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
-            ir.model.edges[edge_index].param_range = Some(resolved.block.parameters.range);
+            ir.model.edges[edge_index]
+                .set_param_range(Some(resolved.block.parameters.range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             if procedural.try_replace_definition(definition, None).is_err() {
                 continue;
@@ -2973,6 +2983,33 @@ mod tests {
     }
 
     #[test]
+    fn rejected_later_wire_leaves_all_topology_arenas_unchanged() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid linear NURBS"),
+            ),
+            source_object: None,
+        });
+        let before = ir.model.clone();
+        assert!(!attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)],
+        ));
+        assert_eq!(ir.model, before);
+    }
+
+    #[test]
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::b2_line_profile_stream();
@@ -2989,7 +3026,7 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &wires,
         ));
-        assert_eq!(ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([-4.0, 9.0]));
         let expected_start = Point3::new(1.0, -0.4, -0.2);
         let expected_end = Point3::new(1.0, 7.4, 10.2);
         for (actual, expected) in [
@@ -3270,12 +3307,15 @@ mod tests {
         ir.model.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-edge".to_string())
                 .expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id.clone()),
+                Some([0.0, 1.0]),
+            )
+            .expect("valid edge carrier"),
             start: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
-            param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let support_ids = [
@@ -3375,7 +3415,7 @@ mod tests {
         assert_eq!(ir.model.coedges[0].pcurves.len(), 0);
         assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
-        assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
+        assert_eq!(ir.model.edges[0].curve().as_ref(), Some(&curve_id));
         let ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.model.procedural_curves[0].definition()
         else {
@@ -3400,7 +3440,7 @@ mod tests {
         )
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
-        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
     }
 
     #[test]
@@ -3592,12 +3632,11 @@ mod tests {
         ir.model.edges.push(Edge {
             id: EdgeId::mint("catia:test:edge#standard-plane-edge".to_string())
                 .expect("identity grammar"),
-            curve: Some(curve_id.clone()),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
             start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
                 .expect("identity grammar"),
-            param_range: None,
             tolerance: None,
         });
         let plane = SurfaceGeometry::Plane(
@@ -3655,7 +3694,7 @@ mod tests {
         )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
-        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
         let ProceduralCurveDefinition::Intersection { context, .. } =
             ir.model.procedural_curves[0].definition()
         else {

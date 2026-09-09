@@ -280,3 +280,13 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
         assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
     }
 }
+
+#[test]
+fn absent_normals_reject_edit_without_calling_the_editor() {
+    let mut value = mesh();
+    let original = value.clone();
+    let mut called = false;
+    assert!(value.edit_normals(|_| called = true).is_err());
+    assert!(!called);
+    assert_eq!(value, original);
+}

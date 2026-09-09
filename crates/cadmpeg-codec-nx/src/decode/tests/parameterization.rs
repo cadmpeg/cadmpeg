@@ -408,7 +408,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let carrier = result.ir().model.edges[0]
-        .curve
+        .curve()
         .as_ref()
         .and_then(|id| {
             result
@@ -689,7 +689,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .edges
         .iter()
         .find(|candidate| candidate.id == edge)
-        .and_then(|edge| edge.curve.clone())
+        .and_then(|edge| edge.curve().clone())
         .expect("edge curve");
     let edge_tolerance = ir
         .model

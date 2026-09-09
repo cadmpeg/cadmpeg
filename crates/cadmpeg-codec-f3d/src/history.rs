@@ -9003,7 +9003,7 @@ pub(crate) fn historical_topology(
             .map(|edge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
                     entity: entity_ref(edge.id.as_str())?,
-                    carrier: match &edge.curve {
+                    carrier: match &edge.curve() {
                         Some(curve) => Some(entity_ref(curve.as_str())?),
                         None => None,
                     },

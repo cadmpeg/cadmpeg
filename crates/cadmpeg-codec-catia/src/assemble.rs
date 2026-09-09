@@ -181,7 +181,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         + ir.model
             .edges
             .iter()
-            .filter(|edge| edge.curve.is_none())
+            .filter(|edge| edge.curve().is_none())
             .count();
     let surfaces = ir
         .model

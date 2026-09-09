@@ -89,19 +89,24 @@ pub(super) fn normalize_model_lengths(
         .collect::<BTreeMap<_, _>>();
     for edge in &mut ir.model.edges {
         scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
-        if let (Some(range), Some(scale)) = (
-            edge.param_range.as_mut(),
-            edge.curve
+        if let (Some(mut range), Some(scale)) = (
+            edge.param_range(),
+            edge.curve()
                 .as_ref()
                 .and_then(|id| curve_parameter_scales.get(id)),
         ) {
-            scale_pair(range, *scale);
+            scale_pair(&mut range, *scale);
+            edge.set_param_range(Some(range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     for coedge in &mut ir.model.coedges {
         if let Some(use_curve) = &mut coedge.use_curve {
             if let Some(scale) = curve_parameter_scales.get(&use_curve.curve) {
-                scale_pair(&mut use_curve.parameter_range, *scale);
+                let mut range = use_curve.parameter_range.endpoints();
+                scale_pair(&mut range, *scale);
+                use_curve.parameter_range = cadmpeg_ir::topology::ParameterInterval::new(range)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }

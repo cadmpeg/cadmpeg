@@ -183,7 +183,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {
-            let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            let curve_id = edge.curve().as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES semantic writer does not encode carrier-less edge {}",
                     edge.id
@@ -885,7 +885,7 @@ fn validate_brep_topology(
                             .entry(edge.id.as_str().to_owned())
                             .or_default()
                             .push(coedge.id.as_str().to_owned());
-                        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                        let curve_id = edge.curve().as_ref().ok_or_else(|| {
                             CodecError::NotImplemented(format!(
                                 "IGES B-rep writer does not encode carrier-less edge {}",
                                 edge.id
@@ -1161,7 +1161,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         .edges
         .iter()
         .filter(|edge| ir.model.coedges.iter().any(|coedge| coedge.edge == edge.id))
-        .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.as_str().to_owned()))
+        .filter_map(|edge| edge.curve().as_ref().map(|curve| curve.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     let mut topology_edge_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
@@ -1181,7 +1181,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                     "IGES topology references missing edge {edge_id}"
                 ))
             })?;
-        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+        let curve_id = edge.curve().as_ref().ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "IGES B-rep writer does not encode carrier-less edge {}",
                 edge.id
@@ -1496,7 +1496,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                             coedge.id, coedge.edge
                         ))
                     })?;
-                let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                let curve_id = edge.curve().as_ref().ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "IGES B-rep coedge {} cannot orient pcurves for carrier-less edge {}",
                         coedge.id, edge.id
@@ -1797,7 +1797,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
         if topology_edge_ids.contains(edge.id.as_str()) {
             continue;
         }
-        let Some(curve_id) = &edge.curve else {
+        let Some(curve_id) = &edge.curve() else {
             continue;
         };
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
@@ -1806,18 +1806,24 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
         let matching_topology_tolerance = topology_edges
             .iter()
             .filter(|topology_edge| {
-                topology_edge.curve.as_ref() == Some(curve_id)
-                    && topology_edge.param_range.zip(edge.param_range).is_some_and(
-                        |(topology_range, edge_range)| same_range(topology_range, edge_range),
-                    )
+                topology_edge.curve().as_ref() == Some(curve_id)
+                    && topology_edge
+                        .param_range()
+                        .zip(edge.param_range())
+                        .is_some_and(|(topology_range, edge_range)| {
+                            same_range(topology_range, edge_range)
+                        })
             })
             .map(|topology_edge| topology_edge_explicit_tolerance(ir, topology_edge))
             .fold(0.0, f64::max);
         let is_model_carrier = topology_edges.iter().any(|topology_edge| {
-            topology_edge.curve.as_ref() == Some(curve_id)
-                && topology_edge.param_range.zip(edge.param_range).is_some_and(
-                    |(topology_range, edge_range)| same_range(topology_range, edge_range),
-                )
+            topology_edge.curve().as_ref() == Some(curve_id)
+                && topology_edge
+                    .param_range()
+                    .zip(edge.param_range())
+                    .is_some_and(|(topology_range, edge_range)| {
+                        same_range(topology_range, edge_range)
+                    })
                 && vertex_position(ir, &topology_edge.start)
                     .zip(vertex_position(ir, &edge.start))
                     .is_some_and(|(topology_start, edge_start)| {
@@ -1841,7 +1847,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
             pcurve.parameter_range().is_some_and(|range| {
                 curve_matches_pcurve(&curve.geometry, range, pcurve)
                     && edge
-                        .param_range
+                        .param_range()
                         .is_some_and(|edge_range| same_range(edge_range, range))
                     && vertex_position(ir, &edge.start)
                         .zip(curve_point(&curve.geometry, range[0]))
@@ -1940,7 +1946,7 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         if !topology_edge_ids.contains(edge.id.as_str()) {
             continue;
         }
-        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+        let curve_id = edge.curve().as_ref().ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "IGES semantic writer does not encode carrier-less edge {}",
                 edge.id
@@ -2435,7 +2441,7 @@ fn validate_trimmed_sheet_topology(
                         edge.id
                     )));
                 }
-                let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                let curve_id = edge.curve().as_ref().ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "IGES semantic writer does not encode carrier-less edge {}",
                         edge.id
@@ -2529,7 +2535,7 @@ fn validate_trimmed_sheet_topology(
                     };
                     if pcurve_use
                         .parameter_range
-                        .is_some_and(|range| !same_range(range, parameter_range))
+                        .is_some_and(|range| !same_range(range.endpoints(), parameter_range))
                     {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer cannot restrict pcurve use {}",
@@ -2710,7 +2716,7 @@ fn boundary_entity(
                         coedge.id, coedge.edge
                     ))
                 })?;
-            let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            let curve_id = edge.curve().as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES boundary loop {} cannot orient pcurves for carrier-less edge {}",
                     loop_.id, edge.id
@@ -2804,7 +2810,7 @@ fn curve_on_surface_entity(
                     coedge.id, coedge.edge
                 ))
             })?;
-        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+        let curve_id = edge.curve().as_ref().ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "IGES Type 142 output does not encode carrier-less edge {}",
                 edge.id
@@ -3599,7 +3605,7 @@ fn validate_brep_pcurve_uses(
         })?;
         if pcurve_use
             .parameter_range
-            .is_some_and(|use_range| !same_range(use_range, range))
+            .is_some_and(|use_range| !same_range(use_range.endpoints(), range))
         {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep {} cannot restrict pcurve use {}",
@@ -3890,10 +3896,10 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> f64 {
                 scale = scale.max(point_coordinate_scale(point));
             }
         }
-        let Some(curve_id) = edge.curve.as_ref() else {
+        let Some(curve_id) = edge.curve().as_ref() else {
             continue;
         };
-        let Some(range) = edge.param_range else {
+        let Some(range) = edge.param_range() else {
             continue;
         };
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
@@ -4264,7 +4270,7 @@ fn construction_carrier_interval(
                     .model
                     .edges
                     .iter()
-                    .any(|edge| edge.curve.as_ref() == Some(directrix))
+                    .any(|edge| edge.curve().as_ref() == Some(directrix))
             {
                 curve_reference_span(ir, directrix, geometry).map(|span| span.range)
             } else {
@@ -5300,7 +5306,7 @@ fn curve_reference_span_inner(
                 .model
                 .edges
                 .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .filter(|edge| edge.curve().as_ref() == Some(curve_id))
                 .collect::<Vec<_>>();
             if matching_edges.is_empty() {
                 Ok(CurveSpan {
@@ -5312,7 +5318,7 @@ fn curve_reference_span_inner(
                 let mut selected = None;
                 let mut tolerance: f64 = 0.0;
                 for edge in matching_edges {
-                    if let Some(range) = edge.param_range {
+                    if let Some(range) = edge.param_range() {
                         if !same_range(range, derived_range) {
                             return Err(CodecError::NotImplemented(format!(
                                     "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
@@ -5355,7 +5361,7 @@ fn curve_reference_span_inner(
                 .model
                 .edges
                 .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .filter(|edge| edge.curve().as_ref() == Some(curve_id))
                 .collect::<Vec<_>>();
             if matching_edges.is_empty() {
                 let range = default_range(geometry)?;
@@ -5370,7 +5376,10 @@ fn curve_reference_span_inner(
                     ))
                 })?;
                 Ok(CurveSpan { range, start, end })
-            } else if matching_edges.iter().any(|edge| edge.param_range.is_none()) {
+            } else if matching_edges
+                .iter()
+                .any(|edge| edge.param_range().is_none())
+            {
                 Err(CodecError::NotImplemented(format!(
                     "IGES composite child curve {curve_id} requires a parameter range"
                 )))
@@ -5443,7 +5452,7 @@ fn mark_curve_descendants(
 
 fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveSpan, CodecError> {
     if matches!(geometry, CurveGeometry::Composite { .. }) {
-        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+        let curve_id = edge.curve().as_ref().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES composite edge {} has no curve reference",
                 edge.id
@@ -5451,7 +5460,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         })?;
         return curve_reference_span(ir, curve_id, geometry);
     }
-    let range = edge.param_range.ok_or_else(|| {
+    let range = edge.param_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for edge {}",
             edge.id

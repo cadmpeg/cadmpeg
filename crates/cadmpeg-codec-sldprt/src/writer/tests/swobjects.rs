@@ -83,7 +83,7 @@ fn encoder_writes_source_less_ir() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
 
     let mut encoded = Vec::new();
     let report = SldprtCodec
@@ -115,7 +115,7 @@ fn semantic_writer_emits_face_records_deterministically() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     for (index, face) in ir.model.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
@@ -214,7 +214,7 @@ fn encoder_writes_source_less_line_sketches() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
     let points = [
         Point2::new(0.0, 0.0),
@@ -695,7 +695,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.param_range = None);
+        .for_each(|edge| edge.set_param_range(None).unwrap());
     let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
     let entity_id =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();

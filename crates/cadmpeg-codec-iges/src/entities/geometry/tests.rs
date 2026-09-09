@@ -828,7 +828,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -862,7 +862,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -923,7 +923,7 @@ fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
         );
         if decoded {
             assert_eq!(
-                result.ir().model.edges[0].param_range,
+                result.ir().model.edges[0].param_range(),
                 Some([0.123_457, 1.0])
             );
             assert!(result.report().losses.is_empty());
@@ -959,7 +959,7 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     );
     assert_eq!(*radius, 1.0);
     assert_eq!(
-        result.ir().model.edges[0].param_range,
+        result.ir().model.edges[0].param_range(),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert!(result
@@ -1129,7 +1129,7 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     let (origin, direction) = line_curve.parts();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
-    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 5.0]));
+    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 5.0]));
     assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
     assert!(result.ir().model.shells[0].free_vertices().is_empty());
     assert_eq!(

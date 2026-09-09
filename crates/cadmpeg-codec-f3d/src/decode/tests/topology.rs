@@ -97,7 +97,7 @@ fn decode_builds_valid_topology_and_geometry() {
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
-    assert!(result.ir().model.edges.iter().all(|e| e.curve.is_none()));
+    assert!(result.ir().model.edges.iter().all(|e| e.curve().is_none()));
     // The loop's coedge ring is the three coedges in order.
     assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
 }

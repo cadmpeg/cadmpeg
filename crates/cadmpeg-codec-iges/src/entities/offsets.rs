@@ -185,9 +185,9 @@ fn source_parameter_range(
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(source_id))
+        .filter(|edge| edge.curve().as_ref() == Some(source_id))
         .filter_map(|edge| {
-            let range = edge.param_range?;
+            let range = edge.param_range()?;
             let start = point_position(&edge.start)?;
             let end = point_position(&edge.end)?;
             let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
@@ -881,12 +881,21 @@ pub(super) fn project(
                 }
             }),
         });
+        let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve_id.clone()),
+            Some([start, end]),
+        ) {
+            Ok(carrier) => carrier,
+            Err(error) => {
+                losses.push(entity_loss(entry, error));
+                continue;
+            }
+        };
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id.clone()),
+            carrier,
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([start, end]),
             tolerance: None,
         });
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);

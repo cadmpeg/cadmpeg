@@ -534,7 +534,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
 
     let curve_id = decoded.ir().model.edges[0]
-        .curve
+        .curve()
         .as_ref()
         .expect("opaque edge curve");
     let curve = decoded

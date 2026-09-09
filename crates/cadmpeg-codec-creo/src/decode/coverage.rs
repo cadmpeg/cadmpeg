@@ -166,7 +166,7 @@ pub(crate) fn design_constraint_transfer_coverage(
                 coverage.transferred += 1;
                 let native_kind_text = match constraint.definition.kind() {
                     SketchConstraintDefinitionInput::Native { native_kind, .. }
-                        if native_kind.starts_with(native_kind_prefix) =>
+                        if native_kind.as_str().starts_with(native_kind_prefix) =>
                     {
                         Some(native_kind.as_str())
                     }

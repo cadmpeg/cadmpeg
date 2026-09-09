@@ -1541,7 +1541,8 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         constraint(
             "sketch:relation:2",
             SketchConstraintDefinitionInput::Native {
-                native_kind: "creo:relation:9".to_string(),
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:relation:9")
+                    .expect("nonempty native kind"),
                 entities: vec![entity.clone()],
                 parameter: None,
                 operands: Vec::new(),

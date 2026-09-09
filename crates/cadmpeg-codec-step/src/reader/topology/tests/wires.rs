@@ -37,7 +37,7 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
+        .all(|edge| edge.curve().is_none()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::EdgeNoSurfaceOrCurveForPcurve.kind()
             && loss
@@ -280,7 +280,7 @@ fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
-        .is_some_and(|edge| edge.curve.is_none()));
+        .is_some_and(|edge| edge.curve().is_none()));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("STEP edge curve #19: surface-curve #57 has no resolvable basis")
@@ -318,7 +318,7 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
     assert!(decoded.ir().model.edges.iter().any(|edge| {
         edge.id.as_str() == "step:data:edge#19"
             && edge
-                .curve
+                .curve()
                 .as_ref()
                 .is_some_and(|curve| curve.as_str() == "step:data:curve#18")
     }));

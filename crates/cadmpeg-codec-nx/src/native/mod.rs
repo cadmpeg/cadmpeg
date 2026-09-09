@@ -18,14 +18,14 @@ use crate::parasolid::Stream;
 
 mod attach;
 pub(crate) mod catalogue;
-mod display_jt;
+pub(crate) mod display_jt;
 mod features;
 pub(crate) mod history;
 mod model;
 mod om;
 mod parasolid;
 mod segments;
-mod structure;
+pub(crate) mod structure;
 mod substrate;
 mod toggle;
 pub(crate) mod vector;

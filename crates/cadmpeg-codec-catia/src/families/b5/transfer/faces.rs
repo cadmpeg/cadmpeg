@@ -576,19 +576,25 @@ pub(super) fn emit_faces(
                     } else {
                         Sense::Forward
                     },
-                    pcurves: pcurve_uses
+                    pcurves: match pcurve_uses
                         .get(&(loop_.object_id, member))
-                        .map(
-                            |(pcurve, parameter_range)| cadmpeg_ir::topology::PcurveUse {
-                                pcurve: pcurve.clone(),
-                                isoparametric: None,
-                                parameter_range: orientation.members[member]
-                                    .pcurve_reversed
-                                    .then_some([parameter_range[1], parameter_range[0]]),
-                            },
-                        )
-                        .into_iter()
-                        .collect(),
+                        .map(|(pcurve, parameter_range)| {
+                            orientation.members[member]
+                                .pcurve_reversed
+                                .then_some([parameter_range[1], parameter_range[0]])
+                                .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                .transpose()
+                                .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
+                                    pcurve: pcurve.clone(),
+                                    isoparametric: None,
+                                    parameter_range,
+                                })
+                        })
+                        .transpose()
+                    {
+                        Ok(pcurve) => pcurve.into_iter().collect(),
+                        Err(_) => return false,
+                    },
                     use_curve: None,
                 });
             }

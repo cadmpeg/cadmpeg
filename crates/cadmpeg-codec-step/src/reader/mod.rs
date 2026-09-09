@@ -738,7 +738,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(&ids::data("pcurve", id)))
+        .filter(|id| !owned.contains(ids::data("pcurve", id).as_str()))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -778,7 +778,7 @@ fn retain_unowned_carriers(
             ir.model
                 .edges
                 .iter()
-                .filter_map(|edge| edge.curve.as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
+                .filter_map(|edge| edge.curve().as_ref().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
         .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
         .chain(
@@ -1007,7 +1007,7 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId::mint(ids::data(&kind, id)).expect("identity grammar")
+    UnknownId::from(ids::data(&kind, id))
 }
 
 fn record_targets(

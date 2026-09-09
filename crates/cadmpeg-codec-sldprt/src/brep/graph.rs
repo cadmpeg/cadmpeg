@@ -238,11 +238,11 @@ impl Brep {
             edge.id = qualify(edge.id.as_str())
                 .try_into()
                 .expect("qualified identity");
-            if let Some(curve) = &mut edge.curve {
-                *curve = qualify(curve.as_str())
+            edge.map_curve(|curve| {
+                qualify(curve.as_str())
                     .try_into()
-                    .expect("qualified identity");
-            }
+                    .expect("qualified identity")
+            });
             edge.start = qualify(edge.start.as_str())
                 .try_into()
                 .expect("qualified identity");
@@ -1476,10 +1476,13 @@ fn decode_graph(
             .tag("00_10");
         out.edges.push(Edge {
             id: EdgeId::mint(id_edge(e)).expect("identity grammar"),
-            curve,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                curve,
+                parameter_range.map(|(range, _)| range),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             start: start_id,
             end: end_id,
-            param_range: parameter_range.map(|(range, _)| range),
             tolerance: None,
         });
     }
@@ -1583,12 +1586,20 @@ fn decode_graph(
                             )
                             .ok()?,
                         });
-                        Some(vec![cadmpeg_ir::topology::PcurveUse {
-                            pcurve: id,
-                            isoparametric: None,
-                            parameter_range: Some(parameter_range),
-                        }])
+                        Some(
+                            cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
+                                |range| {
+                                    vec![cadmpeg_ir::topology::PcurveUse {
+                                        pcurve: id,
+                                        isoparametric: None,
+                                        parameter_range: Some(range),
+                                    }]
+                                },
+                            ),
+                        )
                     })
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?
                     .unwrap_or_default();
                 let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
@@ -1979,13 +1990,13 @@ fn decode_graph(
         })
         .collect();
     solve_face_orientation(&mut out);
-    synthesize_cylinder_seams(&mut out, &mut annotations, &source_stream);
-    synthesize_sphere_seams(&mut out, &mut annotations, &source_stream);
+    synthesize_cylinder_seams(&mut out, &mut annotations, &source_stream)?;
+    synthesize_sphere_seams(&mut out, &mut annotations, &source_stream)?;
     derive_planar_pcurves(&mut out, &mut annotations, &source_stream);
     derive_cylindrical_pcurves(&mut out, &mut annotations, &source_stream);
     derive_revolved_circle_pcurves(&mut out, &mut annotations, &source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, &source_stream);
-    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, &source_stream)?;
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
@@ -2273,7 +2284,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let mut kept_curves = out
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.clone())
+        .filter_map(|edge| edge.curve().clone())
         .collect::<HashSet<_>>();
     kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
         if let ProceduralSurfaceDefinition::Blend { spine, .. } = surface.definition() {
@@ -2287,7 +2298,7 @@ fn prune_rejected_topology(out: &mut Brep) {
         .edges
         .iter()
         .filter(|edge| {
-            edge.curve.as_ref().is_some_and(|curve_id| {
+            edge.curve().as_ref().is_some_and(|curve_id| {
                 out.curves.iter().any(|curve| {
                     curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Unknown { .. })
                 })
@@ -2442,7 +2453,7 @@ fn derive_planar_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
+        let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
         let uv = |point: cadmpeg_ir::math::Point3| {
@@ -2631,7 +2642,7 @@ fn derive_cylindrical_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
+        let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
         let cross = cadmpeg_ir::math::Vector3::new(
@@ -2798,7 +2809,7 @@ fn derive_cylindrical_pcurves(
                 ) {
                     continue;
                 }
-                parameter_range = if let Some(range) = edge.param_range {
+                parameter_range = if let Some(range) = edge.param_range() {
                     Some(range)
                 } else {
                     let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end))
@@ -3184,7 +3195,7 @@ fn derive_revolved_circle_pcurves(
         };
         let Some(CurveGeometry::Circle(circle_curve)) = edges
             .get(&coedge.edge)
-            .and_then(|edge| edge.curve.as_ref())
+            .and_then(|edge| edge.curve().as_ref())
             .and_then(|curve_id| curves.get(curve_id))
             .map(|curve| &curve.geometry)
         else {
@@ -3346,7 +3357,7 @@ fn derive_spherical_pcurves(
             continue;
         };
         let Some(CurveGeometry::Circle(circle_curve)) = edge
-            .curve
+            .curve()
             .as_ref()
             .and_then(|id| curves.get(id).copied())
             .map(|curve| &curve.geometry)
@@ -3445,7 +3456,7 @@ fn derive_nurbs_isoparametric_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -3485,7 +3496,7 @@ fn derive_nurbs_isoparametric_pcurves(
             continue;
         };
         let Some(curve) = edge
-            .curve
+            .curve()
             .as_ref()
             .and_then(|id| curves.get(id).copied())
             .map(|item| &item.geometry)
@@ -3591,7 +3602,10 @@ fn derive_nurbs_isoparametric_pcurves(
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
-                parameter_range: pcurve.parameter_range(),
+                parameter_range: (pcurve.parameter_range())
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             }];
         }
         annotations.note(&id, source_stream, 0).tag(if cache {
@@ -3602,6 +3616,7 @@ fn derive_nurbs_isoparametric_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4716,7 +4731,7 @@ fn nurbs_edge_parameter_range(
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Option<[f64; 2]> {
     let domain = nurbs_curve_parameter_domain(curve)?;
-    let range = if let Some(range) = edge.param_range {
+    let range = if let Some(range) = edge.param_range() {
         range
     } else {
         let [start, end] = endpoints?;
@@ -4985,7 +5000,7 @@ fn synthesize_cylinder_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let surfaces: HashMap<_, _> = out
         .surfaces
         .iter()
@@ -5036,7 +5051,7 @@ fn synthesize_cylinder_seams(
             if edge.start != edge.end {
                 return None;
             }
-            let curve = curves.get(edge.curve.as_ref()?)?;
+            let curve = curves.get(edge.curve().as_ref()?)?;
             let CurveGeometry::Circle(circle_curve) = curve.geometry else {
                 return None;
             };
@@ -5125,10 +5140,10 @@ fn synthesize_cylinder_seams(
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             start: vertex_a,
             end: vertex_b,
-            param_range: Some([0.0, norm]),
             tolerance: None,
         });
         coedge_indices.insert(seam_a.clone(), out.coedges.len());
@@ -5169,13 +5184,14 @@ fn synthesize_cylinder_seams(
         removed.insert(loop_b);
     }
     out.loops.retain(|lp| !removed.contains(&lp.id));
+    Ok(())
 }
 
 fn synthesize_sphere_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let surface_geometry = out
         .surfaces
         .iter()
@@ -5233,7 +5249,7 @@ fn synthesize_sphere_seams(
             .iter()
             .filter_map(|coedge| coedge_edges.get(coedge).copied())
             .filter_map(|edge| edge_indices.get(edge).map(|index| (edge.clone(), *index)))
-            .filter(|(_, index)| out.edges[*index].curve.is_none())
+            .filter(|(_, index)| out.edges[*index].curve().is_none())
             .collect::<Vec<_>>();
         let circle_count = coedge_ids
             .iter()
@@ -5241,7 +5257,7 @@ fn synthesize_sphere_seams(
             .filter_map(|edge| edge_indices.get(edge).copied())
             .filter(|index| {
                 out.edges[*index]
-                    .curve
+                    .curve()
                     .as_ref()
                     .and_then(|curve| curve_geometry.get(curve))
                     .is_some_and(|geometry| matches!(geometry, CurveGeometry::Circle(_)))
@@ -5303,7 +5319,9 @@ fn synthesize_sphere_seams(
             source_object: None,
             geometry: CurveGeometry::Degenerate(degenerate),
         });
-        out.edges[edge_index].curve = Some(curve_id);
+        out.edges[edge_index]
+            .set_curve(Some(curve_id))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
 
     let surfaces: HashMap<_, _> = out
@@ -5341,7 +5359,7 @@ fn synthesize_sphere_seams(
             coedges
                 .get(id)
                 .and_then(|coedge| edges.get(&coedge.edge))
-                .and_then(|edge| edge.curve.as_ref())
+                .and_then(|edge| edge.curve().as_ref())
                 .is_some_and(|curve_id| {
                     curves
                         .get(curve_id)
@@ -5454,10 +5472,9 @@ fn synthesize_sphere_seams(
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
-            curve: Some(curve_id),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: pole_vertex.clone(),
             end: pole_vertex,
-            param_range: None,
             tolerance: None,
         });
         out.pcurves.push(Pcurve {
@@ -5484,7 +5501,10 @@ fn synthesize_sphere_seams(
             pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
-                parameter_range: Some([0.0, std::f64::consts::TAU]),
+                parameter_range: Some(
+                    cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             }],
         });
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
@@ -5494,6 +5514,7 @@ fn synthesize_sphere_seams(
             );
         }
     }
+    Ok(())
 }
 
 fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
@@ -6772,10 +6793,9 @@ mod tests {
             }],
             edges: vec![Edge {
                 id: edge_id,
-                curve: Some(curve_id),
+                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
                 start: start_vertex.clone(),
                 end: end_vertex.clone(),
-                param_range: None,
                 tolerance: None,
             }],
             vertices: vec![

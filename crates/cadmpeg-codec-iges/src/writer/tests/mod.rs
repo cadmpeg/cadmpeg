@@ -223,10 +223,10 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     });
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
-        curve: Some(curve_id),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+            .expect("valid edge carrier"),
         start: vertex_start,
         end: vertex_end,
-        param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 

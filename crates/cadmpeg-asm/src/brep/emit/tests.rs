@@ -154,7 +154,8 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             &Carriers::default(),
             &reach,
             IdFormat("f3d"),
-        );
+        )
+        .unwrap();
         assert_eq!(out.tolerant_coedge_parameters.len(), 1);
         assert_eq!(out.tolerant_coedge_parameters[0].extension, expected);
     }

@@ -25,7 +25,7 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
     let mut ir = unit_cube();
     ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: CurveId::mint("missing:model:use-curve#0").expect("valid identity"),
-        parameter_range: [0.0, 1.0],
+        parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
@@ -205,20 +205,17 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
 #[test]
 fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
     let mut ir = unit_cube();
-    ir.model.edges[0].curve = None;
-    ir.model.edges[0].param_range = Some([1.0, 0.0]);
+    ir.model.edges[0].set_curve(None).unwrap();
+    ir.model.edges[0].set_param_range(Some([1.0, 0.0])).unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
     }));
 
-    ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::ParameterDomain
-            && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
-    }));
+    assert!(ir.model.edges[0]
+        .set_param_range(Some([f64::NAN, 0.0]))
+        .is_err());
 }
 
 #[test]

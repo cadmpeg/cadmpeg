@@ -123,7 +123,7 @@ struct Tables<'a> {
     surfaces: &'a [TextSurface],
     polygons3d: &'a [TextPolygon3d],
     polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
-    tshapes: &'a [TextTShape],
+    tshapes: &'a crate::brep::TextTShapes,
     triangulations: &'a [TextTriangulation],
     roots: &'a [TextShapeUse],
 }
@@ -951,14 +951,17 @@ impl<'a> Builder<'a> {
                     use_curve: None,
                     pcurves: pcurve
                         .into_iter()
-                        .map(
-                            |(pcurve, parameter_range)| cadmpeg_ir::topology::PcurveUse {
+                        .map(|(pcurve, parameter_range)| {
+                            Ok(cadmpeg_ir::topology::PcurveUse {
                                 pcurve,
                                 isoparametric: None,
-                                parameter_range,
-                            },
-                        )
-                        .collect(),
+                                parameter_range: (parameter_range)
+                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                    .transpose()
+                                    .map_err(CodecError::malformed)?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?,
                 });
             }
             ir.model.loops.push(Loop {
@@ -1083,10 +1086,10 @@ impl<'a> Builder<'a> {
             });
         ir.model.edges.push(Edge {
             id: id.clone(),
-            curve,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+                .map_err(CodecError::malformed)?,
             start,
             end,
-            param_range,
             tolerance: positive_tolerance(tolerance),
         });
         self.bind_topology(
@@ -1460,10 +1463,7 @@ impl<'a> Builder<'a> {
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
-        self.tables
-            .tshapes
-            .get(index - 1)
-            .ok_or_else(|| CodecError::malformed(format_args!("missing TShape {index}")))
+        self.tables.tshapes.resolve(index)
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> Result<String, CodecError> {

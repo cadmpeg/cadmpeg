@@ -62,7 +62,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     assert_eq!(result.ir().model.coedges.len(), 3);
     assert_eq!(result.ir().model.edges.len(), 3);
     assert!(result.ir().model.edges.iter().all(|edge| {
-        edge.param_range
+        edge.param_range()
             .is_some_and(|[start, end]| start.is_finite() && end.is_finite() && start < end)
     }));
     assert_eq!(result.ir().model.vertices.len(), 3);
@@ -303,7 +303,7 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .model
         .edges
         .iter()
-        .all(|edge| edge.curve.is_none()));
+        .all(|edge| edge.curve().is_none()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

@@ -21,7 +21,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.as_ref().map(super::super::ids::CurveId::as_str))
+        .filter_map(|edge| {
+            edge.curve()
+                .as_ref()
+                .map(super::super::ids::CurveId::as_str)
+        })
         .collect::<HashSet<_>>();
     curves.extend(
         ir.model
@@ -857,33 +861,14 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     for edge in &ir.model.edges {
-        let Some([start, end]) = edge.param_range else {
+        let Some([start, end]) = edge.param_range() else {
             continue;
         };
-        let mut valid = start.is_finite() && end.is_finite();
-        // A null carrier has no canonical parameter domain. Keep checking
-        // that retained native endpoint values are finite, but do not impose
-        // an ordering that belongs to a carrier-backed parameterization.
-        if edge.curve.is_some() {
-            valid &= start <= end;
-        }
-        if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.as_str())) {
+        let mut valid = true;
+        if let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Circle(_) => {
-                    // Canonical periodic domain: the start angle wrapped into
-                    // one turn, the sweep at most a full turn. An arc crossing
-                    // the seam ends past `τ`. A full-period edge retains
-                    // its serialized phase, which may use any equivalent
-                    // angular branch.
-                    let sweep = end - start;
-                    let full_period = (sweep - tau).abs()
-                        < EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9;
-                    valid &= sweep
-                        <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
-                        && (full_period || (0.0..tau).contains(&start));
-                }
-                CurveGeometry::Ellipse(_) => {
+                CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains
@@ -933,10 +918,9 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
         if let Some(use_curve) = &coedge.use_curve {
-            let [start, end] = use_curve.parameter_range;
+            let [start, end] = use_curve.parameter_range.endpoints();
             let geometry = curves.get(use_curve.curve.as_str());
-            let mut valid =
-                start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
+            let mut valid = geometry.is_some();
             if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
                 valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(|domain| {
                     parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
@@ -952,12 +936,14 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         for use_ in &coedge.pcurves {
-            let Some([start, end]) = use_.parameter_range else {
+            let Some([start, end]) = use_
+                .parameter_range
+                .map(crate::geometry::DirectedParameterRange::endpoints)
+            else {
                 continue;
             };
             let geometry = pcurves.get(use_.pcurve.as_str());
-            let mut valid =
-                start.is_finite() && end.is_finite() && start != end && geometry.is_some();
+            let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
                 let domain = pcurve_parameter_domain(geometry);
                 match domain {

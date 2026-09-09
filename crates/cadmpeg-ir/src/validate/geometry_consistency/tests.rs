@@ -194,14 +194,15 @@ fn untrimmed_surface_curve() -> CadIr {
     });
     ir.model.edges.push(Edge {
         id: "test:model:edge#edge".try_into().expect("valid identity"),
-        curve: Some("test:model:curve#curve".try_into().expect("valid identity")),
+        carrier: crate::topology::EdgeCarrier::unbounded(Some(
+            "test:model:curve#curve".try_into().expect("valid identity"),
+        )),
         start: "test:model:vertex#vertex-start"
             .try_into()
             .expect("valid identity"),
         end: "test:model:vertex#vertex-end"
             .try_into()
             .expect("valid identity"),
-        param_range: None,
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
@@ -720,14 +721,14 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    let curve = ir.model.edges[0].curve.clone().expect("cube edge curve");
+    let curve = ir.model.edges[0].curve().clone().expect("cube edge curve");
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {
             context: crate::geometry::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                }), ir.model.edges[0].param_range.expect("cube edge range"), std::array::from_fn(|_| Vec::new())).unwrap(),
+                }), ir.model.edges[0].param_range().expect("cube edge range"), std::array::from_fn(|_| Vec::new())).unwrap(),
             discontinuity_flag: false,
         },
         cache_fit_tolerance: Some(0.99),
@@ -957,7 +958,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         pcurve: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
             .expect("valid identity"),
         isoparametric: None,
-        parameter_range: Some([-10.0, 0.0]),
+        parameter_range: Some(crate::geometry::DirectedParameterRange::new([-10.0, 0.0]).unwrap()),
     }];
     let ranged_coedge_id = coedge.id.clone();
     let negative = validate_neutral(&negative_parameterization, Vec::new());
@@ -977,7 +978,8 @@ fn pcurve_surface_mismatch_is_flagged() {
         .find(|coedge| coedge.id == ranged_coedge_id)
         .expect("ranged coedge")
         .pcurves[0];
-    pcurve_use.parameter_range = Some([-11.0, 0.0]);
+    pcurve_use.parameter_range =
+        Some(crate::geometry::DirectedParameterRange::new([-11.0, 0.0]).unwrap());
     let invalid_range = validate_neutral(&negative_parameterization, Vec::new());
     assert!(invalid_range.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")

@@ -448,10 +448,13 @@ pub(super) fn project(
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            curve: Some(curve),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve),
+                Some([0.0, parameter_end]),
+            )
+            .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([0.0, parameter_end]),
             tolerance: topology_tolerance,
         });
         wire_edges.push(edge);

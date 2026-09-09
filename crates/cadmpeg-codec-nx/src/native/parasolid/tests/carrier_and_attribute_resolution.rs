@@ -203,7 +203,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     assert_eq!(records[0].state.original(), Some(9));
     assert_eq!(records[0].state.tolerance(), 0.000_01);
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve().as_ref(),
         Some(&result.ir().model.curves[0].id)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -288,7 +288,7 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .expect("required invariant");
 
     let edge_curve = result.ir().model.edges[0]
-        .curve
+        .curve()
         .as_ref()
         .expect("edge curve");
     let curve = result
@@ -365,7 +365,7 @@ fn decode_preserves_deltas_intersection_data_curve() {
     assert_eq!(records[0].header_references[0], 1);
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
-        result.ir().model.edges[0].curve.as_ref(),
+        result.ir().model.edges[0].curve().as_ref(),
         result
             .ir()
             .model
@@ -523,8 +523,8 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
     let edge = result.ir().model.edges.first().expect("edge");
-    assert_eq!(edge.curve.as_ref(), Some(&result.ir().model.curves[0].id));
-    assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert_eq!(edge.curve().as_ref(), Some(&result.ir().model.curves[0].id));
+    assert_eq!(edge.param_range(), Some([0.25, 0.75]));
     let records = result
         .ir()
         .native

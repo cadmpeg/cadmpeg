@@ -2303,6 +2303,7 @@ fn build_geometry_ir(
         &mut sketch_entities,
         &histories,
         &lanes,
+        &mut pmi_losses,
     )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
@@ -2591,12 +2592,12 @@ fn build_geometry_ir(
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     assign_configuration_bodies(&mut ir, &configuration_bodies)?;
-    crate::history::project_configuration_sketch_states(
+    pmi_losses.extend(crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
         &mut annotations,
-    )?;
+    )?);
     crate::history::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -3349,6 +3350,7 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &histories,
         &lanes,
+        &mut pmi_losses,
     )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
@@ -3543,12 +3545,12 @@ fn build_metadata_ir(
     )?;
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    crate::history::project_configuration_sketch_states(
+    pmi_losses.extend(crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
         &lanes,
         &mut annotations,
-    )?;
+    )?);
     crate::history::inherit_configuration_reference_plane_states(&mut ir)?;
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);

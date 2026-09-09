@@ -189,24 +189,7 @@ impl SubdCage {
             let Some(layout) = &vertex.secondary_grips else {
                 continue;
             };
-            if layout.wedges.is_empty() {
-                return Err(SubdError(format!(
-                    "vertices[{index}].secondary_grips.wedges is empty"
-                )));
-            }
-            for (wedge_index, wedge) in layout.wedges.iter().enumerate() {
-                let spoke_count = |wedge: &SubdGripWedge| match wedge {
-                    SubdGripWedge::Phantom => 0,
-                    SubdGripWedge::Slot { spokes, .. } => spokes.len(),
-                };
-                let next = &layout.wedges[(wedge_index + 1) % layout.wedges.len()];
-                let sector_count = match wedge {
-                    SubdGripWedge::Phantom => 0,
-                    SubdGripWedge::Slot { sectors, .. } => sectors.len(),
-                };
-                if spoke_count(wedge).checked_mul(spoke_count(next)) != Some(sector_count) {
-                    return Err(SubdError(format!("vertices[{index}].secondary_grips.wedges[{wedge_index}].sectors has invalid arity")));
-                }
+            for wedge in &layout.wedges {
                 let SubdGripWedge::Slot {
                     edge,
                     sector_face,
@@ -340,15 +323,88 @@ pub enum SubdSymmetryKind {
     /// One-to-one correspondence across the symmetry plane.
     Correspondence,
     /// Radial editor symmetry with native segment and sweep controls.
-    Radial {
-        /// Number of radial segments.
+    Radial(SubdRadialSymmetry),
+}
+
+/// Admitted radial controls and selector-preserving maps.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdRadialSymmetryWire")]
+pub struct SubdRadialSymmetry {
+    segments: std::num::NonZeroU32,
+    sweep: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    radial_maps: Vec<SubdRadialSymmetryMap>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdRadialSymmetryWire {
+    segments: std::num::NonZeroU32,
+    sweep: f64,
+    #[serde(default)]
+    radial_maps: Vec<SubdRadialSymmetryMap>,
+}
+
+impl TryFrom<SubdRadialSymmetryWire> for SubdRadialSymmetry {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdRadialSymmetryWire) -> Result<Self, Self::Error> {
+        Self::new(wire.segments, wire.sweep, wire.radial_maps)
+    }
+}
+
+impl SubdRadialSymmetry {
+    fn new(
         segments: std::num::NonZeroU32,
-        /// Native radial sweep value.
         sweep: f64,
-        /// Selector-preserving native radial-symmetry maps.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         radial_maps: Vec<SubdRadialSymmetryMap>,
-    },
+    ) -> Result<Self, SubdError> {
+        if !sweep.is_finite() {
+            return Err(SubdError("kind.radial.sweep must be finite".into()));
+        }
+        let mut selectors = std::collections::BTreeSet::new();
+        for map in &radial_maps {
+            if !selectors.insert(map.selector) {
+                return Err(SubdError("radial_maps repeats a selector".into()));
+            }
+            let mut sources = std::collections::BTreeSet::new();
+            if map.pairs.iter().any(|[source, _]| !sources.insert(*source)) {
+                return Err(SubdError("radial_maps.pairs repeats a source".into()));
+            }
+        }
+        Ok(Self {
+            segments,
+            sweep,
+            radial_maps,
+        })
+    }
+
+    /// Number of radial segments.
+    pub const fn segments(&self) -> std::num::NonZeroU32 {
+        self.segments
+    }
+
+    /// Finite native radial sweep.
+    pub const fn sweep(&self) -> f64 {
+        self.sweep
+    }
+
+    /// Native maps with distinct selectors and distinct sources within each map.
+    pub fn radial_maps(&self) -> &[SubdRadialSymmetryMap] {
+        &self.radial_maps
+    }
+}
+
+impl SubdSymmetryKind {
+    /// Admit radial controls with finite sweep and distinct map selectors and sources.
+    pub fn radial(
+        segments: std::num::NonZeroU32,
+        sweep: f64,
+        radial_maps: Vec<SubdRadialSymmetryMap>,
+    ) -> Result<Self, SubdError> {
+        SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
+    }
 }
 
 /// Selector of one native radial-symmetry map.
@@ -427,24 +483,6 @@ impl SubdSymmetry {
         edge_pairs: Vec<[u32; 2]>,
         vertex_pairs: Vec<[u32; 2]>,
     ) -> Result<Self, SubdError> {
-        if let SubdSymmetryKind::Radial {
-            sweep, radial_maps, ..
-        } = &kind
-        {
-            if !sweep.is_finite() {
-                return Err(SubdError("kind.radial.sweep must be finite".into()));
-            }
-            let mut selectors = std::collections::BTreeSet::new();
-            for map in radial_maps {
-                if !selectors.insert(map.selector) {
-                    return Err(SubdError("radial_maps repeats a selector".into()));
-                }
-                let mut sources = std::collections::BTreeSet::new();
-                if map.pairs.iter().any(|[source, _]| !sources.insert(*source)) {
-                    return Err(SubdError("radial_maps.pairs repeats a source".into()));
-                }
-            }
-        }
         for (field, pairs) in [
             ("face_pairs", &face_pairs),
             ("edge_pairs", &edge_pairs),
@@ -496,16 +534,12 @@ impl Serialize for SubdSymmetry {
     {
         let (kind, radial_maps) = match &self.kind {
             SubdSymmetryKind::Correspondence => (SubdSymmetryKindWire::Correspondence, Vec::new()),
-            SubdSymmetryKind::Radial {
-                segments,
-                sweep,
-                radial_maps,
-            } => (
+            SubdSymmetryKind::Radial(radial) => (
                 SubdSymmetryKindWire::Radial {
-                    segments: segments.get(),
-                    sweep: *sweep,
+                    segments: radial.segments().get(),
+                    sweep: radial.sweep(),
                 },
-                radial_maps.clone(),
+                radial.radial_maps().to_vec(),
             ),
         };
         SubdSymmetryWire {
@@ -535,13 +569,14 @@ impl<'de> Deserialize<'de> for SubdSymmetry {
                     "correspondence SubD symmetry cannot carry radial_maps",
                 ));
             }
-            SubdSymmetryKindWire::Radial { segments, sweep } => SubdSymmetryKind::Radial {
-                segments: std::num::NonZeroU32::new(segments).ok_or_else(|| {
+            SubdSymmetryKindWire::Radial { segments, sweep } => SubdSymmetryKind::radial(
+                std::num::NonZeroU32::new(segments).ok_or_else(|| {
                     serde::de::Error::custom("kind.radial.segments must be nonzero")
                 })?,
                 sweep,
-                radial_maps: wire.radial_maps,
-            },
+                wire.radial_maps,
+            )
+            .map_err(serde::de::Error::custom)?,
         };
         Self::new(
             kind,
@@ -585,7 +620,7 @@ pub struct SubdVertex {
     pub tag: SubdVertexTag,
     /// Optional secondary-grip topology owned by this vertex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_grips: Option<SubdVertexGripLayout>,
+    secondary_grips: Option<SubdVertexGripLayout>,
 }
 
 #[derive(Deserialize)]
@@ -620,6 +655,11 @@ impl SubdVertex {
         })
     }
 
+    /// Optional admitted secondary-grip layout.
+    pub fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
+    }
+
     /// Vertex position in document units.
     pub const fn point(&self) -> Point3 {
         self.point
@@ -651,11 +691,65 @@ pub enum SubdGripDirection {
 /// Typed secondary-grip layout for one subdivision vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SubdVertexGripLayoutWire")]
 pub struct SubdVertexGripLayout {
     /// Direction of the native root edge; wedge zero is the north slot.
-    pub direction: SubdGripDirection,
+    direction: SubdGripDirection,
     /// Wedges in north-anchored order.
-    pub wedges: Vec<SubdGripWedge>,
+    wedges: Vec<SubdGripWedge>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SubdVertexGripLayoutWire {
+    direction: SubdGripDirection,
+    wedges: Vec<SubdGripWedge>,
+}
+
+impl TryFrom<SubdVertexGripLayoutWire> for SubdVertexGripLayout {
+    type Error = SubdError;
+
+    fn try_from(wire: SubdVertexGripLayoutWire) -> Result<Self, Self::Error> {
+        Self::new(wire.direction, wire.wedges)
+    }
+}
+
+impl SubdVertexGripLayout {
+    /// Admit a nonempty cyclic fan with sector arity equal to adjacent spoke products.
+    pub fn new(
+        direction: SubdGripDirection,
+        wedges: Vec<SubdGripWedge>,
+    ) -> Result<Self, SubdError> {
+        if wedges.is_empty() {
+            return Err(SubdError("secondary_grips.wedges is empty".into()));
+        }
+        let spoke_count = |wedge: &SubdGripWedge| match wedge {
+            SubdGripWedge::Phantom => 0,
+            SubdGripWedge::Slot { spokes, .. } => spokes.len(),
+        };
+        for (index, (wedge, next)) in wedges.iter().zip(wedges.iter().cycle().skip(1)).enumerate() {
+            let sector_count = match wedge {
+                SubdGripWedge::Phantom => 0,
+                SubdGripWedge::Slot { sectors, .. } => sectors.len(),
+            };
+            if spoke_count(wedge).checked_mul(spoke_count(next)) != Some(sector_count) {
+                return Err(SubdError(format!(
+                    "secondary_grips.wedges[{index}].sectors has invalid arity"
+                )));
+            }
+        }
+        Ok(Self { direction, wedges })
+    }
+
+    /// Direction of the native root edge.
+    pub const fn direction(&self) -> SubdGripDirection {
+        self.direction
+    }
+
+    /// Wedges in north-anchored cyclic order.
+    pub fn wedges(&self) -> &[SubdGripWedge] {
+        &self.wedges
+    }
 }
 
 /// One wedge in a secondary-grip layout.

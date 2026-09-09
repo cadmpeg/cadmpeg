@@ -241,7 +241,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
         let construction_id = ids::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
-            curve.id.as_str() == construction_id
+            curve.id.as_str() == construction_id.as_str()
                 && matches!(
                     curve.definition(),
                     cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {

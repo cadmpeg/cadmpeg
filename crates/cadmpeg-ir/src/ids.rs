@@ -8,20 +8,9 @@
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
 //! components before `#`). Use [`is_valid_identity`] / [`format_identity`] at
-//! mint time; validation repeats the same grammar.
+//! mint time.
 
 use serde::Deserialize;
-
-pub(crate) fn deserialize_entity_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<String, D::Error> {
-    let value = String::deserialize(deserializer)?;
-    if is_valid_identity(&value) {
-        Ok(value)
-    } else {
-        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
-    }
-}
 
 pub(crate) fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -53,18 +42,70 @@ pub fn is_valid_identity(id: &str) -> bool {
         && components.next().is_none()
 }
 
+/// An entity identity with validated namespace and key grammar.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(try_from = "String")]
+pub struct Identity(String);
+
+impl Identity {
+    /// Admit a string matching the entity identity grammar.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if is_valid_identity(&value) {
+            Ok(Self(value))
+        } else {
+            Err(IdentityError::InvalidId { value })
+        }
+    }
+
+    /// Borrow the identity string.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume the identity into its string.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl TryFrom<String> for Identity {
+    type Error = IdentityError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for Identity {
+    type Error = IdentityError;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl Display for Identity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Format a three-component identity and reject grammar violations.
 ///
 /// # Errors
 ///
 /// Returns [`IdentityError`] when any component is empty, contains `:`, `#`, or
-/// whitespace, or when the composed string fails [`is_valid_identity`].
+/// whitespace, or when the key is empty or contains `#` or whitespace.
 pub fn format_identity(
     format: &str,
     scope: &str,
     kind: &str,
     key: impl Display,
-) -> Result<String, IdentityError> {
+) -> Result<Identity, IdentityError> {
     for (label, part) in [("format", format), ("scope", scope), ("kind", kind)] {
         if part.is_empty()
             || part.contains(':')
@@ -82,10 +123,7 @@ pub fn format_identity(
         return Err(IdentityError::InvalidKey { value: key });
     }
     let id = format!("{format}:{scope}:{kind}#{key}");
-    if !is_valid_identity(&id) {
-        return Err(IdentityError::InvalidId { value: id });
-    }
-    Ok(id)
+    Ok(Identity(id))
 }
 
 /// Failure to mint an entity identity.
@@ -130,44 +168,48 @@ macro_rules! id_type {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
         #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_entity_id")] String);
+        pub struct $name($crate::ids::Identity);
 
         impl serde::Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
-                $crate::schema::serialize_reference_id(&self.0, serializer)
+                $crate::schema::serialize_reference_id(self.0.as_str(), serializer)
             }
         }
 
         impl $name {
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
-                let value = value.into();
-                if !$crate::ids::is_valid_identity(&value) {
-                    return Err($crate::ids::IdentityError::InvalidId { value });
-                }
-                Ok(Self(value))
+                $crate::ids::Identity::new(value).map(Self::from)
             }
 
             /// Return the underlying id string.
             #[must_use]
             pub fn into_string(self) -> String {
-                self.0
+                self.0.into_string()
             }
 
             /// Borrow the underlying id string.
             #[must_use]
             pub fn as_str(&self) -> &str {
-                &self.0
+                self.0.as_str()
             }
         }
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(&self.0)
+                f.write_str(self.0.as_str())
             }
+        }
+
+        impl From<$name> for $crate::ids::Identity {
+            fn from(value: $name) -> Self { value.0 }
+        }
+
+        impl From<$crate::ids::Identity> for $name {
+            fn from(value: $crate::ids::Identity) -> Self { Self(value) }
         }
 
         impl TryFrom<String> for $name {

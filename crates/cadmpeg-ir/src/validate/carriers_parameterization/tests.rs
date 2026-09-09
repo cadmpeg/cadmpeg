@@ -116,7 +116,7 @@ fn orphan_carrier_is_flagged() {
 #[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube();
-    let curve_id = ir.model.edges[0].curve.clone().unwrap();
+    let curve_id = ir.model.edges[0].curve().clone().unwrap();
     ir.model
         .curves
         .iter_mut()
@@ -131,13 +131,15 @@ fn periodic_curve_parameter_domain_is_checked() {
         )
         .unwrap(),
     );
-    ir.model.edges[0].param_range = Some([0.0, 7.0]);
+    ir.model.edges[0].set_param_range(Some([0.0, 7.0])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
-    ir.model.edges[0].param_range = Some([-std::f64::consts::PI, std::f64::consts::PI]);
+    ir.model.edges[0]
+        .set_param_range(Some([-std::f64::consts::PI, std::f64::consts::PI]))
+        .unwrap();
     assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()

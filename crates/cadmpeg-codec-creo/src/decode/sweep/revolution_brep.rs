@@ -190,10 +190,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             });
             ir.model.edges.push(Edge {
                 id: edge_id.clone(),
-                curve: Some(curve_id),
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                    Some(curve_id),
+                    Some([0.0, std::f64::consts::TAU]),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
                 start: vertex_id.clone(),
                 end: vertex_id,
-                param_range: Some([0.0, std::f64::consts::TAU]),
                 tolerance: None,
             });
             edges[index] = Some(edge_id);

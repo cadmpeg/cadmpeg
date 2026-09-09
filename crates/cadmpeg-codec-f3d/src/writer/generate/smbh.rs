@@ -1479,7 +1479,7 @@ fn encode_source_less_edges_vertices_points(
             )));
         };
         let curve_ref = edge
-            .curve
+            .curve()
             .as_ref()
             .map(|curve_id| {
                 curve_ordinals
@@ -1494,11 +1494,11 @@ fn encode_source_less_edges_vertices_points(
             })
             .transpose()?
             .unwrap_or(-1);
-        let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
+        let mut range = edge.param_range().unwrap_or([0.0, 1.0]);
         // Conic edge parameters are angles in both the IR and the native
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.
-        if edge.curve.as_ref().is_some_and(|curve_id| {
+        if edge.curve().as_ref().is_some_and(|curve_id| {
             curve_ordinals.get(curve_id).is_some_and(|ordinal| {
                 matches!(model.curves[*ordinal].geometry, CurveGeometry::Line(_))
             })

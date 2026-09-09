@@ -78,7 +78,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         6 => {
-            ir.tolerances.linear = const { cadmpeg_ir::units::PositiveScalar::new(f64::MAX).expect("positive finite") };
+            // Duplicate a point identity in the document arena.
+            if let Some(point) = ir.model.points.first().cloned() {
+                ir.model.points.push(point);
+            }
         }
         7 => {
             // Clear all geometry but keep topology
@@ -112,9 +115,8 @@ fuzz_target!(|data: &[u8]| {
             source_fidelity.annotations.append(annotations.build());
         }
         12 => {
-            // Put an invalid range on a canonical curve parameterization.
-            if let Some(edge) = ir.model.edges.first_mut() {
-                edge.param_range = Some([f64::INFINITY, f64::NEG_INFINITY]);
+            if let Some(edge) = ir.model.edges.first().cloned() {
+                ir.model.edges.push(edge);
             }
         }
         _ => {}

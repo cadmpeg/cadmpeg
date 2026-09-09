@@ -2422,7 +2422,7 @@ pub(crate) fn project_relation_bindings(
                         && relation_constraint_is_inactive(parameter, definition, sketch_entities))
                 })
                 .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
-                    native_kind: native_kind.into(),
+                    native_kind: super::names::checked_nonempty_name(native_kind),
                     native_state: None,
                     native_flags: None,
                     native_properties: std::collections::BTreeMap::new(),

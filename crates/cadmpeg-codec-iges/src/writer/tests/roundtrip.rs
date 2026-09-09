@@ -432,7 +432,10 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             original.ir().model.curves[0].geometry,
             "{version:?}"
         );
-        assert_eq!(round_trip.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+        assert_eq!(
+            round_trip.ir().model.edges[0].param_range(),
+            Some([0.0, 1.0])
+        );
         assert!(
             round_trip
                 .report()

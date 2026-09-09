@@ -1529,12 +1529,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
             .expect("identity grammar"),
-        curve: Some(boundary_curve),
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(boundary_curve), Some([0.0, 1.0]))
+            .unwrap(),
         start: VertexId::mint("test:model:entity#synthetic:blend-boundary-start")
             .expect("identity grammar"),
         end: VertexId::mint("test:model:entity#synthetic:blend-boundary-end")
             .expect("identity grammar"),
-        param_range: Some([0.0, 1.0]),
         tolerance: Some(
             cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),

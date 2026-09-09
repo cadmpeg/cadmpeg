@@ -18,7 +18,7 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     ));
     assert!(!sketch_constraint_has_complete_neutral_semantics(
         &SketchConstraintDefinitionInput::Native {
-            native_kind: "unresolved".into(),
+            native_kind: cadmpeg_ir::products::NonEmptyString::new("unresolved").unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: BTreeMap::new(),

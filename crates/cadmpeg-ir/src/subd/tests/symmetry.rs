@@ -86,11 +86,7 @@ fn plane_frame_admission_preserves_the_unit_and_orthogonality_tolerance() {
 
 fn radial(sweep: f64) -> Result<SubdSymmetry, crate::subd::SubdError> {
     SubdSymmetry::new(
-        SubdSymmetryKind::Radial {
-            segments: std::num::NonZeroU32::new(1).unwrap(),
-            sweep,
-            radial_maps: Vec::new(),
-        },
+        SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), sweep, Vec::new())?,
         plane(),
         Vec::new(),
         Vec::new(),
@@ -112,7 +108,7 @@ fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
     for sweep in [-f64::MAX, -1.0, 0.0, f64::MAX] {
         let symmetry = radial(sweep).unwrap();
         assert!(
-            matches!(symmetry.kind(), SubdSymmetryKind::Radial { sweep: actual, .. } if *actual == sweep)
+            matches!(symmetry.kind(), SubdSymmetryKind::Radial(radial) if radial.sweep() == sweep)
         );
         assert_eq!(
             serde_json::from_value::<SubdSymmetry>(serde_json::to_value(&symmetry).unwrap())
@@ -186,28 +182,21 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         vec![map(vec![]), map(vec![])],
         vec![map(vec![[0, 0], [0, 1]])],
     ] {
-        assert!(SubdSymmetry::new(
-            SubdSymmetryKind::Radial {
-                segments: std::num::NonZeroU32::new(1).unwrap(),
-                sweep: 0.0,
-                radial_maps: maps.clone()
-            },
-            plane(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new()
-        )
-        .is_err());
+        assert!(
+            SubdSymmetryKind::radial(std::num::NonZeroU32::new(1).unwrap(), 0.0, maps.clone())
+                .is_err()
+        );
         let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
         wire["radial_maps"] = serde_json::to_value(maps).unwrap();
         assert!(serde_json::from_value::<SubdSymmetry>(wire).is_err());
     }
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::Radial {
-            segments: std::num::NonZeroU32::new(1).unwrap(),
-            sweep: 0.0,
-            radial_maps: vec![map(vec![[0, 0], [u64::MAX, 0]])],
-        },
+        SubdSymmetryKind::radial(
+            std::num::NonZeroU32::new(1).unwrap(),
+            0.0,
+            vec![map(vec![[0, 0], [u64::MAX, 0]])],
+        )
+        .unwrap(),
         plane(),
         Vec::new(),
         Vec::new(),
@@ -218,4 +207,24 @@ fn radial_maps_require_distinct_selectors_and_sources() {
         serde_json::from_value::<SubdSymmetry>(serde_json::to_value(&symmetry).unwrap()).unwrap(),
         symmetry
     );
+}
+
+#[test]
+fn radial_kind_deserialization_admits_controls_without_a_symmetry_owner() {
+    let wire = serde_json::json!({
+        "kind": "radial", "segments": 4, "sweep": 1.0,
+        "radial_maps": [{ "selector": "ef", "pairs": [[0, 1]] }]
+    });
+    let kind = serde_json::from_value::<SubdSymmetryKind>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+    let mut zero_segments = wire.clone();
+    zero_segments["segments"] = 0.into();
+    assert!(serde_json::from_value::<SubdSymmetryKind>(zero_segments).is_err());
+    let mut duplicate_sources = wire.clone();
+    duplicate_sources["radial_maps"][0]["pairs"] = serde_json::json!([[0, 1], [0, 2]]);
+    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_sources).is_err());
+    let mut duplicate_selectors = wire.clone();
+    duplicate_selectors["radial_maps"] =
+        serde_json::json!([wire["radial_maps"][0], wire["radial_maps"][0]]);
+    assert!(serde_json::from_value::<SubdSymmetryKind>(duplicate_selectors).is_err());
 }

@@ -977,7 +977,9 @@ fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Poin
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
-pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
+pub(crate) fn clamp_edge_ranges_to_carrier_domains(
+    out: &mut AsmBrep,
+) -> Result<(), cadmpeg_core::CodecError> {
     let domains: HashMap<&str, [f64; 2]> = out
         .curves
         .iter()
@@ -990,11 +992,11 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         })
         .collect();
     for edge in &mut out.edges {
-        let Some([start, end]) = edge.param_range.as_mut() else {
+        let Some([mut start, mut end]) = edge.param_range() else {
             continue;
         };
         let Some([first, last]) = edge
-            .curve
+            .curve()
             .as_ref()
             .and_then(|curve| domains.get(curve.as_str()))
         else {
@@ -1002,13 +1004,16 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         };
         let tolerance =
             EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9 * (last - first).abs().max(1.0);
-        if *start < *first && *first - *start <= tolerance {
-            *start = *first;
+        if start < *first && *first - start <= tolerance {
+            start = *first;
         }
-        if *end > *last && *end - *last <= tolerance {
-            *end = *last;
+        if end > *last && end - *last <= tolerance {
+            end = *last;
         }
+        edge.set_param_range(Some([start, end]))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+    Ok(())
 }
 
 pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {

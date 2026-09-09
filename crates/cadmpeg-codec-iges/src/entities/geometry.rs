@@ -1471,10 +1471,10 @@ pub(crate) fn project_geometry(
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            curve: Some(curve),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
+                .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([0.0, angle]),
             tolerance: None,
         });
         wire_edges.push(edge);
@@ -1733,10 +1733,10 @@ pub(crate) fn project_geometry(
         ]);
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            curve: Some(curve),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
+                .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([0.0, length]),
             tolerance: None,
         });
         wire_edges.push(edge);
@@ -2084,10 +2084,13 @@ pub(crate) fn project_geometry(
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            curve: Some(curve),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve),
+                Some([parameter_range[0], parameter_range[1]]),
+            )
+            .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
-            param_range: Some([parameter_range[0], parameter_range[1]]),
             tolerance: None,
         });
         wire_edges.push(edge);

@@ -303,6 +303,7 @@ pub(crate) fn project_compact_sketch_profiles(
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -493,6 +494,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
+            let entity_start = sketch_entities.len();
             if dimensioned_rectangle.is_some() {
                 let points = markers
                     .iter()
@@ -553,7 +555,13 @@ pub(crate) fn project_compact_sketch_profiles(
                     );
                 }
                 let mut sketch = sketch;
-                if sketch.profiles.try_push(profile).is_err() {
+                if let Err(error) = sketch.profiles.try_push(profile) {
+                    sketch_entities.truncate(entity_start);
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                            "Sketch {sketch_id} profile was not transferred: {error}"
+                        )),
+                    );
                     continue;
                 }
                 sketches.push(sketch);
@@ -687,7 +695,13 @@ pub(crate) fn project_compact_sketch_profiles(
                     profile
                 };
                 let mut sketch = sketch;
-                if sketch.profiles.try_push(profile).is_err() {
+                if let Err(error) = sketch.profiles.try_push(profile) {
+                    sketch_entities.truncate(entity_start);
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                            "Sketch {sketch_id} profile was not transferred: {error}"
+                        )),
+                    );
                     continue;
                 }
                 sketches.push(sketch);
@@ -747,7 +761,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 );
             }
             let mut sketch = sketch;
-            if sketch.profiles.try_push(profile).is_err() {
+            if let Err(error) = sketch.profiles.try_push(profile) {
+                sketch_entities.truncate(entity_start);
+                losses.push(
+                    crate::loss::SldprtLossCode::SketchProfileRejected.note(format!(
+                        "Sketch {sketch_id} profile was not transferred: {error}"
+                    )),
+                );
                 continue;
             }
             sketches.push(sketch);
@@ -1031,10 +1051,14 @@ pub(crate) fn project_marker_backed_sketches(
             let encoded_rectangle =
                 indexed_rectangle_from_line_cycle(&lane.native_payload, &object_markers);
             let inferred_points = std::cell::OnceCell::new();
-            let mut projected = markers
-                .iter()
-                .copied()
-                .filter_map(|marker| {
+            let mut projected = Vec::new();
+            for marker in markers.iter().copied() {
+                // The fixed prefix makes this generated label nonempty.
+                let native_kind = super::names::checked_nonempty_name(format!(
+                    "sldprt:marker-geometry:{}",
+                    marker.kind.native_code()
+                ));
+                let entity = (|| {
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?;
                         let point = transform.apply(quantize(
@@ -1162,14 +1186,7 @@ pub(crate) fn project_marker_backed_sketches(
                                             // A zero-length line is not valid IR geometry. Preserve
                                             // the marker whose endpoint collapsed because a newly
                                             // recognized profile point supplied its coordinates.
-                                            SketchGeometry::native(
-                                                cadmpeg_ir::products::NonEmptyString::new(
-                                                    format!(
-                                                        "sldprt:marker-geometry:{}",
-                                                        marker.kind.native_code()
-                                                    ),
-                                                )?,
-                                            )
+                                            SketchGeometry::native(native_kind)
                                         } else {
                                             return None;
                                         }
@@ -1241,12 +1258,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     })
                                     .ok()?
                                 } else {
-                                    SketchGeometry::native(
-                                        cadmpeg_ir::products::NonEmptyString::new(format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ))?,
-                                    )
+                                    SketchGeometry::native(native_kind)
                                 }
                             }
                         }
@@ -1358,14 +1370,8 @@ pub(crate) fn project_marker_backed_sketches(
                                 else {
                                     return None;
                                 };
-                                minor_arc_geometry(start, end, point, QUANTUM).or_else(|| {
-                                    Some(SketchGeometry::native(
-                                        cadmpeg_ir::products::NonEmptyString::new(format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ))?,
-                                    ))
-                                })?
+                                minor_arc_geometry(start, end, point, QUANTUM)
+                                    .unwrap_or_else(|| SketchGeometry::native(native_kind))
                             } else {
                                 (|| {
                                     let [start, end] = endpoints.as_slice() else {
@@ -1566,14 +1572,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         .ok()?,
                                     )
                                 })()
-                                .or_else(|| {
-                                    Some(SketchGeometry::native(
-                                        cadmpeg_ir::products::NonEmptyString::new(format!(
-                                            "sldprt:marker-geometry:{}",
-                                            marker.kind.native_code()
-                                        ))?,
-                                    ))
-                                })?
+                                .unwrap_or_else(|| SketchGeometry::native(native_kind))
                             }
                         }
                         SketchInputKind::Relation(_)
@@ -1635,8 +1634,11 @@ pub(crate) fn project_marker_backed_sketches(
                         .with_native_ref(Some(marker.id.clone()))
                         .with_endpoint_refs(endpoint_refs),
                     )
-                })
-                .collect::<Vec<_>>();
+                })();
+                if let Some(entity) = entity {
+                    projected.push(entity);
+                }
+            }
             if let Some(rectangle) = encoded_rectangle {
                 let rectangle_marker_refs = object_markers
                     .iter()

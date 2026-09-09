@@ -915,18 +915,16 @@ fn build_wire_set(
         let edge = edefs.get(&edge_id)?;
         let (start, end) = edge.curve_vertices();
         let edge_suffix = format!("-wire-{id}-set-{set_id}");
-        let ir_id = EdgeId::mint(ids::data("edge", format!("{edge_id}{edge_suffix}")))
-            .expect("identity grammar");
+        let ir_id = EdgeId::from(ids::data("edge", format!("{edge_id}{edge_suffix}")));
         let vertex_suffix = format!("-wire-{id}-set-{set_id}");
         wire_edges.push(ir_id.clone());
         built_edges.push(Edge {
             id: ir_id,
-            curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
-            start: VertexId::mint(ids::data("vertex", format!("{start}{vertex_suffix}")))
-                .expect("identity grammar"),
-            end: VertexId::mint(ids::data("vertex", format!("{end}{vertex_suffix}")))
-                .expect("identity grammar"),
-            param_range: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, edge, exchange, warnings,
+            )),
+            start: VertexId::from(ids::data("vertex", format!("{start}{vertex_suffix}"))),
+            end: VertexId::from(ids::data("vertex", format!("{end}{vertex_suffix}"))),
             tolerance: None,
         });
         used_vertices.extend([start, end]);
@@ -941,18 +939,15 @@ fn build_wire_set(
         let vertex = vdefs.get(&vertex_id)?;
         point_positions.get(vertex.point)?;
         built_vertices.push(Vertex {
-            id: VertexId::mint(ids::data("vertex", format!("{vertex_id}{vertex_suffix}")))
-                .expect("identity grammar"),
-            point: PointId::mint(ids::data("point", vertex.point)).expect("identity grammar"),
+            id: VertexId::from(ids::data("vertex", format!("{vertex_id}{vertex_suffix}"))),
+            point: PointId::from(ids::data("point", vertex.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
     }
-    let body = BodyId::mint(ids::data("body", format!("{id}{suffix}"))).expect("identity grammar");
-    let region =
-        RegionId::mint(ids::data("region", format!("{id}{suffix}"))).expect("identity grammar");
-    let shell =
-        ShellId::mint(ids::data("shell", format!("{id}{suffix}"))).expect("identity grammar");
+    let body = BodyId::from(ids::data("body", format!("{id}{suffix}")));
+    let region = RegionId::from(ids::data("region", format!("{id}{suffix}")));
+    let shell = ShellId::from(ids::data("shell", format!("{id}{suffix}")));
     let mut built = staged_topology(
         typed,
         built_vertices,
@@ -1110,20 +1105,18 @@ fn build_shell_wire_set(
         } else {
             (curve_end, curve_start)
         };
-        let ir_id = EdgeId::mint(ids::data(
+        let ir_id = EdgeId::from(ids::data(
             "edge",
             format!("{edge_id}-wire-{id}-{shell_id}-{oriented_id}-{index}"),
-        ))
-        .expect("identity grammar");
+        ));
         wire_edges.push(ir_id.clone());
         edges.push(Edge {
             id: ir_id,
-            curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
-            start: VertexId::mint(ids::data("vertex", format!("{start}{vertex_suffix}")))
-                .expect("identity grammar"),
-            end: VertexId::mint(ids::data("vertex", format!("{end}{vertex_suffix}")))
-                .expect("identity grammar"),
-            param_range: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, edge, exchange, warnings,
+            )),
+            start: VertexId::from(ids::data("vertex", format!("{start}{vertex_suffix}"))),
+            end: VertexId::from(ids::data("vertex", format!("{end}{vertex_suffix}"))),
             tolerance: None,
         });
     }
@@ -1133,23 +1126,18 @@ fn build_shell_wire_set(
             let vertex = vdefs.get(&vertex_id)?;
             point_positions.get(vertex.point)?;
             Some(Vertex {
-                id: VertexId::mint(ids::data("vertex", format!("{vertex_id}{vertex_suffix}")))
-                    .expect("identity grammar"),
-                point: PointId::mint(ids::data("point", vertex.point)).expect("identity grammar"),
+                id: VertexId::from(ids::data("vertex", format!("{vertex_id}{vertex_suffix}"))),
+                point: PointId::from(ids::data("point", vertex.point)),
                 tolerance: None,
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let body = BodyId::mint(ids::data("body", format!("{id}{suffix}"))).expect("identity grammar");
-    let region =
-        RegionId::mint(ids::data("region", format!("{id}{suffix}"))).expect("identity grammar");
+    let body = BodyId::from(ids::data("body", format!("{id}{suffix}")));
+    let region = RegionId::from(ids::data("region", format!("{id}{suffix}")));
     let shell = shell_identity(id, shell_id, scope_root);
     let free_vertices = free_vertices
         .into_iter()
-        .map(|vertex| {
-            VertexId::mint(ids::data("vertex", format!("{vertex}{vertex_suffix}")))
-                .expect("identity grammar")
-        })
+        .map(|vertex| VertexId::from(ids::data("vertex", format!("{vertex}{vertex_suffix}"))))
         .collect();
     let mut built = staged_topology(
         typed,
@@ -1254,8 +1242,7 @@ fn build_geometric_set(
         };
         typed.insert(set_id);
         for surface_step in items {
-            let surface =
-                SurfaceId::mint(ids::data("surface", surface_step)).expect("identity grammar");
+            let surface = SurfaceId::from(ids::data("surface", surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
                 surfaces.push((surface_step, surface));
             }
@@ -1264,18 +1251,16 @@ fn build_geometric_set(
     if surfaces.is_empty() {
         return None;
     }
-    let body = BodyId::mint(ids::data("body", id)).expect("identity grammar");
-    let region = RegionId::mint(ids::data("region", id)).expect("identity grammar");
-    let shell =
-        ShellId::mint(ids::data("shell", format!("geometric-set-{id}"))).expect("identity grammar");
+    let body = BodyId::from(ids::data("body", id));
+    let region = RegionId::from(ids::data("region", id));
+    let shell = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
     let faces = surfaces
         .into_iter()
         .map(|(surface_step, surface)| Face {
-            id: FaceId::mint(ids::data(
+            id: FaceId::from(ids::data(
                 "face",
                 format!("{surface_step}-geometric-set-{id}"),
-            ))
-            .expect("identity grammar"),
+            )),
             shell: shell.clone(),
             surface,
             sense: Sense::Forward,
@@ -1544,7 +1529,7 @@ fn edge_curve_id_reported(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
         ));
     }
-    carrier.map(|curve| CurveId::mint(ids::data("curve", curve)).expect("identity grammar"))
+    carrier.map(|curve| CurveId::from(ids::data("curve", curve)))
 }
 fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
     exchange
@@ -1935,8 +1920,8 @@ fn build(
         || has_type(root, "BREP_WITH_VOIDS")
         || has_type(root, "FACETED_BREP");
     if solid {
-        let body = BodyId::mint(ids::data("body", id)).expect("identity grammar");
-        let region = RegionId::mint(ids::data("region", id)).expect("identity grammar");
+        let body = BodyId::from(ids::data("body", id));
+        let region = RegionId::from(ids::data("region", id));
         let mut failure = None;
         let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
@@ -1995,16 +1980,14 @@ fn build(
         } else {
             None
         };
-        let body = BodyId::mint(ids::data(
+        let body = BodyId::from(ids::data(
             "body",
             format!("{id}{}", suffix.as_deref().unwrap_or_default()),
-        ))
-        .expect("identity grammar");
-        let region = RegionId::mint(ids::data(
+        ));
+        let region = RegionId::from(ids::data(
             "region",
             format!("{id}{}", suffix.as_deref().unwrap_or_default()),
-        ))
-        .expect("identity grammar");
+        ));
         if let Some(value) = build_one(
             id,
             root,
@@ -2212,13 +2195,12 @@ fn build_one(
                 String::new()
             };
             let surface_id = if let Some(surface_step) = face_info.surface {
-                SurfaceId::mint(ids::data("surface", surface_step)).expect("identity grammar")
+                SurfaceId::from(ids::data("surface", surface_step))
             } else {
-                let surface_id = SurfaceId::mint(ids::data(
+                let surface_id = SurfaceId::from(ids::data(
                     "surface",
                     format!("implicit-face-{face_step}{face_suffix}"),
-                ))
-                .expect("identity grammar");
+                ));
                 if implicit_surface_ids.insert(surface_id.clone()) {
                     surfaces.push(Surface {
                         id: surface_id.clone(),
@@ -2240,8 +2222,7 @@ fn build_one(
             };
             let surface_step = face_info.surface;
             let face_same_sense = face_info.same_sense;
-            let fid = FaceId::mint(ids::data("face", format!("{face_step}{face_suffix}")))
-                .expect("identity grammar");
+            let fid = FaceId::from(ids::data("face", format!("{face_step}{face_suffix}")));
             let name = face_info.name.as_ref().and_then(|value| {
                 super::decode_text(
                     exchange,
@@ -2281,11 +2262,10 @@ fn build_one(
                     loop_step,
                     CarrierKind::LoopRecord,
                 )?;
-                let lid = LoopId::mint(ids::data(
+                let lid = LoopId::from(ids::data(
                     "loop",
                     format!("{loop_step}-face-{face_step}{face_suffix}"),
-                ))
-                .expect("identity grammar");
+                ));
                 if has_type(lr, "VERTEX_LOOP") {
                     let vertex_step = require_carrier(
                         named_reference(lr, "VERTEX_LOOP", 1, 0),
@@ -2370,11 +2350,10 @@ fn build_one(
                             .entry((shell_step, edge_id.clone()))
                             .or_insert((canonical_start, canonical_end));
                         poly_points.extend([(shell_step, start_point), (shell_step, end_point)]);
-                        let cid = CoedgeId::mint(ids::data(
+                        let cid = CoedgeId::from(ids::data(
                             "coedge",
                             format!("poly-{loop_step}-{index}-face-{face_step}{face_suffix}"),
-                        ))
-                        .expect("identity grammar");
+                        ));
                         coedge_ids.push(cid.clone());
                         coedges.push(Coedge {
                             id: cid.clone(),
@@ -2448,11 +2427,10 @@ fn build_one(
                         o.edge,
                         CarrierKind::EdgeDefinition,
                     )?;
-                    let cid = CoedgeId::mint(ids::data(
+                    let cid = CoedgeId::from(ids::data(
                         "coedge",
                         format!("{use_step}-face-{face_step}{face_suffix}"),
-                    ))
-                    .expect("identity grammar");
+                    ));
                     let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if let OrientedKind::Seam {
                         pcurve,
                     } = o.kind
@@ -2460,8 +2438,7 @@ fn build_one(
                         let explicit_pcurve = surface_step.and_then(|surface_step| {
                             let pcurve_step = pcurve?;
                             let pcurve = exchange.records.get(&pcurve_step)?;
-                            let pcurve_id = PcurveId::mint(ids::data("pcurve", pcurve_step))
-                                .expect("identity grammar");
+                            let pcurve_id = PcurveId::from(ids::data("pcurve", pcurve_step));
                             let edge_curve = edge.curve()?;
                             let associated = associated_pcurves(
                                 edge_curve,
@@ -2550,12 +2527,20 @@ fn build_one(
                         },
                         pcurves: pcurves
                             .into_iter()
-                            .map(|(pcurve, parameter_range)| PcurveUse {
-                                pcurve,
-                                isoparametric: None,
-                                parameter_range,
+                            .map(|(pcurve, parameter_range)| {
+                                Ok(PcurveUse {
+                                    pcurve,
+                                    isoparametric: None,
+                                    parameter_range: parameter_range
+                                        .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                        .transpose()?,
+                                })
                             })
-                            .collect(),
+                            .collect::<Result<Vec<_>, cadmpeg_ir::geometry::ParameterRangeError>>()
+                            .map_err(|error| {
+                                warnings.push(format!("coedge pcurve parameter_range: {error}"));
+                            })
+                            .ok()?,
                         use_curve: None,
                     });
                     radial
@@ -2677,8 +2662,14 @@ fn build_one(
             let component_shell = if component_index == 0 {
                 sid.clone()
             } else {
-                ShellId::mint(format!("{sid}-component-{component_index}"))
-                    .expect("identity grammar")
+                ShellId::from(ids::data(
+                    "shell",
+                    if scope_root {
+                        format!("{shell_step}-root-{id}-component-{component_index}")
+                    } else {
+                        format!("{shell_step}-component-{component_index}")
+                    },
+                ))
             };
             let component_faces = component
                 .into_iter()
@@ -2712,20 +2703,20 @@ fn build_one(
         let (start, end) = e.curve_vertices();
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
-            curve: edge_curve_id_reported(edge_id, e, exchange, warnings),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
+                edge_id, e, exchange, warnings,
+            )),
             start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
-            param_range: None,
             tolerance: None,
         });
     }
     for ((shell_step, edge_identity), (start, end)) in poly_edges {
         edges.push(Edge {
             id: edge_identity,
-            curve: None,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
             start: scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
             end: scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
-            param_range: None,
             tolerance: None,
         });
     }
@@ -2744,7 +2735,7 @@ fn build_one(
         )?;
         vertices.push(Vertex {
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
-            point: PointId::mint(ids::data("point", v.point)).expect("identity grammar"),
+            point: PointId::from(ids::data("point", v.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
@@ -2758,7 +2749,7 @@ fn build_one(
         )?;
         vertices.push(Vertex {
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
-            point: PointId::mint(ids::data("point", point_id)).expect("identity grammar"),
+            point: PointId::from(ids::data("point", point_id)),
             tolerance: None,
         });
         typed.insert(point_id);
@@ -2945,10 +2936,9 @@ fn connected_face_components(
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
     if scope_root {
-        ShellId::mint(ids::data("shell", format!("{shell_step}-root-{root_id}")))
-            .expect("identity grammar")
+        ShellId::from(ids::data("shell", format!("{shell_step}-root-{root_id}")))
     } else {
-        ShellId::mint(ids::data("shell", shell_step)).expect("identity grammar")
+        ShellId::from(ids::data("shell", shell_step))
     }
 }
 
@@ -2961,17 +2951,15 @@ fn scoped_edge_id(
 ) -> EdgeId {
     if scoped {
         if scope_root {
-            EdgeId::mint(ids::data(
+            EdgeId::from(ids::data(
                 "edge",
                 format!("{edge_step}-root-{root_id}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         } else {
-            EdgeId::mint(ids::data("edge", format!("{edge_step}-shell-{shell_step}")))
-                .expect("identity grammar")
+            EdgeId::from(ids::data("edge", format!("{edge_step}-shell-{shell_step}")))
         }
     } else {
-        EdgeId::mint(ids::data("edge", edge_step)).expect("identity grammar")
+        EdgeId::from(ids::data("edge", edge_step))
     }
 }
 
@@ -2984,20 +2972,18 @@ fn scoped_vertex_id(
 ) -> VertexId {
     if scoped {
         if scope_root {
-            VertexId::mint(ids::data(
+            VertexId::from(ids::data(
                 "vertex",
                 format!("{vertex_step}-root-{root_id}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         } else {
-            VertexId::mint(ids::data(
+            VertexId::from(ids::data(
                 "vertex",
                 format!("{vertex_step}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         }
     } else {
-        VertexId::mint(ids::data("vertex", vertex_step)).expect("identity grammar")
+        VertexId::from(ids::data("vertex", vertex_step))
     }
 }
 
@@ -3010,21 +2996,18 @@ fn scoped_poly_vertex_id(
 ) -> VertexId {
     if scoped {
         if scope_root {
-            VertexId::mint(ids::data(
+            VertexId::from(ids::data(
                 "vertex",
                 format!("poly-point-{point_step}-root-{root_id}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         } else {
-            VertexId::mint(ids::data(
+            VertexId::from(ids::data(
                 "vertex",
                 format!("poly-point-{point_step}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         }
     } else {
-        VertexId::mint(ids::data("vertex", format!("poly-point-{point_step}")))
-            .expect("identity grammar")
+        VertexId::from(ids::data("vertex", format!("poly-point-{point_step}")))
     }
 }
 
@@ -3038,20 +3021,18 @@ fn poly_edge_id(
 ) -> EdgeId {
     if scoped {
         if scope_root {
-            EdgeId::mint(ids::data(
+            EdgeId::from(ids::data(
                 "edge",
                 format!("poly-{start}-{end}-root-{root_id}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         } else {
-            EdgeId::mint(ids::data(
+            EdgeId::from(ids::data(
                 "edge",
                 format!("poly-{start}-{end}-shell-{shell_step}"),
             ))
-            .expect("identity grammar")
         }
     } else {
-        EdgeId::mint(ids::data("edge", format!("poly-{start}-{end}"))).expect("identity grammar")
+        EdgeId::from(ids::data("edge", format!("poly-{start}-{end}")))
     }
 }
 
@@ -3250,8 +3231,7 @@ fn associated_pcurves(
         .into_iter()
         .filter_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
-            let pcurve_id =
-                PcurveId::mint(ids::data("pcurve", pcurve_step)).expect("identity grammar");
+            let pcurve_id = PcurveId::from(ids::data("pcurve", pcurve_step));
             (has_type(pcurve, "PCURVE")
                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
                 && decoded_pcurves.contains(&pcurve_id))
@@ -3310,10 +3290,10 @@ fn select_associated_pcurve(
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.as_str() == surface_identity)
+        .find(|surface| surface.id.as_str() == surface_identity.as_str())
         .map(|surface| surface.geometry.clone())
         .ok_or(PcurveSelectionFailure::Carrier)?;
-    let surface_id = SurfaceId::mint(surface_identity).expect("identity grammar");
+    let surface_id = SurfaceId::from(surface_identity);
     let index = ModelIndex::new(ir);
     let pcurve = ir
         .model
@@ -3404,7 +3384,7 @@ fn pcurve_locus_witness(
     else {
         return false;
     };
-    let curve_id = CurveId::mint(ids::data("curve", curve_step)).expect("identity grammar");
+    let curve_id = CurveId::from(ids::data("curve", curve_step));
     let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
         [
             0.0,

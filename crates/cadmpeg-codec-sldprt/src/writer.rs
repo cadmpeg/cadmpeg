@@ -664,7 +664,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         ));
     }
     if ir.model.edges.iter().any(|edge| {
-        edge.param_range.is_some()
+        edge.param_range().is_some()
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
@@ -883,7 +883,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve.clone())
+        .filter_map(|edge| edge.curve().clone())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -2474,7 +2474,7 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve
+            edge.curve()
                 .as_ref()
                 .and_then(|id| curves.get(id))
                 .copied()

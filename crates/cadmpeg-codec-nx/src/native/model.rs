@@ -2,9 +2,10 @@
 //! Eager, best-effort extraction of the native NX object model.
 //!
 //! [`NativeModel::extract`] runs the extraction dependency DAG and groups
-//! record vectors into domain sub-structs. Extraction is infallible: malformed
-//! data is omitted, never surfaced as an error.
+//! record vectors into domain sub-structs. JT graph admission rejects
+//! inconsistent owners before attachment.
 
+use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::container::Container;
@@ -66,10 +67,8 @@ use super::{
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
 pub(crate) struct DisplayJtRecords {
+    pub(crate) graph: DisplayJtGraph,
     pub(crate) display_jt_indices: Vec<DisplayJtIndex>,
-    pub(crate) display_jt_documents: Vec<DisplayJtDocument>,
-    pub(crate) display_jt_segments: Vec<DisplayJtSegment>,
-    pub(crate) display_jt_shape_lod_elements: Vec<DisplayJtShapeLodElement>,
     pub(crate) display_jt_tri_strip_lod_headers: Vec<DisplayJtTriStripLodHeader>,
     pub(crate) display_jt_initial_face_degree_symbols: Vec<DisplayJtInitialFaceDegreeSymbols>,
     pub(crate) display_jt_topology_packet_sequences: Vec<DisplayJtTopologyPacketSequence>,
@@ -81,8 +80,6 @@ pub(crate) struct DisplayJtRecords {
     pub(crate) display_jt_vertex_texture_coordinates: Vec<DisplayJtVertexTextureCoordinates>,
     pub(crate) display_jt_vertex_flags: Vec<DisplayJtVertexFlags>,
     pub(crate) display_jt_polygon_meshes: Vec<DisplayJtPolygonMesh>,
-    pub(crate) display_jt_compressed_elements: Vec<DisplayJtCompressedElement>,
-    pub(crate) display_jt_compressed_element_sequences: Vec<DisplayJtCompressedElementSequence>,
     pub(crate) display_jt_string_property_atoms: Vec<DisplayJtStringPropertyAtom>,
     pub(crate) display_jt_shape_lod_bindings: Vec<DisplayJtShapeLodBinding>,
     pub(crate) display_jt_base_node_data: Vec<DisplayJtBaseNodeData>,
@@ -162,7 +159,7 @@ pub(crate) struct SegmentRecords {
 pub(crate) struct StructureRecords {
     pub(crate) prototypes: Vec<FastLoadComponentPrototype>,
     pub(crate) uuids: Vec<FastLoadComponentUuid>,
-    pub(crate) occurrences: Vec<FastLoadComponentOccurrence>,
+    pub(crate) occurrences: super::structure::occurrences::FastLoadOccurrences,
     pub(crate) object_groups: Vec<FastLoadComponentObjectGroup>,
 }
 
@@ -493,7 +490,7 @@ impl NativeModel {
         streams: &[Stream],
         parsed: &mut ParsedStreams,
         precomputed_lineage: Option<SegmentLineage>,
-    ) -> Self {
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let SegmentLineage {
             bindings: segment_body_bindings,
             labels: feature_operation_labels,
@@ -1101,19 +1098,24 @@ impl NativeModel {
             fast_load_component_prototypes,
             fast_load_component_uuids,
             fast_load_component_occurrences,
-        ) = fast_load_component_roster(container);
+        ) = fast_load_component_roster(container)?;
         let fast_load_component_object_groups = fast_load_component_object_groups(
             &fast_load_component_uuids,
-            &fast_load_component_occurrences,
+            fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
         );
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
-        NativeModel {
+        Ok(NativeModel {
             display_jt: DisplayJtRecords {
+                graph: DisplayJtGraphWire {
+                    documents: display_jt_documents,
+                    segments: display_jt_segments,
+                    shape_lod_elements: display_jt_shape_lod_elements,
+                    compressed_elements: display_jt_compressed_elements,
+                    compressed_element_sequences: display_jt_compressed_element_sequences,
+                }
+                .try_into()?,
                 display_jt_indices,
-                display_jt_documents,
-                display_jt_segments,
-                display_jt_shape_lod_elements,
                 display_jt_tri_strip_lod_headers,
                 display_jt_initial_face_degree_symbols,
                 display_jt_topology_packet_sequences,
@@ -1125,8 +1127,6 @@ impl NativeModel {
                 display_jt_vertex_texture_coordinates,
                 display_jt_vertex_flags,
                 display_jt_polygon_meshes,
-                display_jt_compressed_elements,
-                display_jt_compressed_element_sequences,
                 display_jt_string_property_atoms,
                 display_jt_shape_lod_bindings,
                 display_jt_base_node_data,
@@ -1380,7 +1380,7 @@ impl NativeModel {
                 material_texture_catalog_entries,
                 persistent_handles,
             },
-        }
+        })
     }
 
     /// Whether every emptiness-counting catalogue family is empty.

@@ -1096,12 +1096,11 @@ fn mixed_current_and_generated_edges_remain_native() {
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
         id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
-        curve: None,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:start".to_string())
             .expect("identity grammar"),
         end: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:end".to_string())
             .expect("identity grammar"),
-        param_range: None,
         tolerance: None,
     });
 

@@ -1028,8 +1028,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     .expect("valid edge tolerance");
 
     assert_eq!(brep.edges.len(), 1);
-    assert_eq!(brep.edges[0].curve, None);
-    assert_eq!(brep.edges[0].param_range, Some([1.0, 0.0]));
+    assert_eq!(brep.edges[0].curve().as_ref(), None);
+    assert_eq!(brep.edges[0].param_range(), Some([1.0, 0.0]));
 }
 
 #[test]

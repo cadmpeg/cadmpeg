@@ -3816,10 +3816,10 @@ pub(crate) fn emit_edges(
             };
             out.edges.push(Edge {
                 id: EdgeId::mint(id(format, i)).expect("identity grammar"),
-                curve,
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 start: VertexId::mint(id(format, start)).expect("identity grammar"),
                 end: VertexId::mint(id(format, end)).expect("identity grammar"),
-                param_range,
                 tolerance: tolerant_tail
                     .map(|(tolerance, _, _)| {
                         cadmpeg_ir::units::PositiveScalar::new(tolerance * LEN_TO_MM).ok_or_else(
@@ -3879,7 +3879,7 @@ pub(crate) fn emit_coedges(
     carriers: &Carriers,
     reach: &Reachable,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers {
         pcurve_parameter_ranges,
         ..
@@ -3963,21 +3963,32 @@ pub(crate) fn emit_coedges(
                 sense: sense_at(r, 7),
                 pcurves: coedge_pcurve_ref(r)
                     .filter(|p| kept_pcurves.contains(p))
-                    .map(|p| cadmpeg_ir::topology::PcurveUse {
-                        pcurve: PcurveId::mint(id(format, p)).expect("identity grammar"),
-                        isoparametric: None,
-                        parameter_range: pcurve_parameter_ranges
-                            .get(&super::CoedgeRecordIndex(i))
-                            .copied(),
+                    .map(|p| {
+                        Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::PcurveUse {
+                            pcurve: PcurveId::mint(id(format, p)).expect("identity grammar"),
+                            isoparametric: None,
+                            parameter_range: (pcurve_parameter_ranges
+                                .get(&super::CoedgeRecordIndex(i))
+                                .copied())
+                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .transpose()
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        })
                     })
+                    .transpose()?
                     .into_iter()
                     .collect(),
-                use_curve: use_curve.map(|(curve, parameter_range)| {
-                    cadmpeg_ir::topology::CoedgeUseCurve {
-                        curve,
-                        parameter_range,
-                    }
-                }),
+                use_curve: use_curve
+                    .map(|(curve, parameter_range)| {
+                        Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
+                            curve,
+                            parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
+                                parameter_range,
+                            )
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        })
+                    })
+                    .transpose()?,
             });
             if let Some((parameter_range, extension)) = tolerant {
                 out.tolerant_coedge_parameters
@@ -3992,6 +4003,7 @@ pub(crate) fn emit_coedges(
             }
         }
     }
+    Ok(())
 }
 
 /// Emit reachable loops with their coedge rings filtered to kept coedges.
