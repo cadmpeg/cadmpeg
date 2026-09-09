@@ -181,3 +181,15 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
     );
     assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
 }
+
+#[test]
+fn rejected_curve_definition_replacements_preserve_serialized_owner() {
+    let mut curve = ProceduralCurve::try_new(id(), subset([0.0, 1.0]), Some(0.5)).unwrap();
+    let before = serde_json::to_vec(&curve).unwrap();
+    for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
+        assert!(curve
+            .try_replace_definition(subset([2.0, 3.0]), Some(tolerance))
+            .is_err());
+        assert_eq!(serde_json::to_vec(&curve).unwrap(), before);
+    }
+}
