@@ -22,7 +22,7 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
 
-use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::dialect::F3dDialect;
@@ -127,18 +127,25 @@ pub fn classify(name: &str) -> ContainerRole {
     }
 }
 
-/// Owned binary kernel framing for one BREP stream.
+/// Owned kernel framing for one BREP stream.
 #[derive(Debug, Clone)]
 pub enum KernelFraming {
     /// Autodesk Shape Manager binary framing.
     Asm {
         /// Parsed ASM header.
-        header: KernelHeader,
+        header: BinaryHeader,
         /// Exact byte boundary between solved records and construction history.
         solved_record_limit: Option<usize>,
     },
     /// Spatial ACIS binary framing.
-    Acis(KernelHeader),
+    Acis(BinaryHeader),
+    /// Text kernel framing without a binary reference width.
+    Text {
+        /// Encoding-independent header metadata.
+        header: KernelHeader,
+        /// Family selected by the text terminator.
+        terminator: cadmpeg_asm::sat::Terminator,
+    },
 }
 
 impl KernelFraming {
@@ -147,6 +154,14 @@ impl KernelFraming {
         match self {
             Self::Asm { header, .. } => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
             Self::Acis(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
+            Self::Text { header, terminator } => match terminator {
+                cadmpeg_asm::sat::Terminator::Asm => {
+                    cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(header)
+                }
+                cadmpeg_asm::sat::Terminator::Acis => {
+                    cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(header)
+                }
+            },
         }
     }
 
@@ -157,15 +172,24 @@ impl KernelFraming {
                 solved_record_limit,
                 ..
             } => *solved_record_limit,
+            Self::Acis(_) | Self::Text { .. } => None,
+        }
+    }
+
+    /// Metadata retained for ASM binary and text model reports.
+    pub(crate) fn model_metadata(&self) -> Option<&KernelHeader> {
+        match self {
+            Self::Asm { header, .. } => Some(&header.metadata),
+            Self::Text { header, .. } => Some(header),
             Self::Acis(_) => None,
         }
     }
 
     /// Return the header only when ASM framing owns it.
-    pub(crate) fn asm_header(&self) -> Option<&KernelHeader> {
+    pub(crate) fn asm_header(&self) -> Option<&BinaryHeader> {
         match self {
             Self::Asm { header, .. } => Some(header),
-            Self::Acis(_) => None,
+            Self::Acis(_) | Self::Text { .. } => None,
         }
     }
 }
@@ -386,34 +410,34 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
-                if let Some(v) = h.save_format_version {
+                if let Some(v) = h.metadata.save_format_version {
                     attributes.insert("acis_save_format_version".to_string(), v.to_string());
                 }
                 if let Some(v) = asm_header::record_count(buf) {
                     attributes.insert("asm_record_count".to_string(), v.to_string());
                 }
-                if let Some(v) = h.entity_count {
+                if let Some(v) = h.metadata.entity_count {
                     attributes.insert("asm_entity_count".to_string(), v.to_string());
                 }
-                if let Some(v) = h.flags {
+                if let Some(v) = h.metadata.flags {
                     attributes.insert("asm_flags".to_string(), v.to_string());
                 }
-                if let Some(pf) = &h.product_family {
+                if let Some(pf) = &h.metadata.product_family {
                     attributes.insert("product_family".to_string(), pf.clone());
                 }
-                if let Some(pv) = &h.product_version {
+                if let Some(pv) = &h.metadata.product_version {
                     attributes.insert("product_version".to_string(), pv.clone());
                 }
-                if let Some(sd) = &h.save_date {
+                if let Some(sd) = &h.metadata.save_date {
                     attributes.insert("save_date".to_string(), sd.clone());
                 }
-                if let Some(s) = h.scale {
+                if let Some(s) = h.metadata.scale {
                     attributes.insert("scale".to_string(), format!("{s}"));
                 }
-                if let Some(r) = h.linear {
+                if let Some(r) = h.metadata.linear {
                     attributes.insert("resabs".to_string(), format!("{r}"));
                 }
-                if let Some(r) = h.angular {
+                if let Some(r) = h.metadata.angular {
                     attributes.insert("resnor".to_string(), format!("{r}"));
                 }
             }
@@ -594,7 +618,7 @@ pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'
         brep.kernel
             .as_ref()
             .and_then(KernelFraming::asm_header)
-            .is_some_and(KernelHeader::has_history_partition)
+            .is_some_and(|header| header.metadata.has_history_partition())
     })
 }
 

@@ -5,7 +5,7 @@ use cadmpeg_core::container::{ContainerRole, EntryCompression};
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
-use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -19,9 +19,9 @@ use crate::dialect::{terminator_line, Family, StreamEvidence, TextEvidence};
 #[derive(Debug)]
 pub(crate) enum StreamKind {
     /// `ASM BinaryFile4`/`ASM BinaryFile8` SAB.
-    AsmBinary(KernelHeader),
+    AsmBinary(BinaryHeader),
     /// `ACIS BinaryFile` 32-bit SAB.
-    AcisBinary(KernelHeader),
+    AcisBinary(BinaryHeader),
     /// Text header lines.
     Text,
 }
@@ -112,8 +112,8 @@ pub(crate) fn inspect(
     let (matched, kernel) = match &kind {
         StreamKind::AsmBinary(header) => {
             let framed = asm_header::record_stream_start_with_header(bytes, header).is_some();
-            header_attributes(header, Family::Asm, &mut attributes);
-            if header.has_history_partition() {
+            header_attributes(&header.metadata, Family::Asm, &mut attributes);
+            if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
                          the solved partition"
@@ -134,8 +134,8 @@ pub(crate) fn inspect(
                 header,
                 framed,
             };
-            header_attributes(header, Family::Acis, &mut attributes);
-            if header.has_history_partition() {
+            header_attributes(&header.metadata, Family::Acis, &mut attributes);
+            if header.metadata.has_history_partition() {
                 notes.push(
                     "the stream declares a construction-history partition; decode reads \
                          the solved partition"
