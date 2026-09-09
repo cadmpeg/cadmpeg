@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8C44);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8c44).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -27,8 +27,7 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
             marker_kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;

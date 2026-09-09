@@ -37,14 +37,14 @@ struct Chart {
 }
 
 /// One validated intersection curve and its solved chart.
-pub(super) struct IntersectionCarrier {
+pub(crate) struct IntersectionCarrier {
     pub(crate) carrier: CurveCarrier,
     pub(crate) support_data: IntersectionSupportData,
 }
 
 /// Ordered supports and optional UV lanes for the model-space chart curve.
 #[derive(Clone)]
-pub(super) struct IntersectionSupportData {
+pub(crate) struct IntersectionSupportData {
     pub(crate) supports: [u16; 2],
     pub(crate) fit_tolerance_mm: f64,
     pub(crate) support_uv: Option<[Vec<Point2>; 2]>,
@@ -603,6 +603,33 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
         bytes
+    }
+
+    #[test]
+    fn marker_three_uv_has_two_values_per_chart_point() {
+        let points = (0..9)
+            .map(|index| [f64::from(index) * 0.01, 0.0, 0.0])
+            .collect::<Vec<_>>();
+        let mut record = uv(7, points.len());
+        record
+            .get_mut(2..6)
+            .unwrap()
+            .copy_from_slice(&18_u32.to_be_bytes());
+        *record.get_mut(8).unwrap() = 3;
+        record.truncate(9 + 18 * 8);
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart(4, &points));
+        bytes.extend(term(5, *points.first().unwrap()));
+        bytes.extend(term(6, *points.last().unwrap()));
+        bytes.extend(record);
+        let charts = chart_records(&bytes);
+        let records = uv_records(&bytes);
+        let chart = &charts[&4][0];
+        let uv = &records[&7][0];
+        assert_eq!(chart.points.len(), 9);
+        assert!(uv.width == UvWidth::Two);
+        assert_eq!(uv.values.len(), chart.points.len() * 2);
+        assert!(scan_intersection_carriers(&bytes).contains_key(&9));
     }
 
     #[test]

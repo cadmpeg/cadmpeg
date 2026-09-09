@@ -65,8 +65,6 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -136,8 +134,7 @@ fn current_coordinate_line_uses_its_single_local_link() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -187,8 +184,7 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -245,8 +241,7 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
                 },
             );
             constructed_marker.feature_ref = Some("sketch".into());
-            constructed_marker.object_index = object_index;
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
@@ -295,8 +290,6 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -360,8 +353,6 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -414,8 +405,6 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -454,7 +443,7 @@ fn native_owner_operand_requires_a_source_index() {
         }],
     );
     for index in [None, Some(7)] {
-        owner.local_id = index;
+        owner = owner.with_test_identity(owner.object_index(), index);
         let markers = HashMap::from([
             (relation.id.as_str(), &relation),
             (owner.id.as_str(), &owner),

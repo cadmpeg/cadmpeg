@@ -444,8 +444,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
                 SketchInputKind::Point,
             );
             constructed_marker.feature_ref = Some("profile-native".into());
-            constructed_marker.object_index = object_index;
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
@@ -619,8 +618,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
                 SketchInputKind::Point,
             );
             constructed_marker.feature_ref = Some("profile-native".into());
-            constructed_marker.object_index = object_index;
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
@@ -703,8 +701,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
                 SketchInputKind::Point,
             );
             constructed_marker.feature_ref = Some("profile-native".into());
-            constructed_marker.object_index = object_index;
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
@@ -770,7 +767,8 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         &HashSet::from(["profile-point", "opposite-profile-point"]),
         [&lane.sketch_entities[0], &lane.sketch_entities[1]],
     ));
-    lane.sketch_entities[4].object_index = None;
+    lane.sketch_entities[4] =
+        lane.sketch_entities[4].with_test_identity(None, lane.sketch_entities[4].local_id());
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     assert!(bounded_profile_axis_endpoints(
         "profile-native",
@@ -948,8 +946,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("profile-native".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;

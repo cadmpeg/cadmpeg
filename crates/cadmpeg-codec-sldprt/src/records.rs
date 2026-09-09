@@ -518,7 +518,7 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     /// Four-byte serialized surface identity type family.
     pub(crate) type_prefix: [u8; 4],
     /// Source identifier of the feature that produced the terminal surface.
-    pub(crate) feature_source_id: u32,
+    pub(crate) feature_source_id: crate::brep::feature_source::FeatureSourceId,
     /// Opaque feature-local identity of the terminal surface.
     pub(crate) local_identity: u32,
     /// Ordered typed entries in the persistent generated-surface path.
@@ -883,10 +883,10 @@ pub(crate) struct SketchInputEntity {
     offset: u64,
     /// Feature-local object index stored immediately before the marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) object_index: Option<u32>,
+    object_index: Option<u32>,
     /// Feature-local object identifier stored in the marker trailer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) local_id: Option<u32>,
+    local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     pub(crate) kind: SketchInputKind,
     /// Finite little-endian state scalar at the marker layout's state slot.
@@ -975,6 +975,29 @@ impl SketchInputEntity {
         self.offset
     }
 
+    /// Returns the feature-local object index.
+    pub(crate) fn object_index(&self) -> Option<u32> {
+        self.object_index
+    }
+
+    /// Returns the feature-local object identifier.
+    pub(crate) fn local_id(&self) -> Option<u32> {
+        self.local_id
+    }
+
+    #[cfg(test)]
+    /// Sets the identity fields on a cloned fixture.
+    pub(crate) fn with_test_identity(
+        &self,
+        object_index: Option<u32>,
+        local_id: Option<u32>,
+    ) -> Self {
+        let mut updated = self.clone();
+        updated.object_index = object_index;
+        updated.local_id = local_id;
+        updated
+    }
+
     pub(crate) fn try_new(
         id: String,
         parent: String,
@@ -1026,9 +1049,8 @@ impl SketchInputEntity {
     #[cfg(test)]
     pub(crate) fn with_test_position(&self, ordinal: u32, offset: u64) -> Self {
         let mut updated = self.clone();
-        let position = Self::new(String::new(), String::new(), ordinal, offset, self.kind);
-        updated.ordinal = position.ordinal;
-        updated.offset = position.offset;
+        updated.ordinal = ordinal;
+        updated.offset = offset;
         updated
     }
 }

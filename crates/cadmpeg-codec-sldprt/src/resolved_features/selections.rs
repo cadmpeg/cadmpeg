@@ -19,6 +19,7 @@ use super::terminations::{
     compact_termination_reference_path_at,
 };
 use super::{is_class_token, CLASS_MARKER, LEGACY_SKETCH_MARKER};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{
     classify_type_token, native_object_class, FeatureClass, NativeClassKind,
 };
@@ -1927,15 +1928,19 @@ pub(super) fn inline_surface_reference_at(
 pub(crate) fn generated_surface_identities(
     lane: &FeatureInputLane,
 ) -> Vec<crate::records::FeatureInputGeneratedSurfaceIdentity> {
-    let signature_prefix_at = |offset: usize, prefix: [u8; 4]| -> Option<[u8; 12]> {
-        let signature: [u8; 12] = lane
-            .native_payload
-            .get(offset..offset + 12)?
-            .try_into()
-            .ok()?;
-        let source = View::u32_le_at(&signature, 4)?;
-        let identity = View::u32_le_at(&signature, 8)?;
-        (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
+    struct SurfaceIdentityFields {
+        offset: u64,
+        type_prefix: [u8; 4],
+        feature_source_id: FeatureSourceId,
+        local_identity: u32,
+        components: Vec<FeatureInputComponentPathEntry>,
+    }
+
+    let signature_prefix = |bytes: &[u8], prefix: [u8; 4]| -> Option<FeatureSourceId> {
+        let signature = bytes.first_chunk::<12>()?;
+        let source = FeatureSourceId::try_from(View::u32_le_at(signature, 4)?).ok()?;
+        let identity = View::u32_le_at(signature, 8)?;
+        (signature[..4] == prefix && identity != 0).then_some(source)
     };
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
@@ -1970,24 +1975,31 @@ pub(crate) fn generated_surface_identities(
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for terminal in 0..=lane.native_payload.len().saturating_sub(16) {
-        let Some(prefix) = lane
+        let Some(window) = lane
             .native_payload
-            .get(terminal..terminal + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .filter(|prefix| prefixes.contains(prefix))
+            .get(terminal..terminal + 16)
+            .and_then(<[u8]>::first_chunk::<16>)
         else {
             continue;
         };
-        let Some(signature) = signature_prefix_at(terminal, prefix) else {
+        let [p0, p1, p2, p3, .., t0, t1, t2, t3] = *window;
+        let prefix = [p0, p1, p2, p3];
+        if !prefixes.contains(&prefix) {
+            continue;
+        }
+        let Some(feature_source_id) = signature_prefix(window, prefix) else {
             continue;
         };
-        let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
-            .try_into()
-            .expect("bounded surface identity tail");
-        let possible_instance = View::u16_le_at(&tail, 0).expect("two-byte instance slice");
+        let tail = [t0, t1, t2, t3];
+        let [instance_low, instance_high, _, _] = tail;
+        let possible_instance = u16::from_le_bytes([instance_low, instance_high]);
         if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
-            && signature_prefix_at(terminal + 16, prefix).is_some()
+            && lane
+                .native_payload
+                .get(terminal + 16..)
+                .and_then(|bytes| signature_prefix(bytes, prefix))
+                .is_some()
         {
             continue;
         }
@@ -1995,16 +2007,16 @@ pub(crate) fn generated_surface_identities(
         while instance_before(offset).is_some()
             && offset
                 .checked_sub(16)
-                .is_some_and(|previous| signature_prefix_at(previous, prefix).is_some())
+                .and_then(|previous| lane.native_payload.get(previous..))
+                .and_then(|bytes| signature_prefix(bytes, prefix))
+                .is_some()
         {
             offset -= 16;
         }
         let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
             continue;
         };
-        let feature_source_id =
-            View::u32_le_at(&signature, 4).expect("four-byte feature source ID");
-        let local_identity = View::u32_le_at(&tail, 0).expect("four-byte local identity");
+        let local_identity = u32::from_le_bytes(tail);
         let key = (
             prefix,
             components
@@ -2021,10 +2033,7 @@ pub(crate) fn generated_surface_identities(
         if !seen.insert(key) {
             continue;
         }
-        result.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
-            id: String::new(),
-            parent: lane.id.clone(),
-            ordinal: 0,
+        result.push(SurfaceIdentityFields {
             offset: offset as u64,
             type_prefix: prefix,
             feature_source_id,
@@ -2037,14 +2046,25 @@ pub(crate) fn generated_surface_identities(
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
-    for (ordinal, identity) in result.iter_mut().enumerate() {
-        identity.ordinal = ordinal as u32;
-        identity.id = format!(
-            "sldprt:feature-input:generated-surface#{lane_key}:{}",
-            identity.offset
-        );
-    }
     result
+        .into_iter()
+        .enumerate()
+        .map(
+            |(ordinal, fields)| crate::records::FeatureInputGeneratedSurfaceIdentity {
+                id: format!(
+                    "sldprt:feature-input:generated-surface#{lane_key}:{}",
+                    fields.offset
+                ),
+                parent: lane.id.clone(),
+                ordinal: ordinal as u32,
+                offset: fields.offset,
+                type_prefix: fields.type_prefix,
+                feature_source_id: fields.feature_source_id,
+                local_identity: fields.local_identity,
+                components: fields.components,
+            },
+        )
+        .collect()
 }
 
 fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {

@@ -117,7 +117,7 @@ fn lane() -> FeatureInputLane {
         ordinal,
         offset: u64::from(ordinal),
         type_prefix: [0xc3, 0x80, 0xc5, 0],
-        feature_source_id: 7,
+        feature_source_id: 7_u32.try_into().unwrap(),
         local_identity: 2,
         components: Vec::new(),
     };

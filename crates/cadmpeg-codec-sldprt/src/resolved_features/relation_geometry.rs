@@ -173,7 +173,7 @@ fn spatial_relation_point_line_entities(
         .iter()
         .filter(|marker| {
             marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
-                && marker.object_index.is_some()
+                && marker.object_index().is_some()
         })
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset()).ok()?;
@@ -1607,7 +1607,7 @@ pub(super) fn implicit_circle_marker<'a>(
         .filter_map(|lane| {
             let relation = lane.sketch_entities.iter().find(|marker| {
                 marker.feature_ref.as_deref() == Some(feature)
-                    && marker.object_index == Some(relation_index)
+                    && marker.object_index() == Some(relation_index)
                     && marker.kind == SketchInputKind::Relation(SketchRelationKind::Distance)
                     && matches!(marker.links(), [first, second]
                         if first.entity_ref == second.entity_ref
@@ -1657,12 +1657,12 @@ pub(super) fn implicit_circle_marker<'a>(
         for radial in feature_markers
             .iter()
             .copied()
-            .filter(|marker| marker.local_id.is_none())
+            .filter(|marker| marker.local_id().is_none())
         {
             for center in feature_markers
                 .iter()
                 .copied()
-                .filter(|marker| marker.local_id.is_some() && marker.offset() < radial.offset())
+                .filter(|marker| marker.local_id().is_some() && marker.offset() < radial.offset())
             {
                 let [cu, cv] = center.coordinates_m?;
                 let [ru, rv] = radial.coordinates_m?;
@@ -1691,7 +1691,7 @@ pub(super) fn implicit_circle_marker<'a>(
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
         .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| marker.local_id != Some(0))
+        .filter(|marker| marker.local_id() != Some(0))
         .filter(|marker| {
             marker.coordinates_m.is_some()
                 && matches!(
@@ -1832,7 +1832,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     };
     let slot_index = u32::try_from(*slot_index).ok()?;
     let center_index = u32::try_from(*center_index).ok()?;
-    if slot_index != u32::from(operand.entity_index) || marker.local_id != Some(slot_index) {
+    if slot_index != u32::from(operand.entity_index) || marker.local_id() != Some(slot_index) {
         return None;
     }
 
@@ -1852,8 +1852,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let [first, second] = center_indices.map(|index| points.get(index).copied());
     let (first, second) = (first?, second?);
     let center = match (
-        first.local_id == Some(center_index),
-        second.local_id == Some(center_index),
+        first.local_id() == Some(center_index),
+        second.local_id() == Some(center_index),
     ) {
         (true, false) => first,
         (false, true) => second,
@@ -1913,12 +1913,12 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
         .collect::<Vec<_>>();
     if !markers.chunks_exact(2).remainder().is_empty()
         || pairs.iter().any(|[center, radial]| {
-            let Some(center_local_id) = center.local_id else {
+            let Some(center_local_id) = center.local_id() else {
                 return true;
             };
             center_local_id == 0
-                || radial.object_index != Some(center_local_id)
-                || radial.local_id.is_none_or(|local_id| local_id == 0)
+                || radial.object_index() != Some(center_local_id)
+                || radial.local_id().is_none_or(|local_id| local_id == 0)
         })
     {
         return None;
@@ -1941,9 +1941,9 @@ fn point_dimension_marker_matches_operand(
     let address = u32::from(operand.entity_index);
     let identity_matches = match operand.kind {
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) => {
-            marker.object_index == Some(address)
+            marker.object_index() == Some(address)
         }
-        FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
+        FeatureInputOperandKind::Native(_) => marker.local_id() == Some(address),
         _ => false,
     };
     marker.id == entity_ref
@@ -2181,10 +2181,10 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
             let [center, radial] = pair else {
                 unreachable!("slice windows have the requested length")
             };
-            let center_local_id = center.local_id?;
+            let center_local_id = center.local_id()?;
             if center_local_id == 0
-                || radial.object_index != Some(center_local_id)
-                || radial.local_id.is_none_or(|local_id| local_id == 0)
+                || radial.object_index() != Some(center_local_id)
+                || radial.local_id().is_none_or(|local_id| local_id == 0)
             {
                 return None;
             }
@@ -2291,10 +2291,10 @@ fn declared_entity_handle_linked_pairs<'a>(
             ) {
                 return None;
             }
-            let center_local_id = center.local_id?;
+            let center_local_id = center.local_id()?;
             if center_local_id == 0
-                || radial.object_index != Some(center_local_id)
-                || !matches!(radial.local_id, None | Some(0))
+                || radial.object_index() != Some(center_local_id)
+                || !matches!(radial.local_id(), None | Some(0))
             {
                 return None;
             }
@@ -3059,17 +3059,17 @@ mod relation_geometry_tests {
             marker
         };
         let mut first_start = point("first-start", 2, 10, 0.0, 0.0);
-        first_start.object_index = Some(2);
+        first_start = first_start.with_test_identity(Some(2), first_start.local_id());
         let mut first_end = point("first-end", 3, 11, 10.0, 0.0);
-        first_end.object_index = Some(3);
+        first_end = first_end.with_test_identity(Some(3), first_end.local_id());
         let mut second_start = point("second-start", 4, 12, 0.0, 5.0);
-        second_start.object_index = Some(4);
+        second_start = second_start.with_test_identity(Some(4), second_start.local_id());
         let mut second_end = point("second-end", 5, 13, 10.0, 5.0);
-        second_end.object_index = Some(5);
+        second_end = second_end.with_test_identity(Some(5), second_end.local_id());
         let mut first_line =
             SketchInputEntity::new("first-line", LANE, 6, 20, SketchInputKind::LineOrCircle);
         first_line.feature_ref = Some(FEATURE.into());
-        first_line.object_index = Some(0);
+        first_line = first_line.with_test_identity(Some(0), first_line.local_id());
         first_line.links = crate::records::SketchInputLinks::new(
             0,
             vec![
@@ -3086,7 +3086,7 @@ mod relation_geometry_tests {
         let mut second_line =
             SketchInputEntity::new("second-line", LANE, 7, 21, SketchInputKind::LineOrCircle);
         second_line.feature_ref = Some(FEATURE.into());
-        second_line.object_index = Some(1);
+        second_line = second_line.with_test_identity(Some(1), second_line.local_id());
         second_line.links = crate::records::SketchInputLinks::new(
             0,
             vec![
@@ -3120,7 +3120,9 @@ mod relation_geometry_tests {
                 .map(|(index, entity_index)| FeatureInputOperand {
                     offset: 40 + index as u64,
                     reference_ref: format!("reference-{index}"),
-                    kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+                    kind: FeatureInputOperandKind::Native(
+                        NativeOperandTag::try_from(0x812a).unwrap(),
+                    ),
                     entity_index,
                     entity_ref: None,
                 })
@@ -3201,7 +3203,7 @@ mod relation_geometry_tests {
         for marker in &mut fallback_lane.sketch_entities {
             match marker.id.as_str() {
                 "first-line" => {
-                    marker.object_index = Some(1);
+                    *marker = marker.with_test_identity(Some(1), marker.local_id());
                     marker.links = crate::records::SketchInputLinks::new(
                         0,
                         vec![
@@ -3217,7 +3219,7 @@ mod relation_geometry_tests {
                     );
                 }
                 "second-line" => {
-                    marker.object_index = Some(2);
+                    *marker = marker.with_test_identity(Some(2), marker.local_id());
                     marker.links = crate::records::SketchInputLinks::new(
                         0,
                         vec![
@@ -3393,7 +3395,7 @@ mod relation_geometry_tests {
                 SketchInputKind::Point,
             );
             marker.feature_ref = Some(FEATURE.into());
-            marker.object_index = Some(object_index);
+            marker = marker.with_test_identity(Some(object_index), marker.local_id());
             marker
         }
 

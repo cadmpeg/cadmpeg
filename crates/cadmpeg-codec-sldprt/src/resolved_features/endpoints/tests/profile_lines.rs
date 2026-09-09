@@ -72,8 +72,7 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -146,8 +145,6 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -301,8 +298,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -506,8 +502,6 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
             },
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -586,8 +580,6 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -613,8 +605,6 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -670,8 +660,6 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -727,8 +715,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 10_000, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -791,8 +778,7 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -888,8 +874,6 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1028,8 +1012,6 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1095,8 +1077,6 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
             },
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1239,8 +1219,7 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1398,8 +1377,6 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1493,8 +1470,6 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1573,8 +1548,6 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1663,8 +1636,6 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1754,8 +1725,6 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;

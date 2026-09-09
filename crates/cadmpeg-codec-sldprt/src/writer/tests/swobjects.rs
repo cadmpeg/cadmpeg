@@ -535,7 +535,7 @@ fn encoder_writes_source_less_line_sketches() {
             .sketch_entities
             .iter()
             .any(|candidate| candidate.id == link.entity_ref
-                && candidate.local_id == Some(u32::from(link.local_id))))));
+                && candidate.local_id() == Some(u32::from(link.local_id))))));
     assert_eq!(decoded.ir().model.sketches.len(), 1);
     assert_eq!(decoded.ir().model.sketches[0].profiles.len(), 1);
     assert_eq!(decoded.ir().model.sketches[0].profiles[0].len(), 3);

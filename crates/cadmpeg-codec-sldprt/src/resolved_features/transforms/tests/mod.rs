@@ -15,8 +15,6 @@ fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature-native".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
