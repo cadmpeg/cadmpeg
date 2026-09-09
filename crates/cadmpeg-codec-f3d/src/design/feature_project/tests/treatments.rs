@@ -1234,6 +1234,43 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         &groups[0].radius,
         cadmpeg_ir::features::RadiusSpec::Variable { points } if points.as_slice().len() == 3
     ));
+    let cadmpeg_ir::features::RadiusSpec::Variable { points } = &groups[0].radius else {
+        panic!("expected assigned variable radius controls");
+    };
+    assert_eq!(
+        points
+            .as_slice()
+            .iter()
+            .map(|point| (point.parameter, point.radius.get()))
+            .collect::<Vec<_>>(),
+        vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
+    );
+    let (unassigned_features, _) = project_parameter_design(
+        &variable_parameters,
+        &variable_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[1..],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let FeatureDefinition::Fillet {
+        groups: unassigned_groups,
+    } = unassigned_features[0].evaluation.definition()
+    else {
+        panic!("expected unassigned variable Fillet");
+    };
+    assert_eq!(unassigned_groups.len(), 1);
+    assert_eq!(
+        unassigned_groups[0].edges,
+        cadmpeg_ir::features::EdgeSelection::Native(operand_groups[1].id.clone())
+    );
+    assert_eq!(unassigned_groups[0].radius, groups[0].radius);
+    assert_eq!(
+        unassigned_groups[0].tangency_weight,
+        groups[0].tangency_weight
+    );
     let variable_without_weight_parameters = [
         parameter(50, 51, "StartRadius", Some("mm"), 0.2),
         parameter(60, 61, "EndRadius", Some("mm"), 0.6),
