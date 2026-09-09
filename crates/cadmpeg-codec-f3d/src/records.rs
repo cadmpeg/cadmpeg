@@ -785,10 +785,12 @@ pub enum DesignParameterSource {
     Owned(OwnedDesignParameter),
 }
 
+const USER_PARAMETER_SOURCE_KIND: &str = "User Parameter";
+
 /// An owned source family. Its nonempty name cannot identify a user parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnedDesignParameter {
-    source_kind: String,
+    source_kind: NonEmptyString,
     owner_record_index: u32,
     family_discriminator: Option<Located<DesignParameterDiscriminator>>,
 }
@@ -799,24 +801,29 @@ impl DesignParameterSource {
         owner_record_index: Option<u32>,
         family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     ) -> Result<Self, String> {
-        match (source_kind.as_str(), owner_record_index) {
-            ("", _) => Err("design parameter source_kind is empty".into()),
-            ("User Parameter", None) => family_discriminator
+        let Some(source_kind) = NonEmptyString::new(source_kind) else {
+            return Err("design parameter source_kind is empty".into());
+        };
+        match (
+            source_kind == USER_PARAMETER_SOURCE_KIND,
+            owner_record_index,
+        ) {
+            (true, None) => family_discriminator
                 .map(|family_discriminator| Self::User {
                     family_discriminator,
                 })
                 .ok_or_else(|| {
                     "design parameter family_discriminator is missing for user source_kind".into()
                 }),
-            ("User Parameter", Some(_)) => {
+            (true, Some(_)) => {
                 Err("design parameter owner_record_index is present for user source_kind".into())
             }
-            (_, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter {
+            (false, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter {
                 source_kind,
                 owner_record_index,
                 family_discriminator,
             })),
-            (_, None) => {
+            (false, None) => {
                 Err("design parameter owner_record_index is missing for owned source_kind".into())
             }
         }
@@ -1059,8 +1066,17 @@ impl DesignParameter {
 
     pub(crate) fn source_kind(&self) -> &str {
         match &self.source {
-            DesignParameterSource::User { .. } => "User Parameter",
-            DesignParameterSource::Owned(source) => &source.source_kind,
+            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND,
+            DesignParameterSource::Owned(source) => source.source_kind.as_str(),
+        }
+    }
+
+    pub(crate) fn source_kind_name(&self) -> NonEmptyString {
+        match &self.source {
+            DesignParameterSource::User { .. } => {
+                cadmpeg_ir::nonempty_literal!("User Parameter")
+            }
+            DesignParameterSource::Owned(source) => source.source_kind.clone(),
         }
     }
 
@@ -1170,8 +1186,8 @@ impl From<DesignParameter> for DesignParameterSerde {
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
         let source_kind = match parameter.source {
-            DesignParameterSource::User { .. } => "User Parameter".to_owned(),
-            DesignParameterSource::Owned(source) => source.source_kind,
+            DesignParameterSource::User { .. } => USER_PARAMETER_SOURCE_KIND.to_owned(),
+            DesignParameterSource::Owned(source) => source.source_kind.to_string(),
         };
         Self {
             id: parameter.id,

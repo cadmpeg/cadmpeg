@@ -63,6 +63,18 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
+/// Mints an identity whose namespace and escaped key parts satisfy the grammar.
+fn minted<T: From<cadmpeg_ir::ids::Identity>>(id: String) -> T {
+    cadmpeg_ir::ids::Identity::new(id)
+        .map(T::from)
+        .expect("f3d identity grammar")
+}
+
+/// Mints a local identity whose escaped parts carry no whitespace.
+fn minted_local<T>(mint: fn(String) -> Result<T, cadmpeg_ir::ids::IdentityError>, id: String) -> T {
+    mint(id).expect("f3d identity grammar")
+}
+
 /// Percent-encode identity separators, the escape byte, and whitespace.
 fn identity_key_component(value: &str) -> String {
     use std::fmt::Write as _;
@@ -115,28 +127,22 @@ pub(crate) fn neutral_xref_occurrence_id(
     reference_ordinal: u32,
     occurrence_ordinal: u32,
 ) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId::mint(format!(
+    minted(format!(
         "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
     ))
-    .expect("identity grammar")
 }
 
 /// Neutral local component definition projected from its stable Design GUID.
 pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
-    cadmpeg_ir::ids::ProductDefinitionId::mint(format!(
-        "f3d:model:component#{}",
-        guid.to_ascii_lowercase()
-    ))
-    .expect("identity grammar")
+    minted(format!("f3d:model:component#{}", guid.to_ascii_lowercase()))
 }
 
 /// Neutral local occurrence projected from its stable Design GUID.
 pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId::mint(format!(
+    minted(format!(
         "f3d:model:occurrence#{}",
         guid.to_ascii_lowercase()
     ))
-    .expect("identity grammar")
 }
 
 /// Neutral occurrence identity for an external component-insert scope whose
@@ -145,14 +151,13 @@ pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::ids::OccurrenceId::mint(format!(
+    minted(format!(
         "f3d:model:occurrence#component-insert-{}:{}{}:{}",
         stream.len(),
         stream,
         scope.feature_ordinal,
         scope.record_index,
     ))
-    .expect("identity grammar")
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
@@ -160,13 +165,12 @@ pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::products::JointId::mint(format!(
+    minted(format!(
         "f3d:model:joint#{}:{}{}",
         stream.len(),
         stream,
         scope.record_index
     ))
-    .expect("identity grammar")
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -198,14 +202,13 @@ pub(crate) fn neutral_configuration_id(
 ) -> cadmpeg_ir::features::ConfigurationId {
     let entry_name = identity_key_component(entry_name);
     let variant_name = identity_key_component(variant_name);
-    cadmpeg_ir::features::ConfigurationId::mint(format!(
+    minted(format!(
         "f3d:configuration:variant#{}:{}{}:{}",
         entry_name.len(),
         entry_name,
         variant_name.len(),
         variant_name,
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral feature key for a parameter `scope`.
@@ -228,7 +231,7 @@ pub(crate) fn neutral_feature_id_parts(
 ) -> cadmpeg_ir::features::FeatureId {
     let stream = identity_key_component(stream);
     let kind = identity_key_component(kind);
-    cadmpeg_ir::features::FeatureId::mint(format!(
+    minted(format!(
         "f3d:model:feature#{}:{}{}:{}{}:{}",
         stream.len(),
         stream,
@@ -237,7 +240,6 @@ pub(crate) fn neutral_feature_id_parts(
         feature_ordinal,
         scope_record_index,
     ))
-    .expect("identity grammar")
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
@@ -348,8 +350,7 @@ pub(crate) fn neutral_assembly_legacy_object_id(
 /// The neutral embedded-asset key for one exact archive entry.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = identity_key_component(entry_name);
-    cadmpeg_ir::assets::AssetId::mint(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
-        .expect("identity grammar")
+    minted(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
 }
 
 /// The neutral parameter key for a design `parameter`.
@@ -369,29 +370,26 @@ pub(crate) fn neutral_parameter_id_parts(
     record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
     let stream = identity_key_component(stream);
-    cadmpeg_ir::features::ParameterId::mint(format!(
+    minted(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
         stream,
         record_index,
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch key for a sketch `placement`.
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SketchId {
-    cadmpeg_ir::sketches::SketchId::mint(sketch_placement_id("sketch", placement))
-        .expect("identity grammar")
+    minted(sketch_placement_id("sketch", placement))
 }
 
 /// The neutral spatial-sketch key for a sketch `placement`.
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SpatialSketchId {
-    cadmpeg_ir::sketches::SpatialSketchId::mint(sketch_placement_id("spatial-sketch", placement))
-        .expect("identity grammar")
+    minted(sketch_placement_id("spatial-sketch", placement))
 }
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
@@ -411,13 +409,12 @@ pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
+    minted(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         'p',
         persistent_id,
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
@@ -426,13 +423,12 @@ pub(crate) fn neutral_sketch_curve_id(
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_curve(
+    minted(sketch_entity_curve(
         "sketch-entity",
         sketch.as_str(),
         primary_id,
         secondary_id,
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
@@ -440,13 +436,12 @@ pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
+    minted(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         't',
         persistent_id,
     ))
-    .expect("identity grammar")
 }
 
 /// The source-local neutral key for a planar sketch record that has no
@@ -455,13 +450,12 @@ pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
+    minted(sketch_entity_tagged(
         "sketch-entity",
         sketch.as_str(),
         'x',
         u64::from(record_index),
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
@@ -470,13 +464,12 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_curve(
+    minted(sketch_entity_curve(
         "spatial-sketch-entity",
         sketch.as_str(),
         primary_id,
         secondary_id,
     ))
-    .expect("identity grammar")
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
@@ -601,8 +594,7 @@ pub(crate) fn history_input_prefix(
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
 pub(crate) fn history_input_state_id(prefix: &str) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    cadmpeg_ir::ids::FeatureInputTopologyId::mint(format!("f3d:history-input:state#{prefix}"))
-        .expect("identity grammar")
+    minted(format!("f3d:history-input:state#{prefix}"))
 }
 
 /// The history-input edge key for `slot` under a `prefix`.
@@ -610,8 +602,10 @@ pub(crate) fn history_input_edge_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalEdgeId {
-    cadmpeg_ir::ids::HistoricalEdgeId::mint(format!("f3d:history-input:edge#{prefix}:{slot}"))
-        .expect("identity grammar")
+    minted_local(
+        cadmpeg_ir::ids::HistoricalEdgeId::mint,
+        format!("f3d:history-input:edge#{prefix}:{slot}"),
+    )
 }
 
 /// The history-input vertex key for `slot` under a `prefix`.
@@ -619,8 +613,10 @@ pub(crate) fn history_input_vertex_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalVertexId {
-    cadmpeg_ir::ids::HistoricalVertexId::mint(format!("f3d:history-input:vertex#{prefix}:{slot}"))
-        .expect("identity grammar")
+    minted_local(
+        cadmpeg_ir::ids::HistoricalVertexId::mint,
+        format!("f3d:history-input:vertex#{prefix}:{slot}"),
+    )
 }
 
 /// The history-input face key for `slot` under a `prefix`.
@@ -628,8 +624,10 @@ pub(crate) fn history_input_face_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalFaceId {
-    cadmpeg_ir::ids::HistoricalFaceId::mint(format!("f3d:history-input:face#{prefix}:{slot}"))
-        .expect("identity grammar")
+    minted_local(
+        cadmpeg_ir::ids::HistoricalFaceId::mint,
+        format!("f3d:history-input:face#{prefix}:{slot}"),
+    )
 }
 
 /// The history-input body key for `slot` under a `prefix`.
@@ -637,8 +635,10 @@ pub(crate) fn history_input_body_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalBodyId {
-    cadmpeg_ir::ids::HistoricalBodyId::mint(format!("f3d:history-input:body#{prefix}:{slot}"))
-        .expect("identity grammar")
+    minted_local(
+        cadmpeg_ir::ids::HistoricalBodyId::mint,
+        format!("f3d:history-input:body#{prefix}:{slot}"),
+    )
 }
 
 // --- native design-record keys ---------------------------------------------

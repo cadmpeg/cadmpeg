@@ -982,9 +982,8 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     .is_none());
 }
 
-#[test]
-fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
-    let scope = DesignParameterScope::try_new(
+fn localized_fillet_scope() -> DesignParameterScope {
+    DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
@@ -1014,90 +1013,121 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }
         .with_fixture_layout(),
     )
-    .unwrap();
-    let group = |record_index, ordinal, members: Vec<u32>| {
-        DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
-                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
-                scope_record_index: 12,
-                scope_reference_ordinal: ordinal,
-                record_index,
-                byte_offset: 1000 + u64::from(ordinal) * 200,
-                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+    .unwrap()
+}
 
-                members: members
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, value)| crate::records::Located {
-                        value,
-                        offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
-                    })
-                    .collect(),
-                lost_edge_references: Vec::new(),
-                frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
-                        member_count_offset: 1021 + u64::from(ordinal) * 200,
-                        auxiliary_records: Vec::new(),
-                        auxiliary_paths: Vec::new(),
-                        trailing_records: vec![crate::records::Located {
-                            value: 300 + ordinal,
-                            offset: 1100 + u64::from(ordinal) * 200,
-                        }],
-                        trailing_transforms: Vec::new(),
-                        trailing_dual_transforms: Vec::new(),
-                        trailing_flags: Vec::new(),
-                        opaque_index: 100,
-                        opaque_index_offset: 1128 + u64::from(ordinal) * 200,
-                        opaque_scalar: 0.5,
-                        opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
-                        variant: false,
-                    },
-                )
-                .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                    DesignOperandRole::BODIES_B,
-                ),
-                role_offset: 1110 + u64::from(ordinal) * 200,
+fn localized_fillet_group(
+    record_index: u32,
+    ordinal: u32,
+    members: Vec<u32>,
+) -> DesignConstructionOperandGroup {
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
+            scope_record_index: 12,
+            scope_reference_ordinal: ordinal,
+            record_index,
+            byte_offset: 1000 + u64::from(ordinal) * 200,
+            class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
 
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
-                    .unwrap(),
-                paired_byte_offset: 1200 + u64::from(ordinal) * 200,
-            },
-        )
+            members: members
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| crate::records::Located {
+                    value,
+                    offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
+                })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021 + u64::from(ordinal) * 200,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 300 + ordinal,
+                        offset: 1100 + u64::from(ordinal) * 200,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 100,
+                    opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+                    opaque_scalar: 0.5,
+                    opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                DesignOperandRole::BODIES_B,
+            ),
+            role_offset: 1110 + u64::from(ordinal) * 200,
+
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+        },
+    )
+    .unwrap()
+}
+
+fn localized_fillet_operand_groups() -> [DesignConstructionOperandGroup; 2] {
+    [
+        localized_fillet_group(100, 0, vec![200]),
+        localized_fillet_group(101, 1, vec![201, 202]),
+    ]
+}
+
+fn localized_fillet_parameter(
+    owner_index: u32,
+    record_index: u32,
+    source_kind: &str,
+    unit: Option<&str>,
+    value: f64,
+) -> crate::records::DesignParameter {
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(owner_index),
+        "value",
+        source_kind,
+        unit,
+        "d1",
+        value,
+    ))
+    .expect("canonical localized Fillet parameter");
+    parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
+    parameter.record_index = record_index;
+    parameter
+}
+
+fn localized_fillet_owner(
+    record_index: u32,
+    parameter_record_index: u32,
+    local_ordinal: u32,
+) -> crate::records::DesignParameterOwner {
+    let mut owner = parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
-    };
-    let mut operand_groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
-    let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
-        let mut parameter = parse_design_parameter(&parameter_record(
-            Some(owner_index),
-            "value",
-            source_kind,
-            unit,
-            "d1",
-            value,
-        ))
-        .expect("canonical localized Fillet parameter");
-        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
-        parameter.record_index = record_index;
-        parameter
-    };
-    let owner = |record_index, parameter_record_index, local_ordinal| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
-            .unwrap()
-            .into_record("Design/BulkStream.dat", 0)
-            .unwrap();
-        {
-            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
-            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
-            wire.record_index = record_index;
-            wire.scope_record_index = 12;
-            wire.parameter_record_index = parameter_record_index;
-            wire.companion_record_index = parameter_record_index + 1;
-            wire.local_ordinal = local_ordinal;
-            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
-        }
-        owner
-    };
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
+        wire.record_index = record_index;
+        wire.scope_record_index = 12;
+        wire.parameter_record_index = parameter_record_index;
+        wire.companion_record_index = parameter_record_index + 1;
+        wire.local_ordinal = local_ordinal;
+        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
+    owner
+}
+
+#[test]
+fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
+    let scope = localized_fillet_scope();
+    let mut operand_groups = localized_fillet_operand_groups();
+    let group = localized_fillet_group;
+    let parameter = localized_fillet_parameter;
+    let owner = localized_fillet_owner;
     let parameters = [
         parameter(10, 11, "Radius", Some("mm"), 0.5),
         parameter(20, 21, "Radius", Some("mm"), 0.3),
@@ -1205,71 +1235,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert_eq!(
         variable_assignments[0].tangency_weight_parameter_record_index,
         Some(91)
-    );
-    let (variable_features, _) = project_parameter_design(
-        &variable_parameters,
-        &variable_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[1..],
-        &variable_assignments,
-        &[],
-        &[],
-        &[],
-    );
-    let FeatureDefinition::Fillet { groups } = variable_features[0].evaluation.definition() else {
-        panic!("expected assigned variable Fillet");
-    };
-    assert_eq!(groups.len(), 1);
-    assert_eq!(
-        groups[0].edges,
-        cadmpeg_ir::features::EdgeSelection::Native(variable_assignments[0].id.clone())
-    );
-    assert_eq!(
-        groups[0]
-            .tangency_weight
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        Some(0.75)
-    );
-    assert!(matches!(
-        &groups[0].radius,
-        cadmpeg_ir::features::RadiusSpec::Variable { points } if points.as_slice().len() == 3
-    ));
-    let cadmpeg_ir::features::RadiusSpec::Variable { points } = &groups[0].radius else {
-        panic!("expected assigned variable radius controls");
-    };
-    assert_eq!(
-        points
-            .as_slice()
-            .iter()
-            .map(|point| (point.parameter, point.radius.get()))
-            .collect::<Vec<_>>(),
-        vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
-    );
-    let (unassigned_features, _) = project_parameter_design(
-        &variable_parameters,
-        &variable_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[1..],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    let FeatureDefinition::Fillet {
-        groups: unassigned_groups,
-    } = unassigned_features[0].evaluation.definition()
-    else {
-        panic!("expected unassigned variable Fillet");
-    };
-    assert_eq!(unassigned_groups.len(), 1);
-    assert_eq!(
-        unassigned_groups[0].edges,
-        cadmpeg_ir::features::EdgeSelection::Native(operand_groups[1].id.clone())
-    );
-    assert_eq!(unassigned_groups[0].radius, groups[0].radius);
-    assert_eq!(
-        unassigned_groups[0].tangency_weight,
-        groups[0].tangency_weight
     );
     let variable_without_weight_parameters = [
         parameter(50, 51, "StartRadius", Some("mm"), 0.2),
@@ -1785,6 +1750,99 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }) if tool_selection == &tools.id
             && cell_selections.as_slice() == [cadmpeg_ir::features::BodySelection::Native(cell.id)]
     ));
+}
+
+#[test]
+fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_controls() {
+    let scope = localized_fillet_scope();
+    let operand_groups = localized_fillet_operand_groups();
+    let parameter = localized_fillet_parameter;
+    let owner = localized_fillet_owner;
+    let variable_parameters = [
+        parameter(50, 51, "StartRadius", Some("mm"), 0.2),
+        parameter(60, 61, "EndRadius", Some("mm"), 0.6),
+        parameter(70, 71, "MidRadius", Some("mm"), 0.4),
+        parameter(80, 81, "MidParams", None, 0.25),
+        parameter(90, 91, "TangencyWeight", None, 0.75),
+    ];
+    let variable_owners = [
+        owner(50, 51, 0),
+        owner(60, 61, 1),
+        owner(70, 71, 2),
+        owner(80, 81, 3),
+        owner(90, 91, 4),
+    ];
+    let variable_assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &variable_owners,
+        &variable_parameters,
+    );
+    let (variable_features, _) = project_parameter_design(
+        &variable_parameters,
+        &variable_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[1..],
+        &variable_assignments,
+        &[],
+        &[],
+        &[],
+    );
+    let FeatureDefinition::Fillet { groups } = variable_features[0].evaluation.definition() else {
+        panic!("expected assigned variable Fillet");
+    };
+    assert_eq!(groups.len(), 1);
+    assert_eq!(
+        groups[0].edges,
+        cadmpeg_ir::features::EdgeSelection::Native(variable_assignments[0].id.clone())
+    );
+    assert_eq!(
+        groups[0]
+            .tangency_weight
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.75)
+    );
+    assert!(matches!(
+        &groups[0].radius,
+        cadmpeg_ir::features::RadiusSpec::Variable { points } if points.as_slice().len() == 3
+    ));
+    let cadmpeg_ir::features::RadiusSpec::Variable { points } = &groups[0].radius else {
+        panic!("expected assigned variable radius controls");
+    };
+    assert_eq!(
+        points
+            .as_slice()
+            .iter()
+            .map(|point| (point.parameter, point.radius.get()))
+            .collect::<Vec<_>>(),
+        vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
+    );
+    let (unassigned_features, _) = project_parameter_design(
+        &variable_parameters,
+        &variable_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[1..],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let FeatureDefinition::Fillet {
+        groups: unassigned_groups,
+    } = unassigned_features[0].evaluation.definition()
+    else {
+        panic!("expected unassigned variable Fillet");
+    };
+    assert_eq!(unassigned_groups.len(), 1);
+    assert_eq!(
+        unassigned_groups[0].edges,
+        cadmpeg_ir::features::EdgeSelection::Native(operand_groups[1].id.clone())
+    );
+    assert_eq!(unassigned_groups[0].radius, groups[0].radius);
+    assert_eq!(
+        unassigned_groups[0].tangency_weight,
+        groups[0].tangency_weight
+    );
 }
 
 #[test]
