@@ -659,7 +659,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
             extrude.clone(),
             ConfigurationFeatureState {
                 evaluation: crate::features::ConfigurationEvaluation::Active {
-                    outputs: Default::default(),
+                    outputs: crate::features::DistinctMembers::default(),
                 },
                 dependencies: crate::features::DistinctMembers::default(),
                 definition: ir.model.features[1].evaluation.definition().clone(),
@@ -898,7 +898,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 feature,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: crate::features::DistinctMembers::default(),
                     },
                     dependencies: crate::features::DistinctMembers::default(),
                     definition: ir.model.features[index].evaluation.definition().clone(),
