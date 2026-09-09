@@ -899,7 +899,8 @@ mod tests {
         )]);
         let error = decode_detailed(&protein, &[0; 16])
             .expect_err("a header without any complete page is malformed");
-        assert!(error.to_string().contains("page framing is invalid"));
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "Protein page stream is shorter than its header and one page"));
     }
 
     #[test]
