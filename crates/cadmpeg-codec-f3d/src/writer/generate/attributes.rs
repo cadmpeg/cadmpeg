@@ -948,13 +948,12 @@ pub(crate) fn encode_source_less_attributes(
             )));
         }
     }
-    for (body_ordinal, body) in model
+    for (body_ordinal, body, color) in model
         .bodies
         .iter()
         .enumerate()
-        .filter(|(_, body)| body.color.is_some())
+        .filter_map(|(ordinal, body)| Some((ordinal, body, body.color?)))
     {
-        let color = body.color.expect("filtered colored body");
         let owner_target = AttributeTarget::Body(body.id.clone());
         let next = if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)?
         {
@@ -974,10 +973,10 @@ pub(crate) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face, face_start) in faces
+    for (face_ordinal, face, face_start, color) in faces
         .iter()
         .copied()
-        .filter(|(_, face, _)| face.color.is_some())
+        .filter_map(|(ordinal, face, start)| Some((ordinal, face, start, face.color?)))
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)?
@@ -992,17 +991,17 @@ pub(crate) fn encode_source_less_attributes(
         };
         native_color_attribute(
             records,
-            face.color.expect("filtered colored face"),
+            color,
             next,
             native_record_index(face_start, face_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body) in model
+    for (body_ordinal, body, name) in model
         .bodies
         .iter()
         .enumerate()
-        .filter(|(_, body)| body.name.is_some())
+        .filter_map(|(ordinal, body)| Some((ordinal, body, body.name.as_deref()?)))
     {
         let owner_target = AttributeTarget::Body(body.id.clone());
         let next = if let Some(reference) =
@@ -1024,17 +1023,17 @@ pub(crate) fn encode_source_less_attributes(
         };
         native_name_attribute(
             records,
-            body.name.as_deref().expect("filtered named body"),
+            name,
             next,
             previous,
             native_record_index(owners.body, body_ordinal)?,
         )?;
         records.push(0x11);
     }
-    for (face_ordinal, face, face_start) in faces
+    for (face_ordinal, face, face_start, name) in faces
         .iter()
         .copied()
-        .filter(|(_, face, _)| face.name.is_some())
+        .filter_map(|(ordinal, face, start)| Some((ordinal, face, start, face.name.as_deref()?)))
     {
         let owner_target = AttributeTarget::Face(face.id.clone());
         let next = if let Some(reference) =
@@ -1056,7 +1055,7 @@ pub(crate) fn encode_source_less_attributes(
         };
         native_name_attribute(
             records,
-            face.name.as_deref().expect("filtered named face"),
+            name,
             next,
             previous,
             native_record_index(face_start, face_ordinal)?,
