@@ -323,16 +323,11 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
 }
 
 #[test]
-fn absent_normals_call_the_editor_with_an_empty_slice() {
+fn absent_normals_reject_edit_without_calling_the_editor() {
     let mut value = mesh();
     let original = value.clone();
     let mut called = false;
-    value
-        .edit_normals(|normals| {
-            assert!(normals.is_empty());
-            called = true;
-        })
-        .unwrap();
-    assert!(called);
+    assert!(value.edit_normals(|_| called = true).is_err());
+    assert!(!called);
     assert_eq!(value, original);
 }
