@@ -246,9 +246,13 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         .filter(|loss| loss.code == IgesLossCode::PointerUnresolved.kind())
         .collect::<Vec<_>>();
     assert_eq!(cycle_losses.len(), 2);
-    assert!(cycle_losses
-        .iter()
-        .all(|loss| loss.message.contains("Cyclic resolution")));
+    assert_eq!(
+        cycle_losses.iter().map(|loss| loss.message.as_str()).collect::<Vec<_>>(),
+        [
+            "IGES Directory Entry D1 Transform pointer 3 has Cyclic(3) resolution; expected type-124-transformation",
+            "IGES Directory Entry D3 Transform pointer 1 has Cyclic(1) resolution; expected type-124-transformation",
+        ],
+    );
 }
 
 #[test]
