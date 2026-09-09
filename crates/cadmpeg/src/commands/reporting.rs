@@ -169,20 +169,19 @@ pub(super) enum CommandReportBody<'a> {
     Refused(&'a ConversionRefusal),
 }
 
-impl CommandReportBody<'_> {
-    fn command_report(self, command: &'static str) -> CommandReport<Self> {
-        CommandReport::new(command, self)
-    }
+#[derive(Serialize)]
+struct Reports<'a> {
+    decode_report: Option<&'a DecodeReport>,
+    check_report: Option<&'a ValidationReport>,
+    export: Option<&'a ExportReport>,
 }
 
-impl Serialize for CommandReportBody<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Reports<'a> {
-            decode_report: Option<&'a DecodeReport>,
-            check_report: Option<&'a ValidationReport>,
-            export: Option<&'a ExportReport>,
-        }
+impl CommandReportBody<'_> {
+    fn command_report(&self, command: &'static str) -> CommandReport<'_, Reports<'_>> {
+        CommandReport::new(command, self.payload())
+    }
+
+    fn payload(&self) -> Payload<'_, Reports<'_>> {
         match self {
             Self::Ok {
                 decode_report,
@@ -192,8 +191,7 @@ impl Serialize for CommandReportBody<'_> {
                 decode_report: *decode_report,
                 check_report: *check_report,
                 export: *export,
-            })
-            .serialize(serializer),
+            }),
             Self::Refused(refusal) => {
                 let reports = refusal.evidence().reports;
                 Payload::Refused(
@@ -204,7 +202,6 @@ impl Serialize for CommandReportBody<'_> {
                     },
                     refusal,
                 )
-                .serialize(serializer)
             }
         }
     }
@@ -317,15 +314,15 @@ impl<P: Serialize> Serialize for Payload<'_, P> {
 }
 
 #[derive(Serialize)]
-struct CommandReport<P> {
+struct CommandReport<'a, P> {
     command: &'static str,
     generator: String,
     #[serde(flatten)]
-    payload: P,
+    payload: Payload<'a, P>,
 }
 
-impl<P> CommandReport<P> {
-    fn new(command: &'static str, payload: P) -> Self {
+impl<'a, P> CommandReport<'a, P> {
+    fn new(command: &'static str, payload: Payload<'a, P>) -> Self {
         Self {
             command,
             generator: generator(),
