@@ -179,12 +179,14 @@ impl DecodedProceduralSurface {
                 basepoint,
             } => {
                 let [first, second] = *children;
-                ProceduralSurfaceDefinition::Sum {
-                    first: commit_child(0, "first", first)?,
-                    second: commit_child(1, "second", second)?,
-                    basepoint,
-                    revision_form: None,
-                }
+                let first = commit_child(0, "first", first)?;
+                let second = commit_child(1, "second", second)?;
+                ProceduralSurfaceDefinition::Sum(
+                    cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                        first, second, basepoint, None,
+                    )
+                    .map_err(reject_payload)?,
+                )
             }
         })
     }

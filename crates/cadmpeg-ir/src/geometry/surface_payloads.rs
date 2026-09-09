@@ -12,7 +12,7 @@ use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
-use crate::units::FiniteVector;
+use crate::units::{FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -782,6 +782,209 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     type Error = ProceduralGeometryError;
     fn try_from(wire: ParallelOffsetSurfaceConstructionWire) -> Result<Self, Self::Error> {
         Self::try_new(wire.support, wire.distance, wire.self_intersect)
+    }
+}
+
+/// Admitted unbounded linear sweep parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "LinearSweepSurfaceConstructionWire")
+)]
+#[serde(try_from = "LinearSweepSurfaceConstructionWire")]
+pub struct LinearSweepSurfaceConstruction {
+    /// Curve swept along `direction`.
+    directrix: CurveId,
+    /// Length-bearing sweep vector.
+    direction: FiniteVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LinearSweepSurfaceConstructionWire {
+    /// Curve swept along `direction`.
+    directrix: CurveId,
+    /// Length-bearing sweep vector.
+    direction: Vector3,
+}
+
+impl LinearSweepSurfaceConstruction {
+    /// Admit the construction parameters.
+    pub fn try_new(
+        directrix: CurveId,
+        direction: Vector3,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let direction = FiniteVector3::new(direction).ok_or(ProceduralGeometryError::Payload(
+            "invalid linear-sweep direction",
+        ))?;
+        if direction.as_raw().norm() <= f64::EPSILON {
+            return Err(ProceduralGeometryError::Payload(
+                "invalid linear-sweep direction",
+            ));
+        }
+        Ok(Self {
+            directrix,
+            direction,
+        })
+    }
+    /// Return the directrix.
+    pub fn directrix(&self) -> &CurveId {
+        &self.directrix
+    }
+    /// Return the direction.
+    pub fn direction(&self) -> &Vector3 {
+        self.direction.as_raw()
+    }
+}
+
+impl TryFrom<LinearSweepSurfaceConstructionWire> for LinearSweepSurfaceConstruction {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: LinearSweepSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.directrix, wire.direction)
+    }
+}
+
+/// Admitted full axis revolution parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "AxisRevolutionSurfaceConstructionWire")
+)]
+#[serde(try_from = "AxisRevolutionSurfaceConstructionWire")]
+pub struct AxisRevolutionSurfaceConstruction {
+    /// Curve revolved about the axis.
+    directrix: CurveId,
+    /// Point on the revolution axis.
+    axis_origin: FinitePoint3,
+    /// Unit revolution-axis direction.
+    axis_direction: UnitVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AxisRevolutionSurfaceConstructionWire {
+    /// Curve revolved about the axis.
+    directrix: CurveId,
+    /// Point on the revolution axis.
+    axis_origin: Point3,
+    /// Unit revolution-axis direction.
+    axis_direction: Vector3,
+}
+
+impl AxisRevolutionSurfaceConstruction {
+    /// Admit the construction parameters.
+    pub fn try_new(
+        directrix: CurveId,
+        axis_origin: Point3,
+        axis_direction: Vector3,
+    ) -> Result<Self, ProceduralGeometryError> {
+        const INVALID_AXIS: ProceduralGeometryError = ProceduralGeometryError::Payload(
+            "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+        );
+        Ok(Self {
+            directrix,
+            axis_origin: FinitePoint3::new(axis_origin).ok_or(INVALID_AXIS)?,
+            axis_direction: UnitVector3::new(axis_direction).ok_or(INVALID_AXIS)?,
+        })
+    }
+    /// Return the directrix.
+    pub fn directrix(&self) -> &CurveId {
+        &self.directrix
+    }
+    /// Return the axis origin.
+    pub fn axis_origin(&self) -> &Point3 {
+        self.axis_origin.as_raw()
+    }
+    /// Return the axis direction.
+    pub fn axis_direction(&self) -> &Vector3 {
+        self.axis_direction.as_raw()
+    }
+}
+
+impl TryFrom<AxisRevolutionSurfaceConstructionWire> for AxisRevolutionSurfaceConstruction {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: AxisRevolutionSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.directrix, wire.axis_origin, wire.axis_direction)
+    }
+}
+
+/// Admitted ordered curve sum parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SumSurfaceConstructionWire"))]
+#[serde(try_from = "SumSurfaceConstructionWire")]
+pub struct SumSurfaceConstruction {
+    /// First curve, varying in the first surface parameter.
+    first: CurveId,
+    /// Second curve, varying in the second surface parameter.
+    second: CurveId,
+    /// Surface base point.
+    basepoint: FiniteVector3,
+    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// The first curve's optional endpoints are `reference_endpoints`
+    /// and the second curve's are `second_endpoints`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision_form: Option<RevisionSurfaceForm>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SumSurfaceConstructionWire {
+    /// First curve, varying in the first surface parameter.
+    first: CurveId,
+    /// Second curve, varying in the second surface parameter.
+    second: CurveId,
+    /// Surface base point.
+    basepoint: Vector3,
+    /// Revision-gated form fields; absent from the pre-revision layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision_form: Option<RevisionSurfaceForm>,
+}
+
+impl SumSurfaceConstruction {
+    pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
+        self.revision_form.as_mut().map(|form| &mut form.cache)
+    }
+    /// Admit the construction parameters.
+    pub fn try_new(
+        first: CurveId,
+        second: CurveId,
+        basepoint: Vector3,
+        revision_form: Option<RevisionSurfaceForm>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self {
+            first,
+            second,
+            basepoint: FiniteVector3::new(basepoint).ok_or(ProceduralGeometryError::Payload(
+                "sum basepoint must be finite",
+            ))?,
+            revision_form,
+        })
+    }
+    /// Return the first curve.
+    pub fn first(&self) -> &CurveId {
+        &self.first
+    }
+    /// Return the second curve.
+    pub fn second(&self) -> &CurveId {
+        &self.second
+    }
+    /// Return the basepoint.
+    pub fn basepoint(&self) -> &Vector3 {
+        self.basepoint.as_raw()
+    }
+    /// Return the revision form.
+    pub fn revision_form(&self) -> &Option<RevisionSurfaceForm> {
+        &self.revision_form
+    }
+}
+
+impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: SumSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.first, wire.second, wire.basepoint, wire.revision_form)
     }
 }
 

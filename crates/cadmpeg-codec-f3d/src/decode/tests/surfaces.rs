@@ -271,19 +271,16 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("sum spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        let ProceduralSurfaceDefinition::Sum {
-            first,
-            second,
-            basepoint,
-            revision_form: None,
-        } = procedural.definition()
-        else {
+        let ProceduralSurfaceDefinition::Sum(definition_payload) = procedural.definition() else {
             panic!("expected sum surface construction")
         };
+        assert!(definition_payload.revision_form().is_none());
         assert_eq!(
-            *basepoint,
+            *definition_payload.basepoint(),
             cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
         );
+        let first = definition_payload.first();
+        let second = definition_payload.second();
         let source_curves = [first.clone(), second.clone()];
         assert!(result
             .ir()
@@ -328,14 +325,9 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             .expect("source-less sum surface round trip");
         assert!(matches!(
             round_trip.ir().model.procedural_surfaces[0].definition(),
-            ProceduralSurfaceDefinition::Sum {
-                basepoint: cadmpeg_ir::math::Vector3 {
-                    x: 10.0,
-                    y: -20.0,
-                    z: 30.0
-                },
-                ..
-            }
+            ProceduralSurfaceDefinition::Sum(definition_payload)
+                if *definition_payload.basepoint()
+                    == cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
         ));
     }
 }

@@ -5076,11 +5076,10 @@ pub fn model_surface_point(
             )
             .map(|partials| partials.point)
         }
-        ProceduralSurfaceDefinition::LinearSweep {
-            directrix,
-            direction,
-        } => model_curve_point_by_id(&index, directrix, u)
-            .map(|point| offset(point, &[(v, *direction)])),
+        ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+            model_curve_point_by_id(&index, definition_payload.directrix(), u)
+                .map(|point| offset(point, &[(v, *definition_payload.direction())]))
+        }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
             let axis_origin = definition_payload.axis_origin();
@@ -5105,29 +5104,29 @@ pub fn model_surface_point(
             )
             .map(|partials| partials.point)
         }
-        ProceduralSurfaceDefinition::AxisRevolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-        } => model_axis_revolution_point(
-            &index,
-            directrix,
-            *axis_origin,
-            *axis_direction,
-            u,
-            v,
-            None,
-        ),
+        ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+            model_axis_revolution_point(
+                &index,
+                definition_payload.directrix(),
+                *definition_payload.axis_origin(),
+                *definition_payload.axis_direction(),
+                u,
+                v,
+                None,
+            )
+        }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
         }
-        ProceduralSurfaceDefinition::Sum {
-            first,
-            second,
-            basepoint,
-            ..
-        } => model_sum_surface_partials(&index, first, second, *basepoint, u, v)
-            .map(|partials| partials.point),
+        ProceduralSurfaceDefinition::Sum(definition_payload) => model_sum_surface_partials(
+            &index,
+            definition_payload.first(),
+            definition_payload.second(),
+            *definition_payload.basepoint(),
+            u,
+            v,
+        )
+        .map(|partials| partials.point),
         ProceduralSurfaceDefinition::Sweep {
             profile,
             spine,
@@ -6646,23 +6645,21 @@ fn model_surface_point_by_id_inner(
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
-            Some(ProceduralSurfaceDefinition::AxisRevolution {
-                directrix,
-                axis_origin,
-                axis_direction,
-            }) => model_axis_revolution_point(
-                index,
-                directrix,
-                *axis_origin,
-                *axis_direction,
-                u,
-                v,
-                budget,
-            )
-            .map(|point| SurfaceEvaluation {
-                point,
-                oriented_normal: None,
-            }),
+            Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
+                model_axis_revolution_point(
+                    index,
+                    definition_payload.directrix(),
+                    *definition_payload.axis_origin(),
+                    *definition_payload.axis_direction(),
+                    u,
+                    v,
+                    budget,
+                )
+                .map(|point| SurfaceEvaluation {
+                    point,
+                    oriented_normal: None,
+                })
+            }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
                 let directrix = definition_payload.directrix();
                 let direction = definition_payload.direction();
@@ -6684,18 +6681,18 @@ fn model_surface_point_by_id_inner(
                     oriented_normal: None,
                 })
             }
-            Some(ProceduralSurfaceDefinition::LinearSweep {
-                directrix,
-                direction,
-            }) => budget
-                .map_or_else(
-                    || model_curve_point_by_id(index, directrix, u),
-                    |budget| model_curve_point_by_id_with_budget(index, directrix, u, budget),
-                )
-                .map(|point| SurfaceEvaluation {
-                    point: offset(point, &[(v, *direction)]),
-                    oriented_normal: None,
-                }),
+            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
+                let directrix = definition_payload.directrix();
+                budget
+                    .map_or_else(
+                        || model_curve_point_by_id(index, directrix, u),
+                        |budget| model_curve_point_by_id_with_budget(index, directrix, u, budget),
+                    )
+                    .map(|point| SurfaceEvaluation {
+                        point: offset(point, &[(v, *definition_payload.direction())]),
+                        oriented_normal: None,
+                    })
+            }
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
                 let directrix = definition_payload.directrix();
                 let axis_origin = definition_payload.axis_origin();
@@ -6731,17 +6728,18 @@ fn model_surface_point_by_id_inner(
                     }
                 })
             }
-            Some(ProceduralSurfaceDefinition::Sum {
-                first,
-                second,
-                basepoint,
-                ..
-            }) => {
-                model_sum_surface_partials(index, first, second, *basepoint, u, v).map(|partials| {
-                    SurfaceEvaluation {
-                        point: partials.point,
-                        oriented_normal: None,
-                    }
+            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
+                model_sum_surface_partials(
+                    index,
+                    definition_payload.first(),
+                    definition_payload.second(),
+                    *definition_payload.basepoint(),
+                    u,
+                    v,
+                )
+                .map(|partials| SurfaceEvaluation {
+                    point: partials.point,
+                    oriented_normal: None,
                 })
             }
             Some(ProceduralSurfaceDefinition::Sweep {
@@ -7112,25 +7110,23 @@ fn model_surface_mapping(
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
     let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
-        Some(ProceduralSurfaceDefinition::AxisRevolution {
-            directrix,
-            axis_origin,
-            axis_direction,
-        }) => Some(SurfaceMapping {
-            base: model_axis_revolution_partials(
-                index,
-                directrix,
-                *axis_origin,
-                *axis_direction,
-                u,
-                v,
-                budget,
-            )?,
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
+        Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
+            Some(SurfaceMapping {
+                base: model_axis_revolution_partials(
+                    index,
+                    definition_payload.directrix(),
+                    *definition_payload.axis_origin(),
+                    *definition_payload.axis_direction(),
+                    u,
+                    v,
+                    budget,
+                )?,
+                offset_distance: 0.0,
+                u_scale: 1.0,
+                v_scale: 1.0,
+                orientation: 1.0,
+            })
+        }
         Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
             let directrix = definition_payload.directrix();
             let direction = definition_payload.direction();
@@ -7154,10 +7150,9 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
-        Some(ProceduralSurfaceDefinition::LinearSweep {
-            directrix,
-            direction,
-        }) => {
+        Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
+            let directrix = definition_payload.directrix();
+            let direction = definition_payload.direction();
             let differential = budget.map_or_else(
                 || model_curve_differential_by_id(index, directrix, u),
                 |budget| model_curve_differential_by_id_with_budget(index, directrix, u, budget),
@@ -7214,13 +7209,15 @@ fn model_surface_mapping(
             v_scale: 1.0,
             orientation: 1.0,
         }),
-        Some(ProceduralSurfaceDefinition::Sum {
-            first,
-            second,
-            basepoint,
-            ..
-        }) => Some(SurfaceMapping {
-            base: model_sum_surface_partials(index, first, second, *basepoint, u, v)?,
+        Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => Some(SurfaceMapping {
+            base: model_sum_surface_partials(
+                index,
+                definition_payload.first(),
+                definition_payload.second(),
+                *definition_payload.basepoint(),
+                u,
+                v,
+            )?,
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,

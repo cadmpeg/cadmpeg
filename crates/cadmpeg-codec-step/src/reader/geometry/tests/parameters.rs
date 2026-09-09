@@ -207,10 +207,13 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::LinearSweep {
-                directrix: directrix.clone(),
-                direction: Vector3::new(0.0, 1.0, 0.0),
-            },
+            ProceduralSurfaceDefinition::LinearSweep(
+                cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                    directrix.clone(),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -220,11 +223,14 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::AxisRevolution {
-                directrix,
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            },
+            ProceduralSurfaceDefinition::AxisRevolution(
+                cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
+                    directrix,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -345,10 +351,13 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::LinearSweep {
-                directrix,
-                direction: Vector3::new(0.0, 1.0, 0.0),
-            },
+            ProceduralSurfaceDefinition::LinearSweep(
+                cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+                    directrix,
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -396,11 +405,14 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::AxisRevolution {
-                directrix,
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            },
+            ProceduralSurfaceDefinition::AxisRevolution(
+                cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
+                    directrix,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),

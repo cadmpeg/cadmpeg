@@ -911,7 +911,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => {
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                let directrix = definition_payload.directrix();
                 if ids.curves(directrix.as_str()).is_none() {
                     ref_error(
                         findings,
@@ -934,7 +935,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                let directrix = definition_payload.directrix();
                 if ids.curves(directrix.as_str()).is_none() {
                     ref_error(
                         findings,
@@ -1091,8 +1093,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
-                for curve in [first, second] {
+            ProceduralSurfaceDefinition::Sum(definition_payload) => {
+                for curve in [definition_payload.first(), definition_payload.second()] {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
@@ -1353,11 +1355,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Silhouette {
-                context,
-                cast_surface,
-                ..
-            } => {
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                let context = definition_payload.context();
+                let cast_surface = definition_payload.cast_surface();
                 if ids.surfaces(cast_surface.as_str()).is_none() {
                     ref_error(
                         findings,

@@ -4,12 +4,12 @@
 use super::{
     curve_offset_range_wire, default_true, vector_offset_roles_wire, CacheFirstCurveForm,
     CurveOffsetRange, DeformableCurveData, DeformableCurveSource, IntcurveSupportContext,
-    OffsetSide, ProceduralGeometryError, VectorOffsetRoles,
+    OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
 };
 #[cfg(feature = "schema")]
 use super::{CurveOffsetRangeWire, OffsetSideWire, VectorOffsetRolesWire};
 use crate::features::FiniteVector3;
-use crate::ids::CurveId;
+use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
@@ -760,5 +760,85 @@ impl TryFrom<SubsetCurveConstructionWire> for SubsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SubsetCurveConstructionWire) -> Result<Self, Self::Error> {
         Self::try_new(wire.source, wire.parameter_range, wire.sense)
+    }
+}
+/// Admitted silhouette curve parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SilhouetteCurveConstructionWire"))]
+#[serde(try_from = "SilhouetteCurveConstructionWire")]
+pub struct SilhouetteCurveConstruction {
+    /// Shared first two support pairs.
+    context: IntcurveSupportContext,
+    /// Standard, parametric, or taper silhouette semantics.
+    silhouette: SilhouetteKind,
+    /// Surface whose silhouette is constructed.
+    cast_surface: SurfaceId,
+    /// Native model-space light direction.
+    light_direction: FiniteVector3,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SilhouetteCurveConstructionWire {
+    /// Shared first two support pairs.
+    context: IntcurveSupportContext,
+    /// Standard, parametric, or taper silhouette semantics.
+    silhouette: SilhouetteKind,
+    /// Surface whose silhouette is constructed.
+    cast_surface: SurfaceId,
+    /// Native model-space light direction.
+    light_direction: Vector3,
+}
+
+impl SilhouetteCurveConstruction {
+    /// Admit the construction parameters.
+    pub fn try_new(
+        context: IntcurveSupportContext,
+        silhouette: SilhouetteKind,
+        cast_surface: SurfaceId,
+        light_direction: Vector3,
+    ) -> Result<Self, ProceduralGeometryError> {
+        const DEGENERATE: ProceduralGeometryError = ProceduralGeometryError::Payload(
+            "silhouette fields are not finite or the light direction is degenerate",
+        );
+        let light_direction = FiniteVector3::new(light_direction).ok_or(DEGENERATE)?;
+        if light_direction.as_raw().norm() <= f64::EPSILON {
+            return Err(DEGENERATE);
+        }
+        Ok(Self {
+            context,
+            silhouette,
+            cast_surface,
+            light_direction,
+        })
+    }
+    /// Return the support context.
+    pub fn context(&self) -> &IntcurveSupportContext {
+        &self.context
+    }
+    /// Return the silhouette semantics.
+    pub fn silhouette(&self) -> &SilhouetteKind {
+        &self.silhouette
+    }
+    /// Return the cast surface.
+    pub fn cast_surface(&self) -> &SurfaceId {
+        &self.cast_surface
+    }
+    /// Return the light direction.
+    pub fn light_direction(&self) -> &Vector3 {
+        self.light_direction.as_raw()
+    }
+}
+
+impl TryFrom<SilhouetteCurveConstructionWire> for SilhouetteCurveConstruction {
+    type Error = ProceduralGeometryError;
+    fn try_from(wire: SilhouetteCurveConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.context,
+            wire.silhouette,
+            wire.cast_surface,
+            wire.light_direction,
+        )
     }
 }

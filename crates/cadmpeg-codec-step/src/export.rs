@@ -2591,11 +2591,9 @@ impl<'a> Builder<'a> {
             None => ".U.",
         };
         match definition {
-            ProceduralSurfaceDefinition::LinearSweep {
-                directrix,
-                direction,
-            } => {
-                let directrix = self.emit_curve(directrix.as_str())?;
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                let direction = definition_payload.direction();
+                let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, *direction);
                 let vector = self.emitter.emit(
                     "VECTOR",
@@ -2606,14 +2604,11 @@ impl<'a> Builder<'a> {
                     &format!("'',{directrix},{vector}"),
                 ))
             }
-            ProceduralSurfaceDefinition::AxisRevolution {
-                directrix,
-                axis_origin,
-                axis_direction,
-            } => {
-                let directrix = self.emit_curve(directrix.as_str())?;
-                let origin = geometry::point(&mut self.emitter, *axis_origin);
-                let direction = geometry::direction(&mut self.emitter, *axis_direction);
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
+                let origin = geometry::point(&mut self.emitter, *definition_payload.axis_origin());
+                let direction =
+                    geometry::direction(&mut self.emitter, *definition_payload.axis_direction());
                 let axis = self
                     .emitter
                     .emit("AXIS1_PLACEMENT", &format!("'',{origin},{direction}"));

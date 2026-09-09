@@ -3962,37 +3962,13 @@ pub enum ProceduralSurfaceDefinition {
     /// Translation of a directrix along a direction.
     Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     /// Unbounded linear sweep of a directrix.
-    LinearSweep {
-        /// Curve swept along `direction`.
-        directrix: CurveId,
-        /// Length-bearing sweep vector.
-        direction: Vector3,
-    },
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
     /// Revolution of a directrix about an axis.
     Revolution(surface_payloads::RevolutionSurfaceConstruction),
     /// Full revolution of a directrix about an axis.
-    AxisRevolution {
-        /// Curve revolved about the axis.
-        directrix: CurveId,
-        /// Point on the revolution axis.
-        axis_origin: Point3,
-        /// Unit revolution-axis direction.
-        axis_direction: Vector3,
-    },
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
     /// Sum of two ordered curves from a base point.
-    Sum {
-        /// First curve, varying in the first surface parameter.
-        first: CurveId,
-        /// Second curve, varying in the second surface parameter.
-        second: CurveId,
-        /// Surface base point.
-        basepoint: Vector3,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The first curve's optional endpoints are `reference_endpoints`
-        /// and the second curve's are `second_endpoints`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    Sum(surface_payloads::SumSurfaceConstruction),
     /// Sweep of a profile along a spine.
     Sweep {
         /// Cross-section curve carried along `spine`.
@@ -4143,23 +4119,10 @@ enum ProceduralSurfaceDefinitionWire {
         construction: Box<VertexBlendConstruction>,
     },
     Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
-    LinearSweep {
-        directrix: CurveId,
-        direction: Vector3,
-    },
+    LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
     Revolution(surface_payloads::RevolutionSurfaceConstruction),
-    AxisRevolution {
-        directrix: CurveId,
-        axis_origin: Point3,
-        axis_direction: Vector3,
-    },
-    Sum {
-        first: CurveId,
-        second: CurveId,
-        basepoint: Vector3,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
-    },
+    AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
+    Sum(surface_payloads::SumSurfaceConstruction),
     Sweep {
         profile: CurveId,
         spine: CurveId,
@@ -4222,55 +4185,14 @@ impl<'de> Deserialize<'de> for ProceduralSurfaceDefinition {
     }
 }
 
-const EPS_REVOLUTION_AXIS_UNIT: f64 = 1.0e-9;
-
 impl ProceduralSurfaceDefinition {
     fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
         match self {
             Self::Revolution(..) => Ok(()),
-            Self::AxisRevolution {
-                axis_origin,
-                axis_direction,
-                ..
-            } => {
-                if ![
-                    axis_origin.x,
-                    axis_origin.y,
-                    axis_origin.z,
-                    axis_direction.x,
-                    axis_direction.y,
-                    axis_direction.z,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
-                    || (axis_direction.norm() - 1.0).abs() > EPS_REVOLUTION_AXIS_UNIT
-                {
-                    return Err(ProceduralGeometryError::Payload("revolution axis_origin and axis_direction must be finite, with unit axis_direction"));
-                }
-                Ok(())
-            }
-            Self::Sum { basepoint, .. } => {
-                if !basepoint.x.is_finite() || !basepoint.y.is_finite() || !basepoint.z.is_finite()
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "sum basepoint must be finite",
-                    ));
-                }
-                Ok(())
-            }
+            Self::AxisRevolution(..) => Ok(()),
+            Self::Sum(..) => Ok(()),
             Self::Extrusion(..) => Ok(()),
-            Self::LinearSweep { direction, .. } => {
-                if ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || (direction.norm() <= f64::EPSILON)
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "invalid linear-sweep direction",
-                    ));
-                }
-                Ok(())
-            }
+            Self::LinearSweep(..) => Ok(()),
             Self::ParallelOffset(..) => Ok(()),
             Self::Exact { spline } => {
                 let valid = match spline {
@@ -5034,7 +4956,7 @@ impl ProceduralSurfaceDefinition {
                 let revision_form = definition_payload.revision_form();
                 revision_form.as_ref().map(|form| &form.cache)
             }
-            Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
+            Self::Sum(payload) => payload.revision_form().as_ref().map(|form| &form.cache),
             Self::Offset(payload) => match payload.extension() {
                 OffsetExtension::Revision(form) => Some(&form.cache),
                 OffsetExtension::Legacy(_) => None,
@@ -5068,7 +4990,7 @@ impl ProceduralSurfaceDefinition {
             Self::Taper(payload) => payload.revision_cache_mut(),
             Self::Extrusion(payload) => payload.revision_cache_mut(),
             Self::Revolution(payload) => payload.revision_cache_mut(),
-            Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
+            Self::Sum(payload) => payload.revision_cache_mut(),
             Self::Offset(payload) => payload.revision_cache_mut(),
             Self::Loft { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
             Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
@@ -11852,7 +11774,7 @@ pub enum SilhouetteKind {
     /// Draft/taper silhouette with an explicit factor.
     Taper {
         /// Native unscaled draft factor.
-        draft_factor: f64,
+        draft_factor: crate::scalar::FiniteReal,
     },
 }
 
@@ -12111,16 +12033,7 @@ pub enum ProceduralCurveDefinition {
         family: SurfaceCurveFamily,
     },
     /// Silhouette of a cast surface in a light direction.
-    Silhouette {
-        /// Shared first two support pairs.
-        context: IntcurveSupportContext,
-        /// Standard, parametric, or taper silhouette semantics.
-        silhouette: SilhouetteKind,
-        /// Surface whose silhouette is constructed.
-        cast_surface: SurfaceId,
-        /// Native model-space light direction.
-        light_direction: Vector3,
-    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
     /// Curve offset relative to a surface parameterization.
     SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     /// Blend spring guide between two support sides.
@@ -12217,12 +12130,7 @@ enum ProceduralCurveDefinitionWire {
         #[serde(flatten)]
         family: SurfaceCurveFamily,
     },
-    Silhouette {
-        context: IntcurveSupportContext,
-        silhouette: SilhouetteKind,
-        cast_surface: SurfaceId,
-        light_direction: Vector3,
-    },
+    Silhouette(curve_payloads::SilhouetteCurveConstruction),
     SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     Spring {
         #[serde(flatten, with = "spring_layout_wire")]
@@ -12354,30 +12262,7 @@ impl ProceduralCurveDefinition {
                 Ok(())
             }
             Self::SurfaceOffset(..) => Ok(()),
-            Self::Silhouette {
-                silhouette,
-                light_direction,
-                ..
-            } => {
-                let draft_finite = match silhouette {
-                    crate::geometry::SilhouetteKind::Taper { draft_factor } => {
-                        draft_factor.is_finite()
-                    }
-                    crate::geometry::SilhouetteKind::Standard
-                    | crate::geometry::SilhouetteKind::Parametric => true,
-                };
-                if !light_direction.x.is_finite()
-                    || !light_direction.y.is_finite()
-                    || !light_direction.z.is_finite()
-                    || light_direction.norm() <= f64::EPSILON
-                    || !draft_finite
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "silhouette fields are not finite or the light direction is degenerate",
-                    ));
-                }
-                Ok(())
-            }
+            Self::Silhouette(..) => Ok(()),
             Self::ThreeSurfaceIntersection { context, third, .. } => {
                 if third
                     .pcurve

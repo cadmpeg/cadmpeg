@@ -1737,6 +1737,13 @@ pub fn surface_offset_patch_layout(
     })
 }
 
+/// Draft factor of the marker template, replaced by the native tail value.
+const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal =
+    match cadmpeg_ir::scalar::FiniteReal::new(0.0) {
+        Some(value) => value,
+        None => panic!("zero is a finite draft factor"),
+    };
+
 fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let names = [
@@ -1745,7 +1752,9 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
         ("parasil", SilhouetteKind::Parametric),
         (
             "taper_silh_int_cur",
-            SilhouetteKind::Taper { draft_factor: 0.0 },
+            SilhouetteKind::Taper {
+                draft_factor: ZERO_DRAFT_FACTOR,
+            },
         ),
     ];
     let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
@@ -1766,7 +1775,7 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     let light_direction = normalized(light)?;
     if matches!(silhouette, SilhouetteKind::Taper { .. }) {
         silhouette = SilhouetteKind::Taper {
-            draft_factor: cur.take_f64()?,
+            draft_factor: cadmpeg_ir::scalar::FiniteReal::new(cur.take_f64()?)?,
         };
     }
     Some(EmbeddedSilhouette {

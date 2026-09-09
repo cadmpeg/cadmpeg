@@ -390,8 +390,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { direction, .. }
-                if direction.z == 2.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(definition_payload)
+                if definition_payload.direction().z == 2.0
         )));
     assert!(result
         .ir()
@@ -400,8 +400,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
-                if axis_direction.z == 1.0
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
+                if definition_payload.axis_direction().z == 1.0
         )));
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
         match surface.definition() {

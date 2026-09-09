@@ -91,3 +91,41 @@ fn surface_law_admission_preserves_the_depth_boundary() {
         ProceduralSurface::new(id(), law(LawExpression::Text { value: " ".into() }), None).is_ok()
     );
 }
+
+#[test]
+fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
+    use crate::geometry::surface_payloads::LinearSweepSurfaceConstruction;
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let sweep = |direction| {
+        LinearSweepSurfaceConstruction::try_new(directrix.clone(), direction)
+            .map(ProceduralSurfaceDefinition::LinearSweep)
+    };
+    let valid = sweep(Vector3::new(0.0, 0.0, 2.0)).unwrap();
+    let surface = ProceduralSurface::new(id(), valid.clone(), None).unwrap();
+    let wire = serde_json::to_value(&surface).unwrap();
+    assert_eq!(
+        wire["definition"]["direction"],
+        serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0})
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurface>(wire.clone()).unwrap(),
+        surface
+    );
+    for direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(0.0, f64::INFINITY, 0.0),
+    ] {
+        assert!(sweep(direction).is_err());
+        let mut invalid = wire.clone();
+        invalid["definition"]["direction"] = serde_json::to_value(direction).unwrap();
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(
+            invalid["definition"].clone()
+        )
+        .is_err());
+        assert!(serde_json::from_value::<ProceduralSurface>(invalid).is_err());
+    }
+}

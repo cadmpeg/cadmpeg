@@ -1947,15 +1947,14 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
-        let ProceduralCurveDefinition::Silhouette {
-            silhouette,
-            cast_surface,
-            light_direction,
-            ..
-        } = &result.ir().model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Silhouette(definition_payload) =
+            &result.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected {name} silhouette")
         };
+        let silhouette = definition_payload.silhouette();
+        let cast_surface = definition_payload.cast_surface();
+        let light_direction = definition_payload.light_direction();
         assert!(result
             .ir()
             .model
@@ -1975,7 +1974,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
                 },
                 Some(expected),
             ) => {
-                assert_eq!(*actual, expected);
+                assert_eq!(actual.get(), expected);
             }
             _ => panic!("wrong silhouette family for {name}"),
         }
@@ -1983,18 +1982,23 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         let mut edited = result.ir().clone();
         edited.model.procedural_curves[0]
             .edit_definition(|definition| {
-                let ProceduralCurveDefinition::Silhouette {
-                    silhouette,
-                    light_direction,
-                    ..
-                } = definition
-                else {
+                let ProceduralCurveDefinition::Silhouette(definition_payload) = definition else {
                     unreachable!()
                 };
-                *light_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
-                if let SilhouetteKind::Taper { draft_factor } = silhouette {
-                    *draft_factor = -0.2;
-                }
+                let silhouette = match definition_payload.silhouette() {
+                    SilhouetteKind::Taper { .. } => SilhouetteKind::Taper {
+                        draft_factor: cadmpeg_ir::scalar::FiniteReal::new(-0.2).unwrap(),
+                    },
+                    kind => kind.clone(),
+                };
+                *definition_payload =
+                    cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+                        definition_payload.context().clone(),
+                        silhouette,
+                        definition_payload.cast_surface().clone(),
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap();
             })
             .unwrap();
         let mut regenerated = Vec::new();
@@ -2009,15 +2013,13 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
         assert!(matches!(
             regenerated.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::Silhouette {
-                ref silhouette,
-                light_direction,
-                ..
-            } if *light_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && match silhouette {
-                    SilhouetteKind::Taper { draft_factor } => *draft_factor == -0.2,
-                    _ => true,
-                }
+            ProceduralCurveDefinition::Silhouette(definition_payload)
+                if *definition_payload.light_direction()
+                    == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                    && match definition_payload.silhouette() {
+                        SilhouetteKind::Taper { draft_factor } => draft_factor.get() == -0.2,
+                        _ => true,
+                    }
         ));
 
         let (mut source_less, _, _) = result.into_parts();

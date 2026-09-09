@@ -118,3 +118,66 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
         .intersection_context_mut()
         .is_none());
 }
+
+#[test]
+fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draft() {
+    use crate::geometry::curve_payloads::SilhouetteCurveConstruction;
+    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use crate::ids::SurfaceId;
+    use crate::scalar::FiniteReal;
+
+    let context = || {
+        IntcurveSupportContext::try_new(
+            std::array::from_fn(|_| IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            }),
+            [0.0, 1.0],
+            std::array::from_fn(|_| Vec::new()),
+        )
+        .unwrap()
+    };
+    let cast_surface = SurfaceId::mint("synthetic:test:surface#cast").unwrap();
+    let silhouette = |kind, light_direction| {
+        SilhouetteCurveConstruction::try_new(context(), kind, cast_surface.clone(), light_direction)
+            .map(ProceduralCurveDefinition::Silhouette)
+    };
+    let valid = silhouette(
+        SilhouetteKind::Taper {
+            draft_factor: FiniteReal::new(0.5).unwrap(),
+        },
+        Vector3::new(0.0, 0.0, 2.0),
+    )
+    .unwrap();
+    let curve = ProceduralCurve::new(id(), valid).unwrap();
+    let wire = serde_json::to_value(&curve).unwrap();
+    assert_eq!(
+        wire["definition"]["silhouette"]["draft_factor"],
+        serde_json::json!(0.5)
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurve>(wire.clone()).unwrap(),
+        curve
+    );
+    for light_direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(0.0, f64::INFINITY, 0.0),
+    ] {
+        assert!(silhouette(SilhouetteKind::Standard, light_direction).is_err());
+        let mut invalid = wire.clone();
+        invalid["definition"]["light_direction"] = serde_json::to_value(light_direction).unwrap();
+        assert!(
+            serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone())
+                .is_err()
+        );
+        assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+    }
+    assert!(FiniteReal::new(f64::NAN).is_none());
+    let mut invalid = wire;
+    invalid["definition"]["silhouette"]["draft_factor"] = serde_json::json!("nan");
+    assert!(
+        serde_json::from_value::<ProceduralCurveDefinition>(invalid["definition"].clone()).is_err()
+    );
+    assert!(serde_json::from_value::<ProceduralCurve>(invalid).is_err());
+}

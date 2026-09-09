@@ -462,8 +462,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.insert(directrix.as_str());
                 }
             }
-            ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => {
-                curves.insert(directrix.as_str());
+            ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
+                curves.insert(definition_payload.directrix().as_str());
             }
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let directrix = definition_payload.directrix();
@@ -471,8 +471,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.insert(directrix.as_str());
                 }
             }
-            ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
-                curves.insert(directrix.as_str());
+            ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
+                curves.insert(definition_payload.directrix().as_str());
             }
             ProceduralSurfaceDefinition::Sweep {
                 profile,
@@ -567,8 +567,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 curves.extend([first.as_str(), second.as_str()]);
             }
-            ProceduralSurfaceDefinition::Sum { first, second, .. } => {
-                curves.extend([first.as_str(), second.as_str()]);
+            ProceduralSurfaceDefinition::Sum(definition_payload) => {
+                curves.extend([
+                    definition_payload.first().as_str(),
+                    definition_payload.second().as_str(),
+                ]);
             }
             ProceduralSurfaceDefinition::Blend {
                 supports,
@@ -702,13 +705,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Silhouette {
-                context,
-                cast_surface,
-                ..
-            } => {
-                surfaces.insert(cast_surface.as_str());
-                for side in context.sides() {
+            ProceduralCurveDefinition::Silhouette(definition_payload) => {
+                surfaces.insert(definition_payload.cast_surface().as_str());
+                for side in definition_payload.context().sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
                     }

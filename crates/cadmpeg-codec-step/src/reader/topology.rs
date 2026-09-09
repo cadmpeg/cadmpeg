@@ -3941,17 +3941,18 @@ fn surface_selection_parameter_domains(
                 subset_parameter_domain(parameter_ranges[1]),
             ]
         }
-        Some(ProceduralSurfaceDefinition::AxisRevolution { directrix, .. }) => [
+        Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => [
             Some([0.0, std::f64::consts::TAU]),
-            curve_selection_parameter_domain(index, directrix),
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
         ],
         Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
             curve_selection_parameter_domain(index, payload.directrix()),
             None,
         ],
-        Some(ProceduralSurfaceDefinition::LinearSweep { directrix, .. }) => {
-            [curve_selection_parameter_domain(index, directrix), None]
-        }
+        Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => [
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
+            None,
+        ],
         Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
             .surfaces(source.as_str())
             .map_or([None, None], |source_surface| {
