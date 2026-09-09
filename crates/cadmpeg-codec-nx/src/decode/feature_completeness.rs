@@ -15,9 +15,9 @@ use operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
     hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
-    profile_dependency_is_incomplete, profile_ref_is_incomplete, resolved_body_selection_len,
-    revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
-    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
+    profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
+    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    termination_dependency_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
@@ -367,9 +367,7 @@ pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
     };
     let target = operands.target();
     let tools = operands.tools();
-    body_selection_is_incomplete(target)
-        || body_selection_is_incomplete(tools)
-        || resolved_body_selection_len(target).is_none()
+    body_selection_is_incomplete(target) || body_selection_is_incomplete(tools)
 }
 
 pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
