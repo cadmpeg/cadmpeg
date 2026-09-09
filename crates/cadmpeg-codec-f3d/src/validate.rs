@@ -995,30 +995,16 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Validate native configuration identities, JSON shapes, and authored order.
+/// Validate unique configuration entries and a single authored table.
 fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
-    let mut configuration_ids = HashSet::new();
     let mut entry_names = HashSet::new();
     for configuration in &ctx.native.design_configurations {
-        let valid_name = match configuration.kind() {
-            records::DesignConfigurationKind::Table => {
-                configuration.entry_name().ends_with(".dsgcfg")
-            }
-            records::DesignConfigurationKind::Rule => {
-                configuration.entry_name().ends_with(".dsgcfgrule")
-            }
-        };
-        let unique_id = configuration_ids.insert(configuration.id().as_str());
-        let unique_entry_name = entry_names.insert(configuration.entry_name().as_str());
-        let valid = valid_name && unique_id && unique_entry_name;
-        if !valid {
+        if !entry_names.insert(configuration.entry_name().as_str()) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message:
-                    "Fusion Design configuration has an invalid identity, payload, or variant order"
-                        .into(),
-                entity: Some(configuration.id().clone()),
+                message: "Fusion Design configuration entry name is duplicated".into(),
+                entity: Some(configuration.id()),
             });
         }
     }
@@ -1040,7 +1026,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
             check: Check::NativeLinks,
             severity: Severity::Error,
             message: "Fusion Design configurations have no single authored table order".into(),
-            entity: nonempty_tables.first().map(|table| table.id().clone()),
+            entity: nonempty_tables.first().map(|table| table.id()),
         });
     }
 }
