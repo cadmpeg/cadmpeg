@@ -72,11 +72,9 @@ impl DesignEntityId {
 
     pub fn suffix(&self) -> u64 {
         self.0
-            .rsplit('_')
-            .take(1)
-            .flat_map(str::bytes)
-            .filter(|byte| *byte != b'+')
-            .fold(0, |value, digit| value * 10 + u64::from(digit - b'0'))
+            .rsplit_once('_')
+            .and_then(|(_, suffix)| suffix.parse().ok())
+            .unwrap_or_default()
     }
 }
 
