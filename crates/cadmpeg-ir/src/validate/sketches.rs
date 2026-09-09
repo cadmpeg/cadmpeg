@@ -249,8 +249,7 @@ fn sketch_curve_offset_matches(
             || [result_start.get(), result_end.get()]
                 .into_iter()
                 .any(|angle| angle_in_sweep(angle, source_start.get(), source_end.get()));
-        return source_radius.get() > 0.0
-            && source_sweep.abs() > EPS_OFFSET_SWEEP
+        return source_sweep.abs() > EPS_OFFSET_SWEEP
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
@@ -667,7 +666,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         match constraint.definition.kind() {
-            SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
                     spatial_geometry
