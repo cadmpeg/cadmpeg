@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic Part 21 record-graph parser.
 //!
-//! The parser accepts only source deviations whose value remains unambiguous:
-//! the deviation must be recoverable without guessing, observed in a real
-//! producer, represented by its own diagnostic kind, and rejectable by strict
-//! decode policy. Ambiguous records and duplicate names remain parse errors.
+//! Framed metadata deviations produce diagnostics and do not prevent DATA
+//! decoding. Interpretation fields select the grammar independently of metadata
+//! conformance. Ambiguous identities and lost framing remain parse errors.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem::size_of;
@@ -133,6 +132,8 @@ pub struct HeaderRecord {
     pub parameters: Vec<Value>,
     /// Byte offset of the record name in the source.
     pub offset: usize,
+    /// Exclusive end of the record, including its terminating semicolon.
+    pub end: usize,
 }
 
 /// One DATA section and its ordered population.
@@ -402,6 +403,8 @@ pub enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
+    /// Header metadata is nonconforming but does not prevent DATA decoding.
+    HeaderMetadataNoncanonical,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -613,11 +616,13 @@ impl Parser<'_, '_, '_> {
             self.charge_string_storage(&name, "step_parse_name_storage")?;
             let parameters = self.parameters()?;
             self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+            let end = self.current_offset() + 1;
             self.punct(&TokenKind::Semicolon)?;
             header.push(HeaderRecord {
                 name,
                 parameters,
                 offset,
+                end,
             });
         }
         self.name("ENDSEC")?;
@@ -628,17 +633,16 @@ impl Parser<'_, '_, '_> {
         };
         let implementation_level = header_admission.implementation_level.level();
         self.diagnostics.extend(header_diagnostic);
-        self.diagnostics
-            .extend(schema_object_identifier_diagnostics(
-                &header_admission.schema_identifiers,
-                header[2].offset,
-            ));
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
         if let Err(message) =
             validate_header_sections(implementation_level, &header, &schema_names_for_matching)
         {
-            return self.err(message);
+            self.diagnostics.push(ParseDiagnostic {
+                offset: header.first().map_or(0, |record| record.offset),
+                kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+                message: message.into(),
+            });
         }
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
@@ -799,7 +803,11 @@ impl Parser<'_, '_, '_> {
         }
         if let Err(message) = validate_header_data_references(&header, &data, implementation_level)
         {
-            return self.err(message);
+            self.diagnostics.push(ParseDiagnostic {
+                offset: header.first().map_or(0, |record| record.offset),
+                kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+                message: message.into(),
+            });
         }
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -1363,52 +1371,126 @@ fn value_storage_bytes(value: &Value) -> u64 {
     })
 }
 
-/// Validate the three required header records, and admit the `FILE_SCHEMA`
-/// identifier list.
+/// Admit interpretation fields independently of header metadata conformance.
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
+) -> Result<(HeaderAdmission, Vec<ParseDiagnostic>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
+    let mut diagnostics = Vec::new();
+    let offset = header.first().map_or(0, |record| record.offset);
+    let mut schemas = header.iter().filter(|record| record.name == "FILE_SCHEMA");
+    let schema_record = schemas.next().ok_or("HEADER has no FILE_SCHEMA")?;
+    if schemas.next().is_some() {
+        return Err("HEADER contains duplicate FILE_SCHEMA");
+    }
     if header.len() < REQUIRED.len()
         || header
             .iter()
             .zip(REQUIRED)
             .any(|(record, expected)| record.name != expected)
     {
-        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        diagnostics.push(ParseDiagnostic {
+            offset,
+            kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+            message: "HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name".into(),
+        });
     }
-    if REQUIRED
+    let descriptions: Vec<_> = header
         .iter()
-        .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
-    {
-        return Err("HEADER contains a duplicate required entity");
+        .filter(|record| record.name == "FILE_DESCRIPTION")
+        .collect();
+    let text = match descriptions.as_slice() {
+        [record] => match record.parameters.get(1) {
+            Some(Value::String(bytes)) => crate::strings::decode(bytes).unwrap_or_default(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    };
+    let declaration = DeclaredImplementationLevel::new(text);
+    if declaration.is_unverified() {
+        diagnostics.push(ParseDiagnostic {
+            offset: descriptions.first().map_or(offset, |record| record.offset),
+            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+            message: format!(
+                "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+                declaration.text()
+            ),
+        });
     }
+    let implementation_level = declaration.level();
+    for name in ["FILE_DESCRIPTION", "FILE_NAME"] {
+        let count = header.iter().filter(|record| record.name == name).count();
+        if count != 1 {
+            diagnostics.push(ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+                message: format!("HEADER contains {count} {name} records; expected one"),
+            });
+        }
+    }
+    for record in header {
+        let result = match record.name.as_str() {
+            "FILE_DESCRIPTION" => {
+                validate_file_description(&record.parameters, implementation_level)
+            }
+            "FILE_NAME" => validate_file_name(&record.parameters, implementation_level),
+            _ => continue,
+        };
+        if let Err(message) = result {
+            diagnostics.push(ParseDiagnostic {
+                offset: record.offset,
+                kind: ParseDiagnosticKind::HeaderMetadataNoncanonical,
+                message: message.into(),
+            });
+        }
+    }
+    let schema = &schema_record.parameters;
+    let Some(Value::List(identifiers)) = schema.first() else {
+        return Err("FILE_SCHEMA must contain one schema identifier list");
+    };
+    if schema.len() != 1 || identifiers.is_empty() {
+        return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+    }
+    let mut admitted = Vec::with_capacity(identifiers.len());
+    let mut normalized_identifiers = BTreeSet::new();
+    for value in identifiers {
+        let Value::String(bytes) = value else {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        }
+        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        admitted.push(identifier);
+    }
+    diagnostics.extend(schema_object_identifier_diagnostics(
+        &admitted,
+        schema_record.offset,
+    ));
+    Ok((
+        HeaderAdmission {
+            implementation_level: declaration,
+            schema_identifiers: admitted,
+        },
+        diagnostics,
+    ))
+}
 
-    let description = &header[0].parameters;
+fn validate_file_description(
+    description: &[Value],
+    implementation_level: ImplementationLevel,
+) -> Result<(), &'static str> {
     if description.len() != 2
         || !is_string_list(description.first())
         || !matches!(description.get(1), Some(Value::String(_)))
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let declaration = match description.get(1) {
-        Some(Value::String(value)) => {
-            let Ok(text) = crate::strings::decode(value) else {
-                return Err("FILE_DESCRIPTION has an unsupported implementation level");
-            };
-            DeclaredImplementationLevel::new(text)
-        }
-        _ => return Err("FILE_DESCRIPTION has invalid parameters"),
-    };
-    let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
-        offset: header[0].offset,
-        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-        message: format!(
-            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
-            declaration.text()
-        ),
-    });
-    let implementation_level = declaration.level();
     if !is_decodable_string_list(description.first(), implementation_level)
         || !is_decodable_string(
             description.get(1).expect("FILE_DESCRIPTION has two values"),
@@ -1427,7 +1509,13 @@ fn validate_header(
         return Err("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
 
-    let file_name = &header[1].parameters;
+    Ok(())
+}
+
+fn validate_file_name(
+    file_name: &[Value],
+    implementation_level: ImplementationLevel,
+) -> Result<(), &'static str> {
     // Producer metadata after the author and organization lists may be unset.
     if file_name.len() != 7
         || !matches!(file_name.first(), Some(Value::String(_)))
@@ -1500,37 +1588,7 @@ fn validate_header(
         return Err("FILE_NAME has an invalid timestamp");
     }
 
-    let schema = &header[2].parameters;
-    let Some(Value::List(identifiers)) = schema.first() else {
-        return Err("FILE_SCHEMA must contain one schema identifier list");
-    };
-    if schema.len() != 1 || identifiers.is_empty() {
-        return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-    }
-    let mut admitted = Vec::with_capacity(identifiers.len());
-    let mut normalized_identifiers = BTreeSet::new();
-    for value in identifiers {
-        let Value::String(bytes) = value else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        }
-        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        };
-        admitted.push(identifier);
-    }
-    Ok((
-        HeaderAdmission {
-            implementation_level: declaration,
-            schema_identifiers: admitted,
-        },
-        implementation_diagnostic,
-    ))
+    Ok(())
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
@@ -1585,7 +1643,13 @@ fn validate_header_sections(
     let mut schema_population_seen = false;
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
-    for record in header.iter().skip(3) {
+    for record in header {
+        if matches!(
+            record.name.as_str(),
+            "FILE_DESCRIPTION" | "FILE_NAME" | "FILE_SCHEMA"
+        ) {
+            continue;
+        }
         if record.name.starts_with('!') {
             user_defined = true;
             continue;
@@ -1958,7 +2022,7 @@ fn validate_header_data_references(
             names.insert(name);
         }
     }
-    for record in header.iter().skip(3) {
+    for record in header {
         match record.name.as_str() {
             "FILE_POPULATION" => {
                 let Some(Value::List(sections)) = record.parameters.get(2) else {
@@ -1973,10 +2037,14 @@ fn validate_header_data_references(
                 }
             }
             "SECTION_LANGUAGE" => {
-                validate_header_section_name(&record.parameters[0], &names, implementation_level)?;
+                if let Some(value) = record.parameters.first() {
+                    validate_header_section_name(value, &names, implementation_level)?;
+                }
             }
             "SECTION_CONTEXT" => {
-                validate_header_section_name(&record.parameters[0], &names, implementation_level)?;
+                if let Some(value) = record.parameters.first() {
+                    validate_header_section_name(value, &names, implementation_level)?;
+                }
             }
             _ => {}
         }

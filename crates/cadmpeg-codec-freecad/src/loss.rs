@@ -36,6 +36,8 @@ pub enum FreecadLossCode {
     SourceGuiSchemaUnverified,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
+    /// Producer version metadata used an alias or conflicting declarations.
+    ProgramVersionNoncanonical,
 }
 
 impl FreecadLossCode {
@@ -50,6 +52,7 @@ impl FreecadLossCode {
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::PcurveNotTransferred,
+        Self::ProgramVersionNoncanonical,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -66,6 +69,7 @@ impl FreecadLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
+            Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
         }
     }
 
@@ -80,7 +84,8 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
-            | Self::PcurveNotTransferred => Severity::Warning,
+            | Self::PcurveNotTransferred
+            | Self::ProgramVersionNoncanonical => Severity::Warning,
         }
     }
 
@@ -95,6 +100,7 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::ProgramVersionNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
         }
     }
 
@@ -150,6 +156,7 @@ mod tests {
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "pcurve.not-transferred",
+                "metadata.program-version-noncanonical",
             ]
         );
     }
