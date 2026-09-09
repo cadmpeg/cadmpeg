@@ -9,6 +9,36 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn producer_version_metadata_does_not_refuse_the_document() {
+    for (attributes, expected) in [
+        ("programVersion=\"1.0\"", Some("1.0")),
+        ("ProgramVersion=\"1.0\" programVersion=\"1.0\"", Some("1.0")),
+        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", None),
+    ] {
+        let xml = format!(
+            "<Document SchemaVersion=\"4\" {attributes}><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>"
+        );
+        let bytes = archive(&xml);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+        let scan = crate::container::scan(&ctx, root)
+            .expect("metadata does not select persistence grammar");
+        assert_eq!(scan.document.program_version.as_deref(), expected);
+        let summary = crate::container::summarize(&scan);
+        assert!(summary.losses.iter().any(
+            |loss| loss.code == crate::loss::FreecadLossCode::ProgramVersionNoncanonical.kind()
+        ));
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(decoded.report().losses.iter().any(
+            |loss| loss.code == crate::loss::FreecadLossCode::ProgramVersionNoncanonical.kind()
+        ));
+    }
+}
+
+#[test]
 fn frames_zip64_streaming_descriptor_and_local_extra() {
     let bytes = streaming_archive_with_options(
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",

@@ -145,6 +145,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         body.losses.extend(dialect_loss);
         body.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {
+                crate::parse::ParseDiagnosticKind::HeaderMetadataNoncanonical => {
+                    (StepLossCode::HeaderMetadataNoncanonical, "header_metadata")
+                }
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
                 }
@@ -296,6 +299,17 @@ fn decode_exchange_mode(
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
+    let header_spans: Vec<_> = if diagnostics.iter().any(|diagnostic| {
+        diagnostic.kind == crate::parse::ParseDiagnosticKind::HeaderMetadataNoncanonical
+    }) {
+        exchange
+            .header
+            .iter()
+            .map(|record| record.offset..record.end)
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     session.semantic_input_work = semantic_input_work(exchange);
     session.charge_stage("step_geometry_decode")?;
@@ -511,12 +525,30 @@ fn decode_exchange_mode(
         let _reservation = session
             .ctx
             .reserve_scoped(input.len() as u64, "step_byte_accounting")?;
-        byte_accounting(input, exchange, &session.typed_records, session.ctx)?
+        byte_accounting(
+            input,
+            exchange,
+            &session.typed_records,
+            &header_spans,
+            session.ctx,
+        )?
     };
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = std::mem::take(&mut exchange.signatures);
         exchange.release_source_graph();
-        let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
+        let mut opaque =
+            Vec::with_capacity(opaque_sources.len() + signature_spans.len() + header_spans.len());
+        for span in &header_spans {
+            let bytes = session
+                .ctx
+                .copy_retained(&input[span.clone()], "step_header_record")?;
+            opaque.push(UnknownRecord::retained(
+                ids::header(span.start),
+                span.start as u64,
+                bytes,
+                Vec::new(),
+            ));
+        }
         for source in opaque_sources {
             session
                 .ctx
@@ -1047,10 +1079,14 @@ fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
     typed_records: &HashSet<u64>,
+    header_spans: &[std::ops::Range<usize>],
     ctx: &DecodeContext<'_>,
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
+    for span in header_spans {
+        claim_range(&mut classes, span, ByteClass::Opaque);
+    }
     for (&id, record) in &exchange.records {
         let class = if typed_records.contains(&id) {
             ByteClass::Typed

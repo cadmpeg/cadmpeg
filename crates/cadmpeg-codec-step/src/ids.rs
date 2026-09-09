@@ -17,6 +17,11 @@ pub fn signature(index: usize) -> UnknownId {
     )
 }
 
+/// Retained nonconforming header record, keyed by source byte offset.
+pub fn header(offset: usize) -> UnknownId {
+    UnknownId::from(mint("file", "header", offset))
+}
+
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
 pub fn data(kind: &str, key: impl Display) -> Identity {

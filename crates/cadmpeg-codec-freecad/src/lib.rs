@@ -1078,6 +1078,7 @@ impl CodecBackend for FcstdCodec {
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
         losses.extend(topology_losses);
+        losses.extend(scan.losses.iter().cloned());
         losses.extend(dialect::FcstdDialect::dialect_loss(dialects.primary()));
         ctx.admit_entities(
             ir.model.entity_count() as u64,

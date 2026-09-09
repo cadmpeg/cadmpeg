@@ -17,6 +17,7 @@ use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
     parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    TCODE_SHORT,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -199,8 +200,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) data: &'a [u8],
     /// Parsed archive version.
     pub(crate) archive: ArchiveVersion,
-    /// Comment chunk descriptor.
-    pub(crate) comment: Record,
+    /// Introductory comment offset, if the source contains a comment.
+    pub(crate) comment_offset: Option<usize>,
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
@@ -855,22 +856,30 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
-    let comment = Record::from_chunk(
+    let first = Record::from_chunk(
         &chunk_at(data, comment_offset, data.len(), archive, false).map_err(framing_error)?,
     );
-    if comment.typecode != TCODE_COMMENT || comment.is_short() {
-        return Err(CodecError::Malformed(
-            "first post-header chunk is not a long comment".to_string(),
-        ));
-    }
     let mut warnings = Vec::new();
-    if let Some(note) =
-        checksum_warning(data, comment.typecode, comment_offset, data.len(), archive)?
-    {
-        warnings.push(note);
-    }
+    let (comment_offset, mut offset) = if first.typecode & !TCODE_SHORT == TCODE_COMMENT {
+        if first.is_short() {
+            warnings.push(
+                "introductory comment uses short framing; comment text is unavailable".into(),
+            );
+        }
+        if let Some(note) =
+            checksum_warning(data, first.typecode, comment_offset, data.len(), archive)?
+        {
+            warnings.push(note);
+        }
+        (Some(comment_offset), first.range.end)
+    } else {
+        warnings.push(
+            "introductory comment is absent; reading tables from the first post-header chunk"
+                .into(),
+        );
+        (None, comment_offset)
+    };
     let mut tables = Vec::new();
-    let mut offset = comment.range.end;
     let mut last_rank = 0_u8;
     let mut saw_user = false;
     let mut saw_properties = false;
@@ -897,7 +906,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             return Ok(Scan {
                 data,
                 archive,
-                comment,
+                comment_offset,
                 tables,
                 objects: all_objects,
                 opaque_records,
@@ -1192,10 +1201,9 @@ pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -
         }
         SourceMetaDetail::ContainerOnly(scan) => {
             let mut attributes = chunked_source_attributes(scan);
-            attributes.insert(
-                "comment_offset".to_string(),
-                scan.comment.range.start.to_string(),
-            );
+            if let Some(offset) = scan.comment_offset {
+                attributes.insert("comment_offset".to_string(), offset.to_string());
+            }
             attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
             attributes.insert("table_count".to_string(), scan.tables.len().to_string());
             attributes.insert(

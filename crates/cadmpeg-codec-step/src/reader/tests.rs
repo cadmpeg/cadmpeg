@@ -15,7 +15,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&extended, &arena, &policy)
         .expect("root fits the test policy");
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &ctx)
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), &[], &ctx)
         .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);

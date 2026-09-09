@@ -347,6 +347,46 @@ fn missing_end_of_table_marker_is_recoverable_warning() {
 }
 
 #[test]
+fn missing_introductory_comment_keeps_framed_objects() {
+    let archive = ArchiveVersion::V5;
+    let mut bytes = header("50");
+    bytes.extend(table(archive, 0x1000_0014, &[]));
+    bytes.extend(table(archive, 0x1000_0015, &[]));
+    bytes.extend(table(
+        archive,
+        0x1000_0013,
+        &[object_record(archive, 0x20, [0; 16])],
+    ));
+    let end = bytes.len() + eof(archive, 0).len();
+    bytes.extend(eof(archive, end));
+    let scan = crate::container::scan_owned(bytes).expect("comment is not needed to frame objects");
+    assert_eq!(scan.objects.len(), 1);
+    assert_eq!(scan.comment_offset, None);
+    assert!(scan
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("introductory comment is absent")));
+}
+
+#[test]
+fn short_introductory_comment_keeps_framed_tables() {
+    let archive = ArchiveVersion::V5;
+    let mut bytes = header("50");
+    bytes.extend(short_chunk(archive, 1, 0));
+    bytes.extend(table(archive, 0x1000_0014, &[]));
+    bytes.extend(table(archive, 0x1000_0015, &[]));
+    bytes.extend(table(archive, 0x1000_0013, &[]));
+    let end = bytes.len() + eof(archive, 0).len();
+    bytes.extend(eof(archive, end));
+    let scan = crate::container::scan_owned(bytes).expect("short comment has a bounded end");
+    assert_eq!(scan.tables.len(), 3);
+    assert!(scan
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("comment uses short framing")));
+}
+
+#[test]
 fn missing_end_of_file_and_wrong_table_order_remain_fatal() {
     let archive = ArchiveVersion::V5;
     let mut missing = header("50");

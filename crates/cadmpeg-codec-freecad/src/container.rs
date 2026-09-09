@@ -60,6 +60,8 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
 
 /// Fully scanned container used by inspection and decode.
 pub struct Scan<'a> {
+    /// Recoverable container metadata diagnostics.
+    pub losses: Vec<cadmpeg_ir::LossNote>,
     /// Container summary entries.
     pub entries: Vec<ContainerEntry>,
     /// Persistence metadata.
@@ -86,7 +88,8 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         .get("Document.xml")
         .map(|view| view.window())
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
-    let document = parse_document(document_bytes)?;
+    let mut losses = Vec::new();
+    let document = parse_document(document_bytes, &mut losses)?;
     let ledger = archive
         .physical_ledger()?
         .into_iter()
@@ -102,6 +105,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(Scan {
+        losses,
         entries: archive.container_entries(classify),
         document,
         ledger,
@@ -114,6 +118,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document);
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()
+        .chain(scan.losses.iter().cloned())
         .collect();
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
@@ -209,7 +214,10 @@ fn unique_section<'a, 'input>(
     }
 }
 
-pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
+pub(crate) fn parse_document(
+    bytes: &[u8],
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
+) -> Result<DocumentFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -250,11 +258,32 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> 
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let program_version = match (
+        root.attribute("ProgramVersion"),
+        root.attribute("programVersion"),
+    ) {
+        (canonical, None) => canonical.map(str::to_owned),
+        (canonical, Some(alias)) => {
+            let conflict = canonical.is_some_and(|value| value != alias);
+            losses.push(crate::loss::FreecadLossCode::ProgramVersionNoncanonical.note(
+                if conflict {
+                    "Document has conflicting ProgramVersion and programVersion metadata; program version omitted"
+                } else {
+                    "Document uses programVersion metadata; read as ProgramVersion"
+                },
+            ));
+            if conflict {
+                None
+            } else {
+                Some(alias.to_owned())
+            }
+        }
+    };
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         schema_version,
         file_version,
-        program_version: canonical_attribute(root, "ProgramVersion", "programVersion")?,
+        program_version,
         root_name: root.tag_name().name().into(),
         object_count,
         domains,

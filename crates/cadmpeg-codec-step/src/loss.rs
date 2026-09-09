@@ -40,6 +40,8 @@ pub enum StepLossCode {
     SchemaObjectIdentifierOutOfRange,
     /// The declared Part 21 implementation level has no implemented grammar.
     ImplementationLevelUnverified,
+    /// Header metadata deviates from the format without preventing decoding.
+    HeaderMetadataNoncanonical,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
@@ -319,6 +321,7 @@ impl StepLossCode {
         Self::MetadataStringInvalid,
         Self::SchemaObjectIdentifierOutOfRange,
         Self::ImplementationLevelUnverified,
+        Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::AttributeStringInvalid,
@@ -467,6 +470,7 @@ impl StepLossCode {
                 "metadata.schema-object-identifier-out-of-range"
             }
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
+            Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::AttributeStringInvalid => "attribute.string-invalid",
@@ -677,9 +681,9 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ParseNoncanonicalSyntax | Self::OrientedShellOmitsCfsFaces => {
-                LossTaxonomy::NoncanonicalSourceSyntax
-            }
+            Self::ParseNoncanonicalSyntax
+            | Self::OrientedShellOmitsCfsFaces
+            | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
@@ -862,6 +866,7 @@ mod tests {
                 "metadata.string-invalid",
                 "metadata.schema-object-identifier-out-of-range",
                 "parse.implementation-level-unverified",
+                "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "attribute.string-invalid",
