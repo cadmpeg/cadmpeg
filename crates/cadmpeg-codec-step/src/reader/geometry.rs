@@ -161,8 +161,7 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         return None;
     }
     let periodic_domain = match geometry {
-        CurveGeometry::Circle(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
         CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
         CurveGeometry::Transformed { basis, .. } => {
             return edge_parameter_range(basis, start, end);
@@ -3517,8 +3516,7 @@ fn trimmed_curve_parameter_range(
 
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
-        CurveGeometry::Circle(_) => std::f64::consts::TAU,
-        CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => std::f64::consts::TAU,
         CurveGeometry::Nurbs(curve) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
@@ -3610,8 +3608,7 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
             cache: Some(geometry),
             ..
         } => parameter_scale(geometry, angle_scale, linear_parameter_scale),
-        CurveGeometry::Circle(_) => angle_scale,
-        CurveGeometry::Ellipse(_) => angle_scale,
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => angle_scale,
         CurveGeometry::Line(_) => linear_parameter_scale,
         // A replica and the constructions that inherit a parent curve's
         // parameterization keep the parent's parameter units even when their
@@ -3619,14 +3616,14 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
         CurveGeometry::Transformed { basis, .. } => {
             parameter_scale(basis, angle_scale, linear_parameter_scale)
         }
-        CurveGeometry::Parabola(_) => 1.0,
-        CurveGeometry::Hyperbola(_) => 1.0,
-        CurveGeometry::Nurbs(_) => 1.0,
-        CurveGeometry::Polyline(_) => 1.0,
-        CurveGeometry::Degenerate(_) => 1.0,
-        CurveGeometry::Composite { .. } => 1.0,
-        CurveGeometry::Procedural { .. } => 1.0,
-        CurveGeometry::Unknown { .. } => 1.0,
+        CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline(_)
+        | CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => 1.0,
     }
 }
 
@@ -4493,9 +4490,9 @@ fn trimmed_pcurve_parameterization(
 
 fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
     let period = match geometry {
-        PcurveGeometry::Circle(_) => std::f64::consts::TAU,
-        PcurveGeometry::Ellipse(_) => std::f64::consts::TAU,
-        PcurveGeometry::Harmonic(_) => std::f64::consts::TAU,
+        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
+            std::f64::consts::TAU
+        }
         PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
             nurbs.degree(),
             nurbs.knots(),
@@ -4576,10 +4573,10 @@ fn surface_geometry_parameter_scales(
 ) -> Option<[f64; 2]> {
     match geometry {
         SurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
-        SurfaceGeometry::Cylinder(_) => Some([angle_scale, length_scale]),
-        SurfaceGeometry::Cone(_) => Some([angle_scale, length_scale]),
-        SurfaceGeometry::Sphere(_) => Some([angle_scale, angle_scale]),
-        SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
+        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) => {
+            Some([angle_scale, length_scale])
+        }
+        SurfaceGeometry::Sphere(_) | SurfaceGeometry::Torus(_) => Some([angle_scale, angle_scale]),
         SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
             ir,
@@ -4777,12 +4774,11 @@ fn directrix_geometry_parameter_scale(
             ..
         } => directrix_geometry_parameter_scale(ir, geometry, length_scale, angle_scale, active),
         CurveGeometry::Line(_) => Some(length_scale),
-        CurveGeometry::Circle(_) => Some(angle_scale),
-        CurveGeometry::Ellipse(_) => Some(angle_scale),
-        CurveGeometry::Parabola(_) => Some(1.0),
-        CurveGeometry::Hyperbola(_) => Some(1.0),
-        CurveGeometry::Nurbs(_) => Some(1.0),
-        CurveGeometry::Polyline(_) => Some(1.0),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some(angle_scale),
+        CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline(_) => Some(1.0),
         CurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
@@ -4806,9 +4802,9 @@ fn directrix_geometry_parameter_scale(
                 } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
                 _ => None,
             }),
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -4818,9 +4814,9 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
             cache: Some(geometry),
             ..
         } => surface_parameter_periods(geometry),
-        SurfaceGeometry::Cylinder(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Cone(_) => [Some(std::f64::consts::TAU), None],
-        SurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Cylinder(_) | SurfaceGeometry::Cone(_) | SurfaceGeometry::Sphere(_) => {
+            [Some(std::f64::consts::TAU), None]
+        }
         SurfaceGeometry::Torus(_) => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
         SurfaceGeometry::Nurbs(surface) => [
             surface
@@ -4845,10 +4841,10 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
                 .flatten(),
         ],
         SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
-        SurfaceGeometry::Plane(_) => [None, None],
-        SurfaceGeometry::Procedural { .. } => [None, None],
-        SurfaceGeometry::Polygonal(_) => [None, None],
-        SurfaceGeometry::Unknown { .. } => [None, None],
+        SurfaceGeometry::Plane(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal(_)
+        | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
