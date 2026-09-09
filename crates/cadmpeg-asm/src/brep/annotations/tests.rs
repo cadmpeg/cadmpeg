@@ -17,8 +17,8 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         .map(|record| (record.index as i64, record))
         .collect();
     let mut out = AsmBrep {
-        procedural_support_sources: vec![(37, SurfaceId::mint("f3d:child:support").unwrap())],
-        procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve").unwrap())],
+        procedural_support_sources: vec![(37, SurfaceId::mint("f3d:child:support#named").unwrap())],
+        procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
         ..AsmBrep::default()
     };
     emit_annotation_records(&mut out, &records, &by_index, "source", IdFormat("f3d")).unwrap();
@@ -37,8 +37,18 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     assert_eq!(
         annotations,
         [
-            ("f3d:child:support", 1234, "procedural_support", "source"),
-            ("f3d:child:curve", 1234, "procedural_curve_child", "source"),
+            (
+                "f3d:child:support#named",
+                1234,
+                "procedural_support",
+                "source"
+            ),
+            (
+                "f3d:child:curve#named",
+                1234,
+                "procedural_curve_child",
+                "source"
+            ),
         ]
     );
     let serde_value::Value::Map(wire) = serde_value::to_value(&out).unwrap() else {
