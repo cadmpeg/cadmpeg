@@ -10,14 +10,14 @@ use crate::CreoCodec;
 #[test]
 fn parallel_carriers_report_zero_solution_samples() {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
-    for surface in 1..=4 {
+    for (surface, height) in [(1, 0.0), (2, 1.0), (3, 2.0), (4, 4.0)] {
         crate::test_support::push_generated_plane_row(
             &mut payload,
             surface,
             false,
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
-            [0.0, 0.0, f64::from(surface)],
+            [0.0, 0.0, height],
         );
     }
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x06topol_ref_data\0");
