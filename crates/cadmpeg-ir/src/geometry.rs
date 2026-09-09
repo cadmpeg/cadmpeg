@@ -1211,17 +1211,6 @@ impl PlaneSurface {
     pub const fn u_axis(&self) -> &Vector3 {
         self.frame.reference()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3) {
-        (
-            self.origin.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-        )
-    }
 }
 
 impl From<PlaneSurface> for PlaneSurfaceWire {
@@ -1302,18 +1291,6 @@ impl CylinderSurface {
     #[must_use]
     pub const fn radius(&self) -> f64 {
         self.radius.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (
-            self.origin.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.radius.as_raw(),
-        )
     }
 }
 
@@ -1421,20 +1398,6 @@ impl ConeSurface {
     pub const fn half_angle(&self) -> f64 {
         self.half_angle.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64, &f64) {
-        (
-            self.origin.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.radius.as_raw(),
-            self.ratio.as_raw(),
-            self.half_angle.as_raw(),
-        )
-    }
 }
 
 impl From<ConeSurface> for ConeSurfaceWire {
@@ -1527,18 +1490,6 @@ impl SphereSurface {
     #[must_use]
     pub const fn radius(&self) -> f64 {
         self.radius.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (
-            self.center.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.radius.as_raw(),
-        )
     }
 }
 
@@ -1637,19 +1588,6 @@ impl TorusSurface {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
-        (
-            self.center.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.major_radius.as_raw(),
-            self.minor_radius.as_raw(),
-        )
-    }
 }
 
 impl From<TorusSurface> for TorusSurfaceWire {
@@ -1717,13 +1655,6 @@ impl LineCurve {
     #[must_use]
     pub const fn direction(&self) -> &Vector3 {
         self.direction.as_raw()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3) {
-        (self.origin.as_raw(), self.direction.as_raw())
     }
 }
 
@@ -1800,18 +1731,6 @@ impl CircleCurve {
     #[must_use]
     pub const fn radius(&self) -> f64 {
         self.radius.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (
-            self.center.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.radius.as_raw(),
-        )
     }
 }
 
@@ -1915,19 +1834,6 @@ impl EllipseCurve {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
-        (
-            self.center.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.major_radius.as_raw(),
-            self.minor_radius.as_raw(),
-        )
-    }
 }
 
 impl From<EllipseCurve> for EllipseCurveWire {
@@ -2016,18 +1922,6 @@ impl ParabolaCurve {
     #[must_use]
     pub const fn focal_distance(&self) -> f64 {
         self.focal_distance.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (
-            self.vertex.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.focal_distance.as_raw(),
-        )
     }
 }
 
@@ -2135,19 +2029,6 @@ impl HyperbolaCurve {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
-        (
-            self.center.as_raw(),
-            self.frame.axis(),
-            self.frame.reference(),
-            self.major_radius.as_raw(),
-            self.minor_radius.as_raw(),
-        )
-    }
 }
 
 impl From<HyperbolaCurve> for HyperbolaCurveWire {
@@ -2252,13 +2133,6 @@ impl LinePcurve {
     pub const fn direction(&self) -> &Point2 {
         self.direction.as_raw()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2) {
-        (self.origin.as_raw(), self.direction.as_raw())
-    }
 }
 
 impl TryFrom<LinePcurveWire> for LinePcurve {
@@ -2362,20 +2236,6 @@ impl PolarHarmonicPcurve {
     pub const fn axial_sin(&self) -> f64 {
         self.axial_sin.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64, &f64) {
-        (
-            self.radial_center.as_raw(),
-            self.radial_cos.as_raw(),
-            self.radial_sin.as_raw(),
-            self.axial_origin.as_raw(),
-            self.axial_cos.as_raw(),
-            self.axial_sin.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
@@ -2462,18 +2322,6 @@ impl SphericalGreatCirclePcurve {
     pub const fn plane_slope(&self) -> f64 {
         self.plane_slope.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&f64, &f64, &f64, &f64) {
-        (
-            self.azimuth_origin.as_raw(),
-            self.azimuth_rate.as_raw(),
-            self.plane_phase.as_raw(),
-            self.plane_slope.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {
@@ -2557,18 +2405,6 @@ impl CirclePcurve {
     #[must_use]
     pub const fn radius(&self) -> f64 {
         self.radius.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
-        (
-            self.center.as_raw(),
-            self.x_axis.as_raw(),
-            self.y_axis.as_raw(),
-            self.radius.as_raw(),
-        )
     }
 }
 
@@ -2661,19 +2497,6 @@ impl EllipsePcurve {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
-        (
-            self.center.as_raw(),
-            self.x_axis.as_raw(),
-            self.y_axis.as_raw(),
-            self.major_radius.as_raw(),
-            self.minor_radius.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
@@ -2739,17 +2562,6 @@ impl HarmonicPcurve {
     #[must_use]
     pub const fn sine(&self) -> &Point2 {
         self.sine.as_raw()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (
-            self.center.as_raw(),
-            self.cosine.as_raw(),
-            self.sine.as_raw(),
-        )
     }
 }
 
@@ -2829,18 +2641,6 @@ impl ParabolaPcurve {
     #[must_use]
     pub const fn focal_distance(&self) -> f64 {
         self.focal_distance.get()
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
-        (
-            self.vertex.as_raw(),
-            self.x_axis.as_raw(),
-            self.y_axis.as_raw(),
-            self.focal_distance.as_raw(),
-        )
     }
 }
 
@@ -2933,19 +2733,6 @@ impl HyperbolaPcurve {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
-        (
-            self.center.as_raw(),
-            self.x_axis.as_raw(),
-            self.y_axis.as_raw(),
-            self.major_radius.as_raw(),
-            self.minor_radius.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<HyperbolaPcurveWire> for HyperbolaPcurve {
@@ -3012,17 +2799,6 @@ impl HyperbolicPcurve {
     pub const fn sine(&self) -> &Point2 {
         self.sine.as_raw()
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (
-            self.center.as_raw(),
-            self.cosine.as_raw(),
-            self.sine.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
@@ -3088,13 +2864,6 @@ impl TrimmedPcurve {
     pub const fn basis(&self) -> &PcurveGeometry {
         &self.basis
     }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&[f64; 2], &bool, &PcurveGeometry) {
-        (&self.parameter_range, &self.same_sense, &self.basis)
-    }
 }
 
 impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
@@ -3137,13 +2906,6 @@ impl OffsetPcurve {
     #[must_use]
     pub const fn basis(&self) -> &PcurveGeometry {
         &self.basis
-    }
-
-    /// Borrow the carrier parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&f64, &PcurveGeometry) {
-        (self.distance.as_raw(), &self.basis)
     }
 }
 
@@ -3857,13 +3619,6 @@ impl CompoundCurveConstruction {
     #[must_use]
     pub fn components(&self) -> &[CompoundComponent<CurveId>] {
         &self.components
-    }
-
-    /// Leading parameters and ordered parameter-component pairs.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(&self) -> (&[f64], &[CompoundComponent<CurveId>]) {
-        (&self.parameters, &self.components)
     }
 }
 
@@ -4711,31 +4466,6 @@ impl HelixPathConstruction {
     pub const fn axis(&self) -> &Vector3 {
         self.axis.as_raw()
     }
-
-    /// Borrow the payload parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(
-        &self,
-    ) -> (
-        &[f64; 2],
-        &Point3,
-        &Vector3,
-        &Vector3,
-        &Vector3,
-        &f64,
-        &Vector3,
-    ) {
-        (
-            self.angle_range.as_raw(),
-            self.center.as_raw(),
-            self.major.as_raw(),
-            self.minor.as_raw(),
-            self.pitch.as_raw(),
-            self.apex_factor.as_raw(),
-            self.axis.as_raw(),
-        )
-    }
 }
 
 impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
@@ -4866,31 +4596,6 @@ impl HelixCurveConstruction {
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
         self.axis.as_raw()
-    }
-
-    /// Borrow the payload parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(
-        &self,
-    ) -> (
-        &[f64; 2],
-        &Point3,
-        &Vector3,
-        &Vector3,
-        &Vector3,
-        &f64,
-        &Vector3,
-    ) {
-        (
-            self.angle_range.as_raw(),
-            self.center.as_raw(),
-            self.major.as_raw(),
-            self.minor.as_raw(),
-            self.pitch.as_raw(),
-            self.apex_factor.as_raw(),
-            self.axis.as_raw(),
-        )
     }
 }
 
@@ -5101,25 +4806,6 @@ impl HelixSurfaceConstruction {
     #[must_use]
     pub const fn profile(&self) -> &HelixSurfaceProfile {
         &self.profile
-    }
-
-    /// Borrow the payload parameters in constructor order.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub fn parts(
-        &self,
-    ) -> (
-        &[f64; 2],
-        &[f64; 2],
-        &HelixPathConstruction,
-        &HelixSurfaceProfile,
-    ) {
-        (
-            self.angle_range.as_raw(),
-            self.dimension_range.as_raw(),
-            &self.path,
-            &self.profile,
-        )
     }
 }
 
@@ -10078,13 +9764,6 @@ impl TolerantIntersectionConstruction {
     #[must_use]
     pub const fn tolerance(&self) -> f64 {
         self.tolerance.get()
-    }
-
-    /// Support surfaces, endpoint witnesses, and maximum admitted deviation.
-    #[must_use]
-    #[deprecated(note = "use the named parameter accessors")]
-    pub const fn parts(&self) -> (&[SurfaceId; 2], &[Point3; 2], &f64) {
-        (&self.supports, &self.endpoints, self.tolerance.as_raw())
     }
 }
 

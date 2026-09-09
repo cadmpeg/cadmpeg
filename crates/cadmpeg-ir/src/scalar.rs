@@ -165,16 +165,5 @@ impl FiniteReal {
         Self(-self.0)
     }
 }
-impl PositiveReal {
-    pub(crate) const fn as_raw(&self) -> &f64 {
-        &self.0
-    }
-}
-impl NonNegativeReal {
-    pub(crate) const fn as_raw(&self) -> &f64 {
-        &self.0
-    }
-}
-
 #[cfg(test)]
 mod tests;
