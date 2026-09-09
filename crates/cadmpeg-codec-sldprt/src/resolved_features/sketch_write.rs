@@ -7,7 +7,7 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchGeometry};
+use cadmpeg_ir::sketches::{Sketch, SketchGeometry, SketchGeometryDefinition};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -64,20 +64,20 @@ pub(super) fn sketch_brep(
         .collect::<HashSet<_>>();
     if let Some(entity) = ordered_entities.iter().find(|entity| {
         !referenced.contains(entity.id())
-            && !matches!(entity.geometry, SketchGeometry::Point { .. })
+            && !matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
     }) {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
-            entity.id().0
+            entity.id().as_str()
         )));
     }
     let profiles = sketch.profiles.clone();
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
-        if profile.is_empty() {
-            continue;
-        }
         let endpoints = profile
             .iter()
             .map(|entity_use| {
@@ -85,7 +85,7 @@ pub(super) fn sketch_brep(
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "sketch {} references missing entity {}",
                         sketch.id.as_str(),
-                        entity_use.entity.0
+                        entity_use.entity.as_str()
                     ))
                 })?;
                 let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -113,7 +113,7 @@ pub(super) fn sketch_brep(
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch {} references missing entity {}",
                     sketch.id.as_str(),
-                    entity_use.entity.0
+                    entity_use.entity.as_str()
                 ))
             })?;
             let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -143,10 +143,15 @@ pub(super) fn sketch_brep(
                 end_3d.z - start_3d.z,
             );
             let length = delta.norm();
-            if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
+            if length == 0.0
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                )
+            {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
-                    entity.id().0
+                    entity.id().as_str()
                 )));
             }
             let curve_id = CurveId::mint(format!("{prefix}:curve:{profile_index}:{use_index}"))
@@ -193,7 +198,7 @@ pub(super) fn sketch_brep(
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
-        let SketchGeometry::Point { position } = entity.geometry else {
+        let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
             continue;
         };
         let point_id =
@@ -259,13 +264,11 @@ pub(super) fn sketch_brep(
         color: None,
         tolerance: None,
     });
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        shell_id.clone(),
+        region_id.clone(),
+        face_id,
+    ));
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
@@ -310,8 +313,8 @@ fn generated_sketch_curve(
             u_axis.z * u + v_axis.z * v,
         )
     };
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let origin = lift(*start);
             let target = lift(*end);
             let delta = Vector3::new(
@@ -339,21 +342,21 @@ fn generated_sketch_curve(
                 param_range: [0.0, length],
             })
         }
-        SketchGeometry::Circle { center, radius } => {
-            let point = offset_point(*center, Point2::new(radius.0, 0.0));
+        SketchGeometryDefinition::Circle { center, radius } => {
+            let point = offset_point(*center, Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Circle {
                     center: lift(*center),
                     axis: normal,
                     ref_direction: u_axis,
-                    radius: radius.0,
+                    radius: radius.get(),
                 },
                 start: point,
                 end: point,
                 param_range: [0.0, std::f64::consts::TAU],
             })
         }
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -363,13 +366,13 @@ fn generated_sketch_curve(
                 center: lift(*center),
                 axis: normal,
                 ref_direction: u_axis,
-                radius: radius.0,
+                radius: radius.get(),
             },
-            start: offset_point(*center, polar(radius.0, start_angle.0)),
-            end: offset_point(*center, polar(radius.0, end_angle.0)),
-            param_range: [start_angle.0, end_angle.0],
+            start: offset_point(*center, polar(radius.get(), start_angle.get())),
+            end: offset_point(*center, polar(radius.get(), end_angle.get())),
+            param_range: [start_angle.get(), end_angle.get()],
         }),
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -378,33 +381,33 @@ fn generated_sketch_curve(
         } => {
             let point = |parameter: f64| {
                 Point2::new(
-                    center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                        - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                    center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                        - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                     center.v
-                        + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                        + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                        + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                        + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                 )
             };
             let [start, end] = bounds
                 .as_ref()
                 .map_or([0.0, std::f64::consts::TAU], |[start, end]| {
-                    [start.0, end.0]
+                    [start.get(), end.get()]
                 });
             let full = bounds.is_none();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
                     axis: normal,
-                    major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
-                    major_radius: major_radius.0,
-                    minor_radius: minor_radius.0,
+                    major_direction: vector(major_angle.get().cos(), major_angle.get().sin()),
+                    major_radius: major_radius.get(),
+                    minor_radius: minor_radius.get(),
                 },
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
                 param_range: [start, end],
             })
         }
-        SketchGeometry::Nurbs { curve } => {
+        SketchGeometryDefinition::Nurbs { curve } => {
             if curve.periodic() {
                 return Err(cadmpeg_core::CodecError::NotImplemented(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
@@ -425,13 +428,13 @@ fn generated_sketch_curve(
                 param_range: [knots[curve.degree() as usize], knots[control_points.len()]],
             })
         }
-        SketchGeometry::Point { .. }
-        | SketchGeometry::Text { .. }
-        | SketchGeometry::ReferenceLine { .. }
-        | SketchGeometry::Hyperbola { .. }
-        | SketchGeometry::Parabola { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => Err(
+        SketchGeometryDefinition::Point { .. }
+        | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ReferenceLine { .. }
+        | SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => Err(
             cadmpeg_core::CodecError::NotImplemented(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
             ),
@@ -507,11 +510,11 @@ pub(super) fn patch_line_profiles(
             if entity.endpoint_refs.len() != 2 {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch entity {} lacks two endpoint references",
-                    entity.id().0
+                    entity.id().as_str()
                 )));
             }
-            match &entity.geometry {
-                SketchGeometry::Point { position } => {
+            match entity.geometry.definition() {
+                SketchGeometryDefinition::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
                     let point = lift_point(*position, origin, u_axis, v_axis);
@@ -524,7 +527,7 @@ pub(super) fn patch_line_profiles(
                         }
                     }
                 }
-                SketchGeometry::Line { start, end } => {
+                SketchGeometryDefinition::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
                         let point = lift_point(*point, origin, u_axis, v_axis);
@@ -538,7 +541,8 @@ pub(super) fn patch_line_profiles(
                         }
                     }
                 }
-                geometry => {
+                _ => {
+                    let geometry = &entity.geometry;
                     let patch_geometry = PatchCurve::try_from(geometry)?;
                     let geometry_ref = entity.geometry_ref.as_deref().ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
@@ -606,17 +610,17 @@ pub(super) fn patch_line_profiles(
 }
 
 fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
-    match geometry {
-        SketchGeometry::Arc {
+    match geometry.definition() {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
         } => Some([
-            offset_point(*center, polar(radius.0, start_angle.0)),
-            offset_point(*center, polar(radius.0, end_angle.0)),
+            offset_point(*center, polar(radius.get(), start_angle.get())),
+            offset_point(*center, polar(radius.get(), end_angle.get())),
         ]),
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -625,16 +629,16 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
         } => {
             let point = |parameter: f64| {
                 Point2::new(
-                    center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                        - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                    center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
+                        - major_angle.get().sin() * minor_radius.get() * parameter.sin(),
                     center.v
-                        + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                        + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                        + major_angle.get().sin() * major_radius.get() * parameter.cos()
+                        + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                 )
             };
-            Some([point(start.0), point(end.0)])
+            Some([point(start.get()), point(end.get())])
         }
-        SketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let control_points = curve.control_points();
             Some([control_points[0], control_points[control_points.len() - 1]])
         }
@@ -669,23 +673,23 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
     type Error = cadmpeg_core::CodecError;
 
     fn try_from(geometry: &SketchGeometry) -> Result<Self, Self::Error> {
-        match geometry {
-            SketchGeometry::Circle { center, radius } => Ok(Self::Circle {
+        match geometry.definition() {
+            SketchGeometryDefinition::Circle { center, radius } => Ok(Self::Circle {
                 center: *center,
-                radius: radius.0,
+                radius: radius.get(),
             }),
-            SketchGeometry::Arc {
+            SketchGeometryDefinition::Arc {
                 center,
                 radius,
                 start_angle,
                 end_angle,
             } => Ok(Self::Arc {
                 center: *center,
-                radius: radius.0,
-                start_angle: start_angle.0,
-                end_angle: end_angle.0,
+                radius: radius.get(),
+                start_angle: start_angle.get(),
+                end_angle: end_angle.get(),
             }),
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 center,
                 major_angle,
                 major_radius,
@@ -693,12 +697,12 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 bounds,
             } => Ok(Self::Ellipse(PatchEllipse {
                 center: *center,
-                major_angle: major_angle.0,
-                major_radius: major_radius.0,
-                minor_radius: minor_radius.0,
-                bounds: bounds.map(|[start, end]| [start.0, end.0]),
+                major_angle: major_angle.get(),
+                major_radius: major_radius.get(),
+                minor_radius: minor_radius.get(),
+                bounds: bounds.map(|[start, end]| [start.get(), end.get()]),
             })),
-            SketchGeometry::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
+            SketchGeometryDefinition::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
             _ => Err(cadmpeg_core::CodecError::NotImplemented(
                 "SLDPRT sketch write-back does not support this curve family".into(),
             )),

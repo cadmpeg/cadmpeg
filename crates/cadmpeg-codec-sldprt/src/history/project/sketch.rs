@@ -3,7 +3,7 @@
 
 use crate::records::Feature;
 use cadmpeg_ir::features::{
-    CosmeticThreadExtent, FaceSelection, FeatureDefinition, Length, PathRef, SplitFaceTool,
+    CosmeticThreadExtent, FaceSelection, FeatureDefinition, PathRef, SplitFaceTool,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -47,12 +47,11 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             tagged.next().is_none().then_some(diameter)
         })
         .filter(|value| *value > 0.0)
-        .map(Length);
+        .and_then(cadmpeg_ir::features::PositiveLength::new);
     let extent = match feature.parameters.get("D1") {
         Some(value) => parse_positive_dimension_length_mm(value)
-            .map(|length| CosmeticThreadExtent::Blind {
-                length: Length(length),
-            })
+            .and_then(cadmpeg_ir::features::PositiveLength::new)
+            .map(|length| CosmeticThreadExtent::Blind { length })
             .or_else(|| {
                 (parse_angle_rad(value).is_some()
                     || parse_dimension_display_length(value) == Some(0.0))

@@ -2,26 +2,24 @@
 //! Geometry-report losses for NX decode.
 
 use super::feature_completeness::operands::{
-    body_selection_is_incomplete, body_selections_overlap, face_selection_is_incomplete,
-    path_ref_is_incomplete, pattern_feature_is_incomplete,
+    body_selection_is_incomplete, face_selection_is_incomplete, path_ref_is_incomplete,
+    pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
     combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    datum_plane_is_incomplete, delete_body_definition_is_incomplete,
-    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
-    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
-    fillet_definition_is_incomplete, finite_feature_point, hole_definition_is_incomplete,
-    incomplete_expression_parameters, loft_definition_is_incomplete,
+    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
+    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
+    face_blend_definition_is_incomplete, fillet_definition_is_incomplete,
+    hole_definition_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, positive_feature_length,
-    projected_curve_direction_is_incomplete, replace_face_definition_is_incomplete,
-    revolve_definition_is_incomplete, rib_definition_is_incomplete,
-    sew_bodies_definition_is_incomplete, shell_definition_is_incomplete,
-    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, valid_feature_direction,
+    output_free_trim_surface_construction, projected_curve_direction_is_incomplete,
+    replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
+    rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
+    shell_definition_is_incomplete, sphere_definition_is_incomplete,
+    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
+    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
 };
 use super::geometry_work::{
     MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -308,7 +306,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     let active_features = active_features.filter(|active| {
         active.values().any(|&index| {
             !matches!(
-                &ir.model.features[index].definition,
+                ir.model.features[index].evaluation.definition(),
                 FeatureDefinition::BaseFeature { .. }
             )
         })
@@ -392,7 +390,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if !feature_in_active_scope(feature) {
             continue;
         }
-        if let FeatureDefinition::Native { kind, .. } = &feature.definition {
+        if let FeatureDefinition::Native { kind, .. } = feature.evaluation.definition() {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
     }
@@ -413,7 +411,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if !feature_in_active_scope(feature) {
             continue;
         }
-        let family = match feature.definition {
+        let family = match feature.evaluation.definition() {
             FeatureDefinition::Unresolved { family } => match family {
                 UnresolvedFamily::Brep => "brep",
                 UnresolvedFamily::DatumPlane => "datum plane",
@@ -469,7 +467,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .feature_result_topologies
         .iter()
-        .filter(|state| !state.bodies.is_empty())
+        .filter(|state| !state.bodies().is_empty())
         .map(|state| &state.output_of)
         .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {
@@ -477,10 +475,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let is_exact_empty_base = matches!(
-            &feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
-            } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
+            } if bodies.is_empty() && !native.trim().is_empty() && feature.evaluation.outputs().is_empty()
         );
         if feature.suppressed != Some(true)
             && !is_exact_empty_base
@@ -489,24 +487,35 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             && !output_free_pattern_construction(feature)
             && !output_free_trim_surface_construction(feature)
         {
-            if let Some(family) = feature.definition.body_output_family().filter(|_| {
-                let current_outputs_are_valid = !feature.outputs.is_empty()
-                    && feature.outputs.iter().collect::<BTreeSet<_>>().len()
-                        == feature.outputs.len()
-                    && feature
-                        .outputs
-                        .iter()
-                        .all(|output| ir.model.bodies.iter().any(|body| body.id == *output));
-                !(current_outputs_are_valid
-                    || feature.outputs.is_empty() && generated_body_outputs.contains(&feature.id))
-            }) {
+            if let Some(family) =
+                feature
+                    .evaluation
+                    .definition()
+                    .body_output_family()
+                    .filter(|_| {
+                        let current_outputs_are_valid = !feature.evaluation.outputs().is_empty()
+                            && feature
+                                .evaluation
+                                .outputs()
+                                .iter()
+                                .collect::<BTreeSet<_>>()
+                                .len()
+                                == feature.evaluation.outputs().len()
+                            && feature.evaluation.outputs().iter().all(|output| {
+                                ir.model.bodies.iter().any(|body| body.id == *output)
+                            });
+                        !(current_outputs_are_valid
+                            || feature.evaluation.outputs().is_empty()
+                                && generated_body_outputs.contains(&feature.id))
+                    })
+            {
                 *incomplete_feature_output_families
                     .entry(family)
                     .or_default() += 1;
                 continue;
             }
         }
-        let family = match &feature.definition {
+        let family = match feature.evaluation.definition() {
             FeatureDefinition::BaseFeature { bodies }
                 if !is_exact_empty_base
                     && !output_free_native_snapshot(feature)
@@ -518,11 +527,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions,
                 placement,
                 op,
-            } if dimensions.is_none_or(|dimensions| {
-                dimensions
-                    .into_iter()
-                    .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_proper_rigid())
+            } if dimensions.is_none()
+                || placement.is_none()
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
@@ -530,11 +536,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Sphere { .. } if sphere_definition_is_incomplete(feature) => {
                 "sphere"
             }
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } if !distance.0.is_finite()
-                || reference.as_ref().is_none_or(|reference| match reference {
+            FeatureDefinition::DatumOffsetPlane { reference, .. }
+                if reference.as_ref().is_none_or(|reference| match reference {
                     DatumPlaneReference::Feature(reference) => {
                         ir.model
                             .features
@@ -549,25 +552,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum plane"
             }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } if datum_plane_is_incomplete(*origin, *normal, *u_axis) => "datum plane",
-            FeatureDefinition::DatumAxis { origin, direction }
-                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) =>
+            FeatureDefinition::DatumCoordinateSystem { frame }
+                if datum_coordinate_system_is_incomplete(
+                    frame.origin(),
+                    frame.x_axis(),
+                    frame.y_axis(),
+                    frame.z_axis(),
+                ) =>
             {
-                "datum axis"
-            }
-            FeatureDefinition::DatumPoint { position, .. } if !finite_feature_point(*position) => {
-                "datum point"
-            }
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } if datum_coordinate_system_is_incomplete(*origin, *x_axis, *y_axis, *z_axis) => {
                 "datum coordinate system"
             }
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
@@ -631,7 +623,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "face blend"
             }
             FeatureDefinition::Shell { .. }
-                if shell_definition_is_incomplete(&feature.definition) =>
+                if shell_definition_is_incomplete(feature.evaluation.definition()) =>
             {
                 "shell"
             }
@@ -665,12 +657,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "pattern"
             }
             FeatureDefinition::SectionShape {
-                first,
-                second,
+                operands,
                 approximate,
-            } if body_selection_is_incomplete(first)
-                || body_selection_is_incomplete(second)
-                || body_selections_overlap(first, second)
+            } if body_selection_is_incomplete(operands.first())
+                || body_selection_is_incomplete(operands.second())
                 || approximate.is_none() =>
             {
                 "section"
@@ -722,7 +712,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .features
         .iter()
         .filter(|feature| feature_in_active_scope(feature))
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        })
         .count();
     let unresolved_sketch_feature_count = ir
         .model
@@ -731,7 +726,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                         | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -753,7 +748,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .features
         .iter()
         .filter(|feature| feature_in_active_scope(feature))
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
@@ -771,8 +766,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();
@@ -783,8 +778,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
             )
         })
         .count();

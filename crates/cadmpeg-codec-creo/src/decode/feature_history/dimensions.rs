@@ -80,7 +80,9 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        let sketch = model_sketch_id(scan, definition);
+        let Some(sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         for (ordinal, _) in table.rows.iter().enumerate() {
             if let Some((_, parameter)) =
                 resolved_feature_dimension_parameter(&sketch, table, ordinal)
@@ -185,7 +187,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> (usize, BTreeMap<String, ParameterId>) {
+) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let feature_ids = ir
         .model
         .features
@@ -194,7 +196,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
-        let sketch = model_sketch_id(scan, definition);
+        let Some(sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         if !feature_ids.contains(&owner) {
             continue;
@@ -214,7 +218,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
-        return (0, BTreeMap::new());
+        return Ok((0, BTreeMap::new()));
     };
     let unique_external_ids = keys
         .iter()
@@ -287,10 +291,16 @@ pub(in super::super) fn transfer_feature_dimensions(
         let value = dimension
             .value
             .resolved()
-            .map(|value| match dimension.unit() {
-                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
-                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
-                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+            .and_then(|value| match dimension.unit() {
+                crate::feature::DimensionUnit::Radians => {
+                    Angle::new(value).map(ParameterValue::Angle)
+                }
+                crate::feature::DimensionUnit::Millimeters => {
+                    Length::new(value).map(ParameterValue::Length)
+                }
+                crate::feature::DimensionUnit::SchemaDefined => {
+                    cadmpeg_ir::features::FiniteReal::new(value).map(ParameterValue::Real)
+                }
             });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
@@ -300,7 +310,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             expression,
             display: feature_dimension_display(dimension.dimension_type),
             value,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties,
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
@@ -313,10 +323,11 @@ pub(in super::super) fn transfer_feature_dimensions(
         ) {
             feature
                 .source_content
-                .push(FeatureSourceContent::Parameter(id));
+                .push(FeatureSourceContent::Parameter(id))
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
         }
     }
-    (transferred, relation_parameters)
+    Ok((transferred, relation_parameters))
 }
 
 #[cfg(test)]

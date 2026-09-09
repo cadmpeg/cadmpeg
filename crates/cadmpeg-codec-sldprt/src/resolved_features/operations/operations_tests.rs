@@ -472,20 +472,20 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
+        FeatureDefinition, LinearTermination, ProfileRef, RevolutionAxis, RevolveConstruction,
+        RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
 
     let extrude = |op| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(SketchId("sketch".into())),
+        profile: ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()),
         direction: ExtrudeDirection::ProfileNormal,
         start: ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(1.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
                 },
                 draft: None,
             },
@@ -499,10 +499,18 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     let revolve = |op| FeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
+            Some(
+                (ProfileRef::Sketch(SketchId::mint("synthetic:test:id#sketch").unwrap()))
+                    .try_into()
+                    .unwrap(),
+            ),
             Some(RevolutionAxis {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
                 reference: None,
             }),
             Some(RevolveExtent::OneSided {
@@ -520,13 +528,13 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let native_feature = |id: &str, class: &str| Feature {
@@ -558,35 +566,54 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ],
     }];
     let base = vec![
-        feature("extrude", "native-extrude", extrude(BooleanOp::Cut)),
-        feature("revolve", "native-revolve", revolve(BooleanOp::Join)),
+        feature(
+            "synthetic:test:id#extrude",
+            "native-extrude",
+            extrude(BooleanOp::Cut),
+        ),
+        feature(
+            "synthetic:test:id#revolve",
+            "native-revolve",
+            revolve(BooleanOp::Join),
+        ),
     ];
     let mut configured = vec![
-        feature("extrude", "native-extrude", extrude(BooleanOp::Unresolved)),
-        feature("revolve", "native-revolve", revolve(BooleanOp::Unresolved)),
+        feature(
+            "synthetic:test:id#extrude",
+            "native-extrude",
+            extrude(BooleanOp::Unresolved),
+        ),
+        feature(
+            "synthetic:test:id#revolve",
+            "native-revolve",
+            revolve(BooleanOp::Unresolved),
+        ),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
 
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Cut,
             ..
         }
     ));
     assert!(matches!(
-        configured[1].definition,
+        configured[1].evaluation.definition(),
         FeatureDefinition::Revolve {
             op: BooleanOp::Join,
             ..
         }
     ));
 
-    configured[0].definition = extrude(BooleanOp::NewBody);
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    configured[0]
+        .evaluation
+        .set_definition(extrude(BooleanOp::NewBody))
+        .unwrap();
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::NewBody,
             ..
@@ -624,7 +651,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     operation_lane.native_payload[25..29].copy_from_slice(&11_u32.to_le_bytes());
     let mut inherited = vec![feature(
-        "extrude",
+        "synthetic:test:id#extrude",
         "native-extrude",
         extrude(BooleanOp::Unresolved),
     )];
@@ -634,9 +661,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        inherited[0].definition,
+        inherited[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Cut,
             ..
@@ -645,7 +673,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
 
     operation_lane.native_payload[25..29].copy_from_slice(&999_u32.to_le_bytes());
     let mut unresolved = vec![feature(
-        "extrude",
+        "synthetic:test:id#extrude",
         "native-extrude",
         extrude(BooleanOp::Unresolved),
     )];
@@ -655,9 +683,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane],
         Some(4),
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        unresolved[0].definition,
+        unresolved[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Unresolved,
             ..

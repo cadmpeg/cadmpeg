@@ -184,7 +184,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     #[derive(PartialEq)]
     enum ProfileVote {
         Missing,
@@ -337,10 +337,11 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         let Some(&index) = neutral_indices.get(&extrusion) else {
             continue;
         };
+        let mut definition = features[index].evaluation.definition().clone();
         let FeatureDefinition::Extrude {
             profile: neutral_profile,
             ..
-        } = &mut features[index].definition
+        } = &mut definition
         else {
             continue;
         };
@@ -352,10 +353,17 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let dependency = features[profile_index].id.clone();
             *neutral_profile = cadmpeg_ir::features::ProfileRef::Feature(dependency.clone());
             if !features[index].dependencies.contains(&dependency) {
-                features[index].dependencies.push(dependency);
+                features[index].dependencies.insert(dependency);
             }
         }
+
+        features[index]
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
@@ -452,7 +460,7 @@ pub(crate) fn project_dissected_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -468,7 +476,7 @@ pub(crate) fn project_dissected_sketches(
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -477,14 +485,19 @@ pub(crate) fn project_dissected_sketches(
         .collect::<HashMap<_, _>>();
     let planar_features = features
         .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Sketch { .. }
+            )
+        })
         .map(|feature| feature.id.clone())
         .collect::<HashSet<_>>();
     let aliases = features
         .iter()
         .filter(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                         | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -519,60 +532,86 @@ pub(crate) fn project_dissected_sketches(
         .collect::<HashMap<_, _>>();
 
     for feature in features {
-        if aliases.contains_key(&feature.id) {
-            feature.definition = FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
-                children: Vec::new(),
-                active_child: None,
+        let mut definition = feature.evaluation.definition().clone();
+        'feature_edit: {
+            if aliases.contains_key(&feature.id) {
+                definition = FeatureDefinition::TreeNode {
+                    role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                    children: cadmpeg_ir::features::TreeChildren::default(),
+                };
+                break 'feature_edit;
+            }
+            let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
+                let cadmpeg_ir::features::ProfileRef::Feature(child) = profile else {
+                    return None;
+                };
+                let (owner, sketch) = profile_aliases.get(child)?;
+                let child = child.clone();
+                *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+                Some((child, owner.clone()))
             };
-            continue;
-        }
-        let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
-            let cadmpeg_ir::features::ProfileRef::Feature(child) = profile else {
-                return None;
+            let replace_planar = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
+                let cadmpeg_ir::features::ProfileRef::Feature(child) = profile.as_ref() else {
+                    return None;
+                };
+                let (owner, sketch) = profile_aliases.get(child)?;
+                let child = child.clone();
+                *profile = sketch.clone().into();
+                Some((child, owner.clone()))
             };
-            let (owner, sketch) = profile_aliases.get(child)?;
-            let child = child.clone();
-            *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
-            Some((child, owner.clone()))
-        };
-        let replaced = match &mut feature.definition {
-            FeatureDefinition::Extrude { profile, .. }
-            | FeatureDefinition::Wrap { profile, .. } => replace(profile).into_iter().collect(),
-            FeatureDefinition::Rib { construction, .. } => construction
-                .profile
-                .as_mut()
-                .and_then(replace)
-                .into_iter()
-                .collect(),
-            FeatureDefinition::Revolve { construction, .. } => construction
-                .profile_mut()
-                .and_then(replace)
-                .into_iter()
-                .collect(),
-            FeatureDefinition::Sweep { section, .. } => section
-                .referenced_profile_mut()
-                .and_then(replace)
-                .into_iter()
-                .collect(),
-            FeatureDefinition::Loft { sections, .. } => sections
-                .iter_mut()
-                .filter_map(|section| match section {
-                    cadmpeg_ir::features::LoftSection::Profile(profile) => replace(profile),
-                    cadmpeg_ir::features::LoftSection::Point(_) => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        for (child, owner) in replaced {
-            feature
-                .dependencies
-                .retain(|dependency| dependency != &child);
-            if !feature.dependencies.contains(&owner) {
-                feature.dependencies.push(owner);
+            let replaced = match &mut definition {
+                FeatureDefinition::Extrude { profile, .. } => {
+                    replace(profile).into_iter().collect()
+                }
+                FeatureDefinition::Wrap { profile, .. } => {
+                    replace_planar(profile).into_iter().collect()
+                }
+                FeatureDefinition::Rib { construction, .. } => construction
+                    .profile
+                    .as_mut()
+                    .and_then(replace_planar)
+                    .into_iter()
+                    .collect(),
+                FeatureDefinition::Revolve { construction, .. } => construction
+                    .profile_mut()
+                    .and_then(replace_planar)
+                    .into_iter()
+                    .collect(),
+                FeatureDefinition::Sweep { shape, .. } => {
+                    let mut replacements = Vec::new();
+                    shape
+                        .try_edit(|section, _, _| {
+                            replacements
+                                .extend(section.referenced_profile_mut().and_then(replace_planar));
+                        })
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    replacements
+                }
+                FeatureDefinition::Loft { sections, .. } => sections
+                    .iter_mut()
+                    .filter_map(|section| match section {
+                        cadmpeg_ir::features::LoftSection::Profile(profile) => replace(profile),
+                        cadmpeg_ir::features::LoftSection::Point(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for (child, owner) in replaced {
+                feature
+                    .dependencies
+                    .retain(|dependency| dependency != &child);
+                if !feature.dependencies.contains(&owner) {
+                    feature.dependencies.insert(owner);
+                }
             }
         }
+        feature
+            .evaluation
+            .set_definition(definition)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    Ok(())
 }
 
 fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {

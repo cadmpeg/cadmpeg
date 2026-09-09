@@ -86,14 +86,13 @@ pub(in super::super) fn named_feature_definition(
     if let Some(role) = tree_node_role {
         return Some(IrFeatureDefinition::TreeNode {
             role,
-            children: Vec::new(),
-            active_child: None,
+            children: cadmpeg_ir::features::TreeChildren::default(),
         });
     }
     if kind == "Mirror" {
         return Some(IrFeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::UnresolvedMirror,
+            pattern: PatternKind::UNRESOLVED_MIRROR,
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
@@ -116,9 +115,7 @@ pub(in super::super) fn named_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        return Some(revolve_feature_definition_with_profile(
-            scan, ir, feature_id, op,
-        ));
+        return revolve_feature_definition_with_profile(scan, ir, feature_id, op);
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
@@ -128,13 +125,7 @@ pub(in super::super) fn named_feature_definition(
         "Draft" | "Schräge" => SchemaClass::Draft,
         _ => return None,
     };
-    Some(schema_feature_definition(
-        scan,
-        ir,
-        feature_id,
-        Some(schema_class),
-        kind,
-    ))
+    schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind).ok()
 }
 
 pub(in super::super) fn named_or_referenced_feature_definition(
@@ -176,10 +167,17 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
         |(extent, direction)| {
             (
-                ExtrudeDirection::Explicit {
-                    vector: Vector3::new(direction[0], direction[1], direction[2]),
-                    source: None,
-                },
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    direction[0],
+                    direction[1],
+                    direction[2],
+                ))
+                .map_or(ExtrudeDirection::Unresolved, |vector| {
+                    ExtrudeDirection::Explicit {
+                        vector,
+                        source: None,
+                    }
+                }),
                 extent,
             )
         },
@@ -203,12 +201,15 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     ir: &CadIr,
     feature_id: u32,
     op: BooleanOp,
-) -> IrFeatureDefinition {
+) -> Option<IrFeatureDefinition> {
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-    IrFeatureDefinition::Revolve {
+    Some(IrFeatureDefinition::Revolve {
         construction: RevolveConstruction::new(
-            unique_feature_profile_ref(scan, ir, feature_id),
+            unique_feature_profile_ref(scan, ir, feature_id)
+                .map(TryInto::try_into)
+                .transpose()
+                .ok()?,
             feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
             extent,
             sweep_solid(output_kind),
@@ -217,7 +218,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
             None,
         ),
         op,
-    }
+    })
 }
 
 pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
@@ -254,8 +255,12 @@ pub(in super::super) fn surface_intersect_feature_definition(
     surface_tables.next()?;
     surface_tables.next().is_none().then_some(())?;
     Some(IrFeatureDefinition::SectionShape {
-        first: BodySelection::Unresolved,
-        second: BodySelection::Unresolved,
+        operands: cadmpeg_ir::features::SectionOperands::new(
+            BodySelection::Unresolved,
+            BodySelection::Unresolved,
+        )
+        .ok()?,
+
         approximate: None,
     })
 }
@@ -344,8 +349,12 @@ mod tests {
         assert_eq!(
             surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
             Some(IrFeatureDefinition::SectionShape {
-                first: BodySelection::Unresolved,
-                second: BodySelection::Unresolved,
+                operands: cadmpeg_ir::features::SectionOperands::new(
+                    BodySelection::Unresolved,
+                    BodySelection::Unresolved
+                )
+                .expect("valid test fixture"),
+
                 approximate: None,
             })
         );

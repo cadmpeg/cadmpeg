@@ -212,7 +212,7 @@ fn finish_decode(
         &mut annotations,
         modeling_graph_scope.as_ref(),
     )?;
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native);
+    design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         &mut ir,
         &native,
@@ -1782,8 +1782,8 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             matches!(
-                &entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();

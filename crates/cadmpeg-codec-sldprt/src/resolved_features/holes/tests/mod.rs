@@ -2,11 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
 use crate::records::{
     FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -47,30 +49,36 @@ fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("hole").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#hole").expect("identity grammar"),
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            direction: None,
-            placements: None,
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-            exit_kind: None,
-            diameter: Some(Length(4.0)),
-            extent: None,
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                direction: None,
+                placements: None,
+                shape: cadmpeg_ir::features::HoleShape::new(
+                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                    None,
+                    Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
+                )
+                .unwrap(),
+
+                extent: None,
+                bottom: None,
+                taper_angle: None,
+                allow_multi_profile_faces: None,
+            },
+        ),
         native_ref: Some("native-hole".into()),
     }
 }
@@ -165,9 +173,9 @@ fn cylinder(id: usize, x: f64) -> Surface {
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(format!("profile-line-{ordinal}")),
+        SketchEntityId::mint(format!("synthetic:test:id#profile-line-{ordinal}")).unwrap(),
         sketch.clone(),
-        SketchGeometry::Line { start, end },
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
     )
 }
 

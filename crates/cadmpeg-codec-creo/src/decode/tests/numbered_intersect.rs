@@ -39,7 +39,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -210,7 +212,8 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -294,7 +297,8 @@ fn hole_outline_placement_preserves_stored_plane_order() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: Length(6.5),
+                length: cadmpeg_ir::features::NonZeroLength::new(6.5)
+                    .expect("nonzero length fixture"),
             },
         ))
     );
@@ -742,16 +746,16 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     assert_eq!(
         generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
         Some(vec![
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#97".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#98".to_string(),
-            },
-            GeneratedFaceRef {
-                feature: IrFeatureId::mint("creo:model:feature#144".to_string())
-                    .expect("identity grammar"),
-                local_id: "surface#145".to_string(),
-            },
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
+                "surface#98".to_string()
+            )
+            .expect("valid test fixture"),
+            GeneratedFaceRef::new(
+                IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
+                "surface#145".to_string()
+            )
+            .expect("valid test fixture"),
         ])
     );
     assert_eq!(
@@ -826,13 +830,13 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
             .expect("complete result topology")
-            .faces,
+            .faces(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
             .expect("complete result topology")
-            .edges,
+            .edges(),
         vec!["curve#77"]
     );
 
@@ -862,13 +866,14 @@ fn generated_face_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
     let definition = IrFeatureDefinition::Thicken {
-        faces: FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: producer.clone(),
-                local_id: "surface#98".to_string(),
-            }],
-            native: "creo:allfeatur:thicken#9".to_string(),
-        },
+        faces: FaceSelection::generated(
+            vec![
+                GeneratedFaceRef::new(producer.clone(), "surface#98".to_string())
+                    .expect("valid test fixture"),
+            ],
+            "creo:allfeatur:thicken#9".to_string(),
+        )
+        .expect("valid test fixture"),
         thickness: None,
         side: None,
     };
@@ -879,19 +884,20 @@ fn generated_face_dependencies_follow_the_producer_feature() {
 fn generated_edge_dependencies_follow_the_producer_feature() {
     let producer =
         IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
-    let generated_edges = EdgeSelection::Generated {
-        edges: vec![GeneratedEdgeRef {
-            feature: producer.clone(),
-            local_id: "curve#77".to_string(),
-        }],
-        native: "creo:allfeatur:fillet#9".to_string(),
-    };
+    let generated_edges = EdgeSelection::generated(
+        vec![
+            GeneratedEdgeRef::new(producer.clone(), "curve#77".to_string())
+                .expect("valid test fixture"),
+        ],
+        "creo:allfeatur:fillet#9".to_string(),
+    )
+    .expect("valid test fixture");
     let fillet = IrFeatureDefinition::Fillet {
-        groups: vec![cadmpeg_ir::features::FilletGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
             radius: RadiusSpec::Unresolved,
             tangency_weight: None,
-        }],
+        }),
     };
     assert_eq!(
         feature_generated_dependencies(&fillet),
@@ -899,10 +905,10 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     );
 
     let chamfer = IrFeatureDefinition::Chamfer {
-        groups: vec![cadmpeg_ir::features::ChamferGroup {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: generated_edges,
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
-        }],
+        }),
         flip_direction: false,
     };
     assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
@@ -1004,16 +1010,16 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
     assert_eq!(
         generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#12".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#45".to_string(),
-            },
-            GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#18".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#46".to_string(),
-            },
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
+                "curve#45".to_string()
+            )
+            .expect("valid test fixture"),
+            GeneratedEdgeRef::new(
+                IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
+                "curve#46".to_string()
+            )
+            .expect("valid test fixture"),
         ])
     );
     assert_eq!(
@@ -1072,16 +1078,18 @@ fn mixed_current_and_generated_edges_remain_native() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: IrFeatureDefinition::Native {
-            kind: "producer".into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Native {
+                kind: "producer".into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
@@ -1252,11 +1260,11 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &BTreeMap::from([(50, vec![61])]),
             &available_features,
         ),
-        Some(vec![GeneratedFaceRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "surface#61".to_string(),
-        }])
+        Some(vec![GeneratedFaceRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "surface#61".to_string()
+        )
+        .expect("valid test fixture")])
     );
     assert_eq!(
         generated_curve_edge_refs(
@@ -1265,11 +1273,11 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &available_features,
             &BTreeMap::from([(50, vec![59])]),
         ),
-        Some(vec![GeneratedEdgeRef {
-            feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                .expect("identity grammar"),
-            local_id: "curve#59".to_string(),
-        }])
+        Some(vec![GeneratedEdgeRef::new(
+            IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
+            "curve#59".to_string()
+        )
+        .expect("valid test fixture")])
     );
     scan.features
         .affected_ids
@@ -1281,14 +1289,18 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         });
     assert_eq!(
         feature_edge_selection(&scan, &CadIr::empty(), 10),
-        Some(EdgeSelection::Generated {
-            edges: vec![GeneratedEdgeRef {
-                feature: IrFeatureId::mint("creo:model:feature#50".to_string())
-                    .expect("identity grammar"),
-                local_id: "curve#59".to_string(),
-            }],
-            native: "creo:allfeatur:edgs_affected#10:59".to_string(),
-        })
+        Some(
+            EdgeSelection::generated(
+                vec![GeneratedEdgeRef::new(
+                    IrFeatureId::mint("creo:model:feature#50".to_string())
+                        .expect("identity grammar"),
+                    "curve#59".to_string()
+                )
+                .expect("valid test fixture")],
+                "creo:allfeatur:edgs_affected#10:59".to_string()
+            )
+            .expect("valid test fixture")
+        )
     );
 }
 
@@ -1309,11 +1321,13 @@ fn closed_fallback_profile_selects_revolution_segments() {
     let segments = [segment(9), segment(10), segment(11)];
     let profiles = vec![vec![
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:9".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string())
+                .expect("valid test fixture"),
             reversed: false,
         },
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:11".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string())
+                .expect("valid test fixture"),
             reversed: true,
         },
     ]];
@@ -1732,13 +1746,18 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     )
     .expect("valid section frame");
     let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point fixture"),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("valid direction fixture"),
         reference: None,
     };
-    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
     };
 
     assert!(matches!(
@@ -1781,31 +1800,34 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                 && radius == 4.0
                 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
-    let centered_arc = SketchGeometry::Arc {
+    let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
-    };
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &centered_arc, &axis),
         Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
     ));
-    let offset_arc = SketchGeometry::Arc {
+    let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
-        radius: Length(2.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
-    };
+        radius: Length::new(2.0).expect("finite length fixture"),
+        start_angle: Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_arc, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
             if major_radius == 5.0 && minor_radius == 2.0
     ));
-    let offset_circle = SketchGeometry::Circle {
+    let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(5.0, 3.0),
-        radius: Length(2.0),
-    };
+        radius: Length::new(2.0).expect("finite length fixture"),
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_circle, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })

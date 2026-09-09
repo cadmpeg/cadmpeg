@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 use super::super::feature_history::{
     feature_dimension_table_complete, feature_relation_table_complete,
@@ -500,19 +500,23 @@ pub(crate) fn section_fixed_coordinate_line_carrier(
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= EPS_RADIUS_AGREEMENT * scale).then(|| {
-        if fixed_coordinate == SectionAxis::U {
-            SketchGeometry::ReferenceLine {
-                origin: Point2::new(first, 0.0),
-                direction: Point2::new(0.0, 1.0),
+    ((first - second).abs() <= EPS_RADIUS_AGREEMENT * scale)
+        .then(|| {
+            if fixed_coordinate == SectionAxis::U {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: Point2::new(first, 0.0),
+                    direction: Point2::new(0.0, 1.0),
+                })
+                .ok()
+            } else {
+                SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                    origin: Point2::new(0.0, first),
+                    direction: Point2::new(1.0, 0.0),
+                })
+                .ok()
             }
-        } else {
-            SketchGeometry::ReferenceLine {
-                origin: Point2::new(0.0, first),
-                direction: Point2::new(1.0, 0.0),
-            }
-        }
-    })
+        })
+        .flatten()
 }
 
 pub(crate) fn section_proven_axis_line_carrier(
@@ -572,7 +576,7 @@ pub(crate) fn section_axis_reference_line_geometry(
     } else {
         (Point2::new(0.0, value), Point2::new(1.0, 0.0))
     };
-    Some(SketchGeometry::ReferenceLine { origin, direction })
+    SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
 }
 
 pub(crate) fn section_segment_intersection_carrier_with_missing_line(
@@ -596,12 +600,13 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
-    Some(SketchGeometry::Arc {
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-        radius: Length(radius),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::TAU),
+        radius: Length::new(radius)?,
+        start_angle: Angle::new(0.0)?,
+        end_angle: Angle::new(std::f64::consts::TAU)?,
     })
+    .ok()
 }
 
 pub(crate) fn trim_segment_id(
@@ -718,10 +723,15 @@ mod tests {
 
         assert_eq!(
             section_proven_axis_line_carrier(&definition, &variable_points, &line,),
-            Some(cadmpeg_ir::sketches::SketchGeometry::ReferenceLine {
-                origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-            })
+            Some(
+                cadmpeg_ir::sketches::SketchGeometry::try_from(
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine {
+                        origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    }
+                )
+                .expect("valid test fixture")
+            )
         );
         assert_eq!(
             trim_segment_id(

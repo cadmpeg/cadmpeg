@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable presentation-document identity.
     PresentationId
 );
@@ -394,7 +394,9 @@ mod tests {
             );
             states.push(state);
         }
-        let mut document = PresentationDocument::new(PresentationId::mint("presentation").unwrap());
+        let mut document = PresentationDocument::new(
+            PresentationId::mint("synthetic:test:presentation#presentation").unwrap(),
+        );
         document.set_states(states).expect("distinct orders");
         let json = serde_json::to_string(&document).unwrap();
         assert_eq!(
@@ -484,7 +486,8 @@ mod tests {
             assets: Vec::new(),
         };
         let mut document = PresentationDocument::new(
-            PresentationId::mint("presentation").expect("valid identity"),
+            PresentationId::mint("synthetic:test:presentation#presentation")
+                .expect("valid identity"),
         );
         assert!(document.states().is_empty());
         let states = vec![state(9), state(2)];

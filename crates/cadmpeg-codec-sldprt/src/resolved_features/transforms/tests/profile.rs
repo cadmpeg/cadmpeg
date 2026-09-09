@@ -9,14 +9,14 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+    BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
     Feature, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterId, ParameterValue,
     ProfileRef, RadiusSpec,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -66,27 +66,28 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .collect(),
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("width").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#width").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "width".into(),
         expression: "5".into(),
         display: None,
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     };
-    let sketch = SketchId("sketch".into());
-    let line_id = SketchEntityId("line".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let line_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
     let entities = vec![SketchEntity::new(
         line_id.clone(),
         sketch.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(5.0, 0.0),
-        },
+        })
+        .unwrap(),
     )
     .with_native_ref(Some(corner.id.clone()))];
 
@@ -123,33 +124,33 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let producer = feature(
-        "producer",
+        "synthetic:test:id#producer",
         "producer-native",
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
         },
     );
     let target = feature(
-        "target",
+        "synthetic:test:id#target",
         "target-native",
         FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant {
-                    radius: Length(1.0),
+                    radius: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
                 },
                 tangency_weight: None,
-            }],
+            }),
         },
     );
     let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
@@ -187,9 +188,9 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    project_compact_edge_selections(&mut features, &[], &[lane]);
+    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
 
-    let FeatureDefinition::Fillet { groups } = &features[1].definition else {
+    let FeatureDefinition::Fillet { groups } = features[1].evaluation.definition() else {
         panic!("generated edge selection");
     };
     let [cadmpeg_ir::features::FilletGroup {
@@ -211,8 +212,8 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         "sldprt:feature-input:edge-selection-vectors:1,2;3,4;1,2"
     );
     assert_eq!(
-        features[1].dependencies,
-        vec![FeatureId::mint("producer").expect("identity grammar")]
+        features[1].dependencies.as_slice(),
+        vec![FeatureId::mint("synthetic:test:id#producer").expect("identity grammar")]
     );
 }
 
@@ -294,7 +295,7 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         relation_operand_marker(
             &relation,
             0,
-            &SketchId("sldprt:model:sketch#compact:lane:1".into()),
+            &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
         ),
         Some("point")
@@ -309,13 +310,18 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         relation_operand_marker(
             &constrained_relation,
             0,
-            &SketchId("sldprt:model:sketch#compact:lane:1".into()),
+            &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
         ),
         Some("constrained-point")
     );
     assert_eq!(
-        relation_operand_marker(&relation, 0, &SketchId("sketch".into()), &markers),
+        relation_operand_marker(
+            &relation,
+            0,
+            &SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            &markers
+        ),
         Some("stored-marker")
     );
 }
@@ -355,18 +361,18 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
             0,
             FeatureDefinition::DatumPrincipalPlane {
@@ -374,7 +380,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             },
         ),
         feature(
-            "sketch",
+            "synthetic:test:id#sketch",
             "sketch-native",
             1,
             FeatureDefinition::Sketch {
@@ -546,72 +552,74 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
-    assert!(matches!(
-        entities[0].geometry,
-        SketchGeometry::Point { position }
+    assert!(matches!(*entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point { position }
             if position == Point2::new(-2.0, 1.0)
     ));
-    assert!(matches!(
-        entities[1].geometry,
-        SketchGeometry::Line { start, end }
+    assert!(matches!(*entities[1].geometry.definition(),
+        SketchGeometryDefinition::Line { start, end }
             if start == Point2::new(-2.0, 1.0)
                 && end == Point2::new(-6.0, 5.0)
     ));
     assert!(!entities[0].construction);
     assert!(entities[1].construction);
     assert!(entities[2..].iter().all(|entity| !entity.construction));
-    assert!(matches!(
-        entities[3].geometry,
-        SketchGeometry::Arc {
+    assert!(matches!(*entities[3].geometry.definition(),
+        SketchGeometryDefinition::Arc {
             center,
-            radius: Length(radius),
-            start_angle: Angle(start_angle),
-            end_angle: Angle(end_angle),
+            radius,
+            start_angle,
+            end_angle,
         } if center == Point2::new(0.0, 0.0)
-            && radius == 1.0
-            && start_angle == std::f64::consts::FRAC_PI_2
-            && end_angle == std::f64::consts::PI
+            && radius.get() == 1.0
+            && start_angle.get() == std::f64::consts::FRAC_PI_2
+            && end_angle.get() == std::f64::consts::PI
     ));
     assert_eq!(sketches[0].profiles.len(), 1);
     assert_eq!(sketches[0].profiles[0].len(), 3);
     assert!(matches!(
-        features[1].definition,
+        features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
         }
     ));
     let expected_sketch = sketches[0].id.clone();
     let mut configured_features = features.clone();
-    configured_features[1].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-    };
+    configured_features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        })
+        .unwrap();
     project_marker_backed_sketches(
         &mut configured_features,
         &mut sketches,
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
     assert!(matches!(
-        &configured_features[1].definition,
+        configured_features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         } if sketch == &expected_sketch
     ));
 
-    let compact_id = SketchId("sldprt:model:sketch#compact:lane:7".into());
+    let compact_id = SketchId::mint("sldprt:model:sketch#compact:lane:7").unwrap();
     let mut compact_sketch = sketches[0].clone();
     compact_sketch.id = compact_id.clone();
     compact_sketch.profiles.clear();
     let source_entity = &entities[0];
     let compact_entity = SketchEntity::new(
-        SketchEntityId("compact-entity".into()),
+        SketchEntityId::mint("synthetic:test:id#compact-entity").unwrap(),
         compact_id.clone(),
         source_entity.geometry.clone(),
     )
@@ -620,9 +628,12 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     .with_geometry_ref(source_entity.geometry_ref.clone())
     .with_endpoint_refs(source_entity.endpoint_refs.clone());
     let mut replacement_features = features.clone();
-    replacement_features[1].definition = FeatureDefinition::Sketch {
-        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(compact_id)),
-    };
+    replacement_features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(compact_id)),
+        })
+        .unwrap();
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
@@ -631,7 +642,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_entities,
         &histories,
         &lanes,
-    );
+    )
+    .unwrap();
     assert_eq!(replacement_sketches.len(), 1);
     assert_eq!(replacement_sketches[0].id, expected_sketch);
     assert_eq!(replacement_entities.len(), 13);
@@ -668,19 +680,21 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         features: vec![native_feature],
     }];
     let mut features = vec![Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     }];
     let lanes = vec![FeatureInputLane {
@@ -708,19 +722,17 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .unwrap();
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+    assert!(matches!(entities.as_slice(), [entity] if matches!(
+        entity.geometry.definition(), SketchGeometryDefinition::Point { position }
+        if *position == Point2::new(1.0, 2.0)
+    )));
     assert!(matches!(
-        entities.as_slice(),
-        [SketchEntity {
-            geometry: SketchGeometry::Point { position },
-            ..
-        }] if *position == Point2::new(1.0, 2.0)
-    ));
-    assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }
             if sketch == &sketches[0].id
     ));
@@ -746,23 +758,23 @@ fn marker_circle_fit_requires_one_circle_through_every_endpoint() {
 
 #[test]
 fn connected_marker_arcs_use_their_shared_endpoint_circle() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
     let arc = |id: &str, start: &str, end: &str| {
         SketchEntity::new(
-            SketchEntityId(format!("entity-{id}")),
+            SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
-            SketchGeometry::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
-            },
+            ),
         )
         .with_native_ref(Some(id.into()))
         .with_endpoint_refs(vec![start.into(), end.into()])
@@ -778,36 +790,37 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     resolve_connected_marker_arcs(&mut entities, 1.0e-8);
 
     for entity in &entities[3..] {
-        assert!(matches!(
-            entity.geometry,
-            SketchGeometry::Arc {
+        assert!(matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc {
                 center,
-                radius: Length(2.0),
+                radius: actual_radius,
                 ..
-            } if center == Point2::new(0.0, 0.0)
+            } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 2.0
         ));
     }
     for entity in &mut entities[3..] {
         entity.endpoint_refs.reverse();
-        entity.geometry = SketchGeometry::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
+        entity.geometry = SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:2")
                 .expect("nonempty source identity"),
-        };
+        );
     }
     resolve_connected_marker_arcs(&mut entities, 1.0e-8);
-    assert!(entities[3..]
-        .iter()
-        .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
+    assert!(entities[3..].iter().all(|entity| matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Arc { .. }
+    )));
     assert_eq!(entities[3].endpoint_refs, ["p0", "p1"]);
     assert_eq!(entities[4].endpoint_refs, ["p1", "p2"]);
     entities.push(
         SketchEntity::new(
-            SketchEntityId("entity-line".into()),
+            SketchEntityId::mint("synthetic:test:id#entity-line").unwrap(),
             sketch,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 2.0),
                 end: Point2::new(0.0, -2.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("line".into()))
         .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
@@ -820,19 +833,20 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     assert!(closed_marker_profiles(&entities).is_empty());
     entities.push(
         SketchEntity::new(
-            SketchEntityId("entity-circle".into()),
+            SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             entities[0].sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(2.0),
-            },
+                radius: Length::new(2.0).unwrap(),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("circle".into())),
     );
     assert_eq!(
         closed_marker_profiles(&entities),
         vec![vec![SketchEntityUse {
-            entity: SketchEntityId("entity-circle".into()),
+            entity: SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             reversed: false,
         }]]
     );
@@ -840,21 +854,23 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 
 #[test]
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
+            },
+        ),
         native_ref: Some("feature-native".into()),
     };
     let mut sketches = vec![Sketch {
@@ -862,26 +878,28 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {
-        id: ParameterId::mint(format!("parameter-{ordinal}")).expect("identity grammar"),
+        id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}"))
+            .expect("identity grammar"),
         owner: Some(feature.id.clone()),
         name: format!("D{}", ordinal + 1),
         ordinal,
         expression: diameter.to_string(),
-        value: Some(ParameterValue::Length(Length(diameter))),
+        value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
         display: Some(DimensionDisplay::Diameter),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(format!("scalar-{ordinal}")),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
     let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
@@ -919,31 +937,33 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         sketch_entities: vec![center, first, second],
     };
     let carrier = SketchEntity::new(
-        SketchEntityId("carrier".into()),
+        SketchEntityId::mint("synthetic:test:id#carrier").unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:0")
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("sldprt:marker-geometry:0")
                 .expect("nonempty source identity"),
-        },
+        ),
     )
     .with_native_ref(Some("center".into()));
     let mut entities = vec![
         carrier,
         SketchEntity::new(
-            SketchEntityId("first-entity".into()),
+            SketchEntityId::mint("synthetic:test:id#first-entity").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(5.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("first".into())),
         SketchEntity::new(
-            SketchEntityId("second-entity".into()),
+            SketchEntityId::mint("synthetic:test:id#second-entity").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 8.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some("second".into())),
@@ -965,7 +985,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         std::slice::from_ref(&feature),
         &[parameter(0, 10.0), parameter(1, 16.0)],
         std::slice::from_ref(&invalid_lane),
-    );
+    )
+    .unwrap();
     assert_eq!(invalid_entities.len(), 3);
     assert!(invalid_sketches[0].profiles.is_empty());
 
@@ -975,23 +996,24 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         std::slice::from_ref(&feature),
         &[parameter(0, 10.0), parameter(1, 16.0)],
         std::slice::from_ref(&lane),
-    );
+    )
+    .unwrap();
 
     assert_eq!(entities.len(), 4);
     assert_eq!(sketches[0].profiles.len(), 2);
     assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Circle {
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Circle {
             center,
-            radius: Length(5.0)
-        } if center == Point2::new(0.0, 0.0)
+            radius: actual_radius
+        } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 5.0
     )));
     assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Circle {
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Circle {
             center,
-            radius: Length(8.0)
-        } if center == Point2::new(0.0, 0.0)
+            radius: actual_radius
+        } if (center == Point2::new(0.0, 0.0)) && actual_radius.get() == 8.0
     )));
 }
 
@@ -1028,144 +1050,175 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             native_feature("multi-child-native", "Sketch<5>", Some("Sketch<5>")),
         ],
     };
-    let feature = |id: &str, native_ref: &str, dependencies, sketch| Feature {
+    let feature = |id: &str, native_ref: &str, dependencies: Vec<FeatureId>, sketch| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies,
+        dependencies: (dependencies).try_into().unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
+            },
+        ),
         native_ref: Some(native_ref.into()),
     };
-    let single = SketchId("single".into());
-    let multiple = SketchId("multiple".into());
+    let single = SketchId::mint("synthetic:test:id#single").unwrap();
+    let multiple = SketchId::mint("synthetic:test:id#multiple").unwrap();
     let mut features = vec![
-        feature("owner", "owner-native", Vec::new(), Some(single.clone())),
         feature(
-            "child",
+            "synthetic:test:id#owner",
+            "owner-native",
+            Vec::new(),
+            Some(single.clone()),
+        ),
+        feature(
+            "synthetic:test:id#child",
             "child-native",
-            vec![FeatureId::mint("owner").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#owner").expect("identity grammar")],
             None,
         ),
         feature(
-            "multi-owner",
+            "synthetic:test:id#multi-owner",
             "owner-native",
             Vec::new(),
             Some(multiple.clone()),
         ),
         feature(
-            "multi-child",
+            "synthetic:test:id#multi-child",
             "multi-child-native",
-            vec![FeatureId::mint("multi-owner").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#multi-owner").expect("identity grammar")],
             None,
         ),
         Feature {
-            id: FeatureId::mint("consumer").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar"),
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: vec![FeatureId::mint("child").expect("identity grammar")],
+            dependencies: (vec![
+                FeatureId::mint("synthetic:test:id#child").expect("identity grammar")
+            ])
+            .try_into()
+            .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Extrude {
-                profile: ProfileRef::Feature(FeatureId::mint("child").expect("identity grammar")),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: Length(1.0),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Extrude {
+                    profile: ProfileRef::Feature(
+                        FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
+                    ),
+                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                    start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: LinearTermination::Blind {
+                                length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                            },
+                            draft: None,
                         },
-                        draft: None,
                     },
+                    op: BooleanOp::Join,
+                    solid: None,
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
                 },
-                op: BooleanOp::Join,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            },
+            ),
             native_ref: Some("consumer-native".into()),
         },
     ];
     let mut multi_consumer = features[4].clone();
-    multi_consumer.id = FeatureId::mint("multi-consumer").expect("identity grammar");
+    multi_consumer.id =
+        FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies = vec![FeatureId::mint("multi-child").expect("identity grammar")];
-    let FeatureDefinition::Extrude { profile, .. } = &mut multi_consumer.definition else {
-        unreachable!();
-    };
-    *profile = ProfileRef::Feature(FeatureId::mint("multi-child").expect("identity grammar"));
+    multi_consumer.dependencies =
+        (vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")])
+            .try_into()
+            .unwrap();
+    multi_consumer
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::Extrude { profile, .. } = definition else {
+                unreachable!();
+            };
+            *profile = ProfileRef::Feature(
+                FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar"),
+            );
+        })
+        .unwrap();
     features.push(multi_consumer);
     let sketch = |id: SketchId, profile_count: usize| Sketch {
         id,
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: (0..profile_count)
-            .map(|index| {
-                vec![SketchEntityUse {
-                    entity: SketchEntityId(format!("entity-{index}")),
-                    reversed: false,
-                }]
-            })
-            .collect(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
+            (0..profile_count)
+                .map(|index| {
+                    vec![SketchEntityUse {
+                        entity: SketchEntityId::mint(format!("synthetic:test:id#entity-{index}"))
+                            .unwrap(),
+                        reversed: false,
+                    }]
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
         native_ref: None,
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history));
+    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history)).unwrap();
 
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
             ..
         }
     ));
     assert!(matches!(
-        features[3].definition,
+        features[3].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
             ..
         }
     ));
     assert!(matches!(
-        &features[4].definition,
+        features[4].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch),
             ..
         } if sketch == &single
     ));
     assert_eq!(
-        features[4].dependencies,
-        [FeatureId::mint("owner").expect("identity grammar")]
+        features[4].dependencies.as_slice(),
+        [FeatureId::mint("synthetic:test:id#owner").expect("identity grammar")]
     );
     assert!(matches!(
-        &features[5].definition,
+        features[5].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(feature),
             ..
-        } if feature == &FeatureId::mint("multi-child").expect("identity grammar")
+        } if feature == &FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")
     ));
     assert_eq!(
-        features[5].dependencies,
-        [FeatureId::mint("multi-child").expect("identity grammar")]
+        features[5].dependencies.as_slice(),
+        [FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")]
     );
 }

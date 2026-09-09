@@ -10,7 +10,7 @@ use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable tessellation identity.
     TessellationId
 );

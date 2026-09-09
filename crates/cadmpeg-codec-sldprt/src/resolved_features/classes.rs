@@ -19,7 +19,7 @@ use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
 #[cfg(test)]
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, LinearTermination};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LinearTermination};
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -747,57 +747,62 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let profile_id =
-            cadmpeg_ir::features::FeatureId::mint("profile").expect("identity grammar");
+        let profile_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile")
+            .expect("identity grammar");
         let mut features = vec![
             cadmpeg_ir::features::Feature {
                 id: profile_id.clone(),
                 ordinal: 0,
                 name: None,
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
-                outputs: Vec::new(),
-                definition: FeatureDefinition::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                },
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    },
+                ),
                 native_ref: Some("profile-native".into()),
             },
             cadmpeg_ir::features::Feature {
-                id: cadmpeg_ir::features::FeatureId::mint("extrusion").expect("identity grammar"),
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrusion")
+                    .expect("identity grammar"),
                 ordinal: 1,
                 name: None,
                 suppressed: Some(false),
-                dependencies: Vec::new(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Vec::new(),
-                outputs: Vec::new(),
-                definition: FeatureDefinition::Extrude {
-                    profile: cadmpeg_ir::features::ProfileRef::Unresolved(
-                        "extrusion-native".into(),
-                    ),
-                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                    start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-                    extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                        side: cadmpeg_ir::features::ExtrudeSide {
-                            termination: LinearTermination::Blind {
-                                length: Length(1.0),
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Extrude {
+                        profile: cadmpeg_ir::features::ProfileRef::Unresolved(
+                            "extrusion-native".into(),
+                        ),
+                        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                        extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                            side: cadmpeg_ir::features::ExtrudeSide {
+                                termination: LinearTermination::Blind {
+                                    length: cadmpeg_ir::features::NonZeroLength::new(1.0).unwrap(),
+                                },
+                                draft: None,
                             },
-                            draft: None,
                         },
+                        op: BooleanOp::Join,
+                        solid: Some(true),
+                        face_maker: None,
+                        inner_wire_taper: None,
+                        length_along_profile_normal: None,
+                        allow_multi_profile_faces: None,
                     },
-                    op: BooleanOp::Join,
-                    solid: Some(true),
-                    face_maker: None,
-                    inner_wire_taper: None,
-                    length_along_profile_normal: None,
-                    allow_multi_profile_faces: None,
-                },
+                ),
                 native_ref: Some("extrusion-native".into()),
             },
         ];
@@ -806,16 +811,17 @@ mod idless_history_binding_tests {
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        );
+        )
+        .unwrap();
 
         assert!(matches!(
-            &features[1].definition,
+            features[1].evaluation.definition(),
             FeatureDefinition::Extrude {
                 profile: cadmpeg_ir::features::ProfileRef::Feature(actual),
                 ..
             } if actual == &profile_id
         ));
-        assert_eq!(features[1].dependencies, [profile_id]);
+        assert_eq!(features[1].dependencies.as_slice(), [profile_id]);
     }
 
     #[test]

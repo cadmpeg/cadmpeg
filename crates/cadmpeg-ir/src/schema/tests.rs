@@ -47,7 +47,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::features::{
         EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FilletGroup,
-        Length, RadiusSpec,
+        RadiusSpec,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
@@ -60,10 +60,10 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: vec![historical_edge.clone()],
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (vec![historical_edge.clone()]).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     };
     let feature = Feature {
@@ -71,25 +71,28 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: crate::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Fillet {
-            groups: vec![FilletGroup {
-                edges: EdgeSelection::Historical {
-                    state: state_id.clone(),
-                    edges: vec![historical_edge],
-                    native: "edge:local".into(),
-                },
-                radius: RadiusSpec::Constant {
-                    radius: Length(1.0),
-                },
-                tangency_weight: None,
-            }],
-        },
+        source_content: crate::features::FeatureContent::default(),
+
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Fillet {
+                groups: crate::features::NonEmptyMembers::one(FilletGroup {
+                    edges: EdgeSelection::historical(
+                        state_id.clone(),
+                        vec![historical_edge],
+                        "edge:local".into(),
+                    )
+                    .unwrap(),
+                    radius: RadiusSpec::Constant {
+                        radius: crate::features::PositiveLength::new(1.0).unwrap(),
+                    },
+                    tangency_weight: None,
+                }),
+            },
+        ),
         native_ref: None,
     };
 
@@ -110,13 +113,20 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-edge#missing";
-    let FeatureDefinition::Fillet { groups } = &mut ir.model.features[0].definition else {
-        unreachable!("test feature is a fillet")
-    };
-    let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
-        unreachable!("test fillet uses a historical selection")
-    };
-    edges[0] = HistoricalEdgeId::mint(missing).expect("valid identity");
+    ir.model.features[0]
+        .evaluation
+        .try_edit(|definition, _| {
+            let FeatureDefinition::Fillet { groups } = definition else {
+                unreachable!("test feature is a fillet")
+            };
+            let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
+                unreachable!("test fillet uses a historical selection")
+            };
+            *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

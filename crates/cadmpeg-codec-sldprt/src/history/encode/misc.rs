@@ -4,8 +4,7 @@
 use super::super::{format_angle_rad, format_f64_literal, format_length_mm, valid_direction};
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
-    face_selection_value, feature_tree_node_kind, is_helix, path_source, require_direction,
-    require_same_family,
+    face_selection_value, feature_tree_node_kind, is_helix, path_source, require_same_family,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
@@ -28,8 +27,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_tree_node(
         &self,
         role: &FeatureTreeNodeRole,
-        children: &Vec<FeatureId>,
-        active_child: &Option<FeatureId>,
+        children: &[FeatureId],
+        active_child: Option<&FeatureId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -64,7 +63,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_cosmetic_thread(
         &self,
         face: &FaceSelection,
-        diameter: &Option<Length>,
+        diameter: &Option<cadmpeg_ir::features::PositiveLength>,
         extent: &Option<CosmeticThreadExtent>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -87,7 +86,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
                 parameters.insert(
                     "D2".into(),
-                    format!("{prefix}{}", format_f64_literal(diameter.0)),
+                    format!("{prefix}{}", format_f64_literal(diameter.get())),
                 );
             }
             match extent {
@@ -95,7 +94,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         "D1".into(),
                         format_length_like(
-                            length.0,
+                            length.get(),
                             record.parameters.get("D1").map(String::as_str),
                         ),
                     );
@@ -173,41 +172,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_equation_curve(
         &self,
-        parameter: &String,
-        x_expression: &String,
-        y_expression: &String,
-        z_expression: &String,
-        start: &f64,
-        end: &f64,
+        curve: &cadmpeg_ir::features::FeatureEquationCurve,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if parameter.trim().is_empty()
-                || x_expression.trim().is_empty()
-                || y_expression.trim().is_empty()
-                || z_expression.trim().is_empty()
-                || !start.is_finite()
-                || !end.is_finite()
-                || start >= end
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has an invalid equation curve",
-                    feature.id
-                )));
-            }
             require_same_family(
                 existing,
                 &feature.id,
                 &["EquationDrivenCurve", "EquationCurve"],
             )?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Parameter".into(), parameter.clone());
-            properties.insert("XEquation".into(), x_expression.clone());
-            properties.insert("YEquation".into(), y_expression.clone());
-            properties.insert("ZEquation".into(), z_expression.clone());
-            properties.insert("Start".into(), start.to_string());
-            properties.insert("End".into(), end.to_string());
+            properties.insert("Parameter".into(), curve.parameter().to_owned());
+            properties.insert("XEquation".into(), curve.x_expression().to_owned());
+            properties.insert("YEquation".into(), curve.y_expression().to_owned());
+            properties.insert("ZEquation".into(), curve.z_expression().to_owned());
+            properties.insert("Start".into(), curve.start().to_string());
+            properties.insert("End".into(), curve.end().to_string());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || "EquationDrivenCurve".into(),
@@ -258,8 +239,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match direction {
                 CurveProjectionDirection::Vector(direction) => {
-                    require_direction(*direction, &feature.id, "projection direction")?;
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                    properties.insert("Direction".into(), format_vector3(direction.get()));
                 }
                 CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => {
                     properties.remove("Direction");
@@ -284,7 +264,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_composite_curve(
         &self,
-        segments: &Vec<PathRef>,
+        segments: &[PathRef],
         closed: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -328,12 +308,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         axis_origin: &Point3,
         axis_direction: &Vector3,
-        radius: &Length,
+        radius: &cadmpeg_ir::features::PositiveLength,
         shape: &cadmpeg_ir::features::HelixShape,
-        revolutions: &f64,
+        revolutions: &cadmpeg_ir::features::PositiveReal,
         start_angle: &Angle,
         clockwise: &bool,
-        segment_turns: &Option<f64>,
+        segment_turns: &Option<cadmpeg_ir::features::PositiveReal>,
         construction_style: &Option<HelixConstructionStyle>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -345,22 +325,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            let pitch = pitch.get();
             if segment_turns.is_some() || construction_style.is_some() {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported helix construction controls",
                     feature.id
                 )));
             }
-            if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+            if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.get()]
                 .into_iter()
                 .all(f64::is_finite)
                 || !valid_direction(*axis_direction)
-                || !radius.0.is_finite()
-                || radius.0 <= 0.0
-                || !revolutions.is_finite()
-                || *revolutions <= 0.0
-                || !start_angle.0.is_finite()
+                || !radius.get().is_finite()
+                || radius.get() <= 0.0
+                || !start_angle.get().is_finite()
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid helix geometry",
@@ -376,10 +353,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            parameters.insert("Radius".into(), format_length_mm(radius.0));
-            parameters.insert("Pitch".into(), format_length_mm(pitch.0));
-            parameters.insert("Revolutions".into(), revolutions.to_string());
-            parameters.insert("StartAngle".into(), format_angle_rad(start_angle.0));
+            parameters.insert("Radius".into(), format_length_mm(radius.get()));
+            parameters.insert("Pitch".into(), format_length_mm(pitch.get()));
+            parameters.insert("Revolutions".into(), revolutions.get().to_string());
+            parameters.insert("StartAngle".into(), format_angle_rad(start_angle.get()));
             let mut properties = feature.source_properties.clone();
             properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
             properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
@@ -394,10 +371,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_helix_native_axis(
         &self,
-        axis_native_ref: &String,
+        axis_native_ref: &str,
         axial_rise: &Length,
         pitch: &Length,
-        revolutions: &f64,
+        revolutions: &cadmpeg_ir::features::PositiveReal,
         start_angle: &Angle,
         clockwise: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -405,11 +382,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             if axis_native_ref.is_empty()
-                || !axial_rise.0.is_finite()
-                || !pitch.0.is_finite()
-                || !revolutions.is_finite()
-                || *revolutions <= 0.0
-                || !start_angle.0.is_finite()
+                || !axial_rise.get().is_finite()
+                || !pitch.get().is_finite()
+                || !start_angle.get().is_finite()
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid native-axis helix geometry",
@@ -422,7 +397,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !is_helix(record) || axis_native_ref != &record.id {
+            if !is_helix(record) || axis_native_ref != record.id {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes its native helix axis",
                     feature.id
@@ -432,19 +407,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert(
                 "D3".into(),
                 format_length_like(
-                    axial_rise.0,
+                    axial_rise.get(),
                     record.parameters.get("D3").map(String::as_str),
                 ),
             );
             parameters.insert(
                 "D4".into(),
-                format_length_like(pitch.0, record.parameters.get("D4").map(String::as_str)),
+                format_length_like(pitch.get(), record.parameters.get("D4").map(String::as_str)),
             );
-            parameters.insert("D5".into(), revolutions.to_string());
+            parameters.insert("D5".into(), revolutions.get().to_string());
             parameters.insert(
                 "D7".into(),
                 format_angle_like(
-                    start_angle.0,
+                    start_angle.get(),
                     record.parameters.get("D7").map(String::as_str),
                 ),
             );

@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -28,8 +28,9 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
-    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
+    let entity_id =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
@@ -43,22 +44,25 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         .push(SpatialSketchEntity::new(
             entity_id,
             sketch_id.clone(),
-            SpatialSketchGeometry::Line { start, end },
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
         ));
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: Vec::new(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SpatialSketch {
-            sketch: Some(sketch_id),
-        },
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            },
+        ),
         native_ref: None,
     });
     ir
@@ -84,10 +88,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .0;
     let replacement_start = Point3::new(-7.5, 8.25, 9.0);
     let replacement_end = Point3::new(10.0, -11.5, 12.75);
-    decoded.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Line {
-        start: replacement_start,
-        end: replacement_end,
-    };
+    decoded.model.spatial_sketch_entities[0].geometry =
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+            start: replacement_start,
+            end: replacement_end,
+        })
+        .unwrap();
 
     let mut second_encoding = Vec::new();
     SldprtCodec
@@ -100,11 +106,12 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
         .into_parts()
         .0;
 
-    assert!(matches!(
-        regenerated.model.spatial_sketch_entities[0].geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == replacement_start && end == replacement_end
-    ));
+    assert!(
+        matches!(*regenerated.model.spatial_sketch_entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == replacement_start && end == replacement_end
+        )
+    );
 }
 
 #[test]

@@ -66,10 +66,11 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         .flat_map(|table| {
             table.entries.iter().filter_map(|entry| {
                 let external_id = entry.source_entity_id()?;
-                let entity = SketchEntityId(format!(
+                let entity = SketchEntityId::mint(format!(
                     "creo:featdefs:sketch_entity#{}:{external_id}",
                     definition.identity.id()
-                ));
+                ))
+                .ok()?;
                 (profile_entity_set.contains(&entity)
                     && generated_profile_entry_is_admissible(
                         feature_id,
@@ -118,7 +119,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
@@ -145,32 +148,23 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             .flat_map(super::profiles::ValidatedProfile::entities)
             .any(|entity| {
                 let geometry = entity.geometry();
-                let start = entity.start();
-                let end = entity.end();
-
-                matches!(geometry, ProfileGeometry::Line { .. }) && start == end
-            })
-        {
-            continue;
-        }
-        if profiles
-            .iter()
-            .flat_map(super::profiles::ValidatedProfile::entities)
-            .any(|entity| {
-                let geometry = entity.geometry();
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
 
-                extrusion_brep_side_surface(
-                    transform,
-                    &geometry.to_sketch(),
-                    reversed,
-                    start,
-                    end,
-                    span,
-                )
-                .is_none()
+                geometry
+                    .to_sketch()
+                    .and_then(|sketch_geometry| {
+                        extrusion_brep_side_surface(
+                            transform,
+                            &sketch_geometry,
+                            reversed,
+                            start,
+                            end,
+                            span,
+                        )
+                    })
+                    .is_none()
             })
         {
             continue;
@@ -267,6 +261,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let mut vertical_edges = Vec::new();
             for (index, entity) in profile.iter().enumerate() {
                 let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
@@ -320,12 +317,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                     transform.u_axis()[1],
                                     transform.u_axis()[2],
                                 ),
-                                radius: radius.0,
+                                radius: radius.get(),
                             }
                         }
                         ProfileGeometry::Nurbs { .. } => {
                             let Some(nurbs) =
-                                oriented_sketch_nurbs_curve(&geometry.to_sketch(), reversed)
+                                oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                             else {
                                 continue;
                             };
@@ -359,13 +356,18 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end_angle,
                             ..
                         } => Some(
-                            oriented_arc_parameterization(reversed, start_angle.0, end_angle.0).1,
+                            oriented_arc_parameterization(
+                                reversed,
+                                start_angle.get(),
+                                end_angle.get(),
+                            )
+                            .1,
                         ),
                         ProfileGeometry::Circle { .. } => Some(
                             oriented_arc_parameterization(reversed, 0.0, std::f64::consts::TAU).1,
                         ),
                         ProfileGeometry::Nurbs { .. } => {
-                            oriented_sketch_nurbs_curve(&geometry.to_sketch(), reversed)
+                            oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
                         }
                     };
@@ -455,6 +457,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let id = bottom_coedges[ring_index].clone();
                 let entity = &profile[edge_index];
                 let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
@@ -467,7 +472,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&geometry.to_sketch(), reversed, start, end),
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end),
                 );
                 ir.model.coedges.push(Coedge {
                     id,
@@ -488,6 +493,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let id = top_coedges[ring_index].clone();
                 let entity = &profile[ring_index];
                 let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
@@ -500,7 +508,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&geometry.to_sketch(), reversed, start, end),
+                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end),
                 );
                 ir.model.coedges.push(Coedge {
                     id,
@@ -523,6 +531,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let forward_sides = validated.area() > 0.0;
             for (index, entity) in profile.iter().enumerate() {
                 let geometry = entity.geometry();
+                let Some(sketch_geometry) = geometry.to_sketch() else {
+                    continue;
+                };
                 let start = entity.start();
 
                 let next = (index + 1) % count;
@@ -531,7 +542,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         .expect("identity grammar");
                 let Some(surface_geometry) = extrusion_brep_side_surface(
                     transform,
-                    &geometry.to_sketch(),
+                    &sketch_geometry,
                     profile[index].reversed(),
                     start,
                     profile[index].end(),
@@ -579,7 +590,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     (vertical_edges[index].clone(), Sense::Reversed),
                 ];
                 let side_uvs = extrusion_side_uvs(
-                    &geometry.to_sketch(),
+                    &sketch_geometry,
                     profile[index].reversed(),
                     start,
                     profile[index].end(),
@@ -668,13 +679,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             color: None,
             tolerance: None,
         });
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: shell_faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        ir.model.shells.push(
+            match Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                shell_faces,
+                Vec::new(),
+                Vec::new(),
+            ) {
+                Ok(shell) => shell,
+                Err(_) => {
+                    continue;
+                }
+            },
+        );
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),

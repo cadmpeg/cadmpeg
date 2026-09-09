@@ -337,15 +337,17 @@ fn feature_input_topology_projects_historical_vertices() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("WorkPoint".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumPoint,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPoint,
+            },
+        ),
         native_ref: Some(scope.id.clone()),
     };
     let history = AsmHistory {
@@ -388,7 +390,7 @@ fn feature_input_topology_projects_historical_vertices() {
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
-        projected[0].vertices,
+        projected[0].vertices.as_slice(),
         [
             crate::ids::history_input_vertex_id(&prefix, 43),
             crate::ids::history_input_vertex_id(&prefix, 59),
@@ -588,12 +590,12 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
         },
     ];
-    let shell = |id: &str, region: &str, face: &str| Shell {
-        id: ShellId::mint(id).expect("identity grammar"),
-        region: RegionId::mint(region).expect("identity grammar"),
-        faces: vec![FaceId::mint(face).expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
+    let shell = |id: &str, region: &str, face: &str| {
+        Shell::with_face(
+            ShellId::mint(id).expect("identity grammar"),
+            RegionId::mint(region).expect("identity grammar"),
+            FaceId::mint(face).expect("identity grammar"),
+        )
     };
     let shells = [
         shell(
@@ -943,13 +945,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
     };
-    let shell = Shell {
-        id: ShellId::mint("test:model:shell#1").expect("identity grammar"),
-        region: region.id.clone(),
-        faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    };
+    let shell = Shell::with_face(
+        ShellId::mint("test:model:shell#1").expect("identity grammar"),
+        region.id.clone(),
+        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
+    );
     let inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
@@ -1027,7 +1027,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         "{}:design-record#21",
         crate::ids::native_stream(&scope.id).expect("test scope stream")
     );
-    let mut selection = BodySelection::NativeSet(vec![native.clone()]);
+    let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &direct_inputs);
     assert_eq!(
         selection,
@@ -1070,13 +1070,14 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(group_id.into()),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform(1.5),
+            factors: ScaleFactors::Uniform(cadmpeg_ir::features::NonZeroReal::new(1.5).unwrap()),
         },
     );
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs);
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
+        .unwrap();
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
@@ -1118,7 +1119,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+                1.0, 2.0, 3.0,
+            ))
+            .unwrap(),
             rotation: None,
             copies: 0,
         },
@@ -1127,9 +1131,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     super::super::bind_feature_body_selections(
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        move_feature.definition,
+        move_feature.evaluation.definition(),
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
@@ -1147,23 +1152,27 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("Base Feature".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![
-            BodyId::mint("test:model:body#2").expect("identity grammar"),
-            BodyId::mint("test:model:body#1").expect("identity grammar"),
-        ],
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Native("native:scope".into()),
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Native("native:scope".into()),
+            },
+            vec![
+                BodyId::mint("test:model:body#2").expect("identity grammar"),
+                BodyId::mint("test:model:body#1").expect("identity grammar"),
+            ],
+        )
+        .unwrap(),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(&mut feature);
+    super::super::bind_base_feature_output_selection(&mut feature).unwrap();
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
         } if bodies == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
@@ -1335,18 +1344,20 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: Some("SplitFace".into()),
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::SplitFace {
-            targets: FaceSelection::Native(group_id.clone()),
-            tool: SplitFaceTool::Plane {
-                plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::SplitFace {
+                targets: FaceSelection::Native(group_id.clone()),
+                tool: SplitFaceTool::Plane {
+                    plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
+                },
             },
-        },
+        ),
         native_ref: Some(scope_id),
     }];
 
@@ -1359,10 +1370,11 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         &[],
         &[],
         &[history],
-    );
+    )
+    .unwrap();
 
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::SplitFace {
             targets: FaceSelection::Resolved { faces, native },
             ..
@@ -1729,29 +1741,38 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: Default::default(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs,
-        definition: FeatureDefinition::Sweep {
-            section: SweepSection::Unresolved(None),
-            sections: Vec::new(),
-            path: None,
-            mode: SweepMode::Unresolved,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::new(
+                    SweepSection::Unresolved(None),
+                    Vec::new(),
+                    SweepMode::Unresolved,
+                )
+                .unwrap(),
+
+                path: None,
+
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            },
+            outputs,
+        )
+        .unwrap(),
         native_ref: None,
     };
     let bodies = [
@@ -1760,30 +1781,30 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     ];
     let mut features = [
         sweep(
-            "sheet-sweep",
+            "synthetic:test:id#sheet-sweep",
             vec![BodyId::mint("test:model:body#sheet").expect("identity grammar")],
         ),
         sweep(
-            "solid-sweep",
+            "synthetic:test:id#solid-sweep",
             vec![BodyId::mint("test:model:body#solid").expect("identity grammar")],
         ),
         sweep(
-            "mixed-sweep",
+            "synthetic:test:id#mixed-sweep",
             vec![
                 BodyId::mint("test:model:body#sheet").expect("identity grammar"),
                 BodyId::mint("test:model:body#solid").expect("identity grammar"),
             ],
         ),
         sweep(
-            "missing-sweep",
+            "synthetic:test:id#missing-sweep",
             vec![BodyId::mint("test:model:body#missing").expect("identity grammar")],
         ),
     ];
 
-    bind_sweep_result_modes(&mut features, &bodies);
+    bind_sweep_result_modes(&mut features, &bodies).unwrap();
 
-    let modes = features.map(|feature| match feature.definition {
-        FeatureDefinition::Sweep { mode, .. } => mode,
+    let modes = features.map(|feature| match feature.evaluation.definition() {
+        FeatureDefinition::Sweep { shape, .. } => shape.mode(),
         _ => unreachable!(),
     });
     assert_eq!(modes[0], SweepMode::Surface);
@@ -1871,7 +1892,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     use crate::records::topology::DesignEntitySelectionFaceCandidate;
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
-        Length, LinearTermination,
+        LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1949,14 +1970,22 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             face: Some(FaceSelection::Native(scope_id.into())),
             direction: None,
             placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
-                position: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
             }]),
-            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
-            exit_kind: None,
-            diameter: Some(Length(5.0)),
+            shape: cadmpeg_ir::features::HoleShape::new(
+                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                None,
+                Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+            )
+            .unwrap(),
+
             extent: Some(LinearTermination::Blind {
-                length: Length(10.0),
+                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
             }),
             bottom: None,
             taper_angle: None,
@@ -1967,10 +1996,10 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: Vec::new(),
-        faces: Vec::new(),
-        edges: Vec::new(),
-        vertices: Vec::new(),
+        bodies: (Vec::new()).try_into().unwrap(),
+        faces: (Vec::new()).try_into().unwrap(),
+        edges: (Vec::new()).try_into().unwrap(),
+        vertices: (Vec::new()).try_into().unwrap(),
         native_ref: None,
     }];
     let state = |state_id, transition| AsmDeltaState {
@@ -2021,7 +2050,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &[],
         &[],
         &[history],
-    );
+    )
+    .unwrap();
 
     let FeatureDefinition::Hole {
         face:
@@ -2031,7 +2061,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 native,
             }),
         ..
-    } = &feature.definition
+    } = feature.evaluation.definition()
     else {
         panic!("Hole support face remains unresolved");
     };
@@ -2041,7 +2071,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(faces.len(), 1);
-    assert_eq!(&input_topologies[0].faces, faces);
+    assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 }
 
 mod hem_carriers;

@@ -10,7 +10,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::sketches::SketchConstraintDefinition;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -146,7 +146,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("datum feature");
     assert!(matches!(
-        datum_feature.definition,
+        datum_feature.evaluation.definition(),
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(result
@@ -182,8 +182,8 @@ fn featdefs_pipeline_projects_mixed_sketch_entities_and_native_constraints() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Native { .. }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Native { .. }
             )
         }));
     assert_valid(&result);

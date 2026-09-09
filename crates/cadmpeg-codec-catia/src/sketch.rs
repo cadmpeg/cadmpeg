@@ -8,7 +8,7 @@ use unique_index::UniqueIndex;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchNativeOperand,
 };
 
@@ -109,10 +109,12 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
 
-            let entity_id = SketchEntityId(design_feature::neutral_history_id(
+            let Ok(entity_id) = SketchEntityId::mint(design_feature::neutral_history_id(
                 &geometry_field.id,
                 "sketch-entity",
-            ));
+            )) else {
+                continue;
+            };
             if ir.model.sketch_entities.iter().any(|entity| {
                 entity.id() == &entity_id
                     || (entity.sketch == sketch_id
@@ -130,7 +132,7 @@ pub(crate) fn transfer_native_sketch_entities(
                 SketchEntity::new(
                     entity_id,
                     sketch_id.clone(),
-                    SketchGeometry::Native { native_kind },
+                    SketchGeometry::native(native_kind),
                 )
                 .with_native_ref(Some(geometry_field.id.clone())),
             );
@@ -334,10 +336,12 @@ pub(crate) fn transfer_native_sketch_constraints(
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &candidate.target_entity_record,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(candidate.target_entity_record.as_str())
@@ -389,10 +393,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                 incidence.reference_offset.to_string(),
             );
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: candidate.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: candidate.target_class,
                 native_state: None,
                 native_flags: None,
@@ -413,6 +415,13 @@ pub(crate) fn transfer_native_sketch_constraints(
                     native_ref: Some(candidate.target_entity_record.clone()),
                 }],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: candidate.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -614,20 +623,20 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
 
-        let constraint_id = SketchConstraintId(design_feature::neutral_history_id(
+        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
             &entity.id,
             "sketch-constraint",
-        ));
+        )) else {
+            continue;
+        };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
                 || constraint.native_ref.as_deref() == Some(entity.id.as_str())
         }) {
             continue;
         }
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: constraint_id,
-            sketch: binding.sketch,
-            definition: SketchConstraintDefinition::Native {
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
                 native_kind: range.constraint.value.clone(),
                 native_state: None,
                 native_flags: None,
@@ -636,6 +645,13 @@ pub(crate) fn transfer_constraint_ranges(
                 parameter: None,
                 operands: vec![binding.operand],
             },
+        ) else {
+            continue;
+        };
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: constraint_id,
+            sketch: binding.sketch,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -1093,12 +1109,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1199,12 +1215,12 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
-            id: SketchId("synthetic:test:sketch#0".to_string()),
+            id: SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
         let feature_transfer = DesignFeatureTransfer {
@@ -1348,16 +1364,18 @@ mod tests {
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
         let entity = &ir.model.sketch_entities[0];
-        assert_eq!(entity.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(entity.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             entity.native_ref.as_deref(),
             Some("catia:outer:object-record#geometry-field")
         );
-        assert_eq!(entity.id().0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entity.id().as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(entity.geometry_ref.is_none());
-        assert!(matches!(
-            &entity.geometry,
-            SketchGeometry::Native { native_kind } if native_kind == "2DPoint"
+        assert!(matches!(entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } if native_kind == "2DPoint"
         ));
     }
 
@@ -1433,19 +1451,19 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#constraint-field")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native sketch constraint");
         };
@@ -1518,7 +1536,10 @@ mod tests {
         );
         assert_eq!(native_properties["catia_relation_incidence_count"], "1");
         assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(
+            entities[0].as_str(),
+            "catia:outer:sketch-entity#geometry-field"
+        );
         assert!(parameter.is_none());
         assert_eq!(operands.len(), 1);
         assert_eq!(operands[0].native_kind, "ConstraintDYS");
@@ -1586,19 +1607,19 @@ mod tests {
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
-        assert_eq!(constraint.sketch.0, "synthetic:test:sketch#0");
+        assert_eq!(constraint.sketch.as_str(), "synthetic:test:sketch#0");
         assert_eq!(
             constraint.native_ref.as_deref(),
             Some("catia:outer:entity-record#range")
         );
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_kind,
             native_properties,
             entities,
             parameter,
             operands,
             ..
-        } = &constraint.definition
+        } = constraint.definition.kind()
         else {
             panic!("expected opaque native constraint");
         };
@@ -1654,10 +1675,10 @@ mod tests {
 
         assert!(ir.model.parameters.is_empty());
 
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             parameter: constraint_parameter,
             ..
-        } = &ir.model.sketch_constraints[0].definition
+        } = ir.model.sketch_constraints[0].definition.kind()
         else {
             panic!("expected native constraint");
         };
@@ -1667,15 +1688,16 @@ mod tests {
     #[test]
     fn binds_a_constraint_to_an_exact_native_sketch_entity() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
-        let entity_id = SketchEntityId("synthetic:test:sketch-entity#source".to_string());
+        let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#source".to_string())
+            .expect("valid test fixture");
         ir.model.sketch_entities.push(
             SketchEntity::new(
                 entity_id.clone(),
-                SketchId("synthetic:test:sketch#0".to_string()),
-                SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("2DPoint".to_string())
+                SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
                         .expect("nonempty source identity"),
-                },
+                ),
             )
             .with_native_ref(Some("source-record".to_string())),
         );
@@ -1683,7 +1705,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert_eq!(entities, &vec![entity_id]);
@@ -1695,14 +1718,14 @@ mod tests {
         for suffix in ["first", "second"] {
             ir.model.sketch_entities.push(
                 SketchEntity::new(
-                    SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
-                    SketchId("synthetic:test:sketch#0".to_string()),
-                    SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            "2DPoint".to_string(),
-                        )
-                        .expect("nonempty source identity"),
-                    },
+                    SketchEntityId::mint(format!("synthetic:test:sketch-entity#{suffix}"))
+                        .expect("valid test fixture"),
+                    SketchId::mint("synthetic:test:sketch#0".to_string())
+                        .expect("valid test fixture"),
+                    SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                            .expect("nonempty source identity"),
+                    ),
                 )
                 .with_native_ref(Some("source-record".to_string())),
             );
@@ -1711,7 +1734,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());
@@ -1722,12 +1746,14 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
-                SketchId("synthetic:test:other-sketch#0".to_string()),
-                SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("2DPoint".to_string())
+                SketchEntityId::mint("synthetic:test:other-sketch-entity#source".to_string())
+                    .expect("valid test fixture"),
+                SketchId::mint("synthetic:test:other-sketch#0".to_string())
+                    .expect("valid test fixture"),
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
                         .expect("nonempty source identity"),
-                },
+                ),
             )
             .with_native_ref(Some("source-record".to_string())),
         );
@@ -1735,7 +1761,8 @@ mod tests {
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
         let constraint = &ir.model.sketch_constraints[0];
-        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+        let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
+        else {
             panic!("expected opaque native constraint");
         };
         assert!(entities.is_empty());
@@ -1774,8 +1801,10 @@ mod tests {
         let (mut ir, native, mut transfer, graph_scope) = fixture(false);
         transfer.feature_ids.insert(
             "source-object".to_string(),
-            cadmpeg_ir::features::FeatureId::mint("source-object:feature".to_string())
-                .expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint(
+                "synthetic:test:id#source-object:feature".to_string(),
+            )
+            .expect("identity grammar"),
         );
 
         assert_eq!(

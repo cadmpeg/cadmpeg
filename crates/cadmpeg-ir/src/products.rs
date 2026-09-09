@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
+use crate::features::FiniteReal;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable assembly-joint identity.
     JointId
 );
@@ -342,7 +343,8 @@ pub struct Occurrence {
     #[cfg_attr(feature = "schema", schemars(with = "LinkedPrototypeWire"))]
     pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
-    pub scale: [f64; 3],
+    #[serde(deserialize_with = "deserialize_occurrence_scale")]
+    pub scale: [FiniteReal; 3],
     /// Source occurrence identifier or display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -361,14 +363,51 @@ pub struct Occurrence {
 /// `FreeCAD` `App::Link`-specific occurrence state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkState {
+    linked_subelements: Vec<String>,
+    element_component: Option<ProductDefinitionId>,
+    claim_child: Option<bool>,
+    copy_on_change: Option<CopyOnChange>,
+}
+
+impl LinkState {
+    /// Nonempty link state, or absence when all members are empty.
+    pub fn new(
+        linked_subelements: Vec<String>,
+        element_component: Option<ProductDefinitionId>,
+        claim_child: Option<bool>,
+        copy_on_change: Option<CopyOnChange>,
+    ) -> Option<Self> {
+        (!linked_subelements.is_empty()
+            || element_component.is_some()
+            || claim_child.is_some()
+            || copy_on_change.is_some())
+        .then_some(Self {
+            linked_subelements,
+            element_component,
+            claim_child,
+            copy_on_change,
+        })
+    }
+
     /// Persisted prototype subelement selection.
-    pub linked_subelements: Vec<String>,
+    pub fn linked_subelements(&self) -> &[String] {
+        &self.linked_subelements
+    }
+
     /// Explicit application object representing this array element.
-    pub element_component: Option<ProductDefinitionId>,
+    pub fn element_component(&self) -> Option<&ProductDefinitionId> {
+        self.element_component.as_ref()
+    }
+
     /// Whether this link claims its prototype in the source tree.
-    pub claim_child: Option<bool>,
-    /// Copy-on-change ownership state, when enabled on the link.
-    pub copy_on_change: Option<CopyOnChange>,
+    pub fn claim_child(&self) -> Option<bool> {
+        self.claim_child
+    }
+
+    /// Copy-on-change ownership state.
+    pub fn copy_on_change(&self) -> Option<&CopyOnChange> {
+        self.copy_on_change.as_ref()
+    }
 }
 
 /// Copy-on-change ownership state carried by an `App::Link` occurrence.
@@ -382,6 +421,13 @@ pub struct CopyOnChange {
     pub group: Option<ProductDefinitionId>,
     /// Whether the tracked source was persisted as changed.
     pub touched: Option<bool>,
+}
+
+fn deserialize_occurrence_scale<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<[FiniteReal; 3], D::Error> {
+    <[FiniteReal; 3]>::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("scale: {error}")))
 }
 
 impl Occurrence {
@@ -517,16 +563,12 @@ mod link_state_wire {
                 ));
             }
         };
-        let present = !wire.linked_subelements.is_empty()
-            || wire.element_component.is_some()
-            || wire.claim_child.is_some()
-            || copy_on_change.is_some();
-        Ok(present.then_some(LinkState {
-            linked_subelements: wire.linked_subelements,
-            element_component: wire.element_component,
-            claim_child: wire.claim_child,
+        Ok(LinkState::new(
+            wire.linked_subelements,
+            wire.element_component,
+            wire.claim_child,
             copy_on_change,
-        }))
+        ))
     }
 }
 
@@ -589,6 +631,7 @@ pub struct AssemblyGraph<'a> {
 #[cfg(test)]
 mod tests {
     mod joints;
+    mod occurrences;
     use super::*;
 
     #[test]
@@ -659,7 +702,7 @@ mod tests {
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [crate::features::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -722,15 +765,55 @@ mod tests {
     }
 
     #[test]
+    fn joint_limits_admit_only_finite_ordered_bounds() {
+        assert!(JointLimits::new(None, None).is_none());
+        assert!(JointLimits::new(Some(2.0), Some(1.0)).is_none());
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(JointLimits::new(Some(value), None).is_none());
+            assert!(JointLimits::new(None, Some(value)).is_none());
+        }
+        for (minimum, maximum) in [
+            (Some(-2.0), None),
+            (None, Some(-1.0)),
+            (Some(0.0), Some(0.0)),
+        ] {
+            let limits = JointLimits::new(minimum, maximum).unwrap();
+            assert_eq!(
+                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
+                    .unwrap(),
+                limits
+            );
+        }
+        assert!(serde_json::from_value::<JointLimits>(
+            serde_json::json!({"minimum":2.0,"maximum":1.0})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn empty_link_state_is_absent() {
+        assert!(LinkState::new(Vec::new(), None, None, None).is_none());
+        assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
+        let plain = occurrence(
+            "test:model:occurrence#empty-link",
+            OccurrenceParent::Root,
+            0.0,
+        );
+        let wire = serde_json::to_value(&plain).unwrap();
+        assert!(serde_json::from_value::<Occurrence>(wire)
+            .unwrap()
+            .link
+            .is_none());
+    }
+
+    #[test]
     fn link_state_wire_preserves_the_legacy_fields_and_requires_a_copy_policy() {
         let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
-        linked.link = Some(LinkState {
-            linked_subelements: vec!["Face1".into()],
-            element_component: Some(
-                ProductDefinitionId::mint("test:model:product#element").expect("valid identity"),
-            ),
-            claim_child: Some(true),
-            copy_on_change: Some(CopyOnChange {
+        linked.link = LinkState::new(
+            vec!["Face1".into()],
+            Some(ProductDefinitionId::mint("test:model:product#element").expect("valid identity")),
+            Some(true),
+            Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
                 source: Some(
                     ProductDefinitionId::mint("test:model:product#source").expect("valid identity"),
@@ -740,7 +823,7 @@ mod tests {
                 ),
                 touched: Some(true),
             }),
-        });
+        );
         let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
         assert_eq!(wire["linked_subelements"], serde_json::json!(["Face1"]));
         assert_eq!(
@@ -1043,45 +1126,34 @@ impl JsonSchema for JointOperand {
 
 /// Enabled bounds for one joint degree of freedom.
 #[derive(Debug, Clone, PartialEq)]
-pub enum JointLimits {
-    /// Lower bound only.
-    Minimum(f64),
-    /// Upper bound only.
-    Maximum(f64),
-    /// Lower and upper bounds.
-    Both {
-        /// Lower bound.
-        minimum: f64,
-        /// Upper bound.
-        maximum: f64,
-    },
+pub struct JointLimits {
+    minimum: Option<f64>,
+    maximum: Option<f64>,
 }
 
 impl JointLimits {
-    /// Constructs enabled bounds when at least one bound is present.
+    /// Constructs finite ordered limits with at least one enabled bound.
     pub fn new(minimum: Option<f64>, maximum: Option<f64>) -> Option<Self> {
-        match (minimum, maximum) {
-            (Some(minimum), None) => Some(Self::Minimum(minimum)),
-            (None, Some(maximum)) => Some(Self::Maximum(maximum)),
-            (Some(minimum), Some(maximum)) => Some(Self::Both { minimum, maximum }),
-            (None, None) => None,
+        if minimum.is_none() && maximum.is_none()
+            || minimum.is_some_and(|value| !value.is_finite())
+            || maximum.is_some_and(|value| !value.is_finite())
+            || minimum
+                .zip(maximum)
+                .is_some_and(|(minimum, maximum)| minimum > maximum)
+        {
+            return None;
         }
+        Some(Self { minimum, maximum })
     }
 
     /// Returns the lower bound, when enabled.
     pub fn minimum(&self) -> Option<f64> {
-        match *self {
-            Self::Minimum(minimum) | Self::Both { minimum, .. } => Some(minimum),
-            Self::Maximum(_) => None,
-        }
+        self.minimum
     }
 
     /// Returns the upper bound, when enabled.
     pub fn maximum(&self) -> Option<f64> {
-        match *self {
-            Self::Maximum(maximum) | Self::Both { maximum, .. } => Some(maximum),
-            Self::Minimum(_) => None,
-        }
+        self.maximum
     }
 }
 
@@ -1113,8 +1185,11 @@ impl<'de> Deserialize<'de> for JointLimits {
         D: serde::Deserializer<'de>,
     {
         let wire = JointLimitsWire::deserialize(deserializer)?;
-        Self::new(wire.minimum, wire.maximum)
-            .ok_or_else(|| serde::de::Error::custom("joint limits must contain at least one bound"))
+        Self::new(wire.minimum, wire.maximum).ok_or_else(|| {
+            serde::de::Error::custom(
+                "joint limits minimum/maximum must be finite and ordered, with at least one bound",
+            )
+        })
     }
 }
 
@@ -1173,9 +1248,9 @@ pub enum PairedJointKind {
     /// Rigid connection with no relative degrees of freedom.
     Fixed {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1184,25 +1259,25 @@ pub enum PairedJointKind {
     /// Rotation about one axis.
     Revolute {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
     },
     /// Translation along one axis.
     Slider {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled linear interval in document length units.
         linear_limits: Option<JointLimits>,
     },
     /// Coupled rotation and translation on one axis.
     Cylindrical {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1213,7 +1288,7 @@ pub enum PairedJointKind {
     /// Maintains a scalar separation.
     Distance {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
     },
     /// Maintains parallel connector directions.
     Parallel,
@@ -1222,46 +1297,46 @@ pub enum PairedJointKind {
     /// Maintains an angular separation.
     Angle {
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
     },
     /// Couples rack translation to pinion rotation.
     RackPinion {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Couples translation and rotation by screw pitch.
     Screw {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
     },
     /// Couples two gear rotations.
     Gears {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Couples two pulley rotations through a belt.
     Belt {
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
     },
     /// Future application-defined family retained without relabeling.
     Native {
         /// Application-defined family name.
         name: String,
         /// Angular offset in radians.
-        angle: Option<f64>,
+        angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
-        translation_offset: Option<[f64; 3]>,
+        translation_offset: Option<[FiniteReal; 3]>,
         /// Primary linear offset in document length units.
-        distance: Option<f64>,
+        distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
-        distance2: Option<f64>,
+        distance2: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
@@ -1289,6 +1364,26 @@ impl PairedJointKind {
             angular_limits,
             linear_limits,
         } = scalars;
+        let angle = angle
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "angle must be finite")?;
+        let distance = distance
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "distance must be finite")?;
+        let distance2 = distance2
+            .map(FiniteReal::try_from)
+            .transpose()
+            .map_err(|_| "distance2 must be finite")?;
+        let translation_offset = translation_offset
+            .map(|values| {
+                let [x, y, z] = values.map(FiniteReal::try_from);
+                Ok::<_, &'static str>([x?, y?, z?])
+            })
+            .transpose()
+            .map_err(|_| "translation_offset must be finite")?;
+
         match kind {
             JointKind::Fixed if distance.is_none() && distance2.is_none() => Ok(Self::Fixed {
                 angle,
@@ -1436,8 +1531,8 @@ impl PairedJointKind {
                 angular_limits,
                 linear_limits,
             } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
+                angle: angle.map(FiniteReal::get),
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
                 distance: None,
                 distance2: None,
                 angular_limits: angular_limits.clone(),
@@ -1447,7 +1542,7 @@ impl PairedJointKind {
                 angle,
                 angular_limits,
             } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
                 distance: None,
                 distance2: None,
@@ -1460,8 +1555,8 @@ impl PairedJointKind {
                 linear_limits,
             } => JointScalars {
                 angle: None,
-                translation_offset: *translation_offset,
-                distance: *distance,
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: linear_limits.clone(),
@@ -1472,9 +1567,9 @@ impl PairedJointKind {
                 angular_limits,
                 linear_limits,
             } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: angular_limits.clone(),
                 linear_limits: linear_limits.clone(),
@@ -1490,13 +1585,13 @@ impl PairedJointKind {
             Self::Distance { distance } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: None,
             },
             Self::Angle { angle } => JointScalars {
-                angle: *angle,
+                angle: angle.map(FiniteReal::get),
                 translation_offset: None,
                 distance: None,
                 distance2: None,
@@ -1517,15 +1612,15 @@ impl PairedJointKind {
             } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
-                distance2: *distance2,
+                distance: distance.map(FiniteReal::get),
+                distance2: distance2.map(FiniteReal::get),
                 angular_limits: None,
                 linear_limits: None,
             },
             Self::Screw { distance } => JointScalars {
                 angle: None,
                 translation_offset: None,
-                distance: *distance,
+                distance: distance.map(FiniteReal::get),
                 distance2: None,
                 angular_limits: None,
                 linear_limits: None,
@@ -1539,10 +1634,10 @@ impl PairedJointKind {
                 linear_limits,
                 ..
             } => JointScalars {
-                angle: *angle,
-                translation_offset: *translation_offset,
-                distance: *distance,
-                distance2: *distance2,
+                angle: angle.map(FiniteReal::get),
+                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
+                distance: distance.map(FiniteReal::get),
+                distance2: distance2.map(FiniteReal::get),
                 angular_limits: angular_limits.clone(),
                 linear_limits: linear_limits.clone(),
             },

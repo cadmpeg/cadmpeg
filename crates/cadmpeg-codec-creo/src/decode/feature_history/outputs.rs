@@ -119,7 +119,7 @@ fn generated_input_output_bodies(
     ) else {
         return Vec::new();
     };
-    feature_generated_dependencies(&feature.definition)
+    feature_generated_dependencies(feature.evaluation.definition())
         .into_iter()
         .filter_map(|producer| {
             producer
@@ -183,7 +183,12 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
         ir.model
             .shells
             .iter()
-            .filter(|shell| shell.wire_edges.iter().any(|edge| selected.contains(edge)))
+            .filter(|shell| {
+                shell
+                    .wire_edges()
+                    .iter()
+                    .any(|edge| selected.contains(edge))
+            })
             .map(|shell| shell.id.clone()),
     );
     shell_ids
@@ -566,7 +571,11 @@ pub(in super::super) fn feature_parameters(
         insert_feature_parameter(
             &mut parameters,
             "profile_sketch",
-            model_sketch_id(scan, definition).0,
+            match model_sketch_id(scan, definition) {
+                Some(id) => id,
+                None => continue,
+            }
+            .into_string(),
         );
         if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
             insert_feature_parameter(

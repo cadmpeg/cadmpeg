@@ -11,7 +11,7 @@ use crate::native::{
 #[test]
 fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     let mut operation = native_operation_object(
-        "operation-object",
+        "synthetic:test:object#operation-object",
         None,
         1,
         "operation-record",
@@ -47,7 +47,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     });
     let mut range_record = object_record(
         "range-record",
-        Some("operation-object"),
+        Some("synthetic:test:object#operation-object"),
         Some(2),
         Some(1),
         None,

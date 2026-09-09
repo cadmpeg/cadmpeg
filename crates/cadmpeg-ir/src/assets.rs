@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::products::NonEmptyString;
 
-crate::ids::local_id_type!(
+crate::ids::id_type!(
     /// Stable identity of one document asset.
     AssetId
 );
@@ -155,8 +155,7 @@ mod tests {
             assert!(error.to_string().contains(field));
         }
         for field in ["name", "media_type"] {
-            let mut value =
-                serde_json::json!({"id": "asset", "content": {"kind": "embedded", "data": "AA=="}});
+            let mut value = serde_json::json!({"id": "synthetic:test:asset#asset", "content": {"kind": "embedded", "data": "AA=="}});
             value[field] = serde_json::json!("");
             let error = serde_json::from_value::<Asset>(value).expect_err("empty metadata");
             assert!(error.to_string().contains(field));
@@ -165,7 +164,7 @@ mod tests {
             data: AssetData::new(vec![0]).expect("nonempty data"),
         };
         assert!(Asset::try_new(
-            AssetId::mint("asset").expect("id"),
+            AssetId::mint("synthetic:test:asset#asset").expect("id"),
             Some(String::new()),
             None,
             content.clone(),
@@ -173,7 +172,7 @@ mod tests {
         )
         .is_err());
         assert!(Asset::try_new(
-            AssetId::mint("asset").expect("id"),
+            AssetId::mint("synthetic:test:asset#asset").expect("id"),
             None,
             Some(String::new()),
             content,
@@ -184,7 +183,7 @@ mod tests {
             serde_json::json!({"kind": "embedded", "data": "AA=="}),
             serde_json::json!({"kind": "external", "uri": " "}),
         ] {
-            let value = serde_json::json!({"id": "asset", "name": " ", "media_type": " ", "content": content});
+            let value = serde_json::json!({"id": "synthetic:test:asset#asset", "name": " ", "media_type": " ", "content": content});
             let asset: Asset = serde_json::from_value(value.clone()).expect("valid asset");
             assert_eq!(serde_json::to_value(asset).expect("serialize asset"), value);
         }

@@ -1128,10 +1128,10 @@ pub(crate) fn validate_source_less_design_links(
             .expect("validated wire-topology target");
         let member_form_is_valid = match &wire.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
-                !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges.contains(edge))
+                !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges().contains(edge))
             }
             cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
-                shell.free_vertices.contains(vertex)
+                shell.free_vertices().contains(vertex)
             }
         };
         if !member_form_is_valid {
@@ -1171,13 +1171,13 @@ pub(crate) fn validate_source_less_body_kinds(
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
-            .flat_map(|shell| &shell.faces)
+            .flat_map(cadmpeg_ir::topology::Shell::faces)
             .collect::<BTreeSet<_>>();
         let has_wires = model
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
-            .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty());
+            .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty());
         let loop_ids = model
             .faces
             .iter()
@@ -1249,7 +1249,11 @@ pub(crate) fn validate_source_less_wire_vertices(
         .cloned()
         .collect::<BTreeSet<_>>();
     let mut free_vertex_ids = BTreeSet::new();
-    for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
+    for vertex in model
+        .shells
+        .iter()
+        .flat_map(cadmpeg_ir::topology::Shell::free_vertices)
+    {
         if !vertex_ids.contains(vertex) {
             return Err(CodecError::InvalidInput(format!(
                 "wire references missing free vertex {vertex}"

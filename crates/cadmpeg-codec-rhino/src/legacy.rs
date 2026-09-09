@@ -1825,13 +1825,16 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 ring[(index + 1) % ring.len()].clone();
         }
     }
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: shell_faces,
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(
+        Shell::new(
+            shell_id.clone(),
+            region_id.clone(),
+            shell_faces,
+            Vec::new(),
+            Vec::new(),
+        )
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+    );
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
@@ -2286,13 +2289,11 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 point: point_id,
                 tolerance: None,
             });
-            ir.model.shells.push(Shell {
-                id: shell_id.clone(),
-                region: region_id.clone(),
-                faces: Vec::new(),
-                wire_edges: Vec::new(),
-                free_vertices: vec![vertex_id],
-            });
+            ir.model.shells.push(Shell::with_free_vertex(
+                shell_id.clone(),
+                region_id.clone(),
+                vertex_id,
+            ));
             ir.model.regions.push(Region {
                 id: region_id.clone(),
                 body: body_id.clone(),
@@ -2433,13 +2434,11 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                             param_range: Some(parameter_range),
                             tolerance: None,
                         });
-                        ir.model.shells.push(Shell {
-                            id: shell_id.clone(),
-                            region: region_id.clone(),
-                            faces: Vec::new(),
-                            wire_edges: vec![edge_id],
-                            free_vertices: Vec::new(),
-                        });
+                        ir.model.shells.push(Shell::with_wire_edge(
+                            shell_id.clone(),
+                            region_id.clone(),
+                            edge_id,
+                        ));
                         ir.model.regions.push(Region {
                             id: region_id.clone(),
                             body: body_id.clone(),

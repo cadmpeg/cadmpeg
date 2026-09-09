@@ -669,7 +669,7 @@ fn unique_face_body<'a>(
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
-                    .is_some_and(|shell| shell.faces.iter().any(|face| face == face_id))
+                    .is_some_and(|shell| shell.faces().iter().any(|face| face == face_id))
             });
             owns_face.then_some(region.body.clone())
         })
@@ -932,7 +932,7 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::ids::BodyId;
 
     fn fixture() -> FixtureEvidence {
@@ -1025,21 +1025,32 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![body],
-            definition: FeatureDefinition::Block {
-                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-                placement: Some(cadmpeg_ir::transform::Transform::identity()),
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Block {
+                    dimensions: Some([
+                        cadmpeg_ir::features::PositiveLength::new(1.0)
+                            .expect("valid block fixture"),
+                        cadmpeg_ir::features::PositiveLength::new(2.0)
+                            .expect("valid block fixture"),
+                        cadmpeg_ir::features::PositiveLength::new(3.0)
+                            .expect("valid block fixture"),
+                    ]),
+                    placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
+                    op: cadmpeg_ir::features::BooleanOp::NewBody,
+                },
+                vec![body],
+            )
+            .expect("valid block fixture"),
             native_ref: None,
         });
 
@@ -1055,23 +1066,25 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: vec![
-                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-            ],
-            definition: FeatureDefinition::Block {
-                dimensions: None,
-                placement: None,
-                op: cadmpeg_ir::features::BooleanOp::Unresolved,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                FeatureDefinition::Block {
+                    dimensions: None,
+                    placement: None,
+                    op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                },
+                vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
+            )
+            .expect("valid unresolved block fixture"),
             native_ref: None,
         });
 
@@ -1081,7 +1094,7 @@ mod tests {
             boundary,
             Some(RederivationBoundary::Unsupported {
                 feature: FeatureBoundary {
-                    id: cadmpeg_ir::features::FeatureId::mint("block")
+                    id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#block")
                         .expect("valid block fixture identity"),
                     name: Some("BLOCK".to_string()),
                     family: Some("block".to_string()),
@@ -1096,7 +1109,7 @@ mod tests {
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |family: &str| RederivationBoundary::Unsupported {
             feature: FeatureBoundary {
-                id: cadmpeg_ir::features::FeatureId::mint("feature")
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                     .expect("valid feature fixture identity"),
                 name: None,
                 family: Some(family.to_owned()),
@@ -1135,21 +1148,22 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::History,
-                children: Vec::new(),
-                active_child: None,
-            },
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: cadmpeg_ir::features::TreeChildren::default(),
+                },
+            ),
             native_ref: None,
         });
 

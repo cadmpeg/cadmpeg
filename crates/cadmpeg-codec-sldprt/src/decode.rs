@@ -46,7 +46,7 @@ struct DecodedBrep<'a> {
 
 struct EvaluatedFeatureState<'a> {
     feature: &'a cadmpeg_ir::features::Feature,
-    dependencies: &'a [cadmpeg_ir::features::FeatureId],
+    dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
     outputs: &'a [cadmpeg_ir::ids::BodyId],
     definition: &'a cadmpeg_ir::features::FeatureDefinition,
 }
@@ -175,30 +175,26 @@ fn incomplete_pattern(
     pattern: &cadmpeg_ir::features::PatternKind,
     incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
 ) -> bool {
-    use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
+    use cadmpeg_ir::features::{PatternScaleCenter, PatternTransform};
 
-    match pattern {
-        PatternKind::Unresolved
-        | PatternKind::UnresolvedLinear
-        | PatternKind::UnresolvedCircular
-        | PatternKind::UnresolvedCurveDriven
-        | PatternKind::UnresolvedMirror
-        | PatternKind::UnresolvedScale
-        | PatternKind::UnresolvedComposite => true,
-        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
-            direction.is_none()
-        }
-        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
-        PatternKind::MirrorReference { .. } => true,
-        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
-        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
-        PatternKind::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
-        PatternKind::Composite { stages } => {
-            stages.is_empty()
-                || stages
-                    .iter()
-                    .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path))
-        }
+    match pattern.definition() {
+        PatternTransform::Unresolved
+        | PatternTransform::UnresolvedLinear
+        | PatternTransform::UnresolvedCircular
+        | PatternTransform::UnresolvedCurveDriven
+        | PatternTransform::UnresolvedMirror
+        | PatternTransform::UnresolvedScale
+        | PatternTransform::UnresolvedComposite => true,
+        PatternTransform::Linear { direction, .. }
+        | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
+        PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
+        PatternTransform::MirrorReference { .. } => true,
+        PatternTransform::CircularAngles { .. } => false,
+        PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
+        PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
+        PatternTransform::Composite { stages } => stages
+            .iter()
+            .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path)),
     }
 }
 
@@ -216,16 +212,16 @@ fn incomplete_binder_target(
                 || !dependencies.contains(feature)
         }
         cadmpeg_ir::features::BinderTarget::External { document, object } => {
-            document.trim().is_empty() || object.trim().is_empty()
+            document.as_str().trim().is_empty() || object.as_str().trim().is_empty()
         }
         cadmpeg_ir::features::BinderTarget::Native { .. } => true,
     }
 }
 
 fn sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -289,9 +285,9 @@ fn sketch_constraint_has_complete_neutral_semantics(
 }
 
 fn spatial_sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -317,9 +313,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
-        PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
+        PathRef, ProfileRef, RevolveExtent, SplitFaceTool,
     };
-    use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = ir
         .native
@@ -760,8 +756,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             .map(|feature| EvaluatedFeatureState {
                 feature,
                 dependencies: &feature.dependencies,
-                outputs: &feature.outputs,
-                definition: &feature.definition,
+                outputs: feature.evaluation.outputs(),
+                definition: feature.evaluation.definition(),
             })
             .collect::<Vec<_>>()
     };
@@ -774,13 +770,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     .get(parent)
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
             });
-            let mut dependencies = std::collections::HashSet::new();
             parent_incoherent
                 || state.dependencies.iter().any(|dependency| {
-                    !dependencies.insert(dependency)
-                        || feature_positions
-                            .get(dependency)
-                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                    feature_positions
+                        .get(dependency)
+                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                 })
         })
         .count();
@@ -817,22 +811,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .features
         .iter()
         .filter(|feature| {
-            let mut parameters = std::collections::HashSet::new();
-            let mut children = std::collections::HashSet::new();
             feature.source_content.iter().any(|content| match content {
                 FeatureSourceContent::Text(_) => false,
-                FeatureSourceContent::Parameter(parameter) => {
-                    !parameters.insert(parameter)
-                        || parameter_owners
-                            .get(parameter)
-                            .is_none_or(|owner| owner.as_ref() != Some(&feature.id))
-                }
+                FeatureSourceContent::Parameter(parameter) => parameter_owners
+                    .get(parameter)
+                    .is_none_or(|owner| owner.as_ref() != Some(&feature.id)),
                 FeatureSourceContent::Feature(child) => {
-                    !children.insert(child)
-                        || features_by_id.get(child).is_none_or(|child| {
-                            child.ordinal <= feature.ordinal
-                                || ir.model.feature_parent(&child.id) != Some(&feature.id)
-                        })
+                    features_by_id.get(child).is_none_or(|child| {
+                        child.ordinal <= feature.ordinal
+                            || ir.model.feature_parent(&child.id) != Some(&feature.id)
+                    })
                 }
             })
         })
@@ -886,7 +874,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .sketch_constraints
         .iter()
         .filter(|constraint| {
-            !sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
                 && constraint.active != Some(false)
         })
         .count();
@@ -895,7 +883,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .spatial_sketch_constraints
         .iter()
         .filter(|constraint| {
-            !spatial_sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !spatial_sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
         })
         .count();
     let native_constraints = native_planar_constraints + native_spatial_constraints;
@@ -909,12 +897,22 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .sketch_entities
         .iter()
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        })
         .count()
         + ir.model
             .spatial_sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Native { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Native { .. }
+                )
+            })
             .count();
     if native_sketch_geometry > 0 {
         report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
@@ -959,30 +957,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
-        EdgeSelection::Historical { edges, .. } => edges.is_empty(),
-        EdgeSelection::HistoricalPartial {
-            edges, unresolved, ..
-        } => edges.is_empty() || !unresolved.is_empty(),
-        EdgeSelection::Generated { edges, .. } => edges.is_empty(),
+        EdgeSelection::Historical { .. } => false,
+        EdgeSelection::HistoricalPartial { .. } => true,
+        EdgeSelection::Generated { .. } => false,
         EdgeSelection::All => false,
         EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
     };
     let incomplete_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
-        FaceSelection::Historical { faces, .. } => faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => faces.is_empty() || !unresolved.is_empty(),
-        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Historical { .. } => false,
+        FaceSelection::HistoricalPartial { .. } => true,
+        FaceSelection::Generated { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_optional_face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Faces(_) | FaceSelection::Resolved { .. } => false,
-        FaceSelection::Historical { faces, .. } => faces.is_empty(),
-        FaceSelection::HistoricalPartial {
-            faces, unresolved, ..
-        } => faces.is_empty() || !unresolved.is_empty(),
-        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Historical { .. } => false,
+        FaceSelection::HistoricalPartial { .. } => true,
+        FaceSelection::Generated { .. } => false,
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
@@ -997,26 +989,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
-        ProfileRef::Generated { curves, .. } => curves.is_empty(),
-        ProfileRef::SketchProfiles { profiles, .. }
-        | ProfileRef::SpatialSketchProfiles { profiles, .. } => profiles.is_empty(),
-        ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
-        ProfileRef::SketchEntities { entities, .. } => entities.is_empty(),
-        ProfileRef::SketchSelection { selections, .. }
-        | ProfileRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
-        ProfileRef::HistoricalFaces { faces, .. } => faces.is_empty(),
+        ProfileRef::Generated { .. } => false,
+        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
+        ProfileRef::SketchRegions { .. } => false,
+        ProfileRef::SketchEntities { .. } => false,
+        ProfileRef::SketchSelection { .. } | ProfileRef::SpatialSketchSelection { .. } => false,
+        ProfileRef::HistoricalFaces { .. } => false,
         ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
         ProfileRef::Sketch(_) | ProfileRef::Feature(_) => false,
     };
     let incomplete_path = |path: &PathRef| match path {
         PathRef::Edges(edges) => edges.is_empty(),
         PathRef::Curves(curves) => curves.is_empty(),
-        PathRef::HistoricalEdges { edges, .. } => edges.is_empty(),
-        PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
+        PathRef::HistoricalEdges { .. } => false,
+        PathRef::SpatialSketchSelection { .. } => false,
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
-        PathRef::SketchCurves { curves, .. } => curves.is_empty(),
-        PathRef::SpatialSketchCurves { curves, .. } => curves.is_empty(),
+        PathRef::SketchCurves { .. } => false,
+        PathRef::SpatialSketchCurves { .. } => false,
     };
     let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
         matches!(
@@ -1070,7 +1060,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .iter()
         .filter(|state| {
             let mut definition = state.definition;
-            while let FeatureDefinition::PostProcess { operation, .. } = definition {
+            if let FeatureDefinition::PostProcess { operation, .. } = definition {
                 definition = operation;
             }
             match definition {
@@ -1115,8 +1105,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             | FeatureDefinition::CircularArc { .. }
             | FeatureDefinition::EllipticArc { .. }
             | FeatureDefinition::PlanarPatch { .. } => false,
-            FeatureDefinition::Polyline { points, .. } => points.len() < 2,
-            FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
+            FeatureDefinition::Polyline { .. } => false,
+            FeatureDefinition::RegularPolygonCurve { .. } => false,
             FeatureDefinition::FaceFromShapes { sources, .. } => incomplete_body_selection(sources),
             FeatureDefinition::Block {
                 dimensions,
@@ -1236,13 +1226,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 }
             }
             FeatureDefinition::Sweep {
-                section,
-                sections,
+                shape,
+
                 path,
-                mode,
+
                 orientation,
                 ..
             } => {
+let section = shape.section();
+let sections = shape.sections();
+let mode = shape.mode();
                 matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
                     || section.referenced_profile().is_some_and(incomplete_profile)
                     || sections.iter().any(|section| {
@@ -1274,7 +1267,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         ) || source
                             .subelements
                             .iter()
-                            .any(|subelement| subelement.trim().is_empty())
+                            .any(|subelement| subelement.as_str().trim().is_empty())
                     })
                     || matches!(
                         construction,
@@ -1317,7 +1310,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
-                construction.profile.as_ref().is_none_or(incomplete_profile)
+                construction.profile.as_deref().is_none_or(incomplete_profile)
                     || construction.direction.is_none()
                     || construction.thickness.is_none()
                     || construction.side.is_none()
@@ -1336,29 +1329,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || groups.iter().any(|group| {
                         incomplete_edge_selection(&group.edges)
                             || group.radius.is_unresolved()
-                            || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
                     })
             }
             FeatureDefinition::FullRoundFillet { groups } => {
                 groups.is_empty()
                     || groups.iter().any(|group| {
-                        incomplete_face_selection(&group.center_faces)
+                        incomplete_face_selection(group.center_faces())
                             || matches!(
-                                group.side_one_faces,
+                                group.side_one_faces(),
                                 cadmpeg_ir::features::FullRoundSideSelection::Unresolved
                             )
                             || matches!(
-                                group.side_two_faces,
+                                group.side_two_faces(),
                                 cadmpeg_ir::features::FullRoundSideSelection::Unresolved
                             )
                             || matches!(
-                                group.side_one_faces,
+                                group.side_one_faces(),
                                 cadmpeg_ir::features::FullRoundSideSelection::Explicit(
                                     ref selection
                                 ) if incomplete_face_selection(selection)
                             )
                             || matches!(
-                                group.side_two_faces,
+                                group.side_two_faces(),
                                 cadmpeg_ir::features::FullRoundSideSelection::Explicit(
                                     ref selection
                                 ) if incomplete_face_selection(selection)
@@ -1369,14 +1361,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
             }),
             FeatureDefinition::FaceBlend {
-                first_faces,
-                second_faces,
+                operands,
+
                 radius,
             } => {
+let first_faces = operands.first_faces();
+let second_faces = operands.second_faces();
                 incomplete_face_selection(first_faces)
                     || incomplete_face_selection(second_faces)
                     || radius.is_unresolved()
-                    || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
             }
             FeatureDefinition::Shell {
                 bodies,
@@ -1405,10 +1398,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 incomplete_path(first) || incomplete_path(second)
             }
             FeatureDefinition::SectionShape {
-                first,
-                second,
+                operands,
+
                 approximate,
             } => {
+let first = operands.first();
+let second = operands.second();
                 incomplete_body_selection(first)
                     || incomplete_body_selection(second)
                     || approximate.is_none()
@@ -1516,22 +1511,25 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
                     ) && outward.is_none())
             }
-            FeatureDefinition::Combine { target, tools, .. } => {
+            FeatureDefinition::Combine { operands,  .. } => {
+let target = operands.target();
+let tools = operands.tools();
                 incomplete_body_selection(target) || incomplete_body_selection(tools)
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
                 incomplete_body_selection(tools)
-                    || cells.is_empty()
                     || cells.iter().any(incomplete_body_selection)
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
             FeatureDefinition::TrimBodies {
-                targets,
-                tools,
+                operands,
+
                 keep,
             } => {
+let targets = operands.targets();
+let tools = operands.tools();
                 incomplete_body_selection(targets)
                     || incomplete_body_selection(tools)
                     || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
@@ -1555,9 +1553,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::DeleteFace { faces, .. } => incomplete_face_selection(faces),
             FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } => incomplete_face_selection(targets) || incomplete_face_selection(replacements),
+                operands,
+
+            } => {
+let targets = operands.targets();
+let replacements = operands.replacements();
+incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
             FeatureDefinition::MoveFace { faces, .. } => incomplete_face_selection(faces),
             FeatureDefinition::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
             FeatureDefinition::Dome {
@@ -1590,16 +1591,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 profile,
                 face,
                 placements,
-                construction,
-                exit_kind,
-                diameter,
+                shape,
+
+
                 extent,
                 ..
             } => {
+let construction = shape.construction();
+let exit_kind = shape.exit_kind();
+let diameter = &shape.diameter();
                 let exit_kind_is_unresolved = exit_kind
                     .as_ref()
                     .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
-                profile.as_ref().is_some_and(incomplete_profile)
+                profile.as_deref().is_some_and(incomplete_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_none()
                     || matches!(
@@ -1774,7 +1778,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
         .iter()
         .filter(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
                     | cadmpeg_ir::features::FeatureDefinition::SpatialSketch { .. }
             )
@@ -2233,24 +2237,24 @@ fn build_geometry_ir(
         &pmi_dimensions,
         scan,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
         &lanes,
         form_padding,
-    );
+    )?;
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
-    );
+    )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
         parameter_identity_lanes(&lanes),
-    );
+    )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -2260,7 +2264,7 @@ fn build_geometry_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
-    );
+    )?;
     crate::history::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
@@ -2278,7 +2282,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         &mut annotations,
-    );
+    )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -2288,18 +2292,18 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
-    );
+    )?;
     crate::history::project_configuration_supplemental_edge_selections(
         &mut ir,
         &supplemental_config_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
         &lanes,
-    );
+    )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
@@ -2309,7 +2313,7 @@ fn build_geometry_ir(
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        );
+        )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
@@ -2318,37 +2322,37 @@ fn build_geometry_ir(
         &mut sketch_entities,
         &histories,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
         &sketch_lanes,
-    );
-    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
+    )?;
+    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories)?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
         &lanes,
         &sketches,
         &brep.surfaces,
-    );
+    )?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2356,14 +2360,14 @@ fn build_geometry_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
         &mut sketch_entities,
         &mut sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2375,7 +2379,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2478,7 +2482,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.shells,
         &ir.model.regions,
-    );
+    )?;
     let topology_selection_inputs = crate::history::TopologySelectionInputs {
         bodies: &ir.model.bodies,
         faces: &ir.model.faces,
@@ -2492,7 +2496,7 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &histories,
         &topology_selection_inputs,
-    );
+    )?;
     crate::resolved_features::bindings::bind_mirror_surface_planes(
         &mut ir.model.features,
         &histories,
@@ -2500,20 +2504,20 @@ fn build_geometry_ir(
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -2521,7 +2525,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_generated_hole_axes(
         &mut ir.model.features,
         &histories,
@@ -2529,7 +2533,7 @@ fn build_geometry_ir(
         &face_identities,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -2541,7 +2545,7 @@ fn build_geometry_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_hole_axes(
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -2556,7 +2560,7 @@ fn build_geometry_ir(
         },
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -2568,7 +2572,7 @@ fn build_geometry_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -2576,7 +2580,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
@@ -2586,19 +2590,19 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    assign_configuration_bodies(&mut ir, &configuration_bodies);
+    assign_configuration_bodies(&mut ir, &configuration_bodies)?;
     crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
         &mut annotations,
-    );
+    )?;
     crate::history::bind_configuration_topology_selections(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
         &face_identities,
-    );
+    )?;
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,
@@ -2606,14 +2610,14 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
-    crate::history::inherit_configuration_reference_plane_states(&mut ir);
-    sync_active_configuration_resolutions(&mut ir);
+    )?;
+    crate::history::inherit_configuration_reference_plane_states(&mut ir)?;
+    sync_active_configuration_resolutions(&mut ir)?;
     crate::history::order_model_features_for_regeneration(&mut ir);
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
     ir.model.pmi = crate::swift::annotations(
@@ -3284,24 +3288,24 @@ fn build_metadata_ir(
         &pmi_dimensions,
         scan,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
         &lanes,
         form_padding,
-    );
+    )?;
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
-    );
+    )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
         parameter_identity_lanes(&lanes),
-    );
+    )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3311,7 +3315,7 @@ fn build_metadata_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &lanes,
-    );
+    )?;
     crate::history::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
@@ -3324,7 +3328,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         &mut annotations,
-    );
+    )?;
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -3334,18 +3338,18 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
-    );
+    )?;
     crate::history::project_configuration_supplemental_edge_selections(
         &mut ir,
         &supplemental_config_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
         &lanes,
-    );
+    )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
@@ -3355,7 +3359,7 @@ fn build_metadata_ir(
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        );
+        )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
@@ -3364,41 +3368,41 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &histories,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
         &sketch_lanes,
-    );
+    )?;
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
         &lanes,
         &ir.model.sketches,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         &mut ir.model.features,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -3406,7 +3410,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         &mut ir.model.spatial_sketch_constraints,
         &mut ir.model.spatial_sketch_entities,
@@ -3426,7 +3430,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -3454,14 +3458,14 @@ fn build_metadata_ir(
         &ir.model.sketch_entities,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
         &ir.model.spatial_sketches,
@@ -3469,7 +3473,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -3481,7 +3485,7 @@ fn build_metadata_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_hole_axes(
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -3496,7 +3500,7 @@ fn build_metadata_ir(
         },
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -3508,7 +3512,7 @@ fn build_metadata_ir(
             vertices: &ir.model.vertices,
             points: &ir.model.points,
         },
-    );
+    )?;
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -3516,7 +3520,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
@@ -3531,21 +3535,21 @@ fn build_metadata_ir(
         &lanes,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
+    )?;
     crate::resolved_features::projections::project_unbound_offset_plane_faces(
         &mut ir.model.features,
         &ir.model.faces,
         &ir.model.surfaces,
-    );
-    sync_active_configuration_resolutions(&mut ir);
+    )?;
+    sync_active_configuration_resolutions(&mut ir)?;
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(
         &mut ir,
         &histories,
         &lanes,
         &mut annotations,
-    );
-    crate::history::inherit_configuration_reference_plane_states(&mut ir);
+    )?;
+    crate::history::inherit_configuration_reference_plane_states(&mut ir)?;
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
@@ -3580,7 +3584,7 @@ fn project_design_history(
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
     form_padding: Option<usize>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
         &mut semantic_projection,
@@ -3593,17 +3597,17 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    crate::history::project_feature_model(&semantic_projection).install(&mut ir.model);
+    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
-    );
+    )?;
     crate::history::project_compact_and_generated(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
-    );
+    )?;
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
@@ -3624,7 +3628,7 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
         form_padding,
-    );
+    )?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_local_sha256".into(),
@@ -3647,6 +3651,8 @@ fn project_design_history(
             crate::history::native_parameter_hash(histories),
         );
     }
+
+    Ok(())
 }
 
 fn parameter_identity_lanes(
@@ -3804,11 +3810,11 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
                         cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
                     } else {
                         cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: feature.outputs.clone(),
+                            outputs: feature.evaluation.outputs().iter().cloned().collect(),
                         }
                     },
                     dependencies: feature.dependencies.clone(),
-                    definition: feature.definition.clone(),
+                    definition: feature.evaluation.definition().clone(),
                 },
             )
         })
@@ -3826,7 +3832,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn sync_active_configuration_resolutions(ir: &mut CadIr) {
+fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -3835,10 +3841,10 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
-        return;
+        return Ok(());
     };
     if active.next().is_some() {
-        return;
+        return Ok(());
     }
     let resolved = ir
         .model
@@ -3848,16 +3854,18 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Hole {
                 placements,
-                construction,
-                diameter,
+                shape,
+
                 extent,
                 bottom,
                 taper_angle,
                 ..
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
+            let construction = shape.construction();
+            let diameter = &shape.diameter();
             Some((
                 feature.id.clone(),
                 placements.clone(),
@@ -3888,8 +3896,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         }
         let cadmpeg_ir::features::FeatureDefinition::Hole {
             placements,
-            construction,
-            diameter,
+            shape,
             extent,
             bottom,
             taper_angle,
@@ -3901,12 +3908,12 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         if placements.is_none() && resolved_placements.is_some() {
             *placements = resolved_placements;
         }
-        let incomplete = diameter.is_none()
+        let incomplete = shape.diameter().is_none()
             || extent.as_ref().is_none_or(|extent| {
                 matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
             || matches!(
-                construction,
+                shape.construction(),
                 cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
                     if kind.is_unresolved()
             );
@@ -3924,19 +3931,23 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
                 }
             );
         if incomplete && resolved_complete {
-            match (&mut *construction, resolved_construction) {
-                (
-                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
-                    cadmpeg_ir::features::HoleConstruction::Form {
-                        kind: resolved_kind,
-                        ..
-                    },
-                ) => *kind = resolved_kind,
-                (construction, resolved_construction) => {
-                    *construction = resolved_construction;
-                }
-            }
-            *diameter = resolved_diameter;
+            shape
+                .try_edit(|construction, _, diameter| {
+                    match (&mut *construction, resolved_construction) {
+                        (
+                            cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
+                            cadmpeg_ir::features::HoleConstruction::Form {
+                                kind: resolved_kind,
+                                ..
+                            },
+                        ) => *kind = resolved_kind,
+                        (construction, resolved_construction) => {
+                            *construction = resolved_construction;
+                        }
+                    }
+                    *diameter = resolved_diameter;
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             *extent = resolved_extent;
             *bottom = resolved_bottom;
             *taper_angle = resolved_taper_angle;
@@ -3951,7 +3962,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
                 face,
                 diameter,
                 extent,
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -4000,7 +4011,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
                         face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
                     )),
                 distance,
-            } = &feature.definition
+            } = feature.evaluation.definition()
             else {
                 return None;
             };
@@ -4031,13 +4042,17 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Pattern {
-                seeds,
-                pattern: pattern @ cadmpeg_ir::features::PatternKind::Mirror { .. },
-            } = &feature.definition
+            let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, pattern } =
+                feature.evaluation.definition()
             else {
                 return None;
             };
+            if !matches!(
+                pattern.definition(),
+                cadmpeg_ir::features::PatternTransform::Mirror { .. }
+            ) {
+                return None;
+            }
             Some((feature.id.clone(), seeds.clone(), pattern.clone()))
         })
         .collect::<Vec<_>>();
@@ -4055,6 +4070,8 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
             *pattern = resolved_pattern;
         }
     }
+
+    Ok(())
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
@@ -4069,7 +4086,7 @@ fn stamp_feature_baseline(ir: &mut CadIr) {
 fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) {
+) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
         let Ok(index) = u32::try_from(*index) else {
@@ -4098,14 +4115,19 @@ fn assign_configuration_bodies(
         };
         if source_counts.get(&source_index) == Some(&1) {
             configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
-                partition_map.remove(&source_index).unwrap_or_default(),
+                (partition_map.remove(&source_index).unwrap_or_default())
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
             );
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
-            ir.model.configurations[position].bodies =
-                cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
+            ir.model.configurations[position].bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
+                (bodies)
+                    .try_into()
+                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+            );
         }
     }
     for (source_index, bodies) in partition_map {
@@ -4129,13 +4151,18 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                    (bodies)
+                        .try_into()
+                        .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+                ),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
     }
+    Ok(())
 }
 
 /// Bind the active configuration's partition identity from the two native
