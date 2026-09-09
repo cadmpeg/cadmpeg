@@ -1601,6 +1601,36 @@ pub enum ArchiveSpanRole {
     ArchivePadding,
 }
 
+impl TryFrom<&cadmpeg_container::SpanRole> for ArchiveSpanRole {
+    type Error = String;
+
+    fn try_from(role: &cadmpeg_container::SpanRole) -> Result<Self, Self::Error> {
+        use cadmpeg_container::{SpanRole, ZipSpanRole};
+        let role = match role {
+            SpanRole::Zip(role) => role,
+            SpanRole::Cfb(_) => return Err("FCStd archive span cannot have a CFB role".to_owned()),
+        };
+        Ok(match role {
+            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
+            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
+            ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
+            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry.clone()),
+            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry.clone()),
+            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry.clone()),
+            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry.clone()),
+            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry.clone()),
+            ZipSpanRole::CentralName(entry) => Self::CentralName(entry.clone()),
+            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry.clone()),
+            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry.clone()),
+            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry.clone()),
+            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
+            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
+            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
+            ZipSpanRole::EndRecord => Self::EndRecord,
+        })
+    }
+}
+
 impl ArchiveSpanRole {
     /// Stable physical-ledger label retained on the CADIR wire.
     pub fn as_str(&self) -> &'static str {
@@ -1645,7 +1675,7 @@ impl ArchiveSpanRole {
         }
     }
 
-    pub(crate) fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
+    fn from_label(label: &str, entry: Option<String>) -> Result<Self, String> {
         let named = |entry: Option<String>, ctor: fn(String) -> Self| {
             entry
                 .map(ctor)
