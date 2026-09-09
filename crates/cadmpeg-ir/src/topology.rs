@@ -253,7 +253,7 @@ impl Shell {
 impl<'de> Deserialize<'de> for Shell {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        struct Wire {
+        struct ShellWire {
             id: ShellId,
             region: RegionId,
             faces: Vec<FaceId>,
@@ -262,7 +262,7 @@ impl<'de> Deserialize<'de> for Shell {
             #[serde(default)]
             free_vertices: Vec<VertexId>,
         }
-        let wire = Wire::deserialize(deserializer)?;
+        let wire = ShellWire::deserialize(deserializer)?;
         Self::new(
             wire.id,
             wire.region,
