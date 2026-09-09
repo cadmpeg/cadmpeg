@@ -202,7 +202,7 @@ impl<'a> ArchiveSnapshot<'a> {
             ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
-                self.open_expanded(
+                Self::open_expanded(
                     ctx,
                     entry,
                     source,
@@ -218,7 +218,7 @@ impl<'a> ArchiveSnapshot<'a> {
                             entry.name
                         ))
                     })?;
-                self.open_expanded(ctx, entry, source, decoder)
+                Self::open_expanded(ctx, entry, source, decoder)
             }
         }
     }
@@ -263,7 +263,6 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 
     fn open_expanded(
-        &self,
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
         source: View<'a>,
