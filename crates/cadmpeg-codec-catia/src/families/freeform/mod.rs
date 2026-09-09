@@ -1905,7 +1905,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 let SurfaceGeometry::Cylinder(cylinder) = carrier else {
                     continue;
                 };
-                let radius = *&cylinder.radius();
+                let radius = cylinder.radius();
                 if radius <= 0.0 || !radius.is_finite() {
                     continue;
                 }
@@ -3900,7 +3900,7 @@ mod tests {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-                    (*&sphere_surface.radius() == 5.0)
+                    (sphere_surface.radius() == 5.0)
                         && (*center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
@@ -3919,8 +3919,8 @@ mod tests {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-                    (*&torus_surface.major_radius() == 7.0)
-                        && (*&torus_surface.minor_radius() == 2.0)
+                    (torus_surface.major_radius() == 7.0)
+                        && (torus_surface.minor_radius() == 2.0)
                         && (*center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
@@ -3939,7 +3939,7 @@ mod tests {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
-                    (*&cylinder_surface.radius() == 4.0)
+                    (cylinder_surface.radius() == 4.0)
                         && (*origin == Point3::new(0.0, 0.0, 0.0)
                             && *axis == Vector3::new(0.0, 1.0, 0.0)
                             && *ref_direction == Vector3::new(0.0, 0.0, 1.0))

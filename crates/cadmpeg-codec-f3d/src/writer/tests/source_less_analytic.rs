@@ -1732,7 +1732,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         matches!(round_trip.ir().model.surfaces[0].geometry, SurfaceGeometry::Cone(cone_surface)
         if {
             let half_angle = &cone_surface.half_angle();
-            (*&cone_surface.ratio() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
+            (cone_surface.ratio() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
         })
     );
 }

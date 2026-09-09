@@ -1330,7 +1330,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && *&cylinder_surface.radius() == 1.0
+                ) && cylinder_surface.radius() == 1.0
             } =>
         {
             matches!(
@@ -1385,7 +1385,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && *&circle_curve.radius() == 1.0
+                ) && circle_curve.radius() == 1.0
             } =>
         {
             matches!(
@@ -1512,7 +1512,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                             _,
                             _,
                         )
-                    ) && *&circle_curve.radius() == 1.0
+                    ) && circle_curve.radius() == 1.0
                 } =>
             {
                 matches!(

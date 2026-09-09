@@ -438,7 +438,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         .expect("decode");
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Circle(circle_curve)
-                if { *&circle_curve.radius() == 1.0 })
+                if { circle_curve.radius() == 1.0 })
     ));
     let circle = result
         .ir()
@@ -548,7 +548,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         .expect("decode");
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Ellipse(ellipse_curve)
-                if { (*&ellipse_curve.major_radius() == 1.0) && (*&ellipse_curve.minor_radius() == 1.0) })
+                if { (ellipse_curve.major_radius() == 1.0) && (ellipse_curve.minor_radius() == 1.0) })
     ));
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_ellipses"][0];
     assert_eq!(record.fields()["source_entity_id"], 43);

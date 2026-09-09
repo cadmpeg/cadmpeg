@@ -947,9 +947,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(
         matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SurfaceGeometry::Cone(cone_surface)
         if {
-            (*&cone_surface.radius() == 20.0)
-                && (*&cone_surface.ratio() == 0.4)
-                && (*&cone_surface.half_angle() == 0.0)
+            (cone_surface.radius() == 20.0)
+                && (cone_surface.ratio() == 0.4)
+                && (cone_surface.half_angle() == 0.0)
         })
     );
 

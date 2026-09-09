@@ -93,8 +93,8 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         },
     ), Some(SurfaceGeometry::Torus(torus_surface))
             if {
-                (*&torus_surface.major_radius() == 2_000_000.0)
-                    && (*&torus_surface.minor_radius() == 1_500_000.0)
+                (torus_surface.major_radius() == 2_000_000.0)
+                    && (torus_surface.minor_radius() == 1_500_000.0)
             }));
 }
 
