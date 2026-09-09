@@ -169,8 +169,9 @@ pub(super) enum CommandReportBody<'a> {
     Refused(&'a ConversionRefusal),
 }
 
+/// Reports completed by a command.
 #[derive(Serialize)]
-struct Reports<'a> {
+pub(super) struct Reports<'a> {
     decode_report: Option<&'a DecodeReport>,
     check_report: Option<&'a ValidationReport>,
     export: Option<&'a ExportReport>,
@@ -181,7 +182,8 @@ impl CommandReportBody<'_> {
         CommandReport::new(command, self.payload())
     }
 
-    fn payload(&self) -> Payload<'_, Reports<'_>> {
+    /// Returns the reports with their command status.
+    pub(super) fn payload(&self) -> Payload<'_, Reports<'_>> {
         match self {
             Self::Ok {
                 decode_report,
@@ -283,7 +285,8 @@ enum CommandStatus {
     Refused,
 }
 
-enum Payload<'a, P> {
+/// Status-bearing serialized command payload.
+pub(super) enum Payload<'a, P> {
     Ok(P),
     Refused(P, &'a ConversionRefusal),
 }
@@ -365,18 +368,14 @@ pub(super) fn write_json_report<P: Serialize>(
     )
 }
 
-pub(super) fn write_refused_json_report<P: Serialize>(
+/// Writes a status-bearing command payload.
+pub(super) fn write_payload_report<P: Serialize>(
     input: &Path,
     output: Option<&FileDestination>,
     command: &'static str,
-    payload: &P,
-    refusal: &ConversionRefusal,
+    payload: Payload<'_, P>,
 ) -> Result<()> {
-    write_serialized_report(
-        input,
-        output,
-        &CommandReport::new(command, Payload::Refused(payload, refusal)),
-    )
+    write_serialized_report(input, output, &CommandReport::new(command, payload))
 }
 
 fn write_serialized_report(
