@@ -274,7 +274,7 @@ impl AsmEditSet {
                 record.index
             )));
         }
-        Self::patch_bytes_at(bytes, offset + 2, value.as_bytes())
+        Self::patch_bytes_at(bytes, offset, 2, value.as_bytes())
     }
 
     /// Replace one packed true-color integer without changing its carrier.
@@ -295,13 +295,13 @@ impl AsmEditSet {
             })?;
         match (bytes.get(offset).copied(), self.ref_width) {
             (Some(0x17), _) => {
-                Self::patch_bytes_at(bytes, offset + 1, &i64::from(packed).to_le_bytes())?;
+                Self::patch_bytes_at(bytes, offset, 1, &i64::from(packed).to_le_bytes())?;
             }
             (Some(0x04), RefWidth::Four) => {
-                Self::patch_bytes_at(bytes, offset + 1, &packed.to_le_bytes())?;
+                Self::patch_bytes_at(bytes, offset, 1, &packed.to_le_bytes())?;
             }
             (Some(0x04), RefWidth::Eight) => {
-                Self::patch_bytes_at(bytes, offset + 1, &i64::from(packed).to_le_bytes())?;
+                Self::patch_bytes_at(bytes, offset, 1, &i64::from(packed).to_le_bytes())?;
             }
             _ => {
                 return Err(CodecError::malformed(format_args!(
@@ -359,11 +359,18 @@ impl AsmEditSet {
             )));
         }
         let encoded = format!("{packed:0width$}");
-        let start = offset + 1 + length_width;
-        Self::patch_bytes_at(bytes, start, encoded.as_bytes())
+        Self::patch_bytes_at(bytes, offset, 1 + length_width, encoded.as_bytes())
     }
 
-    fn patch_bytes_at(bytes: &mut [u8], offset: usize, payload: &[u8]) -> Result<(), CodecError> {
+    fn patch_bytes_at(
+        bytes: &mut [u8],
+        offset: usize,
+        skip: usize,
+        payload: &[u8],
+    ) -> Result<(), CodecError> {
+        let offset = offset
+            .checked_add(skip)
+            .ok_or_else(|| CodecError::Malformed("native byte payload offset overflows".into()))?;
         let end = offset
             .checked_add(payload.len())
             .ok_or_else(|| CodecError::Malformed("native byte payload offset overflows".into()))?;
@@ -1308,7 +1315,8 @@ fn patch_projection_definition(
             )?;
             AsmEditSet::patch_bytes_at(
                 bytes,
-                record.offset + role_range.range().start,
+                record.offset,
+                role_range.range().start,
                 role.as_str().as_bytes(),
             )?;
         }
@@ -1929,10 +1937,10 @@ mod tests {
 
     #[test]
     fn byte_payload_patch_rejects_truncation_and_overflow_without_writing() {
-        for offset in [2, usize::MAX] {
+        for (offset, skip) in [(2, 0), (usize::MAX, 0), (usize::MAX, 1)] {
             let mut bytes = [0x11; 5];
             let before = bytes;
-            let error = AsmEditSet::patch_bytes_at(&mut bytes, offset, b"surf2").unwrap_err();
+            let error = AsmEditSet::patch_bytes_at(&mut bytes, offset, skip, b"surf2").unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
             assert_eq!(bytes, before);
         }
