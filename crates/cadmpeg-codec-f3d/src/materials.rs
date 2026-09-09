@@ -251,9 +251,7 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::framing::record_frames(bytes).ok_or_else(|| {
-        CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
-    })?;
+    let frames = cadmpeg_protein::framing::record_frames(bytes)?;
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
         let outcome = cadmpeg_protein::decode_detailed(protein, bytes)?;
@@ -525,10 +523,7 @@ pub fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let record_frames =
-            cadmpeg_protein::framing::record_frames(instance.window()).ok_or_else(|| {
-                CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
-            })?;
+        let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
             let outcome = cadmpeg_protein::decode_detailed(protein.window(), instance.window())?;
@@ -1864,9 +1859,7 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::framing::record_frames(entry.window()).ok_or_else(|| {
-        CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
-    })?;
+    let frames = cadmpeg_protein::framing::record_frames(entry.window())?;
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
         let definition = decode_definition_catalog_record(frame.bytes())?;
