@@ -147,8 +147,14 @@ fn database_record_projects_schema_and_creation_and_save_versions() {
             &DecodeOptions::default(),
         )
         .expect("primary envelope decodes");
-    let native = decoded.ir().native.namespace("inventor").unwrap();
-    let records = native.arena_as::<DatabaseRecord>("databases").unwrap();
+    let native = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
+    let records = native
+        .arena_as::<DatabaseRecord>("databases")
+        .expect("database arena");
     let [record] = records.as_slice() else {
         panic!("one DatabaseRecord")
     };
@@ -176,7 +182,7 @@ fn database_record_projects_schema_and_creation_and_save_versions() {
     assert_eq!(record.note, "synthetic primary document");
     assert!(native
         .arena_as::<DatabaseIssueRecord>("database_issues")
-        .unwrap()
+        .expect("database native arena")
         .is_empty());
 }
 
@@ -186,14 +192,18 @@ fn database_issues_preserve_the_unframed_database_instead_of_a_database_record()
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("broken database does not prevent envelope decode");
-    let native = decoded.ir().native.namespace("inventor").unwrap();
+    let native = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
     assert!(native
         .arena_as::<DatabaseRecord>("databases")
-        .unwrap()
+        .expect("database native arena")
         .is_empty());
     let issues = native
         .arena_as::<DatabaseIssueRecord>("database_issues")
-        .unwrap();
+        .expect("database native arena");
     let [issue] = issues.as_slice() else {
         panic!("one database issue")
     };
