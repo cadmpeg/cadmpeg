@@ -1281,6 +1281,16 @@ fn patch_projection_definition(
     let record_bytes = record_slice(bytes, record, "projection")?;
     let layout = crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities().iter().map(Vec::len))
+    {
+        return Err(CodecError::Malformed(
+            "projection context is incomplete".into(),
+        ));
+    }
     match (&layout.tail, tail) {
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
@@ -1856,12 +1866,7 @@ mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
 
-    #[test]
-    fn projection_tail_form_rejection_preserves_all_bytes() {
-        use cadmpeg_ir::geometry::{
-            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
-        };
-
+    fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record) {
         fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);
@@ -1885,49 +1890,59 @@ mod tests {
                 }
             }
         }
+        let mut bytes = b"\x0f\x0d\x0cproj_int_cur".to_vec();
+        for _ in 0..2 {
+            bytes.extend_from_slice(b"\x0d\x05plane");
+            for (tag, values) in [
+                (0x13, [0.0_f64; 3]),
+                (0x14, [0.0, 0.0, 1.0]),
+                (0x14, [1.0, 0.0, 0.0]),
+            ] {
+                bytes.push(tag);
+                for value in values {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            bytes.push(0x0b);
+        }
+        curve(&mut bytes, width, 2);
+        curve(&mut bytes, width, 2);
+        double(&mut bytes, -2.0);
+        double(&mut bytes, 3.0);
+        for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
+            integer(&mut bytes, 0x04, values.len() as i64, width);
+            for value in values {
+                double(&mut bytes, value);
+            }
+        }
+        bytes.push(0x0a);
+        curve(&mut bytes, width, 3);
+        bytes.push(0x0b);
+        if !early_close {
+            double(&mut bytes, -1.0);
+            double(&mut bytes, 1.0);
+            bytes.extend_from_slice(b"\x07\x05surf1");
+        }
+        bytes.push(0x10);
+        let record = crate::sab::Record {
+            index: 0,
+            name: "intcurve".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: bytes.len(),
+        };
+        (bytes, record)
+    }
+
+    #[test]
+    fn projection_tail_form_rejection_preserves_all_bytes() {
+        use cadmpeg_ir::geometry::{
+            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        };
+
         for width in [RefWidth::Four, RefWidth::Eight] {
             for early_close in [false, true] {
-                let mut bytes = b"\x0f\x0d\x0cproj_int_cur".to_vec();
-                for _ in 0..2 {
-                    bytes.extend_from_slice(b"\x0d\x05plane");
-                    for (tag, values) in [
-                        (0x13, [0.0_f64; 3]),
-                        (0x14, [0.0, 0.0, 1.0]),
-                        (0x14, [1.0, 0.0, 0.0]),
-                    ] {
-                        bytes.push(tag);
-                        for value in values {
-                            bytes.extend_from_slice(&value.to_le_bytes());
-                        }
-                    }
-                    bytes.push(0x0b);
-                }
-                curve(&mut bytes, width, 2);
-                curve(&mut bytes, width, 2);
-                double(&mut bytes, -2.0);
-                double(&mut bytes, 3.0);
-                for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
-                    integer(&mut bytes, 0x04, values.len() as i64, width);
-                    for value in values {
-                        double(&mut bytes, value);
-                    }
-                }
-                bytes.push(0x0a);
-                curve(&mut bytes, width, 3);
-                bytes.push(0x0b);
-                if !early_close {
-                    double(&mut bytes, -1.0);
-                    double(&mut bytes, 1.0);
-                    bytes.extend_from_slice(b"\x07\x05surf1");
-                }
-                bytes.push(0x10);
-                let record = crate::sab::Record {
-                    index: 0,
-                    name: "intcurve".into(),
-                    tokens: Vec::new().into(),
-                    offset: 0,
-                    len: bytes.len(),
-                };
+                let (mut bytes, record) = projection_fixture(width, early_close);
                 let context = IntcurveSupportContext::try_new(
                     std::array::from_fn(|_| IntcurveSupportSide {
                         surface: None,
@@ -1954,6 +1969,39 @@ mod tests {
                 assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
                 assert_eq!(bytes, before);
             }
+        }
+    }
+
+    #[test]
+    fn incomplete_projection_context_preserves_ranged_tail_bytes() {
+        use cadmpeg_ir::geometry::{
+            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        };
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let (mut bytes, record) = projection_fixture(width, false);
+            let context = IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                }),
+                [4.0, 5.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap();
+            let tail = ProjectionTail::Ranged {
+                flag: true,
+                parameter_range: [7.0, 8.0],
+                role: ProjectionRole::Surf2,
+            };
+            let before = bytes.clone();
+            let error = super::patch_projection_definition(
+                &mut bytes, width, &record, &context, false, &tail,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::Malformed(ref message) if message == "projection context is incomplete")
+            );
+            assert_eq!(bytes, before);
         }
     }
 
