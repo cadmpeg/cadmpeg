@@ -3,10 +3,10 @@
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
-use crate::records::feature::{DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart};
+use crate::records::feature::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use cadmpeg_core::decode::View;
-
-use super::extrude_sheet_metal::{exact_extrude_extent, ExtrudeExtentContext};
 
 /// Checked class, frame length, and reference-run layout for the class-397 grammar.
 #[derive(Clone, Copy)]
@@ -27,6 +27,18 @@ impl Class397SymmetricFrame {
             && reference_count_offset == symmetric::REFERENCE_COUNT as u64
             && reference_count == symmetric::REFERENCE_COUNT_VALUE as usize)
             .then_some(Self(()))
+    }
+
+    /// The symmetric-distance extent admitted by this frame grammar.
+    pub(crate) fn extent(
+        self,
+        direction: u32,
+        side_extent_discriminators: [u32; 2],
+    ) -> Option<DesignExtrudeExtent> {
+        match (self, direction, side_extent_discriminators) {
+            (Self(()), 3, [1, 1]) => Some(DesignExtrudeExtent::SymmetricDistance),
+            _ => None,
+        }
     }
 }
 
@@ -141,11 +153,7 @@ pub(crate) fn exact_symmetric_extrude_prologue(
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
-    let extent = exact_extrude_extent(
-        ExtrudeExtentContext::Class397Symmetric(frame),
-        direction_face_extend_values[0],
-        side_extent_discriminators,
-    )?;
+    let extent = frame.extent(direction_face_extend_values[0], side_extent_discriminators)?;
     if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9] {
         return None;
     }

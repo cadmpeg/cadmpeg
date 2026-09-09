@@ -3,7 +3,7 @@
 
 use super::prelude::*;
 use crate::design::decode::scopes::extrude_sheet_metal::{
-    exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent, ExtrudeExtentContext,
+    exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent,
 };
 
 #[test]
@@ -20,11 +20,7 @@ fn extrude_extent_tuple_is_one_admission_key() {
     ];
     for (direction, side_extent_discriminators, expected) in accepted {
         assert_eq!(
-            exact_extrude_extent(
-                ExtrudeExtentContext::Common,
-                direction,
-                side_extent_discriminators
-            ),
+            exact_extrude_extent(direction, side_extent_discriminators),
             Some(expected)
         );
     }
@@ -38,11 +34,7 @@ fn extrude_extent_tuple_is_one_admission_key() {
         (3, [1, 1]),
     ] {
         assert_eq!(
-            exact_extrude_extent(
-                ExtrudeExtentContext::Common,
-                direction,
-                side_extent_discriminators
-            ),
+            exact_extrude_extent(direction, side_extent_discriminators),
             None
         );
     }

@@ -534,16 +534,20 @@ impl DesignExtrudeSelectionGroup {
         &self.members
     }
     pub(crate) fn member_count_offset(&self) -> u64 {
-        self.byte_offset + 32
+        Self::offsets(self.byte_offset, self.members.len())
+            .expect("admitted selection group offsets")[0]
     }
     pub(crate) fn opaque_index_offset(&self) -> u64 {
-        self.byte_offset + 36 + self.members.len() as u64 * 11
+        Self::offsets(self.byte_offset, self.members.len())
+            .expect("admitted selection group offsets")[1]
     }
     pub(crate) fn opaque_scalar_offset(&self) -> u64 {
-        self.opaque_index_offset() + 4
+        Self::offsets(self.byte_offset, self.members.len())
+            .expect("admitted selection group offsets")[2]
     }
     pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.opaque_index_offset() + 53
+        Self::offsets(self.byte_offset, self.members.len())
+            .expect("admitted selection group offsets")[3]
     }
     pub(crate) fn opaque_scalar(&self) -> f64 {
         self.opaque_scalar
