@@ -1222,11 +1222,7 @@ impl<'a> DecodeContext<'a> {
                 format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
             ),
         ]);
-        if let Some(gradient) = hatch
-            .gradient
-            .as_ref()
-            .and_then(crate::hatch::gradient_json)
-        {
+        if let Some(gradient) = hatch.gradient.as_ref().map(crate::hatch::gradient_json) {
             parameters.insert("gradient".to_string(), gradient);
         }
         for (index, (kind, id)) in loop_ids.iter().enumerate() {
