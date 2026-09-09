@@ -96,6 +96,8 @@ fn emit_carrier_surface(
     let Carriers {
         surface_geo,
         procedural_surface_defs,
+        procedural_support_sources,
+        procedural_curve_child_sources,
         ..
     } = &mut *carriers;
     let Reachable {
@@ -397,12 +399,12 @@ fn emit_carrier_surface(
                 format,
             ),
         };
-        out.procedural_support_sources.extend(
+        procedural_support_sources.extend(
             out.surfaces[support_start..]
                 .iter()
                 .map(|surface| (i, surface.id.clone())),
         );
-        out.procedural_curve_child_sources.extend(
+        procedural_curve_child_sources.extend(
             out.curves[curve_start..]
                 .iter()
                 .map(|curve| (i, curve.id.clone())),

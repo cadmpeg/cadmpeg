@@ -128,12 +128,6 @@ pub struct AsmBrep {
     pub unknowns: Vec<UnknownRecord>,
     /// Loss accounting for the report.
     pub stats: Stats,
-    /// Source record indices of synthetic procedural support surfaces.
-    #[serde(skip)]
-    pub procedural_support_sources: Vec<(i64, SurfaceId)>,
-    /// Source record indices of synthetic procedural surface curves.
-    #[serde(skip)]
-    pub procedural_curve_child_sources: Vec<(i64, CurveId)>,
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
@@ -194,8 +188,6 @@ impl AsmBrep {
             attributes,
             unknowns,
             annotation_records,
-            procedural_support_sources,
-            procedural_curve_child_sources,
         );
         self.stats.merge(other.stats);
     }
@@ -385,6 +377,10 @@ struct CoedgeRecordIndex(i64);
 /// owning surface or curve record is emitted.
 #[derive(Default)]
 pub(crate) struct Carriers {
+    /// Source record indices of synthetic procedural support surfaces.
+    pub(crate) procedural_support_sources: Vec<(i64, SurfaceId)>,
+    /// Source record indices of synthetic procedural surface curves.
+    pub(crate) procedural_curve_child_sources: Vec<(i64, CurveId)>,
     surface_geo: HashMap<i64, SurfaceGeometry>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
@@ -569,7 +565,7 @@ pub fn decode_with_header(
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(&mut out, records, bytes, &reach, format);
         count_other_records(&mut out, records, &reach, &emitted_attributes);
-        emit_annotation_records(&mut out, records, &by_index, stream, format)?;
+        emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
 
         classify_body_kinds(&mut out);
         clamp_edge_ranges_to_carrier_domains(&mut out)?;
