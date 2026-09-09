@@ -343,7 +343,8 @@ pub struct Occurrence {
     #[cfg_attr(feature = "schema", schemars(with = "LinkedPrototypeWire"))]
     pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
-    pub scale: [f64; 3],
+    #[serde(deserialize_with = "deserialize_occurrence_scale")]
+    pub scale: [FiniteReal; 3],
     /// Source occurrence identifier or display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -420,6 +421,13 @@ pub struct CopyOnChange {
     pub group: Option<ProductDefinitionId>,
     /// Whether the tracked source was persisted as changed.
     pub touched: Option<bool>,
+}
+
+fn deserialize_occurrence_scale<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<[FiniteReal; 3], D::Error> {
+    <[FiniteReal; 3]>::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format!("scale: {error}")))
 }
 
 impl Occurrence {
@@ -606,6 +614,7 @@ pub struct AssemblyGraph<'a> {
 #[cfg(test)]
 mod tests {
     mod joints;
+    mod occurrences;
     use super::*;
 
     #[test]
@@ -676,7 +685,7 @@ mod tests {
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [crate::features::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

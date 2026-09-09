@@ -146,7 +146,7 @@ pub(crate) fn project_occurrences(
             ordinal: source.ordinal,
             transform,
             linked_prototype: None,
-            scale: [1.0; 3],
+            scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
             name: source.title.clone().filter(|title| !title.is_empty()),
             visible,
             link: None,

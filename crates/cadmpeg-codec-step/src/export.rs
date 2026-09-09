@@ -1173,7 +1173,9 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = occurrence.effective_transform();
-            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
+            if !transform.is_proper_rigid()
+                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+            {
                 continue;
             }
             let rows = transform.rows();
@@ -1262,7 +1264,9 @@ impl<'a> Builder<'a> {
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 let transform = occurrence.effective_transform();
-                if !is_identity(&transform.rows()) || occurrence.scale != [1.0; 3] {
+                if !is_identity(&transform.rows())
+                    || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
                         format!(
@@ -1310,7 +1314,9 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = occurrence.effective_transform();
-            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
+            if !transform.is_proper_rigid()
+                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+            {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),

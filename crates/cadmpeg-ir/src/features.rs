@@ -1434,6 +1434,11 @@ checked_feature_scalar!(
     Fraction, value, (0.0..=1.0).contains(&value), "Fraction must be between zero and one"
 );
 
+impl FiniteReal {
+    /// Unit scalar value.
+    pub const ONE: Self = Self(1.0);
+}
+
 impl Length {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
