@@ -86,6 +86,62 @@ pub(super) struct WritableFace<'a> {
     pub(super) loops: Vec<usize>,
 }
 
+/// A free curve admitted for native Rhino object writing.
+pub(super) struct WritableObjectCurve<'a> {
+    geometry: ObjectCurveGeometry<'a>,
+}
+
+enum ObjectCurveGeometry<'a> {
+    Circle(&'a cadmpeg_ir::geometry::CircleCurve),
+    Nurbs(&'a NurbsCurve),
+}
+
+impl<'a> WritableObjectCurve<'a> {
+    /// Admits a free curve with writable attributes and geometry.
+    pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, CodecError> {
+        if curve.source_object.is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "curve {} source-object state is not writable",
+                curve.id.as_str()
+            )));
+        }
+        let geometry = match &curve.geometry {
+            CurveGeometry::Circle(circle) => {
+                let (_, axis, ref_direction, _) = circle.parts();
+                check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
+                ObjectCurveGeometry::Circle(circle)
+            }
+            CurveGeometry::Nurbs(nurbs) => {
+                check_nurbs_curve(curve.id.as_str(), nurbs)?;
+                ObjectCurveGeometry::Nurbs(nurbs)
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "Rhino writer cannot represent curve {} as a native object",
+                    curve.id.as_str()
+                )))
+            }
+        };
+        Ok(Self { geometry })
+    }
+
+    /// Encodes the admitted curve as a native class payload.
+    pub(super) fn payload(&self) -> ([u8; 16], Vec<u8>) {
+        match self.geometry {
+            ObjectCurveGeometry::Circle(circle) => {
+                let (center, axis, ref_direction, radius) = circle.parts();
+                (
+                    super::ARC_CLASS,
+                    super::circle_payload(*center, *axis, *ref_direction, *radius),
+                )
+            }
+            ObjectCurveGeometry::Nurbs(nurbs) => {
+                (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum WritableFaceSurface<'a> {
     Plane {
