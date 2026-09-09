@@ -1036,9 +1036,12 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = Vec::with_capacity(position.checked_add(39).unwrap());
-        payload.extend(std::iter::repeat_n(0, position));
-        payload.extend([0; 39]);
+        let mut payload = cadmpeg_core::decode::alloc_filled(
+            position.checked_add(39).unwrap(),
+            0,
+            "SLDPRT sketch marker fixture",
+        )
+        .unwrap();
         if position >= 4 {
             payload[position - 4..position].fill(0xff);
         }
