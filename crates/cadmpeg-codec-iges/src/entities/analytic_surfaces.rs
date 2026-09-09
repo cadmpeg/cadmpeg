@@ -251,15 +251,8 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(radius) = record
-                    .number(3)
-                    .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    losses.push(entity_loss(
-                        entry,
-                        "cylinder radius is not positive and finite",
-                    ));
+                let Some(radius) = record.number(3).map(|radius| radius * factor) else {
+                    losses.push(entity_loss(entry, "cylinder radius is not numeric"));
                     continue;
                 };
                 let candidate = match form_reference_direction(
@@ -314,12 +307,8 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                let Some(radius) = record
-                    .number(3)
-                    .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius >= 0.0)
-                else {
-                    losses.push(entity_loss(entry, "cone radius is negative or non-finite"));
+                let Some(radius) = record.number(3).map(|radius| radius * factor) else {
+                    losses.push(entity_loss(entry, "cone radius is not numeric"));
                     continue;
                 };
                 let Some(half_angle) = record.number(4).map(f64::to_radians).filter(|angle| {
@@ -371,15 +360,8 @@ pub(super) fn project(
                 )
             }
             196 => {
-                let Some(radius) = record
-                    .number(2)
-                    .map(|radius| radius * factor)
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    losses.push(entity_loss(
-                        entry,
-                        "sphere radius is not positive and finite",
-                    ));
+                let Some(radius) = record.number(2).map(|radius| radius * factor) else {
+                    losses.push(entity_loss(entry, "sphere radius is not numeric"));
                     continue;
                 };
                 let axis = if entry.form == 1 {
@@ -457,11 +439,7 @@ pub(super) fn project(
                     continue;
                 };
                 let (major_radius, minor_radius) = (major_radius * factor, minor_radius * factor);
-                if !major_radius.is_finite()
-                    || !minor_radius.is_finite()
-                    || minor_radius <= 0.0
-                    || minor_radius >= major_radius
-                {
+                if minor_radius <= 0.0 || minor_radius >= major_radius {
                     losses.push(entity_loss(
                         entry,
                         "torus radii do not satisfy 0 < minor < major",
