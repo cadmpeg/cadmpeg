@@ -1,21 +1,21 @@
-# generated at 5bc6b3e0f
+# generated at ee06f3e21
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
 pub fn cadmpeg_asm::acis_header::has_acis_magic(&[u8]) -> bool
-pub fn cadmpeg_asm::acis_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>
+pub fn cadmpeg_asm::acis_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::BinaryHeader>
 pub fn cadmpeg_asm::acis_header::record_stream_start(&[u8]) -> core::option::Option<usize>
-pub fn cadmpeg_asm::acis_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
+pub fn cadmpeg_asm::acis_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::BinaryHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::acis_header::solved_record_limit(&[u8]) -> core::option::Option<usize>
-pub fn cadmpeg_asm::acis_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
+pub fn cadmpeg_asm::acis_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::BinaryHeader) -> core::option::Option<usize>
 pub mod cadmpeg_asm::asm_header
 pub fn cadmpeg_asm::asm_header::has_asm_magic(&[u8]) -> bool
-pub fn cadmpeg_asm::asm_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>
+pub fn cadmpeg_asm::asm_header::parse(&[u8]) -> core::option::Option<cadmpeg_asm::kernel_header::BinaryHeader>
 pub fn cadmpeg_asm::asm_header::record_count(&[u8]) -> core::option::Option<u32>
 pub fn cadmpeg_asm::asm_header::record_stream_start(&[u8]) -> core::option::Option<usize>
-pub fn cadmpeg_asm::asm_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
+pub fn cadmpeg_asm::asm_header::record_stream_start_with_header(&[u8], &cadmpeg_asm::kernel_header::BinaryHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::solved_record_limit(&[u8]) -> core::option::Option<usize>
-pub fn cadmpeg_asm::asm_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::KernelHeader) -> core::option::Option<usize>
+pub fn cadmpeg_asm::asm_header::solved_record_limit_with_header(&[u8], &cadmpeg_asm::kernel_header::BinaryHeader) -> core::option::Option<usize>
 pub fn cadmpeg_asm::asm_header::stream_ref_width(&[u8]) -> cadmpeg_asm::kernel_header::RefWidth
 pub mod cadmpeg_asm::brep
 pub mod cadmpeg_asm::brep::annotations
@@ -143,18 +143,29 @@ pub fn cadmpeg_asm::brep::records::FaceNativeKey::serialize<S: serde_core::ser::
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::FaceNativeKey
 pub fn cadmpeg_asm::brep::records::FaceNativeKey::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_asm::brep::records::FaceSidedness
+pub cadmpeg_asm::brep::records::FaceSidedness::carrier_flipped: bool
 pub cadmpeg_asm::brep::records::FaceSidedness::containment: core::option::Option<cadmpeg_asm::brep::records::FaceContainment>
 pub cadmpeg_asm::brep::records::FaceSidedness::face: cadmpeg_ir::ids::FaceId
 pub cadmpeg_asm::brep::records::FaceSidedness::native_sense: cadmpeg_ir::topology::Sense
-pub cadmpeg_asm::brep::records::FaceSidedness::normalized_sense: cadmpeg_ir::topology::Sense
 pub cadmpeg_asm::brep::records::FaceSidedness::record_index: u32
 pub cadmpeg_asm::brep::records::FaceSidedness::source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace
 impl cadmpeg_asm::brep::records::FaceSidedness
 pub fn cadmpeg_asm::brep::records::FaceSidedness::id(&self) -> alloc::string::String
+impl core::convert::From<cadmpeg_asm::brep::records::FaceSidedness> for cadmpeg_asm::brep::records::FaceSidednessWire
+pub fn cadmpeg_asm::brep::records::FaceSidednessWire::from(cadmpeg_asm::brep::records::FaceSidedness) -> Self
+impl core::convert::TryFrom<cadmpeg_asm::brep::records::FaceSidednessWire> for cadmpeg_asm::brep::records::FaceSidedness
+pub type cadmpeg_asm::brep::records::FaceSidedness::Error = alloc::string::String
+pub fn cadmpeg_asm::brep::records::FaceSidedness::try_from(cadmpeg_asm::brep::records::FaceSidednessWire) -> core::result::Result<Self, Self::Error>
 impl serde_core::ser::Serialize for cadmpeg_asm::brep::records::FaceSidedness
 pub fn cadmpeg_asm::brep::records::FaceSidedness::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_asm::brep::records::FaceSidedness
 pub fn cadmpeg_asm::brep::records::FaceSidedness::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub struct cadmpeg_asm::brep::records::FaceSidednessWire
+impl core::convert::From<cadmpeg_asm::brep::records::FaceSidedness> for cadmpeg_asm::brep::records::FaceSidednessWire
+pub fn cadmpeg_asm::brep::records::FaceSidednessWire::from(cadmpeg_asm::brep::records::FaceSidedness) -> Self
+impl core::convert::TryFrom<cadmpeg_asm::brep::records::FaceSidednessWire> for cadmpeg_asm::brep::records::FaceSidedness
+pub type cadmpeg_asm::brep::records::FaceSidedness::Error = alloc::string::String
+pub fn cadmpeg_asm::brep::records::FaceSidedness::try_from(cadmpeg_asm::brep::records::FaceSidednessWire) -> core::result::Result<Self, Self::Error>
 pub struct cadmpeg_asm::brep::records::MeshSurfaceSentinel
 pub cadmpeg_asm::brep::records::MeshSurfaceSentinel::record_index: u32
 pub cadmpeg_asm::brep::records::MeshSurfaceSentinel::source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace
@@ -284,7 +295,7 @@ pub cadmpeg_asm::brep::AsmBrep::face_sidedness: alloc::vec::Vec<cadmpeg_asm::bre
 pub cadmpeg_asm::brep::AsmBrep::faces: alloc::vec::Vec<cadmpeg_ir::topology::Face>
 pub cadmpeg_asm::brep::AsmBrep::loops: alloc::vec::Vec<cadmpeg_ir::topology::Loop>
 pub cadmpeg_asm::brep::AsmBrep::mesh_surface_sentinels: alloc::vec::Vec<cadmpeg_asm::brep::records::MeshSurfaceSentinel>
-pub cadmpeg_asm::brep::AsmBrep::pcurves: alloc::vec::Vec<cadmpeg_ir::geometry::Pcurve>
+pub cadmpeg_asm::brep::AsmBrep::pcurves: alloc::vec::Vec<cadmpeg_ir::geometry::carriers::Pcurve>
 pub cadmpeg_asm::brep::AsmBrep::points: alloc::vec::Vec<cadmpeg_ir::topology::Point>
 pub cadmpeg_asm::brep::AsmBrep::procedural_curves: alloc::vec::Vec<(cadmpeg_ir::ids::CurveId, cadmpeg_ir::geometry::ProceduralCurve)>
 pub cadmpeg_asm::brep::AsmBrep::procedural_surfaces: alloc::vec::Vec<(cadmpeg_ir::ids::SurfaceId, cadmpeg_ir::geometry::ProceduralSurface)>
@@ -309,8 +320,8 @@ pub fn cadmpeg_asm::brep::AsmBrep::deserialize<D: serde_core::de::Deserializer<'
 pub fn cadmpeg_asm::brep::collect_entity_adjacency(&serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>, &mut std::collections::hash::map::HashMap<alloc::string::String, std::collections::hash::set::HashSet<alloc::string::String>>)
 pub fn cadmpeg_asm::brep::collect_owned_ids(&serde_value::Value, &mut std::collections::hash::set::HashSet<alloc::string::String>)
 pub fn cadmpeg_asm::brep::collect_references(&serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>, &mut std::collections::hash::set::HashSet<alloc::string::String>)
-pub fn cadmpeg_asm::brep::decode_with_header(&[cadmpeg_asm::sab::Record], &[u8], core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>, &str, cadmpeg_asm::ids::IdFormat<'_>, cadmpeg_asm::brep::DecodePurpose) -> cadmpeg_asm::brep::AsmBrep
-pub fn cadmpeg_asm::brep::decode_with_purpose(&[cadmpeg_asm::sab::Record], &[u8], &str, cadmpeg_asm::ids::IdFormat<'_>, cadmpeg_asm::brep::DecodePurpose) -> cadmpeg_asm::brep::AsmBrep
+pub fn cadmpeg_asm::brep::decode_with_header(&[cadmpeg_asm::sab::Record], &[u8], core::option::Option<cadmpeg_asm::kernel_header::KernelHeader>, &str, cadmpeg_asm::ids::IdFormat<'_>, cadmpeg_asm::brep::DecodePurpose) -> core::result::Result<cadmpeg_asm::brep::AsmBrep, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::brep::decode_with_purpose(&[cadmpeg_asm::sab::Record], &[u8], &str, cadmpeg_asm::ids::IdFormat<'_>, cadmpeg_asm::brep::DecodePurpose) -> core::result::Result<cadmpeg_asm::brep::AsmBrep, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::brep::entity_id(&serde_value::Value) -> core::option::Option<&str>
 pub fn cadmpeg_asm::brep::id(cadmpeg_asm::ids::IdFormat<'_>, i64) -> alloc::string::String
 pub fn cadmpeg_asm::brep::remap_owned_ids(&mut serde_value::Value, &std::collections::hash::map::HashMap<alloc::string::String, alloc::string::String>)
@@ -318,8 +329,8 @@ pub fn cadmpeg_asm::brep::retain_root_entities(&mut serde_value::Value, &std::co
 pub fn cadmpeg_asm::brep::value_string(&serde_value::Value) -> core::option::Option<&str>
 pub mod cadmpeg_asm::dialect
 pub enum cadmpeg_asm::dialect::KernelHeaderRef<'a>
-pub cadmpeg_asm::dialect::KernelHeaderRef::Acis(&'a cadmpeg_asm::kernel_header::KernelHeader)
-pub cadmpeg_asm::dialect::KernelHeaderRef::Asm(&'a cadmpeg_asm::kernel_header::KernelHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::Acis(&'a cadmpeg_asm::kernel_header::BinaryHeader)
+pub cadmpeg_asm::dialect::KernelHeaderRef::Asm(&'a cadmpeg_asm::kernel_header::BinaryHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&'a cadmpeg_asm::kernel_header::KernelHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&'a cadmpeg_asm::kernel_header::KernelHeader)
 pub cadmpeg_asm::dialect::KernelHeaderRef::Unknown
@@ -346,6 +357,9 @@ pub fn cadmpeg_asm::dialect::classify_layer(cadmpeg_asm::dialect::KernelHeaderRe
 pub fn cadmpeg_asm::dialect::nearest_verified_acis(core::option::Option<u32>) -> cadmpeg_core::dialect::DialectId
 pub fn cadmpeg_asm::dialect::unverified_message(&str, &cadmpeg_core::dialect::DialectMatch) -> core::option::Option<alloc::string::String>
 pub mod cadmpeg_asm::edit
+pub enum cadmpeg_asm::edit::CacheTarget
+pub cadmpeg_asm::edit::CacheTarget::Final
+pub cadmpeg_asm::edit::CacheTarget::First
 pub enum cadmpeg_asm::edit::PcurveEdit<'a>
 pub cadmpeg_asm::edit::PcurveEdit::Inline(cadmpeg_asm::edit::InlinePcurveEdit<'a>)
 pub cadmpeg_asm::edit::PcurveEdit::Ref
@@ -355,7 +369,7 @@ impl cadmpeg_asm::edit::AsmEditSet
 pub fn cadmpeg_asm::edit::AsmEditSet::apply<T>(&mut [u8], impl core::ops::function::FnOnce(&mut [u8], &Self) -> core::result::Result<T, cadmpeg_core::error::CodecError>) -> core::result::Result<T, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::frame(&[u8]) -> core::result::Result<Self, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::from_framed(alloc::vec::Vec<cadmpeg_asm::sab::Record>, cadmpeg_asm::kernel_header::RefWidth, f64) -> Self
-pub const fn cadmpeg_asm::edit::AsmEditSet::header_scale(&self) -> f64
+pub const fn cadmpeg_asm::edit::AsmEditSet::header_scale(&self) -> core::option::Option<f64>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_ascii_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, &str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_blend_radii(&self, &mut [u8], &cadmpeg_asm::sab::Record, [f64; 2]) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_boolean_at(&mut [u8], usize, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
@@ -367,7 +381,8 @@ pub fn cadmpeg_asm::edit::AsmEditSet::patch_f64_payloads(&mut [u8], usize, impl 
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_integer_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, u8, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_knot_structure(&mut [u8], usize, &cadmpeg_asm::nurbs::reader::KnotLayout, &[f64], cadmpeg_asm::kernel_header::RefWidth) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_layout_integer(&mut [u8], usize, cadmpeg_asm::kernel_header::RefWidth, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
-pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_curve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsCurveEdit<'_>, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_native_bool(&mut [u8], usize, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_curve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsCurveEdit<'_>, cadmpeg_asm::edit::CacheTarget) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_surface(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsSurfaceEdit<'_>, core::option::Option<usize>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_pcurve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::PcurveEdit<'_>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_asm::edit::AsmEditSet::patch_procedural_curve_definition(&self, &mut [u8], &cadmpeg_asm::sab::Record, &cadmpeg_ir::geometry::ProceduralCurveDefinition) -> core::result::Result<(), cadmpeg_core::error::CodecError>
@@ -386,17 +401,17 @@ pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field(&self, &[u8], &cadm
 pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field_at(&[u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::kernel_header::RefWidth, usize, u8) -> core::result::Result<usize, cadmpeg_core::error::CodecError>
 pub struct cadmpeg_asm::edit::InlinePcurveEdit<'a>
 pub cadmpeg_asm::edit::InlinePcurveEdit::fit_tolerance: core::option::Option<f64>
-pub cadmpeg_asm::edit::InlinePcurveEdit::native_geometry: &'a cadmpeg_ir::geometry::PcurveGeometry
+pub cadmpeg_asm::edit::InlinePcurveEdit::native_geometry: &'a cadmpeg_ir::geometry::carriers::PcurveGeometry
 pub cadmpeg_asm::edit::InlinePcurveEdit::native_tail_flags: core::option::Option<[bool; 4]>
 pub cadmpeg_asm::edit::InlinePcurveEdit::parameter_range: core::option::Option<[f64; 2]>
 pub cadmpeg_asm::edit::InlinePcurveEdit::periodic: core::option::Option<bool>
 pub cadmpeg_asm::edit::InlinePcurveEdit::wrapper_reversed: core::option::Option<bool>
 pub struct cadmpeg_asm::edit::NurbsCurveEdit<'a>
-pub cadmpeg_asm::edit::NurbsCurveEdit::curve: &'a cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::edit::NurbsCurveEdit::curve: &'a cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::edit::NurbsCurveEdit::periodic: core::option::Option<bool>
 pub struct cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
 pub cadmpeg_asm::edit::NurbsSurfaceEdit::periodic: core::option::Option<[bool; 2]>
-pub cadmpeg_asm::edit::NurbsSurfaceEdit::surface: &'a cadmpeg_ir::geometry::NurbsSurface
+pub cadmpeg_asm::edit::NurbsSurfaceEdit::surface: &'a cadmpeg_ir::geometry::carriers::NurbsSurface
 pub mod cadmpeg_asm::ids
 pub struct cadmpeg_asm::ids::IdFormat<'a>(pub &'a str)
 impl core::fmt::Display for cadmpeg_asm::ids::IdFormat<'_>
@@ -409,6 +424,9 @@ impl cadmpeg_asm::kernel_header::RefWidth
 pub const fn cadmpeg_asm::kernel_header::RefWidth::bytes(self) -> usize
 impl core::fmt::Display for cadmpeg_asm::kernel_header::RefWidth
 pub fn cadmpeg_asm::kernel_header::RefWidth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct cadmpeg_asm::kernel_header::BinaryHeader
+pub cadmpeg_asm::kernel_header::BinaryHeader::metadata: cadmpeg_asm::kernel_header::KernelHeader
+pub cadmpeg_asm::kernel_header::BinaryHeader::width: cadmpeg_asm::kernel_header::RefWidth
 pub struct cadmpeg_asm::kernel_header::KernelHeader
 pub cadmpeg_asm::kernel_header::KernelHeader::angular: core::option::Option<f64>
 pub cadmpeg_asm::kernel_header::KernelHeader::entity_count: core::option::Option<u64>
@@ -419,7 +437,6 @@ pub cadmpeg_asm::kernel_header::KernelHeader::product_version: core::option::Opt
 pub cadmpeg_asm::kernel_header::KernelHeader::save_date: core::option::Option<alloc::string::String>
 pub cadmpeg_asm::kernel_header::KernelHeader::save_format_version: core::option::Option<u32>
 pub cadmpeg_asm::kernel_header::KernelHeader::scale: core::option::Option<f64>
-pub cadmpeg_asm::kernel_header::KernelHeader::width: cadmpeg_asm::kernel_header::RefWidth
 impl cadmpeg_asm::kernel_header::KernelHeader
 pub fn cadmpeg_asm::kernel_header::KernelHeader::format_revision(&self) -> core::option::Option<u32>
 pub fn cadmpeg_asm::kernel_header::KernelHeader::has_history_partition(&self) -> bool
@@ -432,9 +449,8 @@ pub mod cadmpeg_asm::nurbs
 pub mod cadmpeg_asm::nurbs::blend
 pub mod cadmpeg_asm::nurbs::core
 pub struct cadmpeg_asm::nurbs::core::CurvePatchLayout
-pub cadmpeg_asm::nurbs::core::CurvePatchLayout::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::core::CurvePatchLayout::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::degree_value_offset: usize
-pub cadmpeg_asm::nurbs::core::CurvePatchLayout::int_width: cadmpeg_asm::kernel_header::RefWidth
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::knots: cadmpeg_asm::nurbs::reader::KnotLayout
 pub cadmpeg_asm::nurbs::core::CurvePatchLayout::periodic_value_offset: usize
 impl cadmpeg_asm::nurbs::core::CurvePatchLayout
@@ -442,28 +458,26 @@ pub fn cadmpeg_asm::nurbs::core::CurvePatchLayout::control_value_offsets(&self) 
 pub fn cadmpeg_asm::nurbs::core::CurvePatchLayout::end(&self) -> usize
 pub struct cadmpeg_asm::nurbs::core::SurfacePatchLayout
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::degree_value_offsets: [usize; 2]
-pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::int_width: cadmpeg_asm::kernel_header::RefWidth
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::periodic_value_offsets: [usize; 2]
-pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::surface: cadmpeg_ir::geometry::NurbsSurface
+pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::surface: cadmpeg_ir::geometry::carriers::NurbsSurface
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::u_knots: cadmpeg_asm::nurbs::reader::KnotLayout
 pub cadmpeg_asm::nurbs::core::SurfacePatchLayout::v_knots: cadmpeg_asm::nurbs::reader::KnotLayout
 impl cadmpeg_asm::nurbs::core::SurfacePatchLayout
 pub fn cadmpeg_asm::nurbs::core::SurfacePatchLayout::control_value_offsets(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = usize> + '_
 pub fn cadmpeg_asm::nurbs::core::SurfacePatchLayout::end(&self) -> usize
-pub fn cadmpeg_asm::nurbs::core::curve_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
-pub fn cadmpeg_asm::nurbs::core::decode_curve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
-pub fn cadmpeg_asm::nurbs::core::decode_owned_curve_cache_at(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
-pub fn cadmpeg_asm::nurbs::core::decode_surface_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::NurbsSurface>
+pub fn cadmpeg_asm::nurbs::core::curve_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
+pub fn cadmpeg_asm::nurbs::core::decode_curve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
+pub fn cadmpeg_asm::nurbs::core::decode_owned_curve_cache_at(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
+pub fn cadmpeg_asm::nurbs::core::decode_surface_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsSurface>
 pub fn cadmpeg_asm::nurbs::core::final_curve_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
 pub fn cadmpeg_asm::nurbs::core::final_surface_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
 pub fn cadmpeg_asm::nurbs::core::first_curve_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::core::CurvePatchLayout>
-pub fn cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::NurbsSurface>
+pub fn cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsSurface>
 pub fn cadmpeg_asm::nurbs::core::surface_patch_layout_at(&[u8], usize, cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::core::SurfacePatchLayout>
 pub mod cadmpeg_asm::nurbs::pcurve
 pub struct cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_count: usize
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::degree_value_offset: usize
-pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::int_width: cadmpeg_asm::kernel_header::RefWidth
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::knots: cadmpeg_asm::nurbs::reader::KnotLayout
 pub cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::periodic_value_offset: usize
 impl cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout
@@ -471,9 +485,9 @@ pub fn cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_end(&self) -> usiz
 pub fn cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_value_offsets(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = [usize; 2]> + '_
 pub fn cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::rational(&self) -> bool
 pub fn cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::weight_value_offsets(&self) -> impl core::iter::traits::exact_size::ExactSizeIterator<Item = usize> + '_
-pub fn cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache(&[cadmpeg_asm::sab::Token]) -> core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub fn cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache(&[u8]) -> core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache(&[cadmpeg_asm::sab::Token]) -> core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub fn cadmpeg_asm::nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub fn cadmpeg_asm::nurbs::pcurve::final_pcurve_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout>
 pub fn cadmpeg_asm::nurbs::pcurve::pcurve_fit_tolerance(&[cadmpeg_asm::sab::Token]) -> core::option::Option<f64>
 pub mod cadmpeg_asm::nurbs::proc_curve
@@ -494,40 +508,49 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField::parameter_pairs: alloc::vec::Vec<[f64; 2]>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData::VectorField::vectors: [cadmpeg_ir::math::Vector3; 4]
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::Curve(cadmpeg_ir::geometry::NurbsCurve)
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::Curve(cadmpeg_ir::geometry::carriers::NurbsCurve)
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference::flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference::index: i64
+pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout::Legacy([f64; 2])
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout::Version
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout::Version::parameter_range: [core::option::Option<f64>; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout::Version::post_enum: i64
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout::Version::stamp: i64
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::CacheFirst
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::CacheFirst::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::CacheFirst::form: cadmpeg_ir::geometry::CacheFirstCurveForm
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::CacheFirst::context: cadmpeg_asm::nurbs::proc_curve::CacheFirstCurveContext
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::first_pcurve: cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringPcurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::second_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::second_pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout::ContextFirst::supports: [cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringSupport; 2]
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringPcurve
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringPcurve::Pcurve(cadmpeg_ir::geometry::PcurveNurbs)
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringPcurve::Pcurve(cadmpeg_ir::geometry::carriers::PcurveNurbs)
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringPcurve::Range([f64; 2])
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringSupport
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringSupport::Ranges([[f64; 2]; 2])
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringSupport::Surface(cadmpeg_ir::geometry::SurfaceGeometry)
 pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend::tail: core::option::Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric::tail: core::option::Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>>
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin::tail: core::option::Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained::tail: core::option::Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend(cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<bool>)
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric(cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>)
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin(cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<bool>)
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained(cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<bool>)
+pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<F>
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst::context: cadmpeg_asm::nurbs::proc_curve::CacheFirstCurveContext
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::CacheFirst::flags: F
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceCurveLayout::ContextFirst(cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection)
+pub enum cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::CacheFirst
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::CacheFirst::base_endpoints: [core::option::Option<f64>; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::CacheFirst::context: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_curve::CacheFirstCurveContext>
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::ContextFirst
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::ContextFirst::context: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection>
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout::ContextFirst::discontinuity_flag: bool
 pub enum cadmpeg_asm::nurbs::proc_curve::ProceduralCurveConstruction
 pub cadmpeg_asm::nurbs::proc_curve::ProceduralCurveConstruction::Compound(cadmpeg_asm::nurbs::proc_curve::CompoundDefinition)
 pub cadmpeg_asm::nurbs::proc_curve::ProceduralCurveConstruction::Deformable(cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable)
@@ -551,13 +574,14 @@ pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose::flag:
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::parameter_range: [usize; 2]
-pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::role: core::ops::range::Range<usize>
+pub cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged::role: cadmpeg_asm::nurbs::proc_curve::ProjectionRoleSlot
 pub enum cadmpeg_asm::nurbs::proc_curve::SupportSlot
 pub cadmpeg_asm::nurbs::proc_curve::SupportSlot::Absent
 pub cadmpeg_asm::nurbs::proc_curve::SupportSlot::DeclaredOnly
 pub cadmpeg_asm::nurbs::proc_curve::SupportSlot::Surface(cadmpeg_ir::geometry::SurfaceGeometry)
+pub struct cadmpeg_asm::nurbs::proc_curve::CacheFirstCurveContext
 pub struct cadmpeg_asm::nurbs::proc_curve::CompoundDefinition
-pub cadmpeg_asm::nurbs::proc_curve::CompoundDefinition::components: alloc::vec::Vec<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::geometry::NurbsCurve>>
+pub cadmpeg_asm::nurbs::proc_curve::CompoundDefinition::components: alloc::vec::Vec<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::geometry::carriers::NurbsCurve>>
 pub cadmpeg_asm::nurbs::proc_curve::CompoundDefinition::parameters: alloc::vec::Vec<f64>
 pub struct cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout::component_parameters: alloc::vec::Vec<usize>
@@ -565,63 +589,57 @@ pub cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout::parameters: alloc::vec:
 pub struct cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::cache_fit_tolerance: core::option::Option<f64>
 pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::construction: cadmpeg_asm::nurbs::proc_curve::ProceduralCurveConstruction
-pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::context: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_curve::CacheFirstCurveContext>
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::data: cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableData
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::discontinuities: [alloc::vec::Vec<f64>; 3]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::form: cadmpeg_ir::geometry::CacheFirstCurveForm
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::pcurves: [core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::source: cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::source_parameter_range: [core::option::Option<f64>; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformable::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::pcurves: [core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::pcurves: [core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::surfaces: [cadmpeg_asm::nurbs::proc_curve::SupportSlot; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::additional: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula>
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::extension: i64
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::layout: cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurveLayout
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::pcurves: [core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::primary: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::version: core::option::Option<cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion>
-pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::parameter_range: [core::option::Option<f64>; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::post_enum: i64
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawVersion::stamp: i64
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedLawCurve::surfaces: [cadmpeg_asm::nurbs::proc_curve::SupportSlot; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::pcurves: [cadmpeg_ir::geometry::PcurveNurbs; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::source: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::pcurves: [cadmpeg_ir::geometry::carriers::PcurveNurbs; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::source: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::surfaces: [cadmpeg_ir::geometry::SurfaceGeometry; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedProjection::tail: cadmpeg_ir::geometry::ProjectionTail
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::cast_surface: cadmpeg_ir::geometry::SurfaceGeometry
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::light_direction: cadmpeg_ir::math::Vector3
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::parameter_range: [f64; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::pcurves: [cadmpeg_ir::geometry::carriers::PcurveNurbs; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::silhouette: cadmpeg_ir::geometry::SilhouetteKind
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSilhouette::surfaces: [cadmpeg_ir::geometry::SurfaceGeometry; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::direction: i64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSpring::layout: cadmpeg_asm::nurbs::proc_curve::EmbeddedSpringLayout
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base: cadmpeg_ir::geometry::NurbsCurve
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base_endpoints: [core::option::Option<f64>; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base_u_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::base_v_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::cache_first: core::option::Option<cadmpeg_ir::geometry::CacheFirstCurveForm>
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::context: cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::distance: f64
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::layout: cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffsetLayout
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::scale: f64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedSurfaceOffset::shift: f64
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::discontinuities: [alloc::vec::Vec<f64>; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::pcurves: [cadmpeg_ir::geometry::PcurveNurbs; 3]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::pcurves: [cadmpeg_ir::geometry::carriers::PcurveNurbs; 3]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::selector: i64
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedThreeSurfaceIntersection::surfaces: [cadmpeg_ir::geometry::SurfaceGeometry; 3]
 pub struct cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset
@@ -629,7 +647,7 @@ pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::discontinuities: [al
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::offsets: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::parameter_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::pcurves: [core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>; 2]
+pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::pcurves: [core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]
 pub cadmpeg_asm::nurbs::proc_curve::EmbeddedTwoSidedOffset::surfaces: [core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout::direction: usize
@@ -657,6 +675,10 @@ pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::discontinuities: [all
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::discontinuity_flag: usize
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::parameter_range: [usize; 2]
 pub cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout::tail: cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout
+pub struct cadmpeg_asm::nurbs::proc_curve::ProjectionRoleSlot(_)
+impl cadmpeg_asm::nurbs::proc_curve::ProjectionRoleSlot
+pub fn cadmpeg_asm::nurbs::proc_curve::ProjectionRoleSlot::range(&self) -> core::ops::range::Range<usize>
+pub fn cadmpeg_asm::nurbs::proc_curve::ProjectionRoleSlot::write(&self, &mut [u8], cadmpeg_ir::geometry::ProjectionRole) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub struct cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout
 pub cadmpeg_asm::nurbs::proc_curve::RollingBallPatchLayout::radii: [usize; 2]
 pub struct cadmpeg_asm::nurbs::proc_curve::SilhouettePatchLayout
@@ -696,11 +718,11 @@ pub cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout::offset: usize
 pub cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout::parameter_range: [usize; 2]
 pub fn cadmpeg_asm::nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::HelixDefinition>
 pub fn cadmpeg_asm::nurbs::proc_curve::compound_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::CompoundPatchLayout>
-pub fn cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline(&[u8], cadmpeg_asm::kernel_header::RefWidth, core::option::Option<(&[u8], &cadmpeg_asm::nurbs::subtypes::SubtypeTables)>) -> core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
+pub fn cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline(&[u8], cadmpeg_asm::kernel_header::RefWidth, core::option::Option<(&[u8], &cadmpeg_asm::nurbs::subtypes::SubtypeTables)>) -> core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub fn cadmpeg_asm::nurbs::proc_curve::extrusion_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::ExtrusionPatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::helix_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::HelixPatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::intersection_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::IntersectionPatchLayout>
-pub fn cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&[cadmpeg_asm::sab::Token], i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub fn cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&[cadmpeg_asm::sab::Token], i64, &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub fn cadmpeg_asm::nurbs::proc_curve::procedural_curve_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve>
 pub fn cadmpeg_asm::nurbs::proc_curve::projection_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::ProjectionPatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::record_trailing_surface_bounds(&[cadmpeg_asm::sab::Token]) -> core::option::Option<[core::option::Option<f64>; 4]>
@@ -713,15 +735,15 @@ pub fn cadmpeg_asm::nurbs::proc_curve::surface_offset_patch_layout(&[u8], cadmpe
 pub fn cadmpeg_asm::nurbs::proc_curve::three_surface_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::ThreeSurfacePatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::two_sided_offset_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::TwoSidedOffsetPatchLayout>
 pub fn cadmpeg_asm::nurbs::proc_curve::vector_offset_patch_layout(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> core::option::Option<cadmpeg_asm::nurbs::proc_curve::VectorOffsetPatchLayout>
-pub type cadmpeg_asm::nurbs::proc_curve::SubsetDefinition = (cadmpeg_ir::geometry::NurbsCurve, [f64; 2])
-pub type cadmpeg_asm::nurbs::proc_curve::VectorOffsetDefinition = (cadmpeg_ir::geometry::NurbsCurve, [f64; 2], cadmpeg_ir::math::Vector3, cadmpeg_ir::geometry::VectorOffsetRoles)
+pub type cadmpeg_asm::nurbs::proc_curve::SubsetDefinition = (cadmpeg_ir::geometry::carriers::NurbsCurve, [f64; 2])
+pub type cadmpeg_asm::nurbs::proc_curve::VectorOffsetDefinition = (cadmpeg_ir::geometry::carriers::NurbsCurve, [f64; 2], cadmpeg_ir::math::Vector3, cadmpeg_ir::geometry::VectorOffsetRoles)
 pub mod cadmpeg_asm::nurbs::proc_surface
 pub enum cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::cross_section: cadmpeg_ir::geometry::BlendCrossSection
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::native: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall>>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::radius: cadmpeg_ir::geometry::BlendRadiusLaw
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::spine: core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::spine: core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend::supports: alloc::boxed::Box<[core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Compound
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Compound::components: alloc::vec::Vec<cadmpeg_ir::geometry::CompoundComponent<cadmpeg_ir::geometry::SurfaceGeometry>>
@@ -731,7 +753,7 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Exact
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Exact::spline: cadmpeg_ir::geometry::ExactSpline
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::direction: cadmpeg_ir::math::Vector3
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::directrix: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::directrix: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::native_position: cadmpeg_ir::math::Point3
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::parameter_interval: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
@@ -742,10 +764,8 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Loft(c
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Net(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedNetSurface>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::distance: f64
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::extension: cadmpeg_ir::geometry::OffsetExtension
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::support: cadmpeg_ir::geometry::SurfaceGeometry
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::u_sense: core::option::Option<i64>
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Offset::v_sense: core::option::Option<i64>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::RevisionG2Blend(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Revolution
@@ -756,8 +776,8 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Revolu
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Revolution::parameter_interval: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Revolution::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled::first: cadmpeg_ir::geometry::NurbsCurve
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled::second: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled::first: cadmpeg_ir::geometry::carriers::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Ruled::second: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Skin(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::SubSurface
@@ -769,11 +789,11 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sum::f
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sum::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sum::second: cadmpeg_ir::geometry::CurveGeometry
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Sweep(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface>)
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::TSpline(alloc::boxed::Box<cadmpeg_ir::geometry::TSplineSurfaceConstruction>)
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::TSpline(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface>)
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::parameter: f64
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::reference: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::reference: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::support: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Taper::taper: cadmpeg_ir::geometry::TaperSurfaceKind
@@ -781,7 +801,7 @@ pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Variab
 pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VertexBlend(alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend>)
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Curve::selector: core::num::nonzero::NonZeroI64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection::Vector(cadmpeg_ir::math::Vector3)
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
@@ -794,7 +814,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven::second_sc
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven::selector: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Seven::trailing_flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six::flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Six::parameter_range: [f64; 2]
@@ -806,7 +826,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::flags: [bo
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::trailing_flags: [bool; 2]
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::first_parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::frames: alloc::boxed::Box<[cadmpeg_ir::geometry::DeformableVectorFrame; 2]>
@@ -821,7 +841,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::trail
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Full::version_value: core::option::Option<i64>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Resolved(cadmpeg_ir::geometry::DeformableSurfaceData)
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::first_parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::flags: [bool; 3]
@@ -832,20 +852,25 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurv
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::selector: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData::SurfaceCurve::vectors: [cadmpeg_ir::math::Vector3; 4]
+pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Legacy
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Legacy::discontinuities: [alloc::vec::Vec<f64>; 6]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Legacy::discontinuity_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout::Revision(alloc::boxed::Box<cadmpeg_ir::geometry::RevisionSurfaceForm>)
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::Full(core::option::Option<(cadmpeg_ir::geometry::NurbsSurface, f64)>)
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::Full(core::option::Option<(cadmpeg_ir::geometry::carriers::NurbsSurface, cadmpeg_ir::geometry::FitTolerance)>)
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::coefficients: [f64; 9]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::extension: core::option::Option<cadmpeg_ir::geometry::LoftBridgeToken>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::tolerance: f64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape::None::tolerance: cadmpeg_ir::geometry::FitTolerance
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Algebraic
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Algebraic::operands: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Algebraic::operator: alloc::string::String
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Double(f64)
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Edge
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Edge::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Edge::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Edge::endpoints: core::option::Option<[core::option::Option<f64>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Edge::parameters: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression::Integer(i64)
@@ -870,12 +895,29 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::Named
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::Named::name: cadmpeg_ir::geometry::LawFormulaName
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::Named::variables: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula::Null
+pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy::bridge: alloc::vec::Vec<cadmpeg_ir::geometry::LoftBridgeToken>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy::closures: [i64; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy::mode: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy::ranges: [[f64; 2]; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Legacy::singularities: [i64; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout::Revision(alloc::boxed::Box<cadmpeg_ir::geometry::LoftRevisionForm>, [[core::option::Option<f64>; 2]; 2])
+pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathLayout
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathLayout::Legacy(cadmpeg_ir::geometry::carriers::NurbsCurve)
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathLayout::Revision(core::option::Option<cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionLoftPathCurve>)
+pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy::extension: cadmpeg_ir::geometry::LegacyExtensionFlags
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy::u_sense: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout::Legacy::v_sense: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedOffsetLayout::Revision(alloc::boxed::Box<cadmpeg_ir::geometry::RevisionSurfaceForm<[bool; 4]>>)
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct::direction: cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftDirection
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct::flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve::flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve::scale: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::ExtendedCurve::singularity: i64
@@ -891,28 +933,32 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None::par
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape::None::parameters: [alloc::vec::Vec<f64>; 2]
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::first_tail: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::inner_count: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::second_tail: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::secondary_curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::secondary_curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Compact::subdata: cadmpeg_ir::geometry::LoftSubdata
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::path: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::path: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::profiles: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember<cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout::Profiles::tail: [i64; 2]
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::directions: [cadmpeg_ir::math::Vector3; 5]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::formulas: alloc::boxed::Box<[cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula; 3]>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::origin: cadmpeg_ir::math::Point3
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::parameters: [f64; 4]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::profile: cadmpeg_ir::geometry::NurbsCurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::secondary_kind: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ProfileFirst::spine: cadmpeg_ir::geometry::NurbsCurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Sweep
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Sweep::profile: cadmpeg_asm::nurbs::proc_surface::SweepProfile
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Sweep::tail: cadmpeg_asm::nurbs::proc_surface::SweepTail
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Legacy
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Legacy::layout: cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Legacy::primary_kind: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision::form: cadmpeg_ir::geometry::SweepRevisionForm
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision::profile: cadmpeg_asm::nurbs::proc_surface::SweepProfile
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision::tail: cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula
+pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Inline
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Inline::program: alloc::string::String
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Inline::separator: core::option::Option<bool>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Inline::values: alloc::string::String
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Reference
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Reference::index: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform::Reference::resolved: core::option::Option<cadmpeg_ir::geometry::InlineTSplineSubtransform>
 pub enum cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Circle::curve: cadmpeg_ir::geometry::CurveGeometry
@@ -924,8 +970,8 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Degen
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Degenerate::location: cadmpeg_ir::math::Point3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Degenerate::normals: [cadmpeg_ir::math::Vector3; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::fit_tolerance: f64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::fit_tolerance: cadmpeg_ir::geometry::FitTolerance
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::sense: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::support_bounds: [core::option::Option<f64>; 4]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Pcurve::surface: cadmpeg_ir::geometry::SurfaceGeometry
@@ -934,56 +980,74 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::curve_endpoints: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Plane::parameters: [f64; 2]
+pub enum cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::directions: [cadmpeg_ir::math::Vector3; 5]
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::formulas: alloc::boxed::Box<[cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula; 3]>
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::parameters: [f64; 4]
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::profile: cadmpeg_ir::geometry::carriers::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::secondary_kind: i64
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::ProfileFirst::spine: cadmpeg_ir::geometry::carriers::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::Sweep
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::Sweep::profile: cadmpeg_asm::nurbs::proc_surface::SweepProfile
+pub cadmpeg_asm::nurbs::proc_surface::LegacySweepLayout::Sweep::tail: cadmpeg_asm::nurbs::proc_surface::SweepTail
 pub enum cadmpeg_asm::nurbs::proc_surface::LoftProfileData
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::Classic(cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData)
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::asm_extension: core::option::Option<i64>
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::direction: core::option::Option<cadmpeg_ir::math::Vector3>
-pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::secondary_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::endpoints: [core::option::Option<f64>; 2]
+pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::secondary_pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionPcurvePair::subdata: cadmpeg_ir::geometry::LoftSubdata
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::asm_extension: core::option::Option<i64>
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::direction: core::option::Option<cadmpeg_ir::math::Vector3>
+pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::endpoints: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::first_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::subdata: cadmpeg_ir::geometry::LoftSubdata
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::support_bounds: [core::option::Option<f64>; 4]
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::surface: core::option::Option<cadmpeg_ir::geometry::SurfaceGeometry>
 pub cadmpeg_asm::nurbs::proc_surface::LoftProfileData::RevisionSupport::type_code: core::num::nonzero::NonZeroI64
+impl cadmpeg_asm::nurbs::proc_surface::LoftProfileData
+pub fn cadmpeg_asm::nurbs::proc_surface::LoftProfileData::endpoints(&self) -> core::option::Option<[core::option::Option<f64>; 2]>
 pub enum cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(cadmpeg_ir::geometry::RevisionSurfaceParameterization)
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Solved
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Solved::domains: [[f64; 2]; 2]
 pub cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Solved::fit_tolerance: f64
+pub enum cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Formula
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Formula::formula: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Formula::formula_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Formula::trailing_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Formula::trajectory_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::first_law: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::first_mode: i64
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::first_range: [f64; 2]
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::formula: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::formula_mode: i64
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::law_direction: cadmpeg_ir::math::Vector3
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::path_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::path_mode: i64
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::second_law: alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression>
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::second_law_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula::Law::trailing_flag: bool
 pub enum cadmpeg_asm::nurbs::proc_surface::SweepTail
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Formula
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Formula::formula: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Formula::formula_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Formula::trailing_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Formula::trajectory_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_modes: [i64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_parameters: [f64; 6]
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::guide_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::trailing_flags: [bool; 3]
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Guide::trajectory_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::first_law: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::first_mode: i64
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::first_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::formula: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::formula_mode: i64
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::law_direction: cadmpeg_ir::math::Vector3
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::path_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::path_mode: i64
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::second_law: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawExpression
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::second_law_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Law::trailing_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::SweepTail::LawOrFormula(cadmpeg_asm::nurbs::proc_surface::SweepLawOrFormula)
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface
-pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface::auxiliary_curve: core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
+pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface::auxiliary_curve: core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface::legacy_flag: core::option::Option<bool>
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface::singularity: i64
 pub cadmpeg_asm::nurbs::proc_surface::SweepTail::Surface::support_flag: bool
@@ -993,31 +1057,31 @@ pub struct cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::asm_extension: i64
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::direction: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::first_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::subdata: cadmpeg_ir::geometry::LoftSubdata
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData::type_code: i64
 pub struct cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::cache_fit_tolerance: core::option::Option<f64>
-pub cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::definition: cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
+impl cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface
+pub fn cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::cache_fit_tolerance(&self) -> core::option::Option<f64>
+pub fn cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::definition(&self) -> &cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition
+pub fn cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface::legacy_cache_fit_tolerance(&self) -> core::option::Option<f64>
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::fifth_scale: core::option::Option<alloc::boxed::Box<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::scales: alloc::boxed::Box<[core::option::Option<cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale>; 4]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoft::tail: cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::NurbsCurve>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::members: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember<cadmpeg_asm::nurbs::proc_surface::ClassicLoftProfileData>>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::path: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::path: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftScale::tail: [i64; 2]
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::data: cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceData
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::discontinuity_flag: bool
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedDeformableSurface::support: cadmpeg_ir::geometry::SurfaceGeometry
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_flag: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::center_parameters: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::discontinuities: [alloc::vec::Vec<f64>; 3]
@@ -1025,14 +1089,14 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::first: cadmpeg_asm::nurbs
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::first_shape: cadmpeg_asm::nurbs::proc_surface::EmbeddedG2FirstShape
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::parameter_ranges: [[f64; 2]; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::second: cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::second_exact_surface: cadmpeg_ir::geometry::NurbsSurface
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::second_exact_surface: cadmpeg_ir::geometry::carriers::NurbsSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::singularity: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Blend::trailing_parameters: [f64; 4]
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::label: alloc::string::String
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::pcurves: [core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::pcurves: [core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedG2Side::surface: cadmpeg_ir::geometry::SurfaceGeometry
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::additional: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula>
@@ -1041,24 +1105,15 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::parameter_ranges: core
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::primary: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLawSurface::tail: cadmpeg_ir::geometry::LawSurfaceTail
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::bridge: alloc::vec::Vec<cadmpeg_ir::geometry::LoftBridgeToken>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::closures: [i64; 2]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::mode: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::parameters: cadmpeg_ir::geometry::SplineSurfaceParameters
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::revision_form: core::option::Option<cadmpeg_ir::geometry::LoftRevisionForm>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::sections: [alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry>; 2]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoft::singularities: [i64; 2]
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::NurbsCurve>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::curve: core::option::Option<cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathCurve>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::auxiliaries: alloc::vec::Vec<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::flag: i64
-pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathCurve
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathCurve::endpoints: core::option::Option<[core::option::Option<f64>; 2]>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathCurve::geometry: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPathLayout
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember<D>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::data: D
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftProfileMember::endpoints: core::option::Option<[core::option::Option<f64>; 2]>
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry::parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftSectionEntry::path: cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath
@@ -1081,7 +1136,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::entries: all
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::kind_flags: [bool; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::revision: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail: cadmpeg_ir::geometry::RevisionCompoundLoftTail<cadmpeg_ir::geometry::NurbsCurve>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail: cadmpeg_ir::geometry::RevisionCompoundLoftTail<cadmpeg_ir::geometry::carriers::NurbsCurve>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft::tail_flag: bool
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::cache: cadmpeg_ir::geometry::RevisionCacheForm
@@ -1096,11 +1151,14 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::shape_length: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::shape_parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::shape_prefix: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::shape_tail: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::PcurveNurbs>; 2]>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::tail_extensions: [i64; 3]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::tail_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::u_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::v_range: [core::option::Option<f64>; 2]
+pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionLoftPathCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionLoftPathCurve::endpoints: [core::option::Option<f64>; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionLoftPathCurve::geometry: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::cache: cadmpeg_ir::geometry::RevisionCacheForm
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::definition_index: i64
@@ -1109,7 +1167,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::offsets: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::parameters: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::radius_selector: core::option::Option<f64>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::shape_prefix: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::PcurveNurbs>; 2]>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::slice: cadmpeg_ir::geometry::CurveGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::slice_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::tail: i64
@@ -1119,15 +1177,15 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::third: core::option::
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::u_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBall::v_range: [core::option::Option<f64>; 2]
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::extension: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::label: alloc::string::String
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::secondary_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::secondary_pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::surface: cadmpeg_ir::geometry::SurfaceGeometry
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::tertiary_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallThirdSide::tertiary_pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::branch: cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::discontinuities: [alloc::vec::Vec<f64>; 6]
@@ -1137,7 +1195,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::scales: alloc:
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::selector: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::shape: cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftShape
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::singularity: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_directions: [cadmpeg_ir::math::Vector3; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_kind: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoft::tail_singularity: i64
@@ -1150,7 +1208,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::discontinuity_flag: b
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::formula: cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurfaceLayout
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::parameter: f64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::parameter_curve: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::parameter_curve: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_boolean: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_direction: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSkinSurface::surface_normal: i64
@@ -1159,16 +1217,22 @@ pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::discontinuity_flag: bool
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::layout: cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::primary_kind: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::SweepRevisionForm>
+pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::discontinuities: [alloc::vec::Vec<f64>; 6]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::discontinuity_flag: bool
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::parameter_ranges: [[f64; 2]; 2]
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::revision_form: core::option::Option<cadmpeg_ir::geometry::RevisionSurfaceForm>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::subtransform: cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSubtransform
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::trailing_value: i64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedTSplineSurface::type_code: i64
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::cache: cadmpeg_ir::geometry::VariableBlendCache
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::convexity: cadmpeg_ir::geometry::VariableBlendConvexity
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::cross_section: core::option::Option<cadmpeg_ir::geometry::VariableBlendCrossSection>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::offsets: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::post_curve: core::option::Option<cadmpeg_ir::geometry::NurbsCurve>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::post_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveNurbs>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::post_curve: core::option::Option<cadmpeg_ir::geometry::carriers::NurbsCurve>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::post_pcurve: core::option::Option<cadmpeg_ir::geometry::carriers::PcurveNurbs>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::post_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::radii: cadmpeg_ir::geometry::VariableBlendRadii
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode
@@ -1177,7 +1241,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::secondary_curve: co
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::shape_length: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::shape_parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::shape_tail: i64
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::PcurveNurbs>; 2]>
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::sides: alloc::boxed::Box<[cadmpeg_ir::geometry::RollingBallSide<cadmpeg_ir::geometry::SurfaceGeometry, cadmpeg_ir::geometry::CurveGeometry, cadmpeg_ir::geometry::carriers::PcurveNurbs>; 2]>
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::slice: cadmpeg_ir::geometry::CurveGeometry
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::slice_range: [core::option::Option<f64>; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype
@@ -1187,7 +1251,7 @@ pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::u_range: [f64; 2]
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend::v_lower: core::option::Option<f64>
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::boundaries: alloc::vec::Vec<cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary>
-pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::fit_tolerance: f64
+pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::fit_tolerance: cadmpeg_ir::geometry::FitTolerance
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::grid_size: i64
 pub cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlend::revision: core::option::Option<i64>
 pub struct cadmpeg_asm::nurbs::proc_surface::EmbeddedVertexBlendBoundary
@@ -1205,10 +1269,10 @@ pub struct cadmpeg_asm::nurbs::proc_surface::SweepProfile
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::directions: [cadmpeg_ir::math::Vector3; 3]
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::mode: i64
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::origin: cadmpeg_ir::math::Point3
-pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::path: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::path: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::path_parameter: f64
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::path_range: [f64; 2]
-pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::profile: cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::profile: cadmpeg_ir::geometry::carriers::NurbsCurve
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::profile_frame: core::option::Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>
 pub cadmpeg_asm::nurbs::proc_surface::SweepProfile::profile_range: [f64; 2]
 pub fn cadmpeg_asm::nurbs::proc_surface::procedural_surface_resolving_refs(&[cadmpeg_asm::sab::Token], &cadmpeg_asm::nurbs::toks::SubtypeTable) -> core::option::Option<cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface>
@@ -1234,10 +1298,8 @@ pub struct cadmpeg_asm::nurbs::toks::SubtypeTable
 impl cadmpeg_asm::nurbs::toks::SubtypeTable
 pub fn cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&[cadmpeg_asm::sab::Record]) -> Self
 pub fn cadmpeg_asm::nurbs::toks::SubtypeTable::with_save_format_version(self, core::option::Option<u32>) -> Self
-pub fn cadmpeg_asm::nurbs::toks::lex_test_span(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> alloc::sync::Arc<[cadmpeg_asm::sab::Token]>
 pub fn cadmpeg_asm::nurbs::toks::owned_construction_subtype(&[cadmpeg_asm::sab::Token]) -> core::option::Option<alloc::string::String>
 pub fn cadmpeg_asm::nurbs::toks::payload_subtype_toks<'r>(&'r cadmpeg_asm::sab::Record, usize, &str) -> core::option::Option<&'r [cadmpeg_asm::sab::Token]>
-pub fn cadmpeg_asm::nurbs::toks::test_table(&[u8], cadmpeg_asm::kernel_header::RefWidth) -> cadmpeg_asm::nurbs::toks::SubtypeTable
 pub mod cadmpeg_asm::sab
 pub enum cadmpeg_asm::sab::Token
 pub cadmpeg_asm::sab::Token::Char(u8)

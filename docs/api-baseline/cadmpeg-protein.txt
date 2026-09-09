@@ -1,5 +1,11 @@
-# generated at f444fcb0b
+# generated at ee06f3e21
 pub mod cadmpeg_protein
+pub mod cadmpeg_protein::framing
+pub struct cadmpeg_protein::framing::RecordFrame
+impl cadmpeg_protein::framing::RecordFrame
+pub fn cadmpeg_protein::framing::RecordFrame::bytes(&self) -> &[u8]
+pub const fn cadmpeg_protein::framing::RecordFrame::logical_offset(&self) -> usize
+pub fn cadmpeg_protein::framing::record_frames(&[u8]) -> core::result::Result<alloc::vec::Vec<cadmpeg_protein::framing::RecordFrame>, cadmpeg_core::error::CodecError>
 pub mod cadmpeg_protein::property
 pub enum cadmpeg_protein::property::PropertyContent
 pub cadmpeg_protein::property::PropertyContent::MultipleReferences
@@ -37,9 +43,6 @@ pub cadmpeg_protein::DecodedRecord::logical_offset: usize
 pub cadmpeg_protein::DecodedRecord::ordinal: u64
 pub cadmpeg_protein::DecodedRecord::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_protein::property::DecodedProperty>
 pub cadmpeg_protein::DecodedRecord::schema: alloc::string::String
-pub struct cadmpeg_protein::RecordFrame
-pub cadmpeg_protein::RecordFrame::bytes: alloc::vec::Vec<u8>
-pub cadmpeg_protein::RecordFrame::logical_offset: usize
 pub struct cadmpeg_protein::RejectedRecord
 pub cadmpeg_protein::RejectedRecord::detail: alloc::string::String
 pub cadmpeg_protein::RejectedRecord::ordinal: u64
@@ -48,7 +51,5 @@ pub const cadmpeg_protein::PAGE_SIZE: usize
 pub const cadmpeg_protein::RECORD_MARKER: &[u8]
 pub const cadmpeg_protein::STREAM_HEADER_LEN: usize
 pub const cadmpeg_protein::TERMINAL_MARKER: &[u8]
-pub fn cadmpeg_protein::decode(&[u8], &[u8]) -> core::result::Result<alloc::vec::Vec<cadmpeg_protein::DecodedRecord>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_protein::decode_detailed(&[u8], &[u8]) -> core::result::Result<cadmpeg_protein::DecodeOutcome, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_protein::has_schemas(&[u8]) -> bool
-pub fn cadmpeg_protein::record_frames(&[u8]) -> core::option::Option<alloc::vec::Vec<cadmpeg_protein::RecordFrame>>
