@@ -324,3 +324,50 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         assert_eq!(context.parameter_range(), [2.0, 5.0]);
     }
 }
+
+#[test]
+fn evaluated_and_absent_vertex_slots_have_the_same_native_tail_wire() {
+    let decode = |slot: Option<f64>| {
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Long(0),
+            Token::Ref(1),
+            Token::Double(0.03),
+            Token::Double(0.07),
+        ];
+        tokens.extend(slot.map(Token::Double));
+        let records = [Record {
+            index: 0,
+            name: "tvertex".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect();
+        let reach = Reachable {
+            vertices: HashSet::from([0]),
+            points: HashSet::from([1]),
+            ..Reachable::default()
+        };
+        let mut out = AsmBrep::default();
+        emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d")).unwrap();
+        (
+            serde_value::to_value(&out.tolerant_vertex_tails[0]).unwrap(),
+            out.vertices[0].tolerance,
+        )
+    };
+    let (evaluated_wire, tolerance) = decode(Some(0.125));
+    let (absent_wire, absent_tolerance) = decode(None);
+    assert_eq!(
+        tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        Some(1.25)
+    );
+    assert_eq!(absent_tolerance, None);
+    assert_eq!(evaluated_wire, absent_wire);
+}
