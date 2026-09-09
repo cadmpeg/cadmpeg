@@ -1488,7 +1488,7 @@ pub(crate) fn project_hole_position_sketches(
                 .flat_map(|lane| &lane.sketch_entities)
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                        && marker.object_index.is_some()
+                        && marker.object_index().is_some()
                         && marker.coordinates_m.is_some()
                         && matches!(
                             marker.kind,
@@ -1516,7 +1516,7 @@ pub(crate) fn project_hole_position_sketches(
                         .collect::<Vec<_>>();
                     let indexed_markers = position_markers
                         .iter()
-                        .filter(|marker| marker.object_index.is_some())
+                        .filter(|marker| marker.object_index().is_some())
                         .count();
                     let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
                     complete_alternate_encoding &= paired.len() == indexed_markers;
@@ -1671,9 +1671,9 @@ fn paired_object_locus_markers<'a>(
             };
             (object.feature_ref.as_deref() == Some(feature)
                 && anchor.feature_ref.as_deref() == Some(feature)
-                && object.object_index.is_some()
+                && object.object_index().is_some()
                 && object.coordinates_m.is_some()
-                && anchor.object_index.is_none()
+                && anchor.object_index().is_none()
                 && anchor.kind == SketchInputKind::Point
                 && anchor.coordinates_m == Some([0.0, 0.0]))
             .then_some(object)
@@ -1809,7 +1809,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 .flat_map(|lane| &lane.sketch_entities)
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                        && marker.object_index.is_some()
+                        && marker.object_index().is_some()
                 })
                 .collect::<Vec<_>>();
             let radius = diameter * 0.5;
@@ -2049,7 +2049,7 @@ pub(crate) fn project_generated_hole_axes(
                 let local_identities = lane
                     .generated_surface_identities
                     .iter()
-                    .filter(|identity| identity.feature_source_id == source.value())
+                    .filter(|identity| identity.feature_source_id == source)
                     .map(|identity| identity.local_identity)
                     .collect::<HashSet<_>>();
                 if local_identities.is_empty() {
@@ -3699,7 +3699,7 @@ fn marker_pattern_bore_axes(
             !lane.sketch_entities.iter().any(|candidate| {
                 candidate.id != paired.id
                     && candidate.feature_ref.as_deref() == Some(feature)
-                    && candidate.object_index.is_some()
+                    && candidate.object_index().is_some()
                     && candidate.coordinates_m.is_some_and(|[u, v]| {
                         same_dimension_length(paired_u * 1000.0, u * 1000.0)
                             && same_dimension_length(paired_v * 1000.0, v * 1000.0)
@@ -3713,7 +3713,7 @@ fn marker_pattern_bore_axes(
             .sketch_entities
             .iter()
             .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-            .filter(|marker| marker.object_index.is_some())
+            .filter(|marker| marker.object_index().is_some())
             .filter(|marker| {
                 matches!(
                     marker.kind,

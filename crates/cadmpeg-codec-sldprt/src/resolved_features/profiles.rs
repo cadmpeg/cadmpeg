@@ -2590,7 +2590,7 @@ fn legacy_config_hex_sketch(
 ) -> Option<(Sketch, Vec<SketchEntity>)> {
     let unique_object = |object_index: u32| {
         let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.object_index == Some(object_index) && marker.coordinates_m.is_some()
+            marker.object_index() == Some(object_index) && marker.coordinates_m.is_some()
         });
         let candidate = candidates.next()?;
         candidates.next().is_none().then_some(candidate)
@@ -2598,7 +2598,7 @@ fn legacy_config_hex_sketch(
     let vertices = (9..=14).map(&unique_object).collect::<Option<Vec<_>>>()?;
     let origin = unique_object(3).or_else(|| {
         let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.object_index.is_none()
+            marker.object_index().is_none()
                 && marker.coordinates_m.is_some_and(|coordinates| {
                     same_dimension_length(coordinates[0], 0.0)
                         && same_dimension_length(coordinates[1], 0.0)
@@ -2785,13 +2785,13 @@ fn legacy_config_collinear_sketch(
     let mut chain = markers
         .iter()
         .copied()
-        .filter(|marker| matches!(marker.object_index, Some(18 | 19 | 21)))
+        .filter(|marker| matches!(marker.object_index(), Some(18 | 19 | 21)))
         .filter_map(|marker| Some((marker, marker.coordinates_m?)))
         .collect::<Vec<_>>();
     let origin = markers
         .iter()
         .copied()
-        .filter(|marker| marker.object_index.is_none())
+        .filter(|marker| marker.object_index().is_none())
         .filter_map(|marker| Some((marker, marker.coordinates_m?)))
         .min_by_key(|(marker, _)| marker.offset())?;
     chain.push(origin);
@@ -2938,8 +2938,7 @@ mod detached_legacy_sketch_tests {
                 kind,
             );
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = object_index;
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;

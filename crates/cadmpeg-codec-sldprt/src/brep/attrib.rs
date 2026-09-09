@@ -273,10 +273,11 @@ fn atom_payload<'a>(
     buf: &[u8],
     from: usize,
     lists: &'a HashMap<u16, Vec<u32>>,
-) -> Option<&'a [u32]> {
+) -> Option<(&'a [u32; 5], &'a [u32])> {
     referenced_payload(buf, from, lists, |values| {
-        ATOM_WIDTHS.contains(&values.len()) && values[ATOM_GUARD] == 0
-    })
+        ATOM_WIDTHS.contains(&values.len()) && values.get(ATOM_GUARD) == Some(&0)
+    })?
+    .split_first_chunk::<5>()
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
@@ -306,7 +307,7 @@ pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
         if face_attr <= 1 {
             continue;
         }
-        let Some(values) = atom_payload(buf, p + attr_inst::LEN, &lists) else {
+        let Some((values, trailing_fields)) = atom_payload(buf, p + attr_inst::LEN, &lists) else {
             continue;
         };
         let atom = RawFaceAtom {
@@ -316,7 +317,7 @@ pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
                 .map(|feature_source_id| super::PersistentFaceIdentity {
                     feature_source_id,
                     local_id: values[ATOM_LOCAL],
-                    trailing_fields: values[ATOM_LOCAL + 1..].to_vec(),
+                    trailing_fields: trailing_fields.to_vec(),
                 }),
         };
         match found.entry(face_attr) {

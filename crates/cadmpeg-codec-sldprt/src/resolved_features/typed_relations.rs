@@ -141,7 +141,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             Some(SketchNativeOperand {
                 native_kind: checked_nonempty_name("sldprt:marker-constraint-owner"),
                 field: None,
-                object_index: owner.object_index.or(owner.local_id)?,
+                object_index: owner.object_index().or(owner.local_id())?,
                 native_ref: Some(owner.id.clone()),
             })
         }));
@@ -1477,7 +1477,7 @@ pub(super) fn relation_link_identifies_owner(
     relation: &SketchInputEntity,
     link: &crate::records::SketchInputLink,
 ) -> bool {
-    link.entity_ref == relation.id || relation.local_id == Some(u32::from(link.local_id))
+    link.entity_ref == relation.id || relation.local_id() == Some(u32::from(link.local_id))
 }
 
 pub(super) fn relation_link_is_geometric_operand(
@@ -1889,9 +1889,9 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && if id == 0 {
-                    marker.object_index.is_none()
+                    marker.object_index().is_none()
                 } else {
-                    marker.object_index == Some(id)
+                    marker.object_index() == Some(id)
                 }
         });
         let marker = candidates.next()?;
@@ -1912,7 +1912,7 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == Some(id)
+                && marker.object_index() == Some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -1962,7 +1962,7 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
     let resolve_object = |index| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == Some(index)
+                && marker.object_index() == Some(index)
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -2027,7 +2027,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == Some(id)
+                && marker.object_index() == Some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -2166,8 +2166,8 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && marker.coordinates_m.is_some()
-                && (marker.local_id == Some(id)
-                    || marker.object_index.and_then(|index| index.checked_add(1)) == Some(id))
+                && (marker.local_id() == Some(id)
+                    || marker.object_index().and_then(|index| index.checked_add(1)) == Some(id))
         });
         let candidate = candidates.next()?;
         candidates.next().is_none().then_some(candidate)
@@ -2303,7 +2303,7 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
     let mut endpoints = markers.iter().copied().filter(|marker| {
         marker.feature_ref == line.feature_ref
             && marker.id != line.id
-            && marker.local_id == Some(local_id)
+            && marker.local_id() == Some(local_id)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,

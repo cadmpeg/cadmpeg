@@ -155,10 +155,10 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let point_id = entities[1].id.clone();
     let second_point_id = entities[2].id.clone();
     entities[1].feature_ref = owner.clone();
-    entities[1].local_id = Some(7);
+    entities[1] = entities[1].with_test_identity(entities[1].object_index(), Some(7));
     entities[1].kind = crate::records::SketchInputKind::Point;
     entities[2].feature_ref = owner;
-    entities[2].local_id = Some(8);
+    entities[2] = entities[2].with_test_identity(entities[2].object_index(), Some(8));
     entities[2].kind = crate::records::SketchInputKind::ConstrainedPoint;
     entities[0].kind =
         crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Midpoint);
@@ -181,9 +181,12 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         lane.native_payload[offset..offset + 4].copy_from_slice(&local_id.to_le_bytes());
     }
     for entity in &mut lane.sketch_entities {
-        entity.object_index = crate::resolved_features::markers::marker_object_index(
-            &lane.native_payload,
-            entity.offset() as usize,
+        *entity = entity.with_test_identity(
+            crate::resolved_features::markers::marker_object_index(
+                &lane.native_payload,
+                entity.offset() as usize,
+            ),
+            entity.local_id(),
         );
     }
     let expected = crate::native::lanes::expected_lanes(&native).remove(0).1;
@@ -352,7 +355,10 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let lane = &mut native.feature_input_lanes[0];
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
-    lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
+    lane.sketch_entities[1] = lane.sketch_entities[1].with_test_identity(
+        lane.sketch_entities[1].object_index(),
+        lane.sketch_entities[0].local_id(),
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();

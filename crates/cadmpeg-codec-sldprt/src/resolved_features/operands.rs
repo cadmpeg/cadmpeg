@@ -125,13 +125,13 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         };
         let indexed = entities
             .iter()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
         if entities
             .iter()
-            .any(|entity| entity.object_index == Some(u32::from(address)) && accepts(entity))
+            .any(|entity| entity.object_index() == Some(u32::from(address)) && accepts(entity))
         {
             return match indexed.as_slice() {
                 [entity] => Some(*entity),
@@ -140,7 +140,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         }
         let local = entities
             .iter()
-            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| accepts(entity))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
@@ -153,7 +153,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
@@ -174,7 +174,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
@@ -192,7 +192,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| {
                 matches!(
@@ -221,7 +221,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| entity.coordinates_m.is_some())
             .filter(|entity| operand_accepts_marker(kind, entity.kind))
             .filter(|entity| !excluded.contains(&entity.id))
@@ -243,12 +243,12 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
         if entities.iter().any(|entity| {
-            entity.object_index == Some(u32::from(address))
+            entity.object_index() == Some(u32::from(address))
                 && operand_accepts_marker(kind, entity.kind)
         }) {
             return match indexed.as_slice() {
@@ -259,7 +259,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let local = entities
             .iter()
             .copied()
-            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
@@ -274,7 +274,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         let indexed = entities
             .iter()
             .copied()
-            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.object_index() == Some(u32::from(address)))
             .filter(|entity| operand_accepts_marker(kind, entity.kind))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
@@ -289,7 +289,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             let indexed_line_handles = entities
                 .iter()
                 .copied()
-                .filter(|entity| entity.object_index == Some(u32::from(address)))
+                .filter(|entity| entity.object_index() == Some(u32::from(address)))
                 .filter(|entity| !excluded.contains(&entity.id))
                 .filter(|entity| {
                     linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
@@ -325,7 +325,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
         compatible
             .iter()
             .copied()
-            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| entity.local_id() == Some(u32::from(address)))
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>()
     };
@@ -340,7 +340,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                 let linked_line_handles = entities
                     .iter()
                     .copied()
-                    .filter(|entity| entity.local_id == Some(u32::from(address)))
+                    .filter(|entity| entity.local_id() == Some(u32::from(address)))
                     .filter(|entity| !excluded.contains(&entity.id))
                     .filter(|entity| {
                         linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
@@ -356,7 +356,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                 entities
                     .iter()
                     .copied()
-                    .filter(|entity| entity.local_id == Some(u32::from(address)))
+                    .filter(|entity| entity.local_id() == Some(u32::from(address)))
                     .flat_map(crate::records::SketchInputEntity::links)
                     .filter_map(|link| {
                         entities
@@ -400,7 +400,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                                         matches!(
                                             entity.kind,
                                             SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                        ) && entity.local_id == Some(u32::from(address))
+                                        ) && entity.local_id() == Some(u32::from(address))
                                             && !excluded.contains(&entity.id)
                                     })
                                     .collect::<Vec<_>>()
@@ -443,7 +443,7 @@ fn linked_point_markers<'a>(
     let mut pending = entities
         .iter()
         .copied()
-        .filter(|entity| entity.local_id == Some(u32::from(address)))
+        .filter(|entity| entity.local_id() == Some(u32::from(address)))
         .filter(|entity| !operand_accepts_marker(kind, entity.kind))
         .map(|entity| entity.id.as_str())
         .collect::<Vec<_>>();

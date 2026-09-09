@@ -181,8 +181,8 @@ fn axis_relation_expands_intermediate_relation_handle() {
     second = second.with_test_position(second.ordinal(), 2);
     let mut distance = marker("distance-handle", None);
     distance.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
-    distance.local_id = Some(5);
-    distance.object_index = Some(4);
+    distance = distance.with_test_identity(distance.object_index(), Some(5));
+    distance = distance.with_test_identity(Some(4), distance.local_id());
     distance.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -207,8 +207,8 @@ fn axis_relation_expands_intermediate_relation_handle() {
     );
     let mut horizontal = marker("horizontal", None);
     horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    horizontal.local_id = Some(13);
-    horizontal.object_index = Some(12);
+    horizontal = horizontal.with_test_identity(horizontal.object_index(), Some(13));
+    horizontal = horizontal.with_test_identity(Some(12), horizontal.local_id());
     horizontal.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -438,7 +438,7 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     proxy.kind = SketchInputKind::Point;
     let mut relation = marker("horizontal", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.object_index = Some(4);
+    relation = relation.with_test_identity(Some(4), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -1297,8 +1297,8 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     second.kind = SketchInputKind::Point;
     let mut relation = marker("horizontal", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(7);
-    relation.object_index = Some(6);
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(6), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -1599,7 +1599,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     .with_native_ref(Some("point-marker".into()));
     let known_marker = marker("known-marker", None);
     let mut point_marker = marker("point-marker", Some([0.003, 0.005]));
-    point_marker.local_id = Some(13);
+    point_marker = point_marker.with_test_identity(point_marker.object_index(), Some(13));
     let markers = HashMap::from([
         (known_marker.id.as_str(), &known_marker),
         (point_marker.id.as_str(), &point_marker),

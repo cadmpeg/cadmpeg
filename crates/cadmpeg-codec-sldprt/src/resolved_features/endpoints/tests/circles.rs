@@ -29,8 +29,6 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -96,8 +94,7 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -156,8 +153,6 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -208,8 +203,6 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -266,8 +259,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -314,7 +306,8 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     let mut current_kind_one_entities = entities.clone();
-    current_kind_one_entities[1].object_index = None;
+    current_kind_one_entities[1] = current_kind_one_entities[1]
+        .with_test_identity(None, current_kind_one_entities[1].local_id());
     let current_kind_one_markers = current_kind_one_entities.iter().collect::<Vec<_>>();
     let current_kind_one_circle = &current_kind_one_entities[3];
     assert_eq!(
@@ -382,8 +375,6 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -461,8 +452,6 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -580,8 +569,6 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -689,8 +676,6 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -742,8 +727,6 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -800,8 +783,6 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -878,8 +859,6 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -929,7 +908,8 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     terminal[64..68].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
     terminal[84..86].copy_from_slice(&[0; 2]);
     let mut direct_entities = entities.clone();
-    direct_entities[2].object_index = Some(1);
+    direct_entities[2] =
+        direct_entities[2].with_test_identity(Some(1), direct_entities[2].local_id());
     let direct_markers = direct_entities.iter().collect::<Vec<_>>();
     assert_eq!(
         super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &direct_markers,),
@@ -990,8 +970,6 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1040,8 +1018,6 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;

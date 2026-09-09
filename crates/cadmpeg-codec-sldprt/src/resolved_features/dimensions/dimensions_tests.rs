@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn declared_entity_handle_precedes_generic_operand_resolution() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -40,8 +40,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -101,7 +100,8 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
     assert_eq!(carrier.construction, Some(false));
 
     let mut terminal_lane = lane.clone();
-    terminal_lane.sketch_entities[2].local_id = None;
+    terminal_lane.sketch_entities[2] = terminal_lane.sketch_entities[2]
+        .with_test_identity(terminal_lane.sketch_entities[2].object_index(), None);
     let terminal_markers = terminal_lane
         .sketch_entities
         .iter()
@@ -181,7 +181,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 
 #[test]
 fn declared_entity_handle_accepts_indexed_radial_point_pair() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_80F7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80f7).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -200,8 +200,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -278,7 +277,8 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
     .is_none());
 
     let mut mismatched_lane = lane;
-    mismatched_lane.sketch_entities[1].object_index = Some(99);
+    mismatched_lane.sketch_entities[1] = mismatched_lane.sketch_entities[1]
+        .with_test_identity(Some(99), mismatched_lane.sketch_entities[1].local_id());
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
@@ -315,8 +315,8 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(object_index);
-        constructed_marker.local_id = Some(local_id);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(object_index), Some(local_id));
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -401,7 +401,8 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     .is_none());
 
     let mut mismatched_lane = lane.clone();
-    mismatched_lane.sketch_entities[3].object_index = Some(99);
+    mismatched_lane.sketch_entities[3] = mismatched_lane.sketch_entities[3]
+        .with_test_identity(Some(99), mismatched_lane.sketch_entities[3].local_id());
     let mismatched_markers = mismatched_lane
         .sketch_entities
         .iter()
@@ -433,7 +434,11 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
     .is_none());
 
     let mut missing_center_id_lane = lane.clone();
-    missing_center_id_lane.sketch_entities[2].local_id = Some(0);
+    missing_center_id_lane.sketch_entities[2] = missing_center_id_lane.sketch_entities[2]
+        .with_test_identity(
+            missing_center_id_lane.sketch_entities[2].object_index(),
+            Some(0),
+        );
     let missing_center_id_markers = missing_center_id_lane
         .sketch_entities
         .iter()
@@ -462,8 +467,8 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(object_index);
-        constructed_marker.local_id = Some(local_id);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(object_index), Some(local_id));
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -510,7 +515,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
     for kind in [
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D4),
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
-        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80DD),
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x80dd).unwrap()),
     ] {
         let strict_point_tag = matches!(
             kind,
@@ -645,7 +650,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
 
 #[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_88E7);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x88e7).unwrap());
     let operand = FeatureInputOperand {
         offset: 150,
         reference_ref: "reference".into(),
@@ -700,8 +705,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -859,7 +863,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_69BD);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x69bd).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -923,8 +927,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(11);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(11), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.01, 0.02]);
         constructed_marker.links = None;
@@ -987,8 +990,6 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 1000, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.03, 0.04]);
         constructed_marker.links = None;
@@ -1013,7 +1014,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
 
 #[test]
 fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witness() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8452);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8452).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1032,8 +1033,6 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
             marker_kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -1159,7 +1158,7 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
 
 #[test]
 fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8263);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8263).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1178,8 +1177,6 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
             marker_kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -1235,14 +1232,10 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
             marker("other-radial", 40, SketchInputKind::Point, [0.103, 0.004]),
         ],
     };
-    lane.sketch_entities[0].object_index = Some(50);
-    lane.sketch_entities[0].local_id = Some(49);
-    lane.sketch_entities[1].object_index = Some(49);
-    lane.sketch_entities[1].local_id = Some(0);
-    lane.sketch_entities[2].object_index = Some(70);
-    lane.sketch_entities[2].local_id = Some(69);
-    lane.sketch_entities[3].object_index = Some(69);
-    lane.sketch_entities[3].local_id = Some(0);
+    lane.sketch_entities[0] = lane.sketch_entities[0].with_test_identity(Some(50), Some(49));
+    lane.sketch_entities[1] = lane.sketch_entities[1].with_test_identity(Some(49), Some(0));
+    lane.sketch_entities[2] = lane.sketch_entities[2].with_test_identity(Some(70), Some(69));
+    lane.sketch_entities[3] = lane.sketch_entities[3].with_test_identity(Some(69), Some(0));
     let markers_by_id = lane
         .sketch_entities
         .iter()
@@ -1460,8 +1453,6 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, offset as u32, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1567,7 +1558,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
             entity_ref: Some(marker_id.into()),
         }],
@@ -1592,8 +1583,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
-            constructed_marker.object_index = Some(0);
-            constructed_marker.local_id = Some(0);
+            constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;
@@ -1701,8 +1691,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 1, 20, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
-            constructed_marker.object_index = Some(1);
-            constructed_marker.local_id = Some(0);
+            constructed_marker = constructed_marker.with_test_identity(Some(1), Some(0));
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
@@ -1719,8 +1708,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
                 SketchInputKind::Relation(SketchRelationKind::Distance),
             );
             constructed_marker.feature_ref = Some(feature_ref.into());
-            constructed_marker.object_index = Some(1);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(1), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = None;
             constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -1744,8 +1732,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 3, 30, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
-            constructed_marker.object_index = Some(2);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(2), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.002, 0.0]);
             constructed_marker.links = None;
@@ -1789,8 +1776,6 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
             kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1849,8 +1834,6 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -1862,8 +1845,6 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 10, SketchInputKind::Arc);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -1937,8 +1918,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(object_index);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
@@ -1964,7 +1944,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
     assert_eq!(
         pairs
             .iter()
-            .map(|(center, radial)| (center.object_index, radial.object_index))
+            .map(|(center, radial)| (center.object_index(), radial.object_index()))
             .collect::<Vec<_>>(),
         vec![
             (Some(7), Some(6)),
