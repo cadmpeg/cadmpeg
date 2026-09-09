@@ -22,7 +22,6 @@ use crate::parameter::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
-use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1350,44 +1349,88 @@ impl ViewGeometry {
 
 impl Serialize for NativeView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct OrthographicWire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
+            form: i64,
+            projection: ViewProjection,
+            view_number: Option<i64>,
+            scale: Option<f64>,
+            model_to_view: &'a Option<String>,
+            clipping_planes: &'a [Option<String>],
+            view_plane_normal: Option<[Option<f64>; 3]>,
+            view_reference_point: Option<[Option<f64>; 3]>,
+            center_of_projection: Option<[Option<f64>; 3]>,
+            view_up: Option<[Option<f64>; 3]>,
+            view_plane_distance: Option<f64>,
+            clipping_window: Option<[Option<f64>; 4]>,
+            depth_clipping: Option<i64>,
+            depth_range: Option<[Option<f64>; 2]>,
+        }
+        #[derive(Serialize)]
+        struct PerspectiveWire<'a> {
+            id: &'a str,
+            source_entity: &'a str,
+            form: i64,
+            projection: ViewProjection,
+            view_number: Option<i64>,
+            scale: Option<f64>,
+            model_to_view: Option<&'a str>,
+            clipping_planes: &'a [Option<String>],
+            view_plane_normal: [Option<f64>; 3],
+            view_reference_point: [Option<f64>; 3],
+            center_of_projection: [Option<f64>; 3],
+            view_up: [Option<f64>; 3],
+            view_plane_distance: Option<f64>,
+            clipping_window: [Option<f64>; 4],
+            depth_clipping: Option<i64>,
+            depth_range: [Option<f64>; 2],
+        }
         let projection = self.geometry.projection();
-        let mut wire = serializer.serialize_struct("NativeView", 16)?;
-        wire.serialize_field("id", &self.id)?;
-        wire.serialize_field("source_entity", &self.source_entity)?;
-        wire.serialize_field("form", &projection.form())?;
-        wire.serialize_field("projection", &projection)?;
-        wire.serialize_field("view_number", &self.view_number)?;
-        wire.serialize_field("scale", &self.scale)?;
         match &self.geometry {
             ViewGeometry::Orthographic {
                 model_to_view,
                 clipping_planes,
-            } => {
-                wire.serialize_field("model_to_view", model_to_view)?;
-                wire.serialize_field("clipping_planes", clipping_planes)?;
-                wire.serialize_field("view_plane_normal", &())?;
-                wire.serialize_field("view_reference_point", &())?;
-                wire.serialize_field("center_of_projection", &())?;
-                wire.serialize_field("view_up", &())?;
-                wire.serialize_field("view_plane_distance", &())?;
-                wire.serialize_field("clipping_window", &())?;
-                wire.serialize_field("depth_clipping", &())?;
-                wire.serialize_field("depth_range", &())?;
+            } => OrthographicWire {
+                id: &self.id,
+                source_entity: &self.source_entity,
+                form: projection.form(),
+                projection,
+                view_number: self.view_number,
+                scale: self.scale,
+                model_to_view,
+                clipping_planes,
+                view_plane_normal: None,
+                view_reference_point: None,
+                center_of_projection: None,
+                view_up: None,
+                view_plane_distance: None,
+                clipping_window: None,
+                depth_clipping: None,
+                depth_range: None,
             }
-            ViewGeometry::Perspective(geometry) => {
-                wire.serialize_field("model_to_view", &())?;
-                wire.serialize_field("clipping_planes", &[] as &[()])?;
-                wire.serialize_field("view_plane_normal", &geometry.view_plane_normal)?;
-                wire.serialize_field("view_reference_point", &geometry.view_reference_point)?;
-                wire.serialize_field("center_of_projection", &geometry.center_of_projection)?;
-                wire.serialize_field("view_up", &geometry.view_up)?;
-                wire.serialize_field("view_plane_distance", &geometry.view_plane_distance)?;
-                wire.serialize_field("clipping_window", &geometry.clipping_window)?;
-                wire.serialize_field("depth_clipping", &geometry.depth_clipping)?;
-                wire.serialize_field("depth_range", &geometry.depth_range)?;
+            .serialize(serializer),
+            ViewGeometry::Perspective(geometry) => PerspectiveWire {
+                id: &self.id,
+                source_entity: &self.source_entity,
+                form: projection.form(),
+                projection,
+                view_number: self.view_number,
+                scale: self.scale,
+                model_to_view: None,
+                clipping_planes: &[],
+                view_plane_normal: geometry.view_plane_normal,
+                view_reference_point: geometry.view_reference_point,
+                center_of_projection: geometry.center_of_projection,
+                view_up: geometry.view_up,
+                view_plane_distance: geometry.view_plane_distance,
+                clipping_window: geometry.clipping_window,
+                depth_clipping: geometry.depth_clipping,
+                depth_range: geometry.depth_range,
             }
+            .serialize(serializer),
         }
-        wire.end()
     }
 }
 
