@@ -272,21 +272,6 @@ impl Shell {
         &self.free_vertices
     }
 
-    /// Mutable face identities with fixed membership counts.
-    pub fn faces_mut(&mut self) -> &mut [FaceId] {
-        &mut self.faces
-    }
-
-    /// Mutable wire edge identities with fixed membership counts.
-    pub fn wire_edges_mut(&mut self) -> &mut [EdgeId] {
-        &mut self.wire_edges
-    }
-
-    /// Mutable free vertex identities with fixed membership counts.
-    pub fn free_vertices_mut(&mut self) -> &mut [VertexId] {
-        &mut self.free_vertices
-    }
-
     /// Edits topology members and preserves the shell when admission fails.
     pub fn edit_topology<R>(
         &mut self,
