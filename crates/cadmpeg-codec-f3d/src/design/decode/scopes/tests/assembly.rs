@@ -24,9 +24,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             draft.frame_length = 637;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -458,9 +456,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
                 values.push(99);
                 crate::records::ReferenceRun::unlocated(values)
             };
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -503,9 +499,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                 217, 116, 117, 118, 119, 400,
             ]);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -650,9 +644,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
                     .chain([1_034])
                     .collect(),
             );
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -944,9 +936,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             draft.frame_length = 399;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1173,9 +1163,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 )
                 .unwrap();
                 draft.feature_ordinal_offset = 334;
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.previous_history_state_id_offset =
                     draft.previous_history_state_id.map(|previous| {
                         draft.history_state_id.get_or_insert(previous + 1);

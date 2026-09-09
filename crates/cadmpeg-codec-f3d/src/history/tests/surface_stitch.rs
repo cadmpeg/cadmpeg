@@ -47,9 +47,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             draft.previous_history_state_id = Some(1);
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

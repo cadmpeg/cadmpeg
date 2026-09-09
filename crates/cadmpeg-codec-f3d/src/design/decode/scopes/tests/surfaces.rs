@@ -229,7 +229,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             draft.paired_byte_offset = 366;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -446,9 +446,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     invalid_scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![302]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -502,7 +500,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -602,7 +600,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
                 draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
                     draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-                draft.locate_fixture_references();
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
@@ -695,7 +693,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -778,7 +776,7 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -870,7 +868,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
                 draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
                     draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-                draft.locate_fixture_references();
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
@@ -956,7 +954,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
                 "reference_members",
             )
             .unwrap();
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1063,9 +1061,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
             draft.byte_offset = 0;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1080,7 +1076,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
             draft.kind_offset = class_377::KIND as u64;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1270,9 +1266,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
                 draft.byte_offset = 0;
                 draft.reference_count_offset = draft.byte_offset + 9;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
                 draft.layout_fixture_tail();

@@ -121,9 +121,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![0, 363, 0, 370, 0, 378]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -664,9 +662,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             draft.previous_history_state_id = Some(7);
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![101, 111, 102, 112]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1451,9 +1447,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1504,9 +1498,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 101, 201, 301, 102]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1598,9 +1590,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.frame_length = 339;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![100, 200, 300]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1650,9 +1640,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1676,9 +1664,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301, 302]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1699,9 +1685,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 202, 203, 300]);
             draft.payload = crate::records::feature::DesignScopePayload::SurfacePatch(Vec::new());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1744,9 +1728,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 .unwrap();
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 300, 301, 400]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

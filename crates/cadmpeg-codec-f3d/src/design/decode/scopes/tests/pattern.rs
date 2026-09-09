@@ -378,9 +378,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
                 values.extend([axis_record_index, selection_record_index]);
                 crate::records::ReferenceRun::unlocated(values)
             };
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -437,9 +435,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
                 100, 50, 51, 52, 53, 110, 120, 130, 140,
             ]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -519,9 +515,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.frame_length = 627;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -563,9 +557,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -634,9 +626,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 64, 65]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -673,9 +663,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
                 50, 51, 52, 53, 60, 61, 62, 63, 64, 65,
             ]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -723,9 +711,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -933,9 +919,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![draft.record_index]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -992,9 +976,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
                     .map(crate::records::DesignParameterOwner::record_index)
                     .collect(),
             );
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1017,9 +999,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![draft.record_index]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

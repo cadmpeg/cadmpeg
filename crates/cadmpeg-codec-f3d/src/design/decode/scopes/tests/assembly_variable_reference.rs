@@ -20,9 +20,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
                 200, 201, 202, 203, 108, 109, 110, 111, 204,
             ]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();

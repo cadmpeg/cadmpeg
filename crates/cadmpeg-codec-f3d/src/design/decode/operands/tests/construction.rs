@@ -444,9 +444,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -677,9 +675,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -799,9 +795,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -834,9 +828,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -962,7 +954,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1034,7 +1026,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1089,7 +1081,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1137,7 +1129,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1162,7 +1154,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1205,7 +1197,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
                     draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-                draft.locate_fixture_references();
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
@@ -1235,7 +1227,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-            draft.locate_fixture_references();
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1276,7 +1268,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
                     draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
-                draft.locate_fixture_references();
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
@@ -1354,9 +1346,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                     settings_record_index: 301,
                 },
             );
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1478,9 +1468,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             .try_edit(|draft| {
                 draft.reference_members =
                     crate::records::ReferenceRun::unlocated(vec![group_record_index]);
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
                 draft.layout_fixture_tail();
@@ -1523,9 +1511,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             draft.byte_offset = 1000;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -1541,9 +1527,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
                 (0..13).map(|index| 296_500 + index).collect(),
             );
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();

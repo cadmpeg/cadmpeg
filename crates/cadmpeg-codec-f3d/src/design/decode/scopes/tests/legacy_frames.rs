@@ -70,9 +70,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             draft.byte_offset = 0;
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -86,9 +84,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -142,9 +138,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -202,9 +196,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![76]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -249,9 +241,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
@@ -308,9 +298,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             .try_edit(|draft| {
                 draft.reference_members =
                     crate::records::ReferenceRun::unlocated(vec![record_index]);
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
                 draft.layout_fixture_tail();
@@ -418,9 +406,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                     support_record_index,
                 ]);
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.locate_fixture_references();
-                draft.kind_offset =
-                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
             .unwrap();
@@ -541,9 +527,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![80, 82]);
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();

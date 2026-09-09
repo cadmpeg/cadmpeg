@@ -1640,7 +1640,7 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
                 draft.frame_length = 120;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset = draft.byte_offset + 9;
-                draft.locate_fixture_references();
+                draft.layout_fixture_references();
                 draft.kind_offset = kind_offset;
                 draft.feature_ordinal_offset = kind_offset + 16;
             })

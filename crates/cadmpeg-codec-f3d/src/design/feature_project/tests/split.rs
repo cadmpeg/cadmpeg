@@ -76,9 +76,7 @@ fn class_277_258_compact_split_face_frame_projects() {
             draft.frame_length = 407;
             draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -136,9 +134,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
             draft.previous_history_state_id = Some(7);
             draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.locate_fixture_references();
-            draft.kind_offset =
-                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
