@@ -704,35 +704,38 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         DesignOperandRole::ROLE_0X21,
     );
 
-    let target_selection = crate::records::topology::DesignEntitySelectionOperand {
-        id: format!("{stream}:design-entity-selection-operand#424"),
-        scope_record_index: 382,
-        group_record_index: 421,
-        group_member_ordinal: 0,
-        record_index: 424,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        identity_record_index: 427,
-        identity_record_offset: 0,
-        primary_identity: 319,
-        primary_identity_offset: 0,
-        secondary: None,
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
-        next_record_index: 428,
-        next_byte_offset: 0,
-    };
+    let target_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::DesignEntitySelectionOperandDraft {
+            id: format!("{stream}:design-entity-selection-operand#424"),
+            scope_record_index: 382,
+            group_record_index: 421,
+            group_member_ordinal: 0,
+            record_index: 424,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 0,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 0,
+            identity_record_index: 427,
+            identity_record_offset: 0,
+            primary_identity: 319,
+            primary_identity_offset: 21,
+            secondary: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 428,
+            next_byte_offset: 29,
+        },
+    )
+    .unwrap();
     let mut target_scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#920"),
         crate::records::feature::DesignFeatureKind::WorkPlane,

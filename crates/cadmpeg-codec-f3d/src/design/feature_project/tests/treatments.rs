@@ -119,40 +119,43 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 crate::records::ReferenceRun::unlocated(vec![0, 363, 0, 370, 0, 378]);
         })
         .unwrap();
-    let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
-        id: format!("f3d:native/BulkStream.dat:face-operand#{record_index}"),
-        scope_record_index: 32,
-        scope_reference_ordinal,
-        group: None,
-        record_index,
-        byte_offset: 1200,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1400,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        recipe_record_index: record_index + 3,
-        recipe_record_byte_offset: 1300,
-        recipe_id: format!(
-            "f3d:native/BulkStream.dat:construction-recipe#{}",
-            record_index + 3
-        ),
-        recipe_prefix_offset: 1311,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::BoundedFace,
-        recipe_program_offset: 1350,
-        recipe_program: vec![0, -1],
+    let hole_face_operand = |record_index, scope_reference_ordinal| {
+        DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+            id: format!("f3d:native/BulkStream.dat:face-operand#{record_index}"),
+            scope_record_index: 32,
+            scope_reference_ordinal,
+            group: None,
+            record_index,
+            byte_offset: 1200,
+            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+            paired_byte_offset: 1250,
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            recipe_record_index: record_index + 3,
+            recipe_record_byte_offset: 1300,
+            recipe_id: format!(
+                "f3d:native/BulkStream.dat:construction-recipe#{}",
+                record_index + 3
+            ),
+            recipe_prefix_offset: 1311,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::BoundedFace,
+            recipe_program_offset: 1350,
+            recipe_program: vec![0, -1],
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: Vec::new(),
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: vec![282],
-        resolved_active_face: None,
-        next_record_index: record_index + 4,
-        next_byte_offset: 1411,
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: vec![282],
+            resolved_active_face: None,
+            next_record_index: record_index + 4,
+            next_byte_offset: 1411,
+        })
+        .unwrap()
     };
     let hole_face_operands = [hole_face_operand(370, 3), hole_face_operand(378, 5)];
     let (features, _) = project_parameter_design(
@@ -705,43 +708,46 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         group(101, 111, DesignOperandRole::ROLE_0X10),
         group(102, 112, DesignOperandRole::ROLE_0X21),
     ];
-    let mut selection = DesignEntitySelectionOperand {
-        id: format!("{stream}:design-entity-selection-operand#112"),
-        scope_record_index: 100,
-        group_record_index: 102,
-        group_member_ordinal: 0,
-        record_index: 112,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        identity_record_index: 113,
-        identity_record_offset: 0,
-        primary_identity: 225,
-        primary_identity_offset: 0,
-        secondary: None,
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-            history_id: "history".into(),
-            historical: crate::records::topology::HistoricalBinding {
-                kind: AsmHistoricalEntityKind::Coedge,
-                entity_ref: 225,
-                state_ids: vec![7, 6],
-            },
-            face_slot: 158,
-        }],
-        resolved_edge_slot: None,
-        next_record_index: 114,
-        next_byte_offset: 0,
-    };
+    let mut selection = DesignEntitySelectionOperand::try_new(
+        crate::records::topology::DesignEntitySelectionOperandDraft {
+            id: format!("{stream}:design-entity-selection-operand#112"),
+            scope_record_index: 100,
+            group_record_index: 102,
+            group_member_ordinal: 0,
+            record_index: 112,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 0,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 0,
+            identity_record_index: 115,
+            identity_record_offset: 0,
+            primary_identity: 225,
+            primary_identity_offset: 21,
+            secondary: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+                history_id: "history".into(),
+                historical: crate::records::topology::HistoricalBinding {
+                    kind: AsmHistoricalEntityKind::Coedge,
+                    entity_ref: 225,
+                    state_ids: vec![7, 6],
+                },
+                face_slot: 158,
+            }],
+            resolved_edge_slot: None,
+            next_record_index: 114,
+            next_byte_offset: 29,
+        },
+    )
+    .unwrap();
     let timeline = crate::records::DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
         crate::records::DesignTimelineFrame::test_items(
@@ -1503,33 +1509,36 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     let edge_identity = |record_index, group_record_index, edge| {
-        crate::records::topology::DesignEdgeIdentityOperand {
-            id: format!("f3d:native/BulkStream.dat:edge-identity#{record_index}"),
-            scope_record_index: patch_scope.record_index,
-            group_record_index,
-            group_member_ordinal: 0,
-            record_index,
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-            layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
-            local_id: u64::from(record_index),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 0,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 0,
-            historical: None,
-            treatment_radius_candidates: Vec::new(),
-            transition_edge_candidates: Vec::new(),
-            resolved_edge_slots: Vec::new(),
-            resolved_edge_slot: Some(edge),
-            resolution_identity_id: None,
-        }
+        crate::records::topology::DesignEdgeIdentityOperand::try_new(
+            crate::records::topology::DesignEdgeIdentityOperandDraft {
+                id: format!("f3d:native/BulkStream.dat:edge-identity#{record_index}"),
+                scope_record_index: patch_scope.record_index,
+                group_record_index,
+                group_member_ordinal: 0,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+                layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
+                local_id: u64::from(record_index),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 42,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 118,
+                historical: None,
+                treatment_radius_candidates: Vec::new(),
+                transition_edge_candidates: Vec::new(),
+                resolved_edge_slots: Vec::new(),
+                resolved_edge_slot: Some(edge),
+                resolution_identity_id: None,
+            },
+        )
+        .unwrap()
     };
     let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
     let resolved = crate::design::feature_project::project_surface_patch(

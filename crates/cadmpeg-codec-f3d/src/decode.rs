@@ -4533,10 +4533,10 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             identity
-                .wrappers
+                .wrappers()
                 .iter()
                 .map(|wrapper| wrapper.record_index)
-                .chain(std::iter::once(identity.following_record_index))
+                .chain(std::iter::once(identity.following_record_index()))
                 .map(move |record_index| (stream.clone(), record_index))
         })
         .chain(

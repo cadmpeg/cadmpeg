@@ -1084,7 +1084,7 @@ pub(crate) fn bind_feature_body_selections(
                             operand.owner,
                             crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                         )
-                        && operand.record_index == record_index
+                        && operand.record_index() == record_index
                 });
                 let Some(operand) = matching.next() else {
                     historical_tool_bodies.clear();
@@ -1391,10 +1391,10 @@ fn combine_recipe_family_tool_slots(
                     operand.owner,
                     crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                 )
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let operand = matching.next()?;
-        if matching.next().is_some() || operand.references.len() != 1 {
+        if matching.next().is_some() || operand.references().len() != 1 {
             return None;
         }
         let recipe = recipes_by_id
@@ -1411,7 +1411,7 @@ fn combine_recipe_family_tool_slots(
             (None, None) => None,
             _ => return None,
         };
-        let reference = &operand.references[0];
+        let reference = &operand.references()[0];
         let key = (
             operand.asset_id.clone(),
             operand.context_id.clone(),
@@ -1582,7 +1582,7 @@ fn unique_external_body_candidate(
         .map(|body| (&body.id, body))
         .collect::<HashMap<_, _>>();
     let current_prefix = current_history_source.map(|source| format!("f3d:brep/{source}/"));
-    let mut reference_candidates = operand.references.iter().map(|reference| {
+    let mut reference_candidates = operand.references().iter().map(|reference| {
         reference
             .candidate_faces
             .iter()
@@ -1664,7 +1664,7 @@ fn bind_body_recipe_body_selection(
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
-                && operand.record_index == record_index
+                && operand.record_index() == record_index
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
@@ -1741,7 +1741,7 @@ fn bind_direct_body_recipe_body_selection(
                 };
                 let mut matching_operands = operands.iter().filter(|operand| {
                     operand.owner.group() == Some((group.record_index, ordinal))
-                        && operand.record_index == record_index
+                        && operand.record_index() == record_index
                         && crate::ids::native_stream(&operand.id) == stream
                 });
                 let Some(operand) = matching_operands.next() else {
@@ -1801,7 +1801,7 @@ fn bind_direct_body_recipe_body_selection(
                     operand.owner,
                     crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                 )
-                && operand.record_index == record_index
+                && operand.record_index() == record_index
         });
         let Some(operand) = matching_operands.next() else {
             return;
@@ -1909,7 +1909,7 @@ fn body_recipe_face_body_candidates(
         .collect::<std::collections::HashMap<_, _>>();
     let mut candidates = Vec::new();
     for face in operand
-        .references
+        .references()
         .iter()
         .flat_map(|reference| &reference.candidate_faces)
     {
@@ -2355,7 +2355,7 @@ fn bind_entity_face_groups(
                 operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.record_index == record_index
+                    && operand.record_index() == record_index
                     && crate::ids::native_stream(&operand.id) == stream
             });
             let Some(operand) = matches.next() else {
@@ -2588,7 +2588,7 @@ fn bind_entity_selection_path(
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == ordinal
-                && operand.record_index == record_index
+                && operand.record_index() == record_index
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
@@ -3448,7 +3448,7 @@ pub(crate) fn bind_scope_histories(
                 crate::ids::same_native_occurrence(&operand.id, &scope.id)
                     && operand.scope_record_index == scope.record_index
             })
-            .flat_map(|operand| &operand.references)
+            .flat_map(|operand| operand.references())
             .flat_map(|reference| &reference.candidate_faces)
             .collect::<Vec<_>>();
         if !candidate_faces.is_empty() {
@@ -3635,7 +3635,7 @@ fn exact_face_selection_group<'a>(
                 .members()
                 .get(group_member_ordinal)
                 .map(|member| &member.value)
-                == Some(&operand.record_index)
+                == Some(&operand.record_index())
     });
     let group = groups.next()?;
     groups.next().is_none().then_some(group)
@@ -4565,7 +4565,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         return;
     }
     for operand in operands.iter_mut() {
-        for reference in &mut operand.references {
+        for reference in operand.reference_bindings_mut() {
             reference.preceding_candidate_faces.clear();
             reference.preceding_body_slots.clear();
         }
@@ -4594,8 +4594,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(source) = historical_brep_source(&previous.id) else {
             continue;
         };
-        for reference in &mut operand.references {
-            reference.preceding_candidate_faces = faces_in_topology(
+        for reference in operand.reference_bindings_mut() {
+            *reference.preceding_candidate_faces = faces_in_topology(
                 &reference
                     .candidate_faces
                     .iter()
@@ -4612,19 +4612,19 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             let Some(body_slots) = bodies_intersecting(topology, &face_slots) else {
                 continue;
             };
-            reference.preceding_body_slots = body_slots.into_iter().collect();
+            *reference.preceding_body_slots = body_slots.into_iter().collect();
         }
-        if let [reference] = operand.references.as_slice() {
+        if let [reference] = operand.references().as_slice() {
             if let [face] = reference.preceding_candidate_faces.as_slice() {
                 operand.resolved_face_slot = stable_ref(face.as_str());
             }
         }
-        let Some(first) = operand.references.first() else {
+        let Some(first) = operand.references().first() else {
             continue;
         };
         if first.preceding_body_slots.is_empty()
             || operand
-                .references
+                .references()
                 .iter()
                 .any(|reference| reference.preceding_body_slots.is_empty())
         {
@@ -4635,7 +4635,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             .iter()
             .copied()
             .collect::<BTreeSet<_>>();
-        for reference in &operand.references[1..] {
+        for reference in &operand.references()[1..] {
             intersection.retain(|body| reference.preceding_body_slots.contains(body));
         }
         if intersection.len() == 1 {
@@ -4661,7 +4661,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             operand.asset_id.clone(),
             operand.context_id.clone(),
             operand
-                .references
+                .references()
                 .iter()
                 .map(|reference| (reference.design_reference, reference.form))
                 .collect::<Vec<_>>(),
@@ -6513,7 +6513,7 @@ fn bind_face_selection(
         let mut matches = operands.iter().filter(|operand| {
             crate::ids::native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let Some(operand) = matches.next() else {
             return;
@@ -6585,7 +6585,7 @@ fn bind_body_recipe_face_selection(
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
@@ -6976,8 +6976,11 @@ pub(crate) fn bind_entity_selection_history(
     let identities = HistoricalIdentityIndex::build(
         histories,
         operands.iter().flat_map(|operand| {
-            std::iter::once(operand.primary_identity)
-                .chain(operand.secondary.map(|secondary| secondary.identity.value))
+            std::iter::once(operand.primary_identity).chain(
+                operand
+                    .secondary()
+                    .map(|secondary| secondary.identity.value),
+            )
         }),
     );
     for operand in operands {
@@ -7014,7 +7017,7 @@ pub(crate) fn bind_entity_selection_history(
             continue;
         };
         let identity_pair = operand
-            .secondary
+            .secondary()
             .map(|secondary| [operand.primary_identity, secondary.identity.value]);
         operand.historical_edge_candidates = identity_pair.as_ref().map_or_else(
             || {
@@ -7505,7 +7508,7 @@ pub(crate) fn bind_mirror_selection_planes(
                     && operand.scope_record_index == record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == selection_record_index
+                    && operand.record_index() == selection_record_index
             })
             .collect::<Vec<_>>();
         let matching_face_operands = face_operands
@@ -7515,7 +7518,7 @@ pub(crate) fn bind_mirror_selection_planes(
                     && operand.scope_record_index == record_index
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
-                    && operand.record_index == selection_record_index
+                    && operand.record_index() == selection_record_index
             })
             .collect::<Vec<_>>();
         if matching_operands.len() > 1 || matching_face_operands.len() > 1 {
@@ -7534,7 +7537,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 continue;
             }
             let persistent_candidates = identity
-                .and_then(|identity| identity.persistent_identity.as_ref())
+                .and_then(|identity| identity.persistent_identity().as_ref())
                 .map_or_else(Vec::new, |identity| {
                     entity_selection_face_candidates(identity.local_id, histories)
                 });
@@ -8045,16 +8048,16 @@ pub(crate) fn bind_edge_identity_history(
                 operand.group_record_index,
             ))
             .and_modify(|count| {
-                *count = count.and_then(|count| operand.layout.is_compact().then_some(count + 1));
+                *count = count.and_then(|count| operand.layout().is_compact().then_some(count + 1));
             })
-            .or_insert(operand.layout.is_compact().then_some(1));
+            .or_insert(operand.layout().is_compact().then_some(1));
     }
     let local_ids = operands
         .iter()
         .map(|operand| operand.local_id)
         .chain(identities.iter().filter_map(|identity| {
             identity
-                .persistent_identity
+                .persistent_identity()
                 .as_ref()
                 .map(|persistent| persistent.local_id)
         }))
@@ -8225,7 +8228,7 @@ pub(crate) fn bind_edge_identity_history(
             (crate::ids::native_stream(&identity.id) == Some(stream)
                 && identity.group_record_index == operand.group_record_index)
                 .then_some(identity)?;
-            let persistent = identity.persistent_identity.as_ref()?;
+            let persistent = identity.persistent_identity().as_ref()?;
             let (kind, entity_ref, states) =
                 scoped_identities.selection_identity_kind(persistent.local_id)?;
             states.contains(&previous_state_id).then_some(())?;
@@ -8281,10 +8284,10 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                     && face.scope_record_index == operand.scope_record_index
                     && face.group_record_index() == Some(operand.group_record_index)
                     && face.group_member_ordinal() == Some(operand.group_member_ordinal)
-                    && face.record_index == operand.record_index
+                    && face.record_index() == operand.record_index()
                     && face.class_tag == operand.class_tag
                     && face.recipe_kind == ConstructionRecipeKind::BoundedFace
-                    && u64::from(face.recipe_record_index) == operand.local_id
+                    && u64::from(face.recipe_record_index()) == operand.local_id
             })
             .collect::<Vec<_>>();
         let [face] = matches.as_slice() else { continue };

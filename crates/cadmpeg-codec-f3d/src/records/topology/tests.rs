@@ -6,6 +6,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
     let suffix =
         r#","following_record_index":302,"following_byte_offset":130,"following_class_tag":"363"}"#;
     for fields in ["", ",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122"] {
+        let suffix = if fields.is_empty() { suffix.replace("130", "114") } else { suffix.to_owned() };
         let wire = format!("{prefix}{fields}{suffix}");
         let value: crate::records::topology::DesignConstructionTrackingPath = serde_json::from_str(&wire).expect("tracking path");
         assert_eq!(serde_json::to_string(&value).expect("tracking wire"), wire);
@@ -27,8 +28,8 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 
 #[test]
 fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
-    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150"#;
-    let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":80,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
+    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":44,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150"#;
+    let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":26,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
     for fields in [
         "",
         ",\"selector_tail\":[7,0,0,0],\"selector_tail_offset\":220",
@@ -153,7 +154,15 @@ fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
                 wire.push_str(&format!(",\"{field}\":{value}"));
             }
         }
-        wire.push_str(suffix);
+        let suffix = if mask == 4 {
+            suffix
+                .replace(":163", ":35")
+                .replace(":174", ":46")
+                .replace(":190", ":62")
+        } else {
+            suffix.to_owned()
+        };
+        wire.push_str(&suffix);
         let result =
             serde_json::from_str::<crate::records::topology::DesignConstructionOperandPath>(&wire);
         if mask == 3 || mask == 4 {
@@ -179,8 +188,9 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
                 let indices = ["[]", "[300]", "[300,305]"][count];
                 let offsets_wire = ["[]", "[0]", "[0,24]"][offsets];
                 let tags_wire = ["[]", "[\"384\"]", "[\"384\",\"289\"]"][tags];
+                let following_byte_offset = count * 24;
                 let wire = format!(
-                    r#"{{"id":"identity#0","group_record_index":200,"wrapper_record_indices":{indices},"wrapper_byte_offsets":{offsets_wire},"wrapper_class_tags":{tags_wire},"following_record_index":310,"following_byte_offset":48,"following_class_tag":"304"}}"#
+                    r#"{{"id":"identity#0","group_record_index":200,"wrapper_record_indices":{indices},"wrapper_byte_offsets":{offsets_wire},"wrapper_class_tags":{tags_wire},"following_record_index":310,"following_byte_offset":{following_byte_offset},"following_class_tag":"304"}}"#
                 );
                 let parsed = serde_json::from_str::<
                     crate::records::topology::DesignConstructionOperandIdentity,
@@ -679,11 +689,11 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     let mut member = serde_json::json!({
         "id": "member", "group_record_index": 1, "group_member_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "346",
-        "local_id": 17, "local_id_offset": 20,
-        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 30,
-        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 40,
+        "local_id": 17, "local_id_offset": 31,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 43,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 120,
         "tail_slot_present": false, "tail_slot_offset": 0,
-        "next_record_index": 3, "next_byte_offset": 50
+        "next_record_index": 3, "next_byte_offset": 200
     });
     check::<crate::records::topology::DesignExtrudeSelectionMember>(&member);
     for field in ["asset_id", "context_id"] {
@@ -709,11 +719,15 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     member["scope_record_index"] = serde_json::json!(4);
     member["compact_layout"] = serde_json::json!(false);
     member["local_id_offset"] = serde_json::json!(34);
+    member["asset_id_offset"] = serde_json::json!(52);
+    member["context_id_offset"] = serde_json::json!(128);
     check::<crate::records::topology::DesignEdgeIdentityOperand>(&member);
     for (compact, local_id_offset) in [(true, 32), (true, 33), (false, 34)] {
         let mut framed = member.clone();
         framed["compact_layout"] = compact.into();
         framed["local_id_offset"] = local_id_offset.into();
+        framed["asset_id_offset"] = (local_id_offset + 18).into();
+        framed["context_id_offset"] = (local_id_offset + 94).into();
         let operand =
             serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
                 .expect("edge-identity prologue framing");
@@ -724,6 +738,8 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         let mut framed = member.clone();
         framed["compact_layout"] = compact.into();
         framed["local_id_offset"] = local_id_offset.into();
+        framed["asset_id_offset"] = (local_id_offset + 18).into();
+        framed["context_id_offset"] = (local_id_offset + 94).into();
         assert!(
             serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
                 .is_err(),
@@ -1015,3 +1031,5 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
 }
 
 mod construction_frame;
+
+mod frame_chains;

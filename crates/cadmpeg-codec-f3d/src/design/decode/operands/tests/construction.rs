@@ -539,35 +539,40 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     compact_split_scope.feature_ordinal = std::num::NonZeroU32::new(3).expect("nonzero ordinal");
     let plane_selection = |record_index, group_member_ordinal, primary_identity| {
-        crate::records::topology::DesignEntitySelectionOperand {
-            id: format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
-            scope_record_index: compact_split_scope.record_index,
-            group_record_index: split_groups[0].record_index,
-            group_member_ordinal,
-            record_index,
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 0,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 0,
-            identity_record_index: record_index + 3,
-            identity_record_offset: 0,
-            primary_identity,
-            primary_identity_offset: 0,
-            secondary: None,
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: record_index + 4,
-            next_byte_offset: 0,
-        }
+        crate::records::topology::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::DesignEntitySelectionOperandDraft {
+                id: format!(
+                    "f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"
+                ),
+                scope_record_index: compact_split_scope.record_index,
+                group_record_index: split_groups[0].record_index,
+                group_member_ordinal,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 0,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: record_index + 3,
+                identity_record_offset: 0,
+                primary_identity,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: record_index + 4,
+                next_byte_offset: 29,
+            },
+        )
+        .unwrap()
     };
     let plane_selections = [plane_selection(200, 0, 600), plane_selection(201, 1, 700)];
     let expected_planes = [
@@ -685,7 +690,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     split_target_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
-    let split_tool = DesignFaceOperand {
+    let split_tool = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
         scope_reference_ordinal: 1,
@@ -696,7 +701,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         record_index: 200,
         byte_offset: 1200,
         class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1400,
+        paired_byte_offset: 1250,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         recipe_record_index: 203,
         recipe_record_byte_offset: 1300,
@@ -719,7 +724,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1411,
-    };
+    })
+    .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
         project_split(
@@ -946,7 +952,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         group_record_index: delete_group.record_index,
         group_member_ordinal: 0,
     });
-    delete_face_operand.record_index = 200;
+    let mut draft = delete_face_operand.into_draft();
+    draft.record_index = 200;
+    draft.recipe_record_index = draft.record_index + 3;
+    delete_face_operand = crate::records::topology::DesignFaceOperand::try_new(draft).unwrap();
     delete_face_operand.resolved_face_slots = vec![7];
     let (features, _) = project_parameter_design(
         &[],
@@ -1574,9 +1583,9 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     let parsed = parse_construction_operand_transform(&bytes, &header)
         .expect("exact construction-operand transform");
     assert_eq!(parsed.transform, transform.try_into().unwrap());
-    assert_eq!(parsed.transform_offset, 22);
-    assert_eq!(parsed.following_record_index, 301);
-    assert_eq!(parsed.following_byte_offset, following_at as u64);
+    assert_eq!(parsed.transform_offset(), 22);
+    assert_eq!(parsed.following_record_index(), 301);
+    assert_eq!(parsed.following_byte_offset(), following_at as u64);
     assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
@@ -1679,19 +1688,19 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
-        expanded.placement,
+        expanded.placement(),
         crate::records::topology::DesignConstructionPathPlacement::Transform(
-            crate::records::Located {
-                value: transform.try_into().unwrap(),
-                offset: 33
-            }
+            transform.try_into().unwrap()
         )
     );
-    assert_eq!(expanded.scope_record_index_offset, 163);
-    assert_eq!(expanded.nested_record_index, 102);
-    assert_eq!(expanded.nested_record_index_offset, 174);
-    assert_eq!(expanded.following_record_index, 101);
-    assert_eq!(expanded.following_byte_offset, expanded_following_at as u64);
+    assert_eq!(expanded.scope_record_index_offset(), 163);
+    assert_eq!(expanded.nested_record_index(), 102);
+    assert_eq!(expanded.nested_record_index_offset(), 174);
+    assert_eq!(expanded.following_record_index(), 101);
+    assert_eq!(
+        expanded.following_byte_offset(),
+        expanded_following_at as u64
+    );
 
     let mut compact = Vec::new();
     header(&mut compact, b"304", record_index);
@@ -1708,12 +1717,12 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
-        compact.placement,
+        compact.placement(),
         crate::records::topology::DesignConstructionPathPlacement::Compact(true)
     );
-    assert_eq!(compact.scope_record_index_offset, 35);
-    assert_eq!(compact.nested_record_index_offset, 46);
-    assert_eq!(compact.following_byte_offset, compact_following_at as u64);
+    assert_eq!(compact.scope_record_index_offset(), 35);
+    assert_eq!(compact.nested_record_index_offset(), 46);
+    assert_eq!(compact.following_byte_offset(), compact_following_at as u64);
 }
 
 #[test]
@@ -1762,16 +1771,16 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
         &crate::records::DesignClassTag::try_from("361".to_owned()).unwrap(),
     )
     .expect("tracking path without related identities");
-    assert_eq!(absent.carrier_record_index, 301);
-    assert_eq!(absent.carrier_byte_offset, 33);
+    assert_eq!(absent.carrier_record_index(), 301);
+    assert_eq!(absent.carrier_byte_offset(), 33);
     assert_eq!(absent.primary_identity, 268);
-    assert_eq!(absent.primary_identity_offset, 70);
+    assert_eq!(absent.primary_identity_offset(), 70);
     assert_eq!(absent.selector, -1);
     assert_eq!(absent.kind, 3);
-    assert_eq!(absent.first_related_identity, None);
-    assert_eq!(absent.second_related_identity, None);
-    assert_eq!(absent.following_record_index, 302);
-    assert_eq!(absent.following_byte_offset, 114);
+    assert_eq!(absent.first_related_identity(), None);
+    assert_eq!(absent.second_related_identity(), None);
+    assert_eq!(absent.following_record_index(), 302);
+    assert_eq!(absent.following_byte_offset(), 114);
 
     let present = tracking_path(Some(113), Some(119));
     let present = parse_construction_tracking_path(
@@ -1783,29 +1792,29 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     .expect("tracking path with related identities");
     assert_eq!(
         present
-            .first_related_identity
+            .first_related_identity()
             .map(|identity| identity.value),
         Some(113)
     );
     assert_eq!(
         present
-            .first_related_identity
+            .first_related_identity()
             .map(|identity| identity.offset),
         Some(110)
     );
     assert_eq!(
         present
-            .second_related_identity
+            .second_related_identity()
             .map(|identity| identity.value),
         Some(119)
     );
     assert_eq!(
         present
-            .second_related_identity
+            .second_related_identity()
             .map(|identity| identity.offset),
         Some(122)
     );
-    assert_eq!(present.following_byte_offset, 130);
+    assert_eq!(present.following_byte_offset(), 130);
 }
 
 #[test]

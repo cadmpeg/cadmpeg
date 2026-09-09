@@ -31,12 +31,12 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "record_index": 20,
             "byte_offset": 0,
             "class_tag": "297",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "259",
             "recipe_record_index": 23,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": format!("{stream}:construction-recipe#23"),
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_program_offset": 0,
@@ -44,7 +44,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "changed_boundary_edge_slots": [],
             "deleted_boundary_edge_slots": [],
             "next_record_index": 24,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("edge operand");
     let state = |state_id, topology, transition| AsmDeltaState {

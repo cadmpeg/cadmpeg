@@ -7911,11 +7911,14 @@ fn point_data_level(
     for _ in 0..arity {
         let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
-        inputs.push(DesignWorkPointInput {
-            record_index: u32::try_from(reference.target()?).ok()?,
-            reference_offset: u64::try_from(reference_offset).ok()?,
-            carrier: None,
-        });
+        inputs.push(
+            DesignWorkPointInput::try_new(crate::records::feature::DesignWorkPointInputDraft {
+                record_index: u32::try_from(reference.target()?).ok()?,
+                reference_offset: u64::try_from(reference_offset).ok()?,
+                carrier: None,
+            })
+            .ok()?,
+        );
     }
     Some(PointDataLevel {
         position_at,
@@ -9562,15 +9565,15 @@ fn exact_coil_face_selection(
         &header,
         recipes,
     )?;
-    if face.next_byte_offset != u64::try_from(transform_start).ok()? {
+    if face.next_byte_offset() != u64::try_from(transform_start).ok()? {
         return None;
     }
     let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
     Some(DesignCoilSelection::FaceRecipe {
         asset_id: prefix.asset_id.try_into().ok()?,
         context_id: prefix.context_id.try_into().ok()?,
-        recipe_record_index: face.recipe_record_index,
-        recipe_record_byte_offset: face.recipe_record_byte_offset,
+        recipe_record_index: face.recipe_record_index(),
+        recipe_record_byte_offset: face.recipe_record_byte_offset(),
         recipe_id: recipe.id.clone(),
         recipe_kind: crate::records::feature::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
         design: recipe

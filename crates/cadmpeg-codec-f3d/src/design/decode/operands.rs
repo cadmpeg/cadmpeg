@@ -126,7 +126,7 @@ pub fn decode_edge_operands(
                     .rule
                     .inputs()
                     .iter()
-                    .map(|input| input.record_index),
+                    .map(|input| input.record_index()),
             );
         }
         let Some(stream) = native_stream(&scope.id) else {
@@ -323,26 +323,30 @@ pub fn bind_work_point_input_carriers(
                 .filter(|operand| {
                     native_stream(&operand.id) == Some(stream.as_str())
                         && operand.scope_record_index == scope_record_index
-                        && operand.record_index == input.record_index
+                        && operand.record_index() == input.record_index()
                 })
                 .collect::<Vec<_>>();
             if let [operand] = edge_matches.as_slice() {
-                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-                    operand_id: operand.id.clone(),
-                }));
+                input
+                    .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+                        operand_id: operand.id.clone(),
+                    })))
+                    .map_err(crate::error::malformed)?;
                 continue;
             }
-            let Some(header) = headers.get(&(stream.clone(), input.record_index)) else {
+            let Some(header) = headers.get(&(stream.clone(), input.record_index())) else {
                 continue;
             };
             if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
-                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                    recipe,
-                }));
+                input
+                    .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                        recipe,
+                    })))
+                    .map_err(crate::error::malformed)?;
                 continue;
             }
             if let Some(selection) =
-                parse_work_point_sketch_point_frame(bytes, input.record_index, header.byte_offset)
+                parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
             {
                 let point_matches = sketch_points
                     .iter()
@@ -359,30 +363,37 @@ pub fn bind_work_point_input_carriers(
                     continue;
                 };
                 if let [point] = point_matches.as_slice() {
-                    input.carrier = Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
-                        selection: DesignWorkPointSketchPointSelection {
-                            class_tag: header.class_tag.clone(),
-                            asset_id,
-                            asset_id_offset: selection.asset_id_offset,
-                            context_id,
-                            context_id_offset: selection.context_id_offset,
-                            identity_record_index: selection.identity_record_index,
-                            identity_record_offset: selection.identity_record_offset,
-                            sketch_record_index: selection.sketch_record_index,
-                            sketch_record_index_offset: selection.sketch_record_index_offset,
-                            point_persistent_id: selection.point_persistent_id,
-                            point_persistent_id_offset: selection.point_persistent_id_offset,
-                            point_native_id: point.id.clone(),
-                            next_record_index: selection.next_record_index,
-                            next_byte_offset: selection.next_byte_offset,
-                        },
-                    }));
+                    input
+                        .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
+                            selection: DesignWorkPointSketchPointSelection::try_new(
+                                crate::records::feature::DesignWorkPointSketchPointSelectionDraft {
+                                    class_tag: header.class_tag.clone(),
+                                    asset_id,
+                                    asset_id_offset: selection.asset_id_offset,
+                                    context_id,
+                                    context_id_offset: selection.context_id_offset,
+                                    identity_record_index: selection.identity_record_index,
+                                    identity_record_offset: selection.identity_record_offset,
+                                    sketch_record_index: selection.sketch_record_index,
+                                    sketch_record_index_offset: selection
+                                        .sketch_record_index_offset,
+                                    point_persistent_id: selection.point_persistent_id,
+                                    point_persistent_id_offset: selection
+                                        .point_persistent_id_offset,
+                                    point_native_id: point.id.clone(),
+                                    next_record_index: selection.next_record_index,
+                                    next_byte_offset: selection.next_byte_offset,
+                                },
+                            )
+                            .map_err(crate::error::malformed)?,
+                        })))
+                        .map_err(crate::error::malformed)?;
                 }
                 continue;
             }
             let Some(selection) = parse_entity_selection_frame(
                 bytes,
-                input.record_index,
+                input.record_index(),
                 header.byte_offset,
                 header.class_tag.as_str(),
             ) else {
@@ -406,22 +417,27 @@ pub fn bind_work_point_input_carriers(
             ) else {
                 continue;
             };
-            input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
-                selection: DesignWorkPointPlaneSelection {
-                    class_tag: header.class_tag.clone(),
-                    asset_id,
-                    asset_id_offset: selection.asset_id_offset,
-                    context_id,
-                    context_id_offset: selection.context_id_offset,
-                    identity_record_index: selection.identity_record_index,
-                    identity_record_offset: selection.identity_record_offset,
-                    primary_identity: selection.primary_identity,
-                    primary_identity_offset: selection.primary_identity_offset,
-                    work_plane_scope_record_index,
-                    next_record_index: selection.next_record_index,
-                    next_byte_offset: selection.next_byte_offset,
-                },
-            }));
+            input
+                .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+                    selection: DesignWorkPointPlaneSelection::try_new(
+                        crate::records::feature::DesignWorkPointPlaneSelectionDraft {
+                            class_tag: header.class_tag.clone(),
+                            asset_id,
+                            asset_id_offset: selection.asset_id_offset,
+                            context_id,
+                            context_id_offset: selection.context_id_offset,
+                            identity_record_index: selection.identity_record_index,
+                            identity_record_offset: selection.identity_record_offset,
+                            primary_identity: selection.primary_identity,
+                            primary_identity_offset: selection.primary_identity_offset,
+                            work_plane_scope_record_index,
+                            next_record_index: selection.next_record_index,
+                            next_byte_offset: selection.next_byte_offset,
+                        },
+                    )
+                    .map_err(crate::error::malformed)?,
+                })))
+                .map_err(crate::error::malformed)?;
         }
         construction.rule =
             DesignWorkPointRule::from_serialized(construction.rule.reference_type(), inputs)
@@ -650,27 +666,35 @@ pub fn decode_edge_identity_operands(
             ) else {
                 continue;
             };
-            out.push(DesignEdgeIdentityOperand {
-                id: ids::native_design_edge_identity_operand_id(&entry.name, header.byte_offset),
-                scope_record_index: scope.record_index,
-                group_record_index: group.record_index,
-                group_member_ordinal,
-                record_index,
-                byte_offset: header.byte_offset,
-                class_tag: header.class_tag.clone(),
-                layout: parsed.layout,
-                local_id: parsed.local_id,
-                asset_id,
-                asset_id_offset: parsed.asset_id_offset,
-                context_id,
-                context_id_offset: parsed.context_id_offset,
-                historical: None,
-                treatment_radius_candidates: Vec::new(),
-                transition_edge_candidates: Vec::new(),
-                resolved_edge_slots: Vec::new(),
-                resolved_edge_slot: None,
-                resolution_identity_id: None,
-            });
+            out.push(
+                DesignEdgeIdentityOperand::try_new(
+                    crate::records::topology::DesignEdgeIdentityOperandDraft {
+                        id: ids::native_design_edge_identity_operand_id(
+                            &entry.name,
+                            header.byte_offset,
+                        ),
+                        scope_record_index: scope.record_index,
+                        group_record_index: group.record_index,
+                        group_member_ordinal,
+                        record_index,
+                        byte_offset: header.byte_offset,
+                        class_tag: header.class_tag.clone(),
+                        layout: parsed.layout,
+                        local_id: parsed.local_id,
+                        asset_id,
+                        asset_id_offset: parsed.asset_id_offset,
+                        context_id,
+                        context_id_offset: parsed.context_id_offset,
+                        historical: None,
+                        treatment_radius_candidates: Vec::new(),
+                        transition_edge_candidates: Vec::new(),
+                        resolved_edge_slots: Vec::new(),
+                        resolved_edge_slot: None,
+                        resolution_identity_id: None,
+                    },
+                )
+                .map_err(crate::error::malformed)?,
+            );
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1020,7 +1044,7 @@ pub fn decode_face_source_groups(
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
                             class_tag: source_class_tag.try_into().ok()?,
-                            persistent_identity: DesignConstructionPersistentIdentity {
+                            persistent_identity: DesignConstructionPersistentIdentity::try_new(crate::records::topology::DesignConstructionPersistentIdentityDraft {
                                 local_id: member.local_id,
                                 local_id_offset: member.local_id_offset,
                                 asset_id: member.asset_id.try_into().ok()?,
@@ -1031,7 +1055,7 @@ pub fn decode_face_source_groups(
                                 tail_slot_offset: member.tail_slot_offset,
                                 next_record_index: member.next_record_index,
                                 next_byte_offset: member.next_byte_offset,
-                            },
+                            }).ok()?,
                         },
                     })
                 })
@@ -2523,12 +2547,7 @@ pub(crate) fn parse_construction_operand_path(
             return None;
         }
         (
-            crate::records::topology::DesignConstructionPathPlacement::Transform(
-                crate::records::Located {
-                    value: transform,
-                    offset: u64::try_from(start + 33).ok()?,
-                },
-            ),
+            crate::records::topology::DesignConstructionPathPlacement::Transform(transform),
             start + 162,
         )
     } else {
@@ -2560,21 +2579,26 @@ pub(crate) fn parse_construction_operand_path(
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    Some(crate::records::topology::DesignConstructionOperandPath {
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        entity_ref,
-        entity_ref_offset,
-        placement,
-        scope_record_index,
-        scope_record_index_offset,
-        nested_record_index,
-        nested_record_index_offset,
-        following_record_index,
-        following_byte_offset: u64::try_from(following_at).ok()?,
-        following_class_tag: following_class_tag.try_into().ok()?,
-    })
+    Some(
+        crate::records::topology::DesignConstructionOperandPath::try_new(
+            crate::records::topology::DesignConstructionOperandPathDraft {
+                record_index: header.record_index,
+                byte_offset: header.byte_offset,
+                class_tag: header.class_tag.clone(),
+                entity_ref,
+                entity_ref_offset,
+                placement,
+                scope_record_index,
+                scope_record_index_offset,
+                nested_record_index,
+                nested_record_index_offset,
+                following_record_index,
+                following_byte_offset: u64::try_from(following_at).ok()?,
+                following_class_tag: following_class_tag.try_into().ok()?,
+            },
+        )
+        .ok()?,
+    )
 }
 
 pub(crate) fn parse_construction_operand_transform(
@@ -2597,16 +2621,19 @@ pub(crate) fn parse_construction_operand_transform(
         return None;
     }
     Some(
-        crate::records::topology::DesignConstructionOperandTransform {
-            record_index: header.record_index,
-            byte_offset: header.byte_offset,
-            class_tag: header.class_tag.clone(),
-            transform,
-            transform_offset: u64::try_from(transform_at).ok()?,
-            following_record_index,
-            following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag: following_class_tag.try_into().ok()?,
-        },
+        crate::records::topology::DesignConstructionOperandTransform::try_new(
+            crate::records::topology::DesignConstructionOperandTransformDraft {
+                record_index: header.record_index,
+                byte_offset: header.byte_offset,
+                class_tag: header.class_tag.clone(),
+                transform,
+                transform_offset: u64::try_from(transform_at).ok()?,
+                following_record_index,
+                following_byte_offset: u64::try_from(following_at).ok()?,
+                following_class_tag: following_class_tag.try_into().ok()?,
+            },
+        )
+        .ok()?,
     )
 }
 
@@ -2726,7 +2753,7 @@ pub fn bind_lost_edge_groups(
                 group.record_index
             )));
         }
-        let Some(wrapper) = identity.wrappers.first() else {
+        let Some(wrapper) = identity.wrappers().first() else {
             continue;
         };
         let wrapper_record_index = wrapper.record_index;
@@ -2792,8 +2819,8 @@ pub(crate) fn parse_construction_operand_identity(
     let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
-        current_at = usize::try_from(transform.following_byte_offset).ok()?;
-        current_record_index = transform.following_record_index;
+        current_at = usize::try_from(transform.following_byte_offset()).ok()?;
+        current_record_index = transform.following_record_index();
         current_class_tag = transform.following_class_tag;
         chain_started = true;
     }
@@ -2834,8 +2861,8 @@ pub(crate) fn parse_construction_operand_identity(
         &current_class_tag,
     );
     if let Some(path) = &tracking_path {
-        current_at = usize::try_from(path.following_byte_offset).ok()?;
-        current_record_index = path.following_record_index;
+        current_at = usize::try_from(path.following_byte_offset()).ok()?;
+        current_record_index = path.following_record_index();
         current_class_tag.clone_from(&path.following_class_tag);
         chain_started = true;
     }
@@ -2843,29 +2870,39 @@ pub(crate) fn parse_construction_operand_identity(
         return None;
     }
     let persistent_identity = parse_extrude_identity_member(bytes, current_at).and_then(|member| {
-        Some(DesignConstructionPersistentIdentity {
-            local_id: member.local_id,
-            local_id_offset: member.local_id_offset,
-            asset_id: member.asset_id.try_into().ok()?,
-            asset_id_offset: member.asset_id_offset,
-            context_id: member.context_id.try_into().ok()?,
-            context_id_offset: member.context_id_offset,
-            tail_slot_present: member.tail_slot_present,
-            tail_slot_offset: member.tail_slot_offset,
-            next_record_index: member.next_record_index,
-            next_byte_offset: member.next_byte_offset,
-        })
+        Some(
+            DesignConstructionPersistentIdentity::try_new(
+                crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                    local_id: member.local_id,
+                    local_id_offset: member.local_id_offset,
+                    asset_id: member.asset_id.try_into().ok()?,
+                    asset_id_offset: member.asset_id_offset,
+                    context_id: member.context_id.try_into().ok()?,
+                    context_id_offset: member.context_id_offset,
+                    tail_slot_present: member.tail_slot_present,
+                    tail_slot_offset: member.tail_slot_offset,
+                    next_record_index: member.next_record_index,
+                    next_byte_offset: member.next_byte_offset,
+                },
+            )
+            .ok()?,
+        )
     });
-    Some(DesignConstructionOperandIdentity {
-        id: String::new(),
-        group_record_index: group.record_index,
-        wrappers,
-        following_record_index: current_record_index,
-        following_byte_offset: u64::try_from(current_at).ok()?,
-        following_class_tag: current_class_tag,
-        tracking_path,
-        persistent_identity,
-    })
+    Some(
+        DesignConstructionOperandIdentity::try_new(
+            crate::records::topology::DesignConstructionOperandIdentityDraft {
+                id: String::new(),
+                group_record_index: group.record_index,
+                wrappers,
+                following_record_index: current_record_index,
+                following_byte_offset: u64::try_from(current_at).ok()?,
+                following_class_tag: current_class_tag,
+                tracking_path,
+                persistent_identity,
+            },
+        )
+        .ok()?,
+    )
 }
 
 pub(crate) fn parse_construction_tracking_path(
@@ -2911,25 +2948,30 @@ pub(crate) fn parse_construction_tracking_path(
     if following_record_index != carrier_record_index.checked_add(1)? {
         return None;
     }
-    Some(DesignConstructionTrackingPath {
-        wrapper_record_index,
-        wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
-        wrapper_class_tag: wrapper_class_tag.clone(),
-        carrier_record_index,
-        carrier_byte_offset: u64::try_from(carrier_at).ok()?,
-        carrier_class_tag: carrier_class_tag.try_into().ok()?,
-        primary_identity,
-        primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
-        selector,
-        selector_offset: u64::try_from(carrier_at + 57).ok()?,
-        kind,
-        kind_offset: u64::try_from(carrier_at + 61).ok()?,
-        first_related_identity,
-        second_related_identity,
-        following_record_index,
-        following_byte_offset: u64::try_from(following_at).ok()?,
-        following_class_tag: following_class_tag.try_into().ok()?,
-    })
+    Some(
+        DesignConstructionTrackingPath::try_new(
+            crate::records::topology::DesignConstructionTrackingPathDraft {
+                wrapper_record_index,
+                wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
+                wrapper_class_tag: wrapper_class_tag.clone(),
+                carrier_record_index,
+                carrier_byte_offset: u64::try_from(carrier_at).ok()?,
+                carrier_class_tag: carrier_class_tag.try_into().ok()?,
+                primary_identity,
+                primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
+                selector,
+                selector_offset: u64::try_from(carrier_at + 57).ok()?,
+                kind,
+                kind_offset: u64::try_from(carrier_at + 61).ok()?,
+                first_related_identity,
+                second_related_identity,
+                following_record_index,
+                following_byte_offset: u64::try_from(following_at).ok()?,
+                following_class_tag: following_class_tag.try_into().ok()?,
+            },
+        )
+        .ok()?,
+    )
 }
 
 // Outer absence is a parse failure; inner absence is the encoded null identity.
@@ -3135,29 +3177,34 @@ pub(crate) fn parse_entity_selection_operand(
         header.byte_offset,
         header.class_tag.as_str(),
     )?;
-    Some(DesignEntitySelectionOperand {
-        id: String::new(),
-        scope_record_index: group.scope_record_index,
-        group_record_index: group.record_index,
-        group_member_ordinal,
-        record_index: frame.record_index,
-        byte_offset: frame.byte_offset,
-        class_tag: frame.class_tag,
-        asset_id: frame.asset_id.try_into().ok()?,
-        asset_id_offset: frame.asset_id_offset,
-        context_id: frame.context_id.try_into().ok()?,
-        context_id_offset: frame.context_id_offset,
-        identity_record_index: frame.identity_record_index,
-        identity_record_offset: frame.identity_record_offset,
-        primary_identity: frame.primary_identity,
-        primary_identity_offset: frame.primary_identity_offset,
-        secondary: frame.secondary,
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
-        next_record_index: frame.next_record_index,
-        next_byte_offset: frame.next_byte_offset,
-    })
+    Some(
+        DesignEntitySelectionOperand::try_new(
+            crate::records::topology::DesignEntitySelectionOperandDraft {
+                id: String::new(),
+                scope_record_index: group.scope_record_index,
+                group_record_index: group.record_index,
+                group_member_ordinal,
+                record_index: frame.record_index,
+                byte_offset: frame.byte_offset,
+                class_tag: frame.class_tag,
+                asset_id: frame.asset_id.try_into().ok()?,
+                asset_id_offset: frame.asset_id_offset,
+                context_id: frame.context_id.try_into().ok()?,
+                context_id_offset: frame.context_id_offset,
+                identity_record_index: frame.identity_record_index,
+                identity_record_offset: frame.identity_record_offset,
+                primary_identity: frame.primary_identity,
+                primary_identity_offset: frame.primary_identity_offset,
+                secondary: frame.secondary,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: frame.next_record_index,
+                next_byte_offset: frame.next_byte_offset,
+            },
+        )
+        .ok()?,
+    )
 }
 
 /// Persistent identity payload shared by entity-selection consumers that do
@@ -3251,7 +3298,7 @@ pub(crate) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
-    operand.secondary.is_some_and(|secondary| {
+    operand.secondary().is_some_and(|secondary| {
         curve.primary_id.get() == secondary.identity.value
             && secondary
                 .curve_identity
@@ -3842,32 +3889,35 @@ fn parse_body_recipe_operand_frame_with_index(
     {
         return None;
     }
-    Some(DesignBodyRecipeOperand {
-        id: String::new(),
-        scope_record_index,
-        owner,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        asset_id: asset_id.try_into().ok()?,
-        asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
-        context_id: context_id.try_into().ok()?,
-        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        selector_tail: Some(crate::records::Located {
-            value: selector_tail,
-            offset: u64::try_from(selector_tail_at).ok()?,
-        }),
-        references,
-        nested_record_index,
-        nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
-        recipe_id: recipe.id.clone(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: header.record_index.checked_add(4)?,
-        next_byte_offset: u64::try_from(next_at).ok()?,
-    })
+    Some(
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: String::new(),
+            scope_record_index,
+            owner,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            asset_id: asset_id.try_into().ok()?,
+            asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
+            context_id: context_id.try_into().ok()?,
+            context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+            selector_tail: Some(crate::records::Located {
+                value: selector_tail,
+                offset: u64::try_from(selector_tail_at).ok()?,
+            }),
+            references,
+            nested_record_index,
+            nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
+            recipe_id: recipe.id.clone(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: header.record_index.checked_add(4)?,
+            next_byte_offset: u64::try_from(next_at).ok()?,
+        })
+        .ok()?,
+    )
 }
 
 /// Join body-recipe Design references to solved persistent face tags.
@@ -3906,15 +3956,16 @@ pub fn bind_body_recipe_operand_candidates(
             .and_then(|recipe| *recipe)
             .and_then(|recipe| recipe.design.as_ref()?.selector)
             .map(|selector| i64::from(selector.value));
-        for reference in &mut operand.references {
+        let operand_id = operand.id.clone();
+        for reference in operand.reference_bindings_mut() {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
-            reference.candidate_faces = tags
+            *reference.candidate_faces = tags
                 .iter()
                 .filter(|tag| {
-                    crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                    crate::ids::same_native_occurrence(&tag.id, &operand_id)
                         && tag.design_references.contains(&design_reference)
                         && (reference.form != 3
                             || !form_three_uses_recipe_selector
@@ -4008,10 +4059,10 @@ pub fn bind_extrude_selection_identities(
             .iter()
             .filter(|identity| {
                 native_stream(&identity.id) == Some(stream)
-                    && identity.following_record_index == member.record_index
-                    && identity.following_byte_offset == member.byte_offset
+                    && identity.following_record_index() == member.record_index()
+                    && identity.following_byte_offset() == member.byte_offset()
                     && identity
-                        .persistent_identity
+                        .persistent_identity()
                         .as_ref()
                         .is_some_and(|persistent| {
                             persistent.local_id == member.local_id
@@ -4020,8 +4071,12 @@ pub fn bind_extrude_selection_identities(
                         })
             })
             .collect::<Vec<_>>();
-        matches
-            .sort_by_key(|identity| identity.wrappers.first().map(|wrapper| wrapper.byte_offset));
+        matches.sort_by_key(|identity| {
+            identity
+                .wrappers()
+                .first()
+                .map(|wrapper| wrapper.byte_offset)
+        });
         member.operand_identity_ids = matches
             .into_iter()
             .map(|identity| identity.id.clone())
@@ -4037,27 +4092,32 @@ pub(crate) fn parse_extrude_selection_member(
 ) -> Option<DesignExtrudeSelectionMember> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let member = parse_extrude_identity_member(bytes, start)?;
-    Some(DesignExtrudeSelectionMember {
-        id: String::new(),
-        group_record_index: group.record_index,
-        group_member_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        local_id: member.local_id,
-        local_id_offset: member.local_id_offset,
-        asset_id: member.asset_id.try_into().ok()?,
-        asset_id_offset: member.asset_id_offset,
-        context_id: member.context_id.try_into().ok()?,
-        context_id_offset: member.context_id_offset,
-        tail_slot_present: member.tail_slot_present,
-        tail_slot_offset: member.tail_slot_offset,
-        resolved_geometry: None,
-        operand_identity_ids: Vec::new(),
-        historical: None,
-        next_record_index: member.next_record_index,
-        next_byte_offset: member.next_byte_offset,
-    })
+    Some(
+        DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::DesignExtrudeSelectionMemberDraft {
+                id: String::new(),
+                group_record_index: group.record_index,
+                group_member_ordinal,
+                record_index: header.record_index,
+                byte_offset: header.byte_offset,
+                class_tag: header.class_tag.clone(),
+                local_id: member.local_id,
+                local_id_offset: member.local_id_offset,
+                asset_id: member.asset_id.try_into().ok()?,
+                asset_id_offset: member.asset_id_offset,
+                context_id: member.context_id.try_into().ok()?,
+                context_id_offset: member.context_id_offset,
+                tail_slot_present: member.tail_slot_present,
+                tail_slot_offset: member.tail_slot_offset,
+                resolved_geometry: None,
+                operand_identity_ids: Vec::new(),
+                historical: None,
+                next_record_index: member.next_record_index,
+                next_byte_offset: member.next_byte_offset,
+            },
+        )
+        .ok()?,
+    )
 }
 
 struct ParsedExtrudeIdentityMember {
@@ -4256,19 +4316,24 @@ pub(crate) fn parse_sketch_profile(
     };
     let region_selection =
         parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
-    Some(DesignSketchProfileOperand {
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        asset_id: asset_id.try_into().ok()?,
-        asset_id_offset: u64::try_from(start + 40).ok()?,
-        entity_id: entity.entity_id.clone(),
-        entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
-        region_selection,
-        paired_class_tag: paired_class_tag.try_into().ok()?,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+    Some(
+        DesignSketchProfileOperand::try_new(
+            crate::records::topology::DesignSketchProfileOperandDraft {
+                scope_reference_ordinal,
+                record_index: header.record_index,
+                byte_offset: header.byte_offset,
+                class_tag: header.class_tag.clone(),
+                asset_id: asset_id.try_into().ok()?,
+                asset_id_offset: u64::try_from(start + 40).ok()?,
+                entity_id: entity.entity_id.clone(),
+                entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
+                region_selection,
+                paired_class_tag: paired_class_tag.try_into().ok()?,
+                paired_byte_offset: u64::try_from(paired_at).ok()?,
+            },
+        )
+        .ok()?,
+    )
 }
 
 fn parse_sketch_profile_region_selection(
@@ -4484,24 +4549,27 @@ pub(crate) fn parse_vertex_recipe(
         ConstructionRecipeKind::Vertex,
         RecipeOperandTerminator::RecordDelta(5),
     )?;
-    Some(DesignVertexRecipe {
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        paired_byte_offset: parsed.paired_byte_offset,
-        paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
-        recipe_record_index: parsed.recipe_record_index,
-        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
-        recipe_id: parsed.recipe_id,
-        recipe_prefix_offset: parsed.recipe_prefix_offset,
-        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
-        recipe_references: parsed.recipe_references,
-        recipe_program_offset: parsed.recipe_program_offset,
-        recipe_program: parsed.recipe_program,
-        resolution: None,
-        next_record_index: parsed.next_record_index,
-        next_byte_offset: parsed.next_byte_offset,
-    })
+    Some(
+        DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            paired_byte_offset: parsed.paired_byte_offset,
+            paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
+            recipe_record_index: parsed.recipe_record_index,
+            recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+            recipe_id: parsed.recipe_id,
+            recipe_prefix_offset: parsed.recipe_prefix_offset,
+            recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+            recipe_references: parsed.recipe_references,
+            recipe_program_offset: parsed.recipe_program_offset,
+            recipe_program: parsed.recipe_program,
+            resolution: None,
+            next_record_index: parsed.next_record_index,
+            next_byte_offset: parsed.next_byte_offset,
+        })
+        .ok()?,
+    )
 }
 
 /// Parse the indexed-record envelope shared by topology recipe operands.
@@ -4664,52 +4732,55 @@ pub(crate) fn parse_edge_operand(
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
         edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
-    Some(DesignEdgeOperand {
-        id: ids::native_design_edge_operand_id(
-            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
-            header.byte_offset,
-        ),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        paired_byte_offset: parsed.paired_byte_offset,
-        paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
-        recipe_record_index: parsed.recipe_record_index,
-        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
-        recipe_id: parsed.recipe_id,
-        recipe_prefix_offset: parsed.recipe_prefix_offset,
-        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
-        recipe_references: parsed.recipe_references,
-        recipe_program_offset: parsed.recipe_program_offset,
-        recipe_program: parsed.recipe_program,
-        recipe_structure,
-        surface_patch_recipe_structure,
-        local_topology_references,
-        candidate_faces: Vec::new(),
-        result_candidate_faces: Vec::new(),
-        result_boundary_edge_slots: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        terminal_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        preceding_boundary_edge_slots: Vec::new(),
-        terminal_boundary_edge_slots: Vec::new(),
-        changed_boundary_edge_slots: Vec::new(),
-        deleted_boundary_edge_slots: Vec::new(),
-        updated_boundary_edge_slots: Vec::new(),
-        treatment_radius_candidates: Vec::new(),
-        changed_boundary_edge_contexts: Vec::new(),
-        terminal_boundary_edge_contexts: Vec::new(),
-        terminal_reference_edge_slots: Vec::new(),
-        recipe_reference_contexts: Vec::new(),
-        recipe_selectors: Vec::new(),
-        recipe_state_id: None,
-        resolved_edge_slot: None,
-        resolved_axis: None,
-        next_record_index: parsed.next_record_index,
-        next_byte_offset: parsed.next_byte_offset,
-    })
+    Some(
+        DesignEdgeOperand::try_new(crate::records::topology::DesignEdgeOperandDraft {
+            id: ids::native_design_edge_operand_id(
+                stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
+                header.byte_offset,
+            ),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            paired_byte_offset: parsed.paired_byte_offset,
+            paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
+            recipe_record_index: parsed.recipe_record_index,
+            recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+            recipe_id: parsed.recipe_id,
+            recipe_prefix_offset: parsed.recipe_prefix_offset,
+            recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+            recipe_references: parsed.recipe_references,
+            recipe_program_offset: parsed.recipe_program_offset,
+            recipe_program: parsed.recipe_program,
+            recipe_structure,
+            surface_patch_recipe_structure,
+            local_topology_references,
+            candidate_faces: Vec::new(),
+            result_candidate_faces: Vec::new(),
+            result_boundary_edge_slots: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            terminal_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            preceding_boundary_edge_slots: Vec::new(),
+            terminal_boundary_edge_slots: Vec::new(),
+            changed_boundary_edge_slots: Vec::new(),
+            deleted_boundary_edge_slots: Vec::new(),
+            updated_boundary_edge_slots: Vec::new(),
+            treatment_radius_candidates: Vec::new(),
+            changed_boundary_edge_contexts: Vec::new(),
+            terminal_boundary_edge_contexts: Vec::new(),
+            terminal_reference_edge_slots: Vec::new(),
+            recipe_reference_contexts: Vec::new(),
+            recipe_selectors: Vec::new(),
+            recipe_state_id: None,
+            resolved_edge_slot: None,
+            resolved_axis: None,
+            next_record_index: parsed.next_record_index,
+            next_byte_offset: parsed.next_byte_offset,
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn edge_recipe_structure(
@@ -5237,45 +5308,48 @@ pub(crate) fn parse_face_operand(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(DesignFaceOperand {
-        id: ids::native_design_face_operand_id(
-            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
-            header.byte_offset,
-        ),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        group: group_ownership.map(|(group_record_index, group_member_ordinal)| {
-            crate::records::topology::DesignOperandGroup {
-                group_record_index,
-                group_member_ordinal,
-            }
-        }),
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone().try_into().ok()?,
-        recipe_record_index,
-        recipe_record_byte_offset: recipe_start,
-        recipe_id: recipe.id.clone(),
-        recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
-        recipe_prefix_bytes,
-        recipe_references,
-        recipe_kind: recipe.kind,
-        recipe_program_offset,
-        recipe_program,
-        recipe_nodes,
-        candidate_faces: Vec::new(),
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index,
-        next_byte_offset,
-    })
+    Some(
+        DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+            id: ids::native_design_face_operand_id(
+                stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
+                header.byte_offset,
+            ),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal,
+            group: group_ownership.map(|(group_record_index, group_member_ordinal)| {
+                crate::records::topology::DesignOperandGroup {
+                    group_record_index,
+                    group_member_ordinal,
+                }
+            }),
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            paired_byte_offset: u64::try_from(offsets[0]).ok()?,
+            paired_class_tag: indexed[0].0.clone().try_into().ok()?,
+            recipe_record_index,
+            recipe_record_byte_offset: recipe_start,
+            recipe_id: recipe.id.clone(),
+            recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
+            recipe_prefix_bytes,
+            recipe_references,
+            recipe_kind: recipe.kind,
+            recipe_program_offset,
+            recipe_program,
+            recipe_nodes,
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index,
+            next_byte_offset,
+        })
+        .ok()?,
+    )
 }
 
 pub(crate) fn has_typed_edge_treatment_group(

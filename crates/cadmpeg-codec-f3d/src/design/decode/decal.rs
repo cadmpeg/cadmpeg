@@ -83,13 +83,13 @@ pub fn project_decal_images(
         let Some(operand) = operands.iter().find(|operand| {
             operand.scope_record_index == scope.record_index
                 && operand.owner.group() == Some((group.record_index, 0))
-                && operand.record_index == group.members()[0].value
+                && operand.record_index() == group.members()[0].value
                 && ids::native_stream(&operand.id) == native_stream
         }) else {
             continue;
         };
         let mut faces = operand
-            .references
+            .references()
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter().cloned())
             .collect::<Vec<_>>();

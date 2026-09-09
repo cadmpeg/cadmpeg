@@ -172,27 +172,36 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         start: DesignExtrudeStart::ProfilePlane,
                         start_offset: 142,
                     }),
-                    extrude_profile: Some(DesignSketchProfileOperand {
-                        scope_reference_ordinal: 0,
-                        record_index: 100,
-                        byte_offset: 300,
-                        class_tag: crate::records::DesignClassTag::try_from("308".to_owned())
-                            .unwrap(),
-                        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                            "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
+                    extrude_profile: Some(
+                        DesignSketchProfileOperand::try_new(
+                            crate::records::topology::DesignSketchProfileOperandDraft {
+                                scope_reference_ordinal: 0,
+                                record_index: 100,
+                                byte_offset: 300,
+                                class_tag: crate::records::DesignClassTag::try_from(
+                                    "308".to_owned(),
+                                )
+                                .unwrap(),
+                                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                                    "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
+                                )
+                                .unwrap(),
+                                asset_id_offset: 330,
+                                entity_id: crate::records::DesignEntityId::try_from(
+                                    "0_172".to_owned(),
+                                )
+                                .expect("valid entity identity"),
+                                entity_reference_offset: 420,
+                                region_selection: None,
+                                paired_class_tag: crate::records::DesignClassTag::try_from(
+                                    "259".to_owned(),
+                                )
+                                .unwrap(),
+                                paired_byte_offset: 520,
+                            },
                         )
                         .unwrap(),
-                        asset_id_offset: 330,
-                        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
-                            .expect("valid entity identity"),
-                        entity_reference_offset: 420,
-                        region_selection: None,
-                        paired_class_tag: crate::records::DesignClassTag::try_from(
-                            "259".to_owned(),
-                        )
-                        .unwrap(),
-                        paired_byte_offset: 520,
-                    }),
+                    ),
                     ..crate::records::feature::DesignExtrudeScope::default()
                 },
             )),
@@ -670,7 +679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     .extrude_profile()
                     .as_ref()
                     .expect("test profile operand")
-                    .byte_offset
+                    .byte_offset()
             )]
     ));
 
@@ -774,50 +783,52 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             offset: unrelated_target_group.members()[0].offset,
         }])
         .unwrap();
-    let mut target_shape_operand = DesignBodyRecipeOperand {
-        id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
-        scope_record_index: scope.record_index,
-        owner: DesignOperandOwner::Group {
-            group_record_index: target_shape_group.record_index,
-            group_member_ordinal: 0,
-        },
-        record_index: 201,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        selector_tail: None,
+    let mut target_shape_operand =
+        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+            id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
+            scope_record_index: scope.record_index,
+            owner: DesignOperandOwner::Group {
+                group_record_index: target_shape_group.record_index,
+                group_member_ordinal: 0,
+            },
+            record_index: 201,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 56,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 132,
+            selector_tail: None,
 
-        references: vec![DesignBodyRecipeReference {
-            design_reference: 301,
-            design_reference_offset: 0,
-            form: 33,
-            form_offset: 0,
-            candidate_faces: vec![
-                FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
-                FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
-            ],
-            preceding_candidate_faces: Vec::new(),
-            preceding_body_slots: Vec::new(),
-        }],
-        nested_record_index: 204,
-        nested_record_index_offset: 0,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#205".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 205,
-        next_byte_offset: 0,
-    };
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: vec![
+                    FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
+                    FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
+                ],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 204,
+            nested_record_index_offset: 38,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#205".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 205,
+            next_byte_offset: 256,
+        })
+        .unwrap();
     let unresolved_target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
@@ -913,7 +924,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         group_record_index: multi_target_group.record_index,
         group_member_ordinal: 1,
     };
-    second_target_operand.record_index = 202;
+    let mut draft = second_target_operand.into_draft();
+    draft.record_index = 202;
+    draft.nested_record_index = u64::from(draft.record_index + 3);
+    draft.next_record_index = draft.record_index + 4;
+    second_target_operand =
+        crate::records::topology::DesignBodyRecipeOperand::try_new(draft).unwrap();
     second_target_operand.resolved_body_slot = Some(4);
     second_target_operand.resolved_body_face_slots = vec![30, 31];
     let operands = [target_shape_operand.clone(), second_target_operand.clone()];

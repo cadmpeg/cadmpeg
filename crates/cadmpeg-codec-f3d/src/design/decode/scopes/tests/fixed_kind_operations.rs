@@ -798,41 +798,44 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_bodies.record_index = 901;
     indexed_bodies.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
-    let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand {
-        id: "stream:indexed-axis-selection".into(),
-        scope_record_index: indexed_revolve_scope.record_index,
-        group_record_index: indexed_axis.record_index,
-        group_member_ordinal: 0,
-        record_index: 900,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        identity_record_index: 902,
-        identity_record_offset: 0,
-        primary_identity: 100,
-        primary_identity_offset: 0,
-        secondary: Some(crate::records::DesignSecondaryIdentity {
-            identity: crate::records::Located {
-                value: 104,
-                offset: 0,
-            },
-            curve_identity: None,
-        }),
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
-        next_record_index: 903,
-        next_byte_offset: 0,
-    };
+    let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::DesignEntitySelectionOperandDraft {
+            id: "stream:indexed-axis-selection".into(),
+            scope_record_index: indexed_revolve_scope.record_index,
+            group_record_index: indexed_axis.record_index,
+            group_member_ordinal: 0,
+            record_index: 900,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 0,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 0,
+            identity_record_index: 903,
+            identity_record_offset: 0,
+            primary_identity: 100,
+            primary_identity_offset: 29,
+            secondary: Some(crate::records::DesignSecondaryIdentity {
+                identity: crate::records::Located {
+                    value: 104,
+                    offset: 37,
+                },
+                curve_identity: None,
+            }),
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 904,
+            next_byte_offset: 45,
+        },
+    )
+    .unwrap();
     let axis_placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
             0,
@@ -891,7 +894,12 @@ pub(super) fn continue_fixed_kind_operations(
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, -1.0, 0.0))
     ));
-    axis_selection.secondary = None;
+    let mut draft = axis_selection.into_draft();
+    draft.secondary = None;
+    draft.primary_identity_offset = draft.identity_record_offset + 21;
+    draft.next_byte_offset = draft.identity_record_offset + 29;
+    axis_selection =
+        crate::records::topology::DesignEntitySelectionOperand::try_new(draft).unwrap();
     axis_selection.historical_face_candidates = vec![
         crate::records::topology::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
@@ -977,44 +985,46 @@ pub(super) fn continue_fixed_kind_operations(
                 && axis.direction == Vector3::new(0.0, 0.0, -1.0))
     ));
 
-    let face_axis_operand = DesignFaceOperand {
-        id: "stream:indexed-face-axis".into(),
-        scope_record_index: indexed_revolve_scope.record_index,
-        scope_reference_ordinal: 2,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: indexed_axis.record_index,
-            group_member_ordinal: 0,
-        }),
-        record_index: 900,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
-        recipe_record_index: 903,
-        recipe_record_byte_offset: 0,
-        recipe_id: "stream:indexed-face-axis-recipe".into(),
-        recipe_prefix_offset: 0,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::Face,
-        recipe_program_offset: 0,
-        recipe_program: vec![0, -1],
+    let face_axis_operand =
+        DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+            id: "stream:indexed-face-axis".into(),
+            scope_record_index: indexed_revolve_scope.record_index,
+            scope_reference_ordinal: 2,
+            group: Some(crate::records::topology::DesignOperandGroup {
+                group_record_index: indexed_axis.record_index,
+                group_member_ordinal: 0,
+            }),
+            record_index: 900,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            paired_byte_offset: 16,
+            paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            recipe_record_index: 903,
+            recipe_record_byte_offset: 32,
+            recipe_id: "stream:indexed-face-axis-recipe".into(),
+            recipe_prefix_offset: 43,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 0,
+            recipe_program: vec![0, -1],
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
-            cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
-        ],
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 905,
-        next_byte_offset: 0,
-    };
+            recipe_nodes: Vec::new(),
+            candidate_faces: vec![
+                cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
+                cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
+            ],
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 905,
+            next_byte_offset: 200,
+        })
+        .unwrap();
     let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,
         &[
@@ -1629,23 +1639,29 @@ pub(super) fn continue_fixed_kind_operations(
         None
     );
     {
-        let value = Some(crate::records::topology::DesignSketchProfileOperand {
-            scope_reference_ordinal: 3,
-            record_index: 2795,
-            byte_offset: 32_000,
-            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        let value = Some(
+            crate::records::topology::DesignSketchProfileOperand::try_new(
+                crate::records::topology::DesignSketchProfileOperandDraft {
+                    scope_reference_ordinal: 3,
+                    record_index: 2795,
+                    byte_offset: 32_000,
+                    class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
+                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                    )
+                    .unwrap(),
+                    asset_id_offset: 32_040,
+                    entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
+                        .expect("valid entity identity"),
+                    entity_reference_offset: 32_080,
+                    region_selection: None,
+                    paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned())
+                        .unwrap(),
+                    paired_byte_offset: 32_180,
+                },
             )
             .unwrap(),
-            asset_id_offset: 32_040,
-            entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
-                .expect("valid entity identity"),
-            entity_reference_offset: 32_080,
-            region_selection: None,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-            paired_byte_offset: 32_180,
-        });
+        );
         if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) =
             sweep_scope.payload_mut()
         {
@@ -1670,41 +1686,44 @@ pub(super) fn continue_fixed_kind_operations(
         .unwrap();
     let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
     guide_surface.id = "stream:sweep-guide-surface".into();
-    let entity_selection = crate::records::topology::DesignEntitySelectionOperand {
-        id: "stream:sweep-profile-selection".into(),
-        scope_record_index: sweep_scope.record_index,
-        group_record_index: selected_profile.record_index,
-        group_member_ordinal: 0,
-        record_index: 2788,
-        byte_offset: 31_000,
-        class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 31_040,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 31_080,
-        identity_record_index: 2791,
-        identity_record_offset: 31_180,
-        primary_identity: 2718,
-        primary_identity_offset: 31_200,
-        secondary: Some(crate::records::DesignSecondaryIdentity {
-            identity: crate::records::Located {
-                value: 164,
-                offset: 31_208,
-            },
-            curve_identity: None,
-        }),
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
-        next_record_index: profile_carrier.record_index,
-        next_byte_offset: profile_carrier.byte_offset,
-    };
+    let entity_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::DesignEntitySelectionOperandDraft {
+            id: "stream:sweep-profile-selection".into(),
+            scope_record_index: sweep_scope.record_index,
+            group_record_index: selected_profile.record_index,
+            group_member_ordinal: 0,
+            record_index: 2788,
+            byte_offset: 31_000,
+            class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
+            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
+            asset_id_offset: 31_040,
+            context_id: crate::records::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
+            context_id_offset: 31_080,
+            identity_record_index: 2791,
+            identity_record_offset: 31_180,
+            primary_identity: 2718,
+            primary_identity_offset: 31209,
+            secondary: Some(crate::records::DesignSecondaryIdentity {
+                identity: crate::records::Located {
+                    value: 164,
+                    offset: 31217,
+                },
+                curve_identity: None,
+            }),
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 2792,
+            next_byte_offset: 31225,
+        },
+    )
+    .unwrap();
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
