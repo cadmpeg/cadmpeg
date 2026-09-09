@@ -1,4 +1,4 @@
-# generated at ee06f3e21
+# generated at 7a344d53f
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -8981,6 +8981,7 @@ pub fn cadmpeg_ir::validate::validate_neutral(&cadmpeg_ir::document::CadIr, allo
 pub fn cadmpeg_ir::validate::validate_neutral_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::validate::validate_neutral_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
+pub macro cadmpeg_ir::nonempty_literal!
 pub enum cadmpeg_ir::ArenaKind
 pub cadmpeg_ir::ArenaKind::Model(cadmpeg_ir::document::ArenaName)
 pub cadmpeg_ir::ArenaKind::Native

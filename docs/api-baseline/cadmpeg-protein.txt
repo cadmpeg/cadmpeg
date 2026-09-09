@@ -1,4 +1,4 @@
-# generated at ee06f3e21
+# generated at 7a344d53f
 pub mod cadmpeg_protein
 pub mod cadmpeg_protein::framing
 pub struct cadmpeg_protein::framing::RecordFrame
