@@ -627,7 +627,7 @@ fn parse_placement_list(
 fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
-) -> Result<Vec<[f64; 3]>, CodecError> {
+) -> Result<Vec<crate::native::frame::FiniteVec3>, CodecError> {
     let Some(property) = unique_property(properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
@@ -637,7 +637,7 @@ fn parse_vector_list(
     list_layout::<3>(view, "ScaleList")?
         .map(|positions| {
             let [x, y, z] = positions.map(read_real);
-            Ok([x?, y?, z?])
+            crate::native::frame::FiniteVec3::try_from([x?, y?, z?]).map_err(malformed)
         })
         .collect()
 }
