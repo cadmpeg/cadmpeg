@@ -11,7 +11,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
-                radius: Length(2.5),
+                radius: Length::new(2.5).unwrap(),
             })
             .unwrap(),
         )
@@ -50,8 +50,8 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         name: "D1".into(),
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
@@ -83,7 +83,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )
@@ -123,8 +123,8 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         name: "D1".into(),
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(4.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -160,7 +160,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )
@@ -177,8 +177,8 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         name: "D1".into(),
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
-        value: Some(ParameterValue::Length(Length(5.0))),
-        dependencies: Vec::new(),
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
@@ -196,7 +196,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
     let mut mismatched = entities;
     mismatched[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(0.0, 0.0),
-        radius: Length(2.0),
+        radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
     assert!(relation_constraint_is_inactive(

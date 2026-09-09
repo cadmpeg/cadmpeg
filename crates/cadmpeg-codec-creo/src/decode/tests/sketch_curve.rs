@@ -112,7 +112,7 @@ fn placed_extrusion_arc_defines_cylinder() {
             &transform,
             &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(3.0, -4.0),
-                radius: Length(2.0),
+                radius: Length::new(2.0).expect("finite length fixture"),
             })
             .expect("valid test fixture"),
         ),
@@ -586,7 +586,7 @@ fn dimension_identity_includes_its_feature_definition() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(1.0, 2.0),
-                radius: Length(2.5),
+                radius: Length::new(2.5).expect("finite length fixture"),
             })
             .expect("valid test fixture")
         )

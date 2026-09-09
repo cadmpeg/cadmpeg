@@ -2155,13 +2155,10 @@ pub(crate) fn project_geometry(
             body,
             shells: vec![shell.clone()],
         });
-        ir.model.shells.push(Shell {
-            id: shell,
-            region,
-            faces: Vec::new(),
-            wire_edges,
-            free_vertices,
-        });
+        ir.model.shells.push(
+            Shell::new(shell, region, Vec::new(), wire_edges, free_vertices)
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+        );
     }
     admit_projected_entities(
         ctx,

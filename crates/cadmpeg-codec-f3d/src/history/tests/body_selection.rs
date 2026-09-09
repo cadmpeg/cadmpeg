@@ -121,7 +121,10 @@ fn move_body_selection_uses_unique_owning_history() {
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+                1.0, 2.0, 3.0,
+            ))
+            .unwrap(),
             rotation: None,
             copies: 0,
         },
@@ -138,15 +141,15 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
     };
-    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs).unwrap();
 
     let expected_body =
         crate::ids::history_input_body_id(&crate::ids::history_input_prefix("move", 41), 1);
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Historical { ref bodies, ref native, .. },
             ..
-        } if bodies == &[expected_body] && native == group_id
+        } if bodies.as_slice() == [expected_body] && native.as_str() == group_id
     ));
 }

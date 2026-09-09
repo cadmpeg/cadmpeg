@@ -230,14 +230,14 @@ impl<'a> WritableModel<'a> {
             || region.body != body.id
             || region.shells != [shell.id.clone()]
             || shell.region != region.id
-            || shell.faces
+            || shell.faces()
                 != model
                     .faces
                     .iter()
                     .map(|face| face.id.clone())
                     .collect::<Vec<_>>()
-            || !shell.wire_edges.is_empty()
-            || !shell.free_vertices.is_empty()
+            || !shell.wire_edges().is_empty()
+            || !shell.free_vertices().is_empty()
         {
             return Err(CodecError::Malformed(
                 "Brep ownership graph is inconsistent".into(),

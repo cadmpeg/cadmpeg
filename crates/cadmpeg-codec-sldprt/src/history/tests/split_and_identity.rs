@@ -34,20 +34,20 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         features: vec![split.clone(), sketch.clone()],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let split_feature = projected
         .iter()
         .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
         .expect("split feature");
     assert_eq!(
-        split_feature.definition,
+        *split_feature.evaluation.definition(),
         FeatureDefinition::SplitFace {
             targets: FaceSelection::Unresolved,
             tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
         }
     );
     assert_eq!(
-        split_feature.dependencies,
+        split_feature.dependencies.as_slice(),
         vec![neutral_feature_id(&sketch.id)]
     );
 }
@@ -68,7 +68,8 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
         &feature_id,
         &sketch_id,
         true,
-    ));
+    )
+    .unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::SplitFace {
@@ -95,7 +96,7 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
     };
 
     let annotations = project_semantic_notes(std::slice::from_ref(&history));
-    assert!(project_features(&[history]).is_empty());
+    assert!(project_features(&[history]).unwrap().is_empty());
     assert!(matches!(
         annotations.as_slice(),
         [cadmpeg_ir::semantic_annotations::SemanticAnnotation {
@@ -127,15 +128,18 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        &projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
-            distance: Length(6.0),
-        } if reference == &projected[0].id
+            distance: actual_distance,
+        } if (reference == &projected[0].id) && actual_distance.get() == 6.0
     ));
-    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
 }
 
 #[test]
@@ -150,7 +154,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         configurations: Vec::new(),
         features: vec![first, second],
     }];
-    let mut projected = project_features(&histories);
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -161,11 +165,12 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         &[],
         &[],
         &[],
-    );
+    )
+    .unwrap();
 
-    assert!(projected[0].outputs.is_empty());
+    assert!(projected[0].evaluation.outputs().is_empty());
     assert_eq!(
-        projected[1].outputs,
+        *projected[1].evaluation.outputs(),
         [cadmpeg_ir::ids::BodyId::mint("sldprt:brep:body#333").expect("identity grammar")]
     );
 }
@@ -190,7 +195,7 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             features: vec![feature("b", None, 0), feature("b-next", None, 1)],
         },
     ];
-    let mut projected = project_features(&histories);
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
     derive_feature_outputs(
@@ -201,9 +206,12 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
         &[],
         &[],
         &[],
-    );
+    )
+    .unwrap();
 
-    assert!(projected.iter().all(|feature| feature.outputs.is_empty()));
+    assert!(projected
+        .iter()
+        .all(|feature| feature.evaluation.outputs().is_empty()));
 }
 
 #[test]
@@ -275,27 +283,28 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             extend_surface,
             draft,
         ],
-    }]);
+    }])
+    .unwrap();
 
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::Dome {
-            height: Some(Length(2.0)),
+            height: Some(actual_height),
             ..
-        }
+        } if actual_height.get() == 2.0
     ));
     assert!(matches!(
-        projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::Rib {
             construction: RibConstruction {
-                thickness: Some(Length(1.0)),
+                thickness: Some(actual_thickness),
                 ..
             },
             ..
-        }
+        } if actual_thickness.get() == 1.0
     ));
     assert!(matches!(
-        projected[2].definition,
+        projected[2].evaluation.definition(),
         FeatureDefinition::Loft {
             solid: false,
             op: BooleanOp::Unresolved,
@@ -303,7 +312,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         }
     ));
     assert!(matches!(
-        projected[3].definition,
+        projected[3].evaluation.definition(),
         FeatureDefinition::Loft {
             solid: true,
             op: BooleanOp::Cut,
@@ -311,21 +320,21 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         }
     ));
     assert!(matches!(
-        projected[4].definition,
+        projected[4].evaluation.definition(),
         FeatureDefinition::Extrude {
             solid: Some(false),
             ..
         }
     ));
     assert!(matches!(
-        projected[5].definition,
+        projected[5].evaluation.definition(),
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
         }
     ));
     assert!(matches!(
-        projected[6].definition,
+        projected[6].evaluation.definition(),
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,
             merge_entities: None,
@@ -334,7 +343,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         }
     ));
     assert!(matches!(
-        projected[7].definition,
+        projected[7].evaluation.definition(),
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
@@ -344,7 +353,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         } if continuity.is_unresolved()
     ));
     assert!(matches!(
-        projected[8].definition,
+        projected[8].evaluation.definition(),
         FeatureDefinition::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
@@ -353,7 +362,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         }
     ));
     assert!(matches!(
-        projected[9].definition,
+        projected[9].evaluation.definition(),
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
@@ -361,17 +370,17 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         }
     ));
     assert!(matches!(
-        projected[10].definition,
+        projected[10].evaluation.definition(),
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Unresolved,
                 pull: None,
             },
-            angle: Some(Angle(value)),
+            angle: Some(value),
             outward: None,
             ..
-        } if (value - std::f64::consts::PI / 60.0).abs() < 1.0e-12
+        } if (value.get() - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 

@@ -23,7 +23,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         ],
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features = project_features(&[history]);
+    ir.model.features = project_features(&[history]).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
     ir.model
@@ -44,10 +44,10 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
                 consumer.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Vec::new(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: vec![predecessor.clone()],
-                    definition: ir.model.features[0].definition.clone(),
+                    dependencies: (vec![predecessor.clone()]).try_into().unwrap(),
+                    definition: ir.model.features[0].evaluation.definition().clone(),
                 },
             )]),
             native_ref: None,
@@ -81,13 +81,13 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.1)
+                        length: actual_length
                     },
                     ..
                 }
             },
             ..
-        })
+        }) if actual_length.get() == 2.1
     ));
 }
 
@@ -105,13 +105,13 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.4)
+                        length: actual_length
                     },
                     ..
                 }
             },
             ..
-        })
+        }) if actual_length.get() == 6.4
     ));
 }
 
@@ -140,7 +140,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         features: vec![extrusion, profile],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
@@ -151,18 +151,18 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         .expect("legacy extrusion profile");
     assert!(profile.ordinal < extrusion.ordinal);
     assert!(matches!(
-        &extrusion.definition,
+        extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(6.8) },
+                    termination: LinearTermination::Blind { length: actual_length },
                     ..
                 }
             },
             op: BooleanOp::Join,
             ..
-        } if profile_ref == &profile.id
+        } if (profile_ref == &profile.id) && actual_length.get() == 6.8
     ));
 }
 
@@ -203,7 +203,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         features: vec![extrusion, early_profile, origin_profile, preceding_profile],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
@@ -214,18 +214,18 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         .expect("preceding extrusion profile");
 
     assert!(matches!(
-        &extrusion.definition,
+        extrusion.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Blind { length: Length(4.2) },
+                    termination: LinearTermination::Blind { length: actual_length },
                     ..
                 }
             },
             op: BooleanOp::Cut,
             ..
-        } if profile_ref == &profile.id
+        } if (profile_ref == &profile.id) && actual_length.get() == 4.2
     ));
 }
 
@@ -241,7 +241,9 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
     assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
     assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
-        project_feature_content(&feature, &HashMap::new()),
+        project_feature_content(&feature, &HashMap::new())
+            .unwrap()
+            .as_slice(),
         vec![FeatureSourceContent::Parameter(
             ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar")
         )]
@@ -310,18 +312,21 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>5.5"),
     ]);
     let construction = hole_sketch_construction(&counterbore).expect("required invariant");
-    assert_eq!(construction.diameter, Length(5.5));
-    assert_eq!(construction.depth, Some(Length(12.0)));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(5.5).unwrap()
+    );
+    assert_eq!(construction.depth, Some(Length::new(12.0).unwrap()));
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::Form {
             kind: HoleKind::CounterboreDrilled {
-                diameter: Length(9.0),
-                depth: Length(5.7),
+                diameter: actual_diameter,
+                depth: actual_depth,
                 ..
             },
             ..
-        }
+        } if actual_diameter.get() == 9.0 && actual_depth.get() == 5.7
     ));
 
     let threaded = profile(&[
@@ -332,16 +337,19 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "118°"),
     ]);
     let construction = hole_sketch_construction(&threaded).expect("required invariant");
-    assert_eq!(construction.diameter, Length(4.2));
-    assert_eq!(construction.depth, Some(Length(12.4)));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(4.2).unwrap()
+    );
+    assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::NativeThread {
-            major_diameter: Length(5.0),
-            thread_depth: Length(10.0),
+            major_diameter: actual_major_diameter,
+            thread_depth: actual_thread_depth,
             pitch: None,
             ..
-        }
+        } if actual_major_diameter.get() == 5.0 && actual_thread_depth.get() == 10.0
     ));
 
     let tapered_thread = profile(&[
@@ -353,25 +361,31 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "<MOD-DIAM>10.29"),
     ]);
     let construction = hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
-    assert_eq!(construction.diameter, Length(8.43));
-    assert_eq!(construction.depth, Some(Length(11.62)));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(8.43).unwrap()
+    );
+    assert_eq!(construction.depth, Some(Length::new(11.62).unwrap()));
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::NativeThread {
-            major_diameter: Length(10.29),
-            thread_depth: Length(6.92),
+            major_diameter: actual_major_diameter,
+            thread_depth: actual_thread_depth,
             pitch: None,
-            drill_point_angle: Angle(angle),
-        } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+            drill_point_angle: angle,
+        } if ((angle.get() - 118_f64.to_radians()).abs() < 1.0e-12) && actual_major_diameter.get() == 10.29 && actual_thread_depth.get() == 6.92
     ));
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: Angle(118_f64.to_radians()),
+            included_angle: cadmpeg_ir::features::InteriorAngle::new(118_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
-    assert_eq!(construction.taper_angle, Some(Angle(3.43_f64.to_radians())));
+    assert_eq!(
+        construction.taper_angle,
+        Some(cadmpeg_ir::features::InteriorAngle::new(3.43_f64.to_radians()).unwrap())
+    );
 
     let counterbore_with_exit_countersink = profile(&[
         ("a", "4.6"),
@@ -383,20 +397,23 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     ]);
     let construction =
         hole_sketch_construction(&counterbore_with_exit_countersink).expect("dual-ended profile");
-    assert_eq!(construction.diameter, Length(4.5));
-    assert_eq!(construction.depth, Some(Length(10.0)));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(4.5).unwrap()
+    );
+    assert_eq!(construction.depth, Some(Length::new(10.0).unwrap()));
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
-            diameter: Length(8.0),
-            depth: Length(4.6)
+            diameter: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
+            depth: cadmpeg_ir::features::PositiveLength::new(4.6).unwrap()
         })
     );
     assert_eq!(
         construction.exit_kind,
         Some(HoleKind::Countersink {
-            diameter: Length(4.55),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+            diameter: cadmpeg_ir::features::PositiveLength::new(4.55).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 
@@ -410,21 +427,28 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("g", "<MOD-DIAM>9.95"),
     ]);
     let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
-    assert_eq!(construction.diameter, Length(5.5));
-    assert_eq!(construction.depth, Some(Length(12.4)));
+    assert_eq!(
+        construction.diameter,
+        cadmpeg_ir::features::PositiveLength::new(5.5).unwrap()
+    );
+    assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterdrill {
-            diameter: Length(9.95),
-            entry_diameter: Some(Length(10.05)),
-            depth: Length(5.4),
-            angle: Angle(std::f64::consts::FRAC_PI_2),
+            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+                cadmpeg_ir::features::PositiveLength::new(9.95).unwrap(),
+                Some(cadmpeg_ir::features::PositiveLength::new(10.05).unwrap())
+            )
+            .unwrap(),
+
+            depth: cadmpeg_ir::features::PositiveLength::new(5.4).unwrap(),
+            angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
     assert_eq!(
         construction.bottom,
         Some(HoleBottom::Angled {
-            included_angle: Angle(118_f64.to_radians()),
+            included_angle: cadmpeg_ir::features::InteriorAngle::new(118_f64.to_radians()).unwrap(),
             depth_to_tip: false,
         })
     );
@@ -465,17 +489,16 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &native_owned,
         &HashMap::new(),
         &[native_owned.clone(), native_profile],
-    );
+    )
+    .unwrap();
     assert!(matches!(
-        projected,
-        FeatureDefinition::Hole {
-            diameter: Some(Length(6.6)),
+        projected, FeatureDefinition::Hole {
+            shape,
             extent: Some(LinearTermination::Blind {
-                length: Length(9.4)
+                length: actual_length
             }),
             ..
-        }
-    ));
+        } if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.6 && actual_length.get() == 9.4)));
 
     let mut canonical = feature("hole", Some("8"), 0);
     canonical.parameters = [
@@ -490,25 +513,32 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &canonical,
         &HashMap::new(),
         std::slice::from_ref(&canonical),
-    );
+    )
+    .unwrap();
     let FeatureDefinition::Hole {
-        construction:
-            cadmpeg_ir::features::HoleConstruction::NativeThread {
-                major_diameter,
-                thread_depth,
-                ..
-            },
-        diameter: Some(diameter),
+        ref shape,
+
         extent: Some(LinearTermination::Blind { length }),
         ..
     } = projected
     else {
         panic!("expected canonical threaded hole: {projected:?}");
     };
-    assert!((diameter.0 - 4.2).abs() < 1.0e-12);
-    assert!((major_diameter.0 - 5.0).abs() < 1.0e-12);
-    assert!((thread_depth.0 - 10.0).abs() < 1.0e-12);
-    assert!((length.0 - 12.4).abs() < 1.0e-12);
+    let cadmpeg_ir::features::HoleConstruction::NativeThread {
+        major_diameter,
+        thread_depth,
+        ..
+    } = shape.construction()
+    else {
+        panic!("expected canonical threaded hole: {projected:?}");
+    };
+    let Some(diameter) = &shape.diameter() else {
+        panic!("expected canonical threaded hole: {projected:?}");
+    };
+    assert!((diameter.get() - 4.2).abs() < 1.0e-12);
+    assert!((major_diameter.get() - 5.0).abs() < 1.0e-12);
+    assert!((thread_depth.get() - 10.0).abs() < 1.0e-12);
+    assert!((length.get() - 12.4).abs() < 1.0e-12);
 }
 
 #[test]
@@ -906,9 +936,12 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
             std::slice::from_ref(&plane),
         ),
         FeatureDefinition::DatumPlane {
-            origin: Point3::new(0.0, 70.0, 0.0),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            u_axis: Vector3::new(-1.0, 0.0, 0.0),
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 70.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0)
+            )
+            .unwrap(),
         }
     );
 }
@@ -930,7 +963,7 @@ fn length_plane_parameter_claims_offset_semantics() {
         ),
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
-            distance: Length(70.0),
+            distance: Length::new(70.0).unwrap(),
         }
     );
 }
@@ -1044,7 +1077,9 @@ fn custom_properties_are_document_attributes_not_model_features() {
         features: vec![property],
     };
 
-    assert!(project_features(std::slice::from_ref(&history)).is_empty());
+    assert!(project_features(std::slice::from_ref(&history))
+        .unwrap()
+        .is_empty());
     let attributes = custom_property_attributes(std::slice::from_ref(&history));
     assert_eq!(attributes.len(), 1);
     assert_eq!(attributes[0].name, "PartNumber");
@@ -1099,7 +1134,7 @@ fn native_attribute_records_are_metadata_not_model_features() {
         features: vec![definition, attribute, comments, alignment, model],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
     assert!(project_parameters(&[history]).is_empty());
@@ -1122,7 +1157,9 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
         features: vec![definition],
     };
 
-    assert!(project_features(std::slice::from_ref(&history)).is_empty());
+    assert!(project_features(std::slice::from_ref(&history))
+        .unwrap()
+        .is_empty());
     assert!(project_parameters(&[history]).is_empty());
 }
 
@@ -1137,21 +1174,23 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         configurations: Vec::new(),
         features: vec![light],
     };
-    let mut configured = project_features(std::slice::from_ref(&history));
+    let mut configured = project_features(std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::Native { .. }
     ));
     let mut base = configured.clone();
-    base[0].definition = FeatureDefinition::TreeNode {
-        role: FeatureTreeNodeRole::DirectionalLight,
-        children: Vec::new(),
-        active_child: None,
-    };
+    base[0]
+        .evaluation
+        .set_definition(FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::DirectionalLight,
+            children: cadmpeg_ir::features::TreeChildren::default(),
+        })
+        .unwrap();
 
-    restore_configuration_tree_node_definitions(&mut configured, &base);
+    restore_configuration_tree_node_definitions(&mut configured, &base).unwrap();
     assert!(matches!(
-        configured[0].definition,
+        configured[0].evaluation.definition(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::DirectionalLight,
             ..
@@ -1186,18 +1225,19 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         features: vec![hole, position, profile],
     };
 
-    let projected = project_features(std::slice::from_ref(&history));
-    let FeatureDefinition::Hole {
-        diameter, extent, ..
-    } = &projected[0].definition
-    else {
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let FeatureDefinition::Hole { shape, extent, .. } = projected[0].evaluation.definition() else {
         panic!("expected a hole definition");
     };
-    assert_eq!(*diameter, Some(Length(4.5)));
+    let diameter = &shape.diameter();
+    assert_eq!(
+        *diameter,
+        Some(cadmpeg_ir::features::PositiveLength::new(4.5).unwrap())
+    );
     assert_eq!(
         *extent,
         Some(LinearTermination::Blind {
-            length: Length(13.2)
+            length: cadmpeg_ir::features::NonZeroLength::new(13.2).unwrap()
         })
     );
 
@@ -1205,13 +1245,11 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     ambiguous.features[2]
         .parameters
         .insert("another length".into(), "2".into());
-    let ambiguous = project_features(&[ambiguous]);
-    let FeatureDefinition::Hole {
-        diameter, extent, ..
-    } = &ambiguous[0].definition
-    else {
+    let ambiguous = project_features(&[ambiguous]).unwrap();
+    let FeatureDefinition::Hole { shape, extent, .. } = ambiguous[0].evaluation.definition() else {
         panic!("expected a hole definition");
     };
+    let diameter = &shape.diameter();
     assert_eq!(*diameter, None);
     assert_eq!(*extent, None);
 }
@@ -1250,19 +1288,17 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
         features: vec![hole, position, profile],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::Simple,
-                ..
-            },
-            diameter: None,
+        projected[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+
             extent: None,
             ..
-        }
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            }, None,))));
 }
 
 #[test]
@@ -1299,23 +1335,21 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
         features: vec![hole, profile],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
-        FeatureDefinition::Hole {
-            construction: cadmpeg_ir::features::HoleConstruction::Form {
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(drill_point_angle),
-                },
-                ..
-            },
-            diameter: Some(Length(4.2)),
+        projected[0].evaluation.definition(), FeatureDefinition::Hole {
+            shape,
+
             extent: Some(LinearTermination::Blind {
-                length: Length(10.0),
+                length: actual_length,
             }),
             ..
-        } if (drill_point_angle - 118.0_f64.to_radians()).abs() < 1.0e-12
-    ));
+        } if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle,
+                },
+                ..
+            }, Some(actual_diameter),) if ((drill_point_angle.get() - 118.0_f64.to_radians()).abs() < 1.0e-12) && actual_diameter.get() == 4.2 && actual_length.get() == 10.0)));
 }
 
 #[test]
@@ -1346,15 +1380,15 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             op: BooleanOp::Cut,
         } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) }
-                }) if (value - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
+                    termination: AngularTermination::Angle { angle: value }
+                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
     ));
 }
 
@@ -1373,9 +1407,9 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
         features: vec![cut],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::Extrude {
             op: BooleanOp::Cut,
             ..
@@ -1400,15 +1434,15 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::Revolve {
             ref construction,
             ..
         } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) }
-                }) if (value - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
+                    termination: AngularTermination::Angle { angle: value }
+                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
     ));
 }
 
@@ -1437,19 +1471,19 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         features: vec![chamfer],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
-        projected[0].definition,
+        projected[0].evaluation.definition(),
         FeatureDefinition::Chamfer { ref groups, .. }
             if matches!(
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
                     spec: ChamferSpec::DistanceAngle {
-                        distance: Length(1.5),
-                        angle: Angle(value),
+                        distance: actual_distance,
+                        angle: value,
                     },
                     ..
-                }] if (*value - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+                }] if ((value.get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && actual_distance.get() == 1.5
             )
     ));
 
@@ -1468,10 +1502,10 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
                     spec: ChamferSpec::Distance {
-                        distance: Length(2.0),
+                        distance: actual_distance,
                     },
                     ..
-                }]
+                }] if actual_distance.get() == 2.0
             )
     ));
 
@@ -1488,11 +1522,11 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
                 groups.as_slice(),
                 [cadmpeg_ir::features::ChamferGroup {
                     spec: ChamferSpec::TwoDistances {
-                        first: Length(2.0),
-                        second: Length(3.0),
+                        first: actual_first,
+                        second: actual_second,
                     },
                     ..
-                }]
+                }] if actual_first.get() == 2.0 && actual_second.get() == 3.0
             )
     ));
 }
@@ -1512,14 +1546,14 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert_eq!(
-        projected[0].definition,
+        *projected[0].evaluation.definition(),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(Length(8.0)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Blind {
-                length: Length(16.0),
+                length: cadmpeg_ir::features::PositiveLength::new(16.0).unwrap(),
             }),
         }
     );
@@ -1539,12 +1573,12 @@ fn cosmetic_thread_without_blind_length_is_through() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     assert_eq!(
-        projected[0].definition,
+        *projected[0].evaluation.definition(),
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Unresolved,
-            diameter: Some(Length(8.0)),
+            diameter: Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Through),
         }
     );
@@ -1568,12 +1602,12 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             features: vec![thread],
         };
 
-        let projected = project_features(&[history]);
+        let projected = project_features(&[history]).unwrap();
         assert_eq!(
-            projected[0].definition,
+            *projected[0].evaluation.definition(),
             FeatureDefinition::CosmeticThread {
                 face: FaceSelection::Unresolved,
-                diameter: Some(Length(4.9)),
+                diameter: Some(cadmpeg_ir::features::PositiveLength::new(4.9).unwrap()),
                 extent: Some(CosmeticThreadExtent::Through),
             }
         );
@@ -1599,8 +1633,9 @@ fn cosmetic_thread_requires_one_named_diameter() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]);
-    let FeatureDefinition::CosmeticThread { diameter, .. } = &projected[0].definition else {
+    let projected = project_features(&[history]).unwrap();
+    let FeatureDefinition::CosmeticThread { diameter, .. } = projected[0].evaluation.definition()
+    else {
         panic!("expected a cosmetic thread");
     };
     assert_eq!(*diameter, None);
@@ -1694,7 +1729,8 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
-    ));
+    )
+    .unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
@@ -1708,7 +1744,8 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
-    ));
+    )
+    .unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
@@ -1740,14 +1777,14 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
         features: vec![sketch, extrusion],
     };
 
-    let projected = project_features(&[history]);
+    let projected = project_features(&[history]).unwrap();
     let sketch_id = neutral_feature_id("sketch");
     assert!(matches!(
-        &projected[1].definition,
+        projected[1].evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(feature),
             ..
         } if feature == &sketch_id
     ));
-    assert_eq!(projected[1].dependencies, [sketch_id]);
+    assert_eq!(projected[1].dependencies.as_slice(), [sketch_id]);
 }

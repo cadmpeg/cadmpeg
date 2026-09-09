@@ -869,5 +869,5 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.edges.len(), 3);
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
-    assert_eq!(ir.model.shells[0].wire_edges.len(), 3);
+    assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
 }

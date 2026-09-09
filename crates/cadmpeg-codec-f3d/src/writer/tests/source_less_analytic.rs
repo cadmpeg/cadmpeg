@@ -775,9 +775,9 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             expression: "60 mm".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(60.0),
+                cadmpeg_ir::features::Length::new(60.0).unwrap(),
             )),
-            dependencies: Vec::new(),
+            dependencies: Default::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -886,7 +886,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     assert_eq!(round_trip_parameters, expected_parameters);
     assert_eq!(f3d_native(decoded.ir()).design_parameters.len(), 2);
     assert_eq!(
-        decoded.ir().model.parameters[0].dependencies,
+        decoded.ir().model.parameters[0].dependencies.as_slice(),
         [cadmpeg_ir::features::ParameterId::mint(format!(
             "f3d:model:parameter#{}:f3d%3A{stream}701",
             "f3d%3A".len() + stream.len(),
@@ -1479,13 +1479,10 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         body,
         shells: vec![shell.clone()],
     });
-    source_less.model.shells.push(Shell {
-        id: shell.clone(),
-        region,
-        faces: vec![face.clone()],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    source_less
+        .model
+        .shells
+        .push(Shell::with_face(shell.clone(), region, face.clone()));
     source_less.model.faces.push(Face {
         id: face.clone(),
         shell,

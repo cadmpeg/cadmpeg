@@ -46,7 +46,7 @@ pub(crate) fn encode_smbh(
             .model
             .shells
             .iter()
-            .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty())
+            .any(|shell| !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty())
         {
             return Err(CodecError::NotImplemented(
                 "source-less F3D generation requires owned face topology or a nonempty wire shell"
@@ -109,7 +109,7 @@ impl NativeRecordPlan {
         let wire_edge_count = model
             .shells
             .iter()
-            .map(|shell| shell.wire_edges.len())
+            .map(|shell| shell.wire_edges().len())
             .sum::<usize>();
         let edge_start = native_record_index(wire_coedge_start, wire_edge_count)?;
         let vertex_start = native_record_index(edge_start, model.edges.len())?;
@@ -143,7 +143,7 @@ impl NativeRecordPlan {
 }
 
 fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
-    usize::from(!shell.wire_edges.is_empty()) + shell.free_vertices.len()
+    usize::from(!shell.wire_edges().is_empty()) + shell.free_vertices().len()
 }
 
 fn source_less_wire_record_for_shell(
@@ -180,7 +180,7 @@ fn encode_source_less_wires(
     let mut wire_ordinal = 0usize;
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
         let shell_wire_count = source_less_wire_count(shell);
-        if !shell.wire_edges.is_empty() {
+        if !shell.wire_edges().is_empty() {
             native_ident(records, "wire")?;
             native_ref(records, -1);
             native_i64(records, -1);
@@ -199,14 +199,14 @@ fn encode_source_less_wires(
             records.push(native_wire_side(
                 topology,
                 &shell.id,
-                &shell.wire_edges,
+                shell.wire_edges(),
                 None,
             )?);
             records.push(0x11);
             wire_ordinal += 1;
-            edge_base += shell.wire_edges.len();
+            edge_base += shell.wire_edges().len();
         }
-        for (free_ordinal, vertex_id) in shell.free_vertices.iter().enumerate() {
+        for (free_ordinal, vertex_id) in shell.free_vertices().iter().enumerate() {
             let vertex_ordinal = vertex_ordinals
                 .get(vertex_id)
                 .copied()
@@ -219,7 +219,7 @@ fn encode_source_less_wires(
             native_ref(records, -1);
             native_ref(
                 records,
-                if free_ordinal + 1 < shell.free_vertices.len() {
+                if free_ordinal + 1 < shell.free_vertices().len() {
                     native_record_index(wire_start, wire_ordinal + 1)?
                 } else {
                     -1
@@ -254,17 +254,17 @@ fn encode_wire_body_smbh(
         || model
             .shells
             .iter()
-            .any(|shell| shell.wire_edges.is_empty() && shell.free_vertices.is_empty())
+            .any(|shell| shell.wire_edges().is_empty() && shell.free_vertices().is_empty())
         || model
             .shells
             .iter()
-            .flat_map(|shell| &shell.wire_edges)
+            .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
             .zip(&model.edges)
             .any(|(id, edge)| *id != edge.id)
         || model
             .shells
             .iter()
-            .map(|shell| shell.wire_edges.len())
+            .map(|shell| shell.wire_edges().len())
             .sum::<usize>()
             != model.edges.len()
         || model
@@ -484,11 +484,11 @@ fn encode_wire_body_smbh(
     )?;
     let mut edge_base = 0usize;
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
-        for ordinal in 0..shell.wire_edges.len() {
+        for ordinal in 0..shell.wire_edges().len() {
             let edge_ordinal = edge_base + ordinal;
-            let next = edge_base + (ordinal + 1) % shell.wire_edges.len();
+            let next = edge_base + (ordinal + 1) % shell.wire_edges().len();
             let previous =
-                edge_base + (ordinal + shell.wire_edges.len() - 1) % shell.wire_edges.len();
+                edge_base + (ordinal + shell.wire_edges().len() - 1) % shell.wire_edges().len();
             native_ident(&mut records, "coedge")?;
             native_ref(&mut records, -1);
             native_i64(&mut records, -1);
@@ -509,7 +509,7 @@ fn encode_wire_body_smbh(
             native_ref(&mut records, -1);
             records.push(0x11);
         }
-        edge_base += shell.wire_edges.len();
+        edge_base += shell.wire_edges().len();
     }
     encode_source_less_curves(&mut records, target)?;
     let mut wire_edge_owners = model
@@ -876,7 +876,7 @@ fn encode_face_topology_smbh(
                 CodecError::malformed(format_args!("region does not own shell {}", shell.id))
             })?;
         let first_face = shell
-            .faces
+            .faces()
             .first()
             .map(|first_face| {
                 model
@@ -953,7 +953,7 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| CodecError::malformed(format_args!("face {} has no shell", face.id)))?;
         let shell = &model.shells[shell_ordinal];
         let ordinal = shell
-            .faces
+            .faces()
             .iter()
             .position(|id| *id == face.id)
             .ok_or_else(|| {
@@ -999,10 +999,10 @@ fn encode_face_topology_smbh(
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
-            if ordinal + 1 == shell.faces.len() {
+            if ordinal + 1 == shell.faces().len() {
                 -1
             } else {
-                let id = &shell.faces[ordinal + 1];
+                let id = &shell.faces()[ordinal + 1];
                 let position = model
                     .faces
                     .iter()
@@ -1342,11 +1342,11 @@ fn encode_face_topology_smbh(
     let mut wire_edge_owners = BTreeMap::new();
     let mut wire_edge_base = 0usize;
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
-        if shell.wire_edges.is_empty() {
+        if shell.wire_edges().is_empty() {
             continue;
         }
         let wire_ref = source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?;
-        for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
+        for (ordinal, edge_id) in shell.wire_edges().iter().enumerate() {
             let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
                 CodecError::malformed(format_args!("wire references missing edge {edge_id}"))
             })?;
@@ -1357,9 +1357,9 @@ fn encode_face_topology_smbh(
                     "wire edge {edge_id} belongs to more than one shell"
                 )));
             }
-            let next = wire_edge_base + (ordinal + 1) % shell.wire_edges.len();
-            let previous =
-                wire_edge_base + (ordinal + shell.wire_edges.len() - 1) % shell.wire_edges.len();
+            let next = wire_edge_base + (ordinal + 1) % shell.wire_edges().len();
+            let previous = wire_edge_base
+                + (ordinal + shell.wire_edges().len() - 1) % shell.wire_edges().len();
             native_ident(&mut records, "coedge")?;
             native_ref(&mut records, -1);
             native_i64(&mut records, -1);
@@ -1377,7 +1377,7 @@ fn encode_face_topology_smbh(
             native_ref(&mut records, -1);
             records.push(0x11);
         }
-        wire_edge_base += shell.wire_edges.len();
+        wire_edge_base += shell.wire_edges().len();
     }
     apply_native_edge_owners(target, topology, coedge_start, &mut wire_edge_owners)?;
 

@@ -145,7 +145,7 @@ pub(crate) fn transfer(
 pub(crate) fn transfer_neutral(
     records: &[JointRecord],
     occurrences: &[Occurrence],
-) -> Vec<AssemblyJoint> {
+) -> Result<Vec<AssemblyJoint>, CodecError> {
     let occurrence_by_native = occurrences
         .iter()
         .filter_map(|occurrence| {
@@ -180,7 +180,15 @@ pub(crate) fn transfer_neutral(
                         .then(|| scalar(maximum))
                         .flatten()
                         .map(|value: f64| value * scale);
-                    JointLimits::new(minimum, maximum)
+                    if minimum.is_none() && maximum.is_none() {
+                        Ok(None)
+                    } else {
+                        JointLimits::new(minimum, maximum).map(Some).ok_or_else(|| {
+                            CodecError::Malformed(
+                                "joint limits minimum/maximum must be finite and ordered".into(),
+                            )
+                        })
+                    }
                 };
             let operand = |reference: &LinkTarget| {
                 let object = reference.object()?.to_owned();
@@ -232,6 +240,10 @@ pub(crate) fn transfer_neutral(
                 "EnableLengthMax",
                 1.0,
             );
+            let (angular_limits, linear_limits) = match (angular_limits, linear_limits) {
+                (Ok(angular), Ok(linear)) => (angular, linear),
+                (Err(error), _) | (_, Err(error)) => return Some(Err(error)),
+            };
             let mut joint = match &record.body {
                 JointBody::Grounded {
                     reference,
@@ -257,6 +269,10 @@ pub(crate) fn transfer_neutral(
                         angular_limits,
                         linear_limits,
                     );
+                    let kind = match kind {
+                        Ok(kind) => kind,
+                        Err(error) => return Some(Err(error)),
+                    };
                     AssemblyJoint::paired(
                         id,
                         kind,
@@ -278,7 +294,7 @@ pub(crate) fn transfer_neutral(
             };
             joint.suppressed = bool_value("Suppressed").unwrap_or(false);
             joint.native_ref = Some(record.id.clone());
-            Some(joint)
+            Some(Ok(joint))
         })
         .collect()
 }
@@ -290,8 +306,15 @@ fn joint_kind(
     distance2: Option<f64>,
     angular_limits: Option<JointLimits>,
     linear_limits: Option<JointLimits>,
-) -> PairedJointKind {
-    match kind.as_str().to_ascii_lowercase().as_str() {
+) -> Result<PairedJointKind, CodecError> {
+    let finite = |value: f64| {
+        cadmpeg_ir::features::FiniteReal::new(value)
+            .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
+    };
+    let angle = angle.map(finite).transpose()?;
+    let distance = distance.map(finite).transpose()?;
+    let distance2 = distance2.map(finite).transpose()?;
+    Ok(match kind.as_str().to_ascii_lowercase().as_str() {
         "fixed" => PairedJointKind::Fixed {
             angle,
             translation_offset: None,
@@ -340,7 +363,7 @@ fn joint_kind(
             angular_limits,
             linear_limits,
         },
-    }
+    })
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -640,7 +663,8 @@ pub(crate) mod tests {
                         None,
                         None,
                         None
-                    ),
+                    )
+                    .unwrap(),
                     PairedJointKind::Native { .. }
                 ),
                 "{family} must not fall through to a native joint family"
@@ -732,17 +756,6 @@ pub(crate) mod tests {
         );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
-        let mut corrupted = result.ir().clone();
-        corrupted.model.assembly_joints[0].set_angular_limits(Some(
-            cadmpeg_ir::JointLimits::Both {
-                minimum: 2.0,
-                maximum: 1.0,
-            },
-        ));
-        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("invalid assembly joint")));
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
             .expect("assembly joint wire");
         wire["operands"][0]["external_document"] = serde_json::json!({

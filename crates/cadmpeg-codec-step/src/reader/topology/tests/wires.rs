@@ -379,7 +379,7 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.shells[0].free_vertices.len(), 1);
+    assert_eq!(decoded.ir().model.shells[0].free_vertices().len(), 1);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

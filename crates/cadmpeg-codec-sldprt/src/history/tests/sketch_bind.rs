@@ -102,7 +102,7 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("sketch history feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
         } if id == &sketch.id
@@ -134,12 +134,10 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("sweep history feature");
     assert!(matches!(
-        &feature.definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(id)),
+        feature.evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             ..
-        } if id == &sketch.id
-    ));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Sketch(id),) if id == &sketch.id))));
 }
 
 #[test]
@@ -164,12 +162,10 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("sweep history feature");
     assert!(matches!(
-        &feature.definition,
-        FeatureDefinition::Sweep {
-            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+        feature.evaluation.definition(), FeatureDefinition::Sweep {
+            shape,
             ..
-        }
-    ));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),))));
 }
 
 #[test]
@@ -197,7 +193,7 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("extrusion history feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(id),
             ..
@@ -257,7 +253,7 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("extrusion history feature");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             ..
@@ -280,21 +276,19 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .unwrap();
     let sketch_id = decoded.ir().model.sketches[0].id.clone();
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(value)),
         } if value == &sketch_id
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
-        &feature.definition,
-        FeatureDefinition::Rib {
+        feature.evaluation.definition(), FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
-                profile: Some(ProfileRef::Sketch(value)),
+                profile,
                 ..
             },
             ..
-        } if value == &sketch_id
-    )));
+        } if matches!((profile.as_ref().map(AsRef::as_ref),), (Some(ProfileRef::Sketch(value)),) if value == &sketch_id))));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
@@ -313,7 +307,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         .features
         .iter()
         .any(|feature| matches!(
-            feature.definition,
+            feature.evaluation.definition(),
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_))
             }
@@ -361,13 +355,13 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),
             source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         };
     let mut features = vec![
@@ -448,10 +442,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         ],
     };
 
-    crate::history::bind_unique_sketch_feature(&mut features, &[sketch], &[history]);
+    crate::history::bind_unique_sketch_feature(&mut features, &[sketch], &[history]).unwrap();
 
     assert!(matches!(
-        &features[1].definition,
+        features[1].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -459,11 +453,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         }
     ));
     assert_eq!(
-        features[1].dependencies,
+        features[1].dependencies.as_slice(),
         vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
     assert!(matches!(
-        &features[2].definition,
+        features[2].evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -471,11 +465,11 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         }
     ));
     assert!(matches!(
-        &features[3].definition,
+        features[3].evaluation.definition(),
         FeatureDefinition::Extrude { profile: ProfileRef::Sketch(id), .. } if id == &sketch_id
     ));
     assert_eq!(
-        features[3].dependencies,
+        features[3].dependencies.as_slice(),
         vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
 }
@@ -498,7 +492,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .model
         .features
         .iter()
-        .filter_map(|feature| match &feature.definition {
+        .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             } => Some(sketch.clone()),
@@ -511,12 +505,20 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .model
         .features
         .iter()
-        .find_map(|feature| match &feature.definition {
+        .find_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Sweep {
-                section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(profile)),
+                shape,
                 path: Some(PathRef::Sketch(path)),
                 ..
-            } => Some((profile, path)),
+            } => match (shape.section(),) {
+                (cadmpeg_ir::features::SweepSection::Profile(profile),) => {
+                    match (profile.as_ref(),) {
+                        (ProfileRef::Sketch(profile),) => Some((profile, path)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
             _ => None,
         })
         .expect("bound sweep");
@@ -554,7 +556,7 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
         .unwrap();
     assert_eq!(decoded.ir().model.sketches.len(), 2);
     assert!(decoded.ir().model.features.iter().all(|feature| matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
                 | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -565,7 +567,6 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
 
 #[test]
 fn decode_distinguishes_full_circle_sketch_geometry() {
-    use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
@@ -579,15 +580,16 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
         (decoded.ir().model.sketch_entities[0].geometry).definition(),
         SketchGeometryDefinition::Circle {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
-            radius: Length(1000.0),
-        }
+            radius: actual_radius,
+        } if actual_radius.get() == 1000.0
     ));
 }
 
 #[test]
 fn decode_projects_full_ellipse_sketch_geometry() {
-    use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    const EPS_ELLIPSE_ANGLE: f64 = 1.0e-12;
 
     let decoded = SldprtCodec
         .decode(
@@ -595,17 +597,16 @@ fn decode_projects_full_ellipse_sketch_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(
-        matches!((decoded.ir().model.sketch_entities[0].geometry).definition(),
-            SketchGeometryDefinition::Ellipse {
-                center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
-                major_angle: Angle(value),
-                major_radius: Length(2000.0),
-                minor_radius: Length(1000.0),
-                bounds: None,
-            } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-        )
-    );
+    assert!(matches!(
+        decoded.ir().model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Ellipse {
+            center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
+            major_angle: value,
+            major_radius: actual_major_radius,
+            minor_radius: actual_minor_radius,
+            bounds: None,
+        } if ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_ELLIPSE_ANGLE) && actual_major_radius.get() == 2000.0 && actual_minor_radius.get() == 1000.0
+    ));
 }
 
 #[test]

@@ -158,6 +158,7 @@ pub(crate) fn prepare_features_for_write(
             let projected_model = native
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
+                .transpose()?
                 .map(FeatureProjection::into_model)
                 .unwrap_or_default();
             if feature_hash(&projected_model) == neutral_hash {
@@ -186,29 +187,32 @@ pub(crate) fn validate_embedded_helix_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)
+    let embedded = project_features(&native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
-                feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::HelixNativeAxis { .. }
             )
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
-                && matches!(feature.definition, FeatureDefinition::Helix { .. }))
-            .then_some((feature.id, feature.definition))
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Helix { .. }
+                ))
+            .then_some((feature.id, feature.evaluation.definition().clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        if &feature.definition != expected {
+        if feature.evaluation.definition() != expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes embedded helix geometry",
                 feature.id
@@ -225,33 +229,34 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)
+    let expected = project_features_with_native_inputs(native)?
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep { section, .. } = feature.definition else {
+            let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
                 return None;
             };
-            let cadmpeg_ir::features::SweepSection::Profile(
-                profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }),
-            ) = section
+            let section = shape.section();
+            let profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }) =
+                section.referenced_profile()?
             else {
                 return None;
             };
             (matches!(profile, ProfileRef::Generated { .. })
                 || !feature.source_properties.contains_key("Profile"))
-            .then_some((feature.id, profile))
+            .then_some((feature.id, profile.clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep { section, .. } = &feature.definition else {
+        let FeatureDefinition::Sweep { shape, .. } = feature.evaluation.definition() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
             )));
         };
+        let section = shape.section();
         let Some(profile) = section.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
@@ -270,13 +275,13 @@ pub(crate) fn validate_surface_sweep_profile_edits(
 
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> Vec<cadmpeg_ir::features::Feature> {
-    project_feature_model_with_native_inputs(native).features
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    Ok(project_feature_model_with_native_inputs(native)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
-) -> FeatureProjection {
+) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
         &mut histories,
@@ -284,32 +289,32 @@ fn project_feature_model_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     );
-    let mut projection = project_feature_model(&histories);
+    let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
         features,
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::operations::bind_sweep_operations(
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
-    project_compact_and_generated(features, &histories, &native.feature_input_lanes);
+    )?;
+    project_compact_and_generated(features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
     let _ = crate::resolved_features::markers::spatial_sketches(
         features,
         &histories,
         &native.feature_input_lanes,
-    );
-    projection
+    )?;
+    Ok(projection)
 }
 
 pub(crate) fn validate_compact_body_selection_edits(
@@ -337,19 +342,20 @@ pub(crate) fn validate_compact_body_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        let FeatureDefinition::DeleteBody { bodies, mode } = feature.evaluation.definition() else {
             continue;
         };
-        let expected = BodySelection::Local {
-            bodies: selection
+        let expected = BodySelection::local(
+            selection
                 .local_body_ids
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            native: crate::resolved_features::component_paths::compact_body_selection_value(
+            crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
             ),
-        };
+        )
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact body selection",
@@ -402,7 +408,7 @@ pub(crate) fn validate_compact_edge_selection_edits(
         else {
             continue;
         };
-        let groups = match &feature.definition {
+        let groups = match feature.evaluation.definition() {
             FeatureDefinition::Fillet { groups } => {
                 groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
             }
@@ -431,11 +437,12 @@ pub(crate) fn validate_compact_edge_selection_edits(
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
+                cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok()
             })
             .collect::<Option<Vec<_>>>();
         let expected = match generated.filter(|edges| !edges.is_empty()) {
-            Some(edges) => EdgeSelection::Generated { edges, native },
+            Some(edges) => EdgeSelection::generated(edges, native.clone())
+                .unwrap_or(EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
         if *edges != &expected {
@@ -479,9 +486,11 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let first_component =
-            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
-        let slot = match &feature.definition {
+        let first_component = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::CosmeticThread { .. }
+        );
+        let slot = match feature.evaluation.definition() {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
@@ -530,13 +539,12 @@ pub(crate) fn validate_compact_surface_selection_edits(
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => FaceSelection::Generated {
-                        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        }],
-                        native,
-                    },
+                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedFaceRef::new(
+                        feature.clone(),
+                        local_id.to_string(),
+                    )
+                    .and_then(|face| FaceSelection::generated(vec![face], native.clone()))
+                    .unwrap_or(FaceSelection::Native(native)),
                     None => FaceSelection::Native(native),
                 };
                 faces != &expected
@@ -549,14 +557,15 @@ pub(crate) fn validate_compact_surface_selection_edits(
             }
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => VertexSelection::Generated {
-                        vertex: cadmpeg_ir::features::GeneratedVertexRef {
-                            feature: feature.clone(),
-                            local_id: local_id.to_string(),
-                        },
-                        native,
-                    },
-                    None => VertexSelection::Native(native),
+                    Some((feature, local_id)) => cadmpeg_ir::features::GeneratedVertexRef::new(
+                        feature.clone(),
+                        local_id.to_string(),
+                    )
+                    .and_then(|vertex| VertexSelection::generated(vertex, native.clone()))
+                    .unwrap_or_else(|_| {
+                        VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved)
+                    }),
+                    None => VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved),
                 };
                 vertex != &expected
             }

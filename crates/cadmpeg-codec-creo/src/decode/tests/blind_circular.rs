@@ -29,8 +29,8 @@ use crate::decode::sweep::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
-    LinearTermination, RadiusSpec,
+    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, LinearTermination,
+    RadiusSpec,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -287,7 +287,8 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(8.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -802,7 +803,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     }
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Fillet {
             ref groups,
         } if matches!(
@@ -932,7 +933,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(
@@ -1008,7 +1009,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(
@@ -1088,7 +1089,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
     assert_eq!(round_constant_radius(&scan, &ir, 5), None);
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Fillet {
             groups,
         } if matches!(
@@ -1201,13 +1202,15 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(3.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(3.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1229,7 +1232,8 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(48.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(48.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1254,7 +1258,8 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(48.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(48.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1280,7 +1285,8 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(38.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(38.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1318,7 +1324,8 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(34.0)
+                        length: cadmpeg_ir::features::NonZeroLength::new(34.0)
+                            .expect("nonzero length fixture")
                     },
                     draft: None,
                 }
@@ -1513,7 +1520,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: Length(8.0),
+                    length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -1598,7 +1606,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(8.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1795,7 +1804,8 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(2.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1838,7 +1848,8 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(10.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(10.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1852,7 +1863,8 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(10.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(10.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -1925,7 +1937,8 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(6.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(6.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -2012,7 +2025,8 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(42.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(42.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -2027,7 +2041,8 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(42.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(42.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },
@@ -2042,7 +2057,8 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: Length(42.0),
+                        length: cadmpeg_ir::features::NonZeroLength::new(42.0)
+                            .expect("nonzero length fixture"),
                     },
                     draft: None,
                 },

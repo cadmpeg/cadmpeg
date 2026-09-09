@@ -11,16 +11,18 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: Vec::new(),
+        dependencies: Default::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: "test".into(),
-            parameters: std::collections::BTreeMap::new(),
-        },
+        source_content: Default::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Native {
+                kind: "test".into(),
+                parameters: std::collections::BTreeMap::new(),
+            },
+        ),
         native_ref: None,
     }
 }

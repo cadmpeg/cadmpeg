@@ -462,7 +462,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 
     fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
         let finite_point = |point: &Point2| point.u.is_finite() && point.v.is_finite();
-        let positive = |length: &Length| length.0.is_finite() && length.0 > 0.0;
+        let positive = |length: &Length| length.get() > 0.0;
         match &definition {
             SketchGeometryDefinition::Point { position } if !finite_point(position) => {
                 return Err("sketch point position must be finite");
@@ -489,41 +489,31 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                     "sketch circular geometry requires finite center and positive finite radius",
                 );
             }
-            SketchGeometryDefinition::Arc {
-                start_angle,
-                end_angle,
-                ..
-            } if !start_angle.0.is_finite() || !end_angle.0.is_finite() => {
-                return Err("sketch arc angles must be finite");
-            }
             SketchGeometryDefinition::Ellipse {
                 center,
-                major_angle,
+                major_angle: _,
                 major_radius,
                 minor_radius,
-                bounds,
+                bounds: _,
             } => {
-                if !finite_point(center) || !major_angle.0.is_finite() {
+                if !finite_point(center) {
                     return Err("sketch ellipse center and major_angle must be finite");
                 }
                 if !positive(major_radius) || !positive(minor_radius) {
                     return Err("sketch ellipse radii must be positive and finite");
                 }
-                if major_radius.0 < minor_radius.0 {
+                if major_radius.get() < minor_radius.get() {
                     return Err("sketch ellipse major_radius must be at least minor_radius");
-                }
-                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
-                    return Err("sketch ellipse bounds must be finite");
                 }
             }
             SketchGeometryDefinition::Hyperbola {
                 center,
-                major_angle,
+                major_angle: _,
                 major_radius,
                 minor_radius,
                 bounds,
             } => {
-                if !finite_point(center) || !major_angle.0.is_finite() {
+                if !finite_point(center) {
                     return Err("sketch hyperbola center and major_angle must be finite");
                 }
                 if !positive(major_radius) || !positive(minor_radius) {
@@ -535,11 +525,11 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
             }
             SketchGeometryDefinition::Parabola {
                 vertex,
-                axis_angle,
+                axis_angle: _,
                 focal_length,
                 bounds,
             } => {
-                if !finite_point(vertex) || !axis_angle.0.is_finite() {
+                if !finite_point(vertex) {
                     return Err("sketch parabola vertex and axis_angle must be finite");
                 }
                 if !positive(focal_length) {
@@ -561,9 +551,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                 if width_factor.is_some_and(|value| !value.is_finite() || value <= 0.0) {
                     return Err("sketch text width_factor must be positive and finite");
                 }
-                if placement.is_some_and(|placement| {
-                    !finite_point(&placement.anchor) || !placement.rotation.0.is_finite()
-                }) {
+                if placement.is_some_and(|placement| !finite_point(&placement.anchor)) {
                     return Err("sketch text anchor and rotation must be finite");
                 }
             }
@@ -1170,8 +1158,7 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
                 !sources.is_empty()
                     && !results.is_empty()
                     && unit(normal)
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
+                    && distance.get() > 0.0
                     && sources
                         .iter()
                         .chain(results)
@@ -1441,7 +1428,7 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
                 radius,
                 ..
             } => {
-                if !finite_point(center) || !radius.0.is_finite() || radius.0 <= 0.0 {
+                if !finite_point(center) || radius.get() <= 0.0 {
                     return Err("spatial circular geometry requires finite center and positive finite radius");
                 }
                 let normal_length = normal.norm();
@@ -1465,10 +1452,7 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
                     ..
                 } = &definition
                 {
-                    if !start_angle.0.is_finite()
-                        || !end_angle.0.is_finite()
-                        || start_angle == end_angle
-                    {
+                    if start_angle == end_angle {
                         return Err("spatial sketch arc angles must be finite and distinct");
                     }
                 }
@@ -1755,8 +1739,7 @@ impl SketchPatternDirection {
         distance: Option<SketchPatternDistance>,
         count_parameter: Option<ParameterId>,
     ) -> Option<Self> {
-        if !spacing.0.is_finite()
-            || !direction.iter().all(|value| value.is_finite())
+        if !direction.iter().all(|value| value.is_finite())
             || (direction[0].hypot(direction[1]) - 1.0).abs() > EPS_PATTERN_DIRECTION_UNIT
         {
             return None;
@@ -1914,14 +1897,12 @@ impl SketchCircularPattern {
             return None;
         }
         let mut entities = std::collections::HashSet::new();
-        if !angle.0.is_finite()
-            || instances.first()?.angle.0 != 0.0
+        if instances.first()?.angle.get() != 0.0
             || instances.iter().any(|instance| {
-                !instance.angle.0.is_finite()
-                    || instance
-                        .entities
-                        .iter()
-                        .any(|entity| entity == &center || !entities.insert(entity))
+                instance
+                    .entities
+                    .iter()
+                    .any(|entity| entity == &center || !entities.insert(entity))
             })
         {
             return None;
@@ -2591,24 +2572,19 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
                 path,
                 glyph_transforms,
             } => text != path && !glyph_transforms.is_empty(),
-            Kind::DistanceLociValue { distance, .. } => distance.0.is_finite() && distance.0 >= 0.0,
-            Kind::PointCoordinateValues { values, .. } => {
-                values.iter().all(|value| value.0.is_finite())
-            }
-            Kind::MidpointCoordinate { value, .. } => value.0.is_finite(),
+            Kind::DistanceLociValue { distance, .. } => distance.get() >= 0.0,
             Kind::PolarDistance {
                 distance, angle, ..
             } => {
-                distance.0.is_finite()
-                    && distance.0 >= 0.0
-                    && if distance.0 <= EPS_POLAR_DISTANCE_ZERO {
+                distance.get() >= 0.0
+                    && if distance.get() <= EPS_POLAR_DISTANCE_ZERO {
                         angle.is_none()
                     } else {
-                        angle.is_some_and(|angle| angle.0.is_finite())
+                        angle.is_some()
                     }
             }
             Kind::AngleDifference { value, .. } => {
-                value.0.is_finite() && (0.0..=std::f64::consts::PI).contains(&value.0)
+                (0.0..=std::f64::consts::PI).contains(&value.get())
             }
             Kind::ScalarEquality { first, second } => first != second,
             Kind::RepeatedDistance { measurements, .. } => {
@@ -2658,8 +2634,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
                 let mut sources = std::collections::HashSet::new();
                 let mut results = std::collections::HashSet::new();
                 !pairs.is_empty()
-                    && distance.0.is_finite()
-                    && distance.0 > 0.0
+                    && distance.get() > 0.0
                     && pairs.iter().all(|pair| {
                         pair.source != pair.result
                             && sources.insert(&pair.source)

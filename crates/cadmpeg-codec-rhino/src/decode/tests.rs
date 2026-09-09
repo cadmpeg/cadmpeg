@@ -590,7 +590,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     .expect("stage Brep with an isolated vertex");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
     assert_eq!(
-        staged.draft.model().shells[0].free_vertices,
+        staged.draft.model().shells[0].free_vertices(),
         vec!["rhino:object:vertex#free-vertex.slot-3"
             .try_into()
             .expect("valid identity")]

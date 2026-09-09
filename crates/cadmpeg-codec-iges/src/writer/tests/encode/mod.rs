@@ -1026,13 +1026,11 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         color: None,
         tolerance: None,
     });
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    ir.model.shells.push(Shell::with_face(
+        shell_id.clone(),
+        region_id.clone(),
+        face_id,
+    ));
     ir.model.regions.push(Region {
         id: region_id,
         body: body_id.clone(),
@@ -1703,7 +1701,7 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         .iter()
         .find(|shell| shell.id == region.shells[0])
         .unwrap();
-    assert_eq!(shell.faces.len(), 3);
+    assert_eq!(shell.faces().len(), 3);
     let shared_edge = round_trip
         .ir()
         .model
@@ -1787,8 +1785,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|shell| shell.id == shell_id)
         .unwrap();
-    let target_face_id = shell.faces[0].clone();
-    let moved_face_id = shell.faces[2].clone();
+    let target_face_id = shell.faces()[0].clone();
+    let moved_face_id = shell.faces()[2].clone();
     let outer_loop_id = decoded
         .ir()
         .model
@@ -1831,8 +1829,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter_mut()
         .find(|shell| shell.id == shell_id)
         .unwrap()
-        .faces
-        .retain(|face_id| *face_id != moved_face_id);
+        .edit_topology(|faces, _, _| faces.retain(|face_id| *face_id != moved_face_id))
+        .unwrap();
     {
         let mut ir = decoded.ir_mut();
         let moved_loop = ir

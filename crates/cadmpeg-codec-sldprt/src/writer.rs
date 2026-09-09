@@ -816,7 +816,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.faces.iter().cloned())
+        .flat_map(|shell| shell.faces().iter().cloned())
         .collect::<HashSet<_>>();
     subset.model.faces.retain(|face| faces.contains(&face.id));
     let loops = subset
@@ -843,7 +843,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .map(|coedge| coedge.edge.clone())
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        edges.extend(shell.wire_edges.iter().cloned());
+        edges.extend(shell.wire_edges().iter().cloned());
     }
     subset.model.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
@@ -853,7 +853,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        vertices.extend(shell.free_vertices.iter().cloned());
+        vertices.extend(shell.free_vertices().iter().cloned());
     }
     subset
         .model
@@ -2637,7 +2637,7 @@ fn write_body_hierarchy(
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in &shell.faces {
+                for face in shell.faces() {
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
                             "shell references missing face".into(),
@@ -2755,7 +2755,7 @@ fn write_typed_body_hierarchy(
     let mut face_shells = HashMap::new();
     for shell in &ir.model.shells {
         let shell_attr = shell_attrs[&shell.id];
-        for face in &shell.faces {
+        for face in shell.faces() {
             if face_shells.insert(face.clone(), shell_attr).is_some() {
                 return Err(CodecError::Malformed(
                     "face belongs to multiple typed shells".into(),

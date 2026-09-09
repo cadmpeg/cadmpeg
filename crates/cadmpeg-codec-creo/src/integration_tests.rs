@@ -150,7 +150,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("datum feature");
     assert!(matches!(
-        datum_feature.definition,
+        datum_feature.evaluation.definition(),
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(result

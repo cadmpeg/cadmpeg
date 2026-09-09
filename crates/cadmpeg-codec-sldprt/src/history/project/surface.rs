@@ -24,15 +24,15 @@ pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value))
-            .map(Length),
+            .and_then(Length::new),
     }
 }
 
 pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
-        Some(value) => parse_length_mm(value)
-            .filter(|value| *value >= 0.0)
-            .map(Length),
+        Some(value) => {
+            parse_length_mm(value).and_then(cadmpeg_ir::features::NonNegativeLength::new)
+        }
         None => None,
     };
     FeatureDefinition::KnitSurface {
@@ -123,7 +123,7 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_positive_length_mm(value))
-            .map(Length),
+            .and_then(cadmpeg_ir::features::PositiveLength::new),
         method: feature
             .properties
             .get("Method")
@@ -133,12 +133,12 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let distance = Length(parse_positive_length_mm(
+    let distance = cadmpeg_ir::features::PositiveLength::new(parse_positive_length_mm(
         feature
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))?,
-    )?);
+    )?)?;
     let mode = match feature
         .properties
         .get("Mode")?
@@ -148,7 +148,9 @@ pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefiniti
         "normal" => RuledSurfaceMode::Normal { distance },
         "tangent" => RuledSurfaceMode::Tangent { distance },
         "direction" => RuledSurfaceMode::Direction {
-            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
+            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
+                feature.properties.get("Direction")?,
+            )?)?,
             distance,
         },
         _ => return None,

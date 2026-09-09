@@ -1120,8 +1120,8 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(result.ir().model.shells.len(), 1);
-    assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
-    assert!(result.ir().model.shells[0].faces.is_empty());
+    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
+    assert!(result.ir().model.shells[0].faces().is_empty());
 }
 
 #[test]

@@ -96,7 +96,10 @@ pub(in super::super) fn feature_edge_selection(
         &model_feature_ids(scan),
         &result_edge_ids,
     ) {
-        Some(EdgeSelection::Generated { edges, native })
+        Some(
+            EdgeSelection::generated(edges, native.clone())
+                .unwrap_or(EdgeSelection::Native(native)),
+        )
     } else {
         Some(EdgeSelection::Native(native))
     }
@@ -124,10 +127,7 @@ pub(in super::super) fn generated_curve_edge_refs(
                 && result_edge_ids
                     .get(&row.feature_id)
                     .is_some_and(|ids| ids.contains(curve_id)))
-            .then_some(GeneratedEdgeRef {
-                feature,
-                local_id: format!("curve#{curve_id}"),
-            })
+            .then_some(GeneratedEdgeRef::new(feature, format!("curve#{curve_id}")).ok()?)
         })
         .collect()
 }

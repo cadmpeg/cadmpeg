@@ -1013,7 +1013,7 @@ impl CodecBackend for FcstdCodec {
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
-                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
                 ir.model.entity_count() as u64,
                 &mut admitted_entities,
@@ -1176,7 +1176,7 @@ fn semantic_losses(
         .features
         .iter()
         .filter_map(|feature| {
-            let definition = match &feature.definition {
+            let definition = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
                     operation.as_ref()
                 }

@@ -193,7 +193,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         .expect("geometry generator feature");
 
     assert!(matches!(
-        feature.definition,
+        feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert_eq!(
@@ -457,7 +457,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     );
     assert_eq!(result.ir().model.features[1].ordinal, 1);
     assert!(matches!(
-        &result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind.as_str() == "Native Feature"
     ));
@@ -470,7 +470,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         Exactness::Derived,
     );
     assert!(matches!(
-        &result.ir().model.features[1].definition,
+        result.ir().model.features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [group]

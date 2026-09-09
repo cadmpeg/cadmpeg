@@ -30,18 +30,14 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let direct = FeatureDefinition::DatumPlane {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
     };
     assert!(!feature_definition_is_incomplete(&direct));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumPlane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 0.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }
-    ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane
@@ -74,20 +70,20 @@ fn datum_axes_require_a_finite_nonzero_direction() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::DatumAxis {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::DatumAxis {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(0.0, 0.0, 0.0),
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumAxis {
-            origin: Point3::new(f64::NAN, 2.0, 3.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                f64::EPSILON / 2.0,
+                0.0,
+                0.0
+            ))
+            .unwrap(),
         }
     ));
 }
@@ -99,26 +95,13 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            x_axis: Vector3::new(1.0, 0.0, 0.0),
-            y_axis: Vector3::new(0.0, 1.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, 1.0),
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            x_axis: Vector3::new(1.0, 0.0, 0.0),
-            y_axis: Vector3::new(0.0, 1.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, -1.0),
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumCoordinateSystem {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            x_axis: Vector3::new(2.0, 0.0, 0.0),
-            y_axis: Vector3::new(0.0, 1.0, 0.0),
-            z_axis: Vector3::new(0.0, 0.0, 1.0),
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )
+            .unwrap()
         }
     ));
 }
@@ -162,20 +145,29 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: resolved("target"),
-            replacements: resolved("replacement"),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                resolved("target"),
+                resolved("replacement")
+            )
+            .unwrap(),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: FaceSelection::Native("native:target".into()),
-            replacements: resolved("replacement"),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                FaceSelection::Native("native:target".into()),
+                resolved("replacement")
+            )
+            .unwrap(),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
-            targets: resolved("target"),
-            replacements: FaceSelection::Native("native:replacement".into()),
+            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+                resolved("target"),
+                FaceSelection::Native("native:replacement".into())
+            )
+            .unwrap(),
         }
     ));
 }
@@ -248,33 +240,19 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Sphere {
-            center: Point3::new(1.0, 2.0, 3.0),
-            radius: Length(4.0),
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            radius: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
             op: BooleanOp::NewBody,
         }
     ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Sphere {
-            center: Point3::new(1.0, 2.0, 3.0),
-            radius: Length(0.0),
-            op: BooleanOp::NewBody,
-        }
-    ));
+
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Torus {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            major_radius: Length(8.0),
-            minor_radius: Length(2.0),
-            op: BooleanOp::Join,
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Torus {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 0.0),
-            major_radius: Length(8.0),
-            minor_radius: Length(2.0),
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
+            major_radius: cadmpeg_ir::features::PositiveLength::new(8.0).unwrap(),
+            minor_radius: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
             op: BooleanOp::Join,
         }
     ));
@@ -283,7 +261,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::MoveFace {
             faces: faces.clone(),
             motion: FaceMotion::Offset {
-                distance: Length(-2.0),
+                distance: Length::new(-2.0).unwrap(),
             },
         }
     ));
@@ -291,21 +269,14 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::MoveFace {
             faces: FaceSelection::Native("native:faces".into()),
             motion: FaceMotion::Offset {
-                distance: Length(2.0),
+                distance: Length::new(2.0).unwrap(),
             },
         }
     ));
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Thicken {
             faces: faces.clone(),
-            thickness: Some(Length(2.0)),
-            side: Some(ThickenSide::Forward),
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Thicken {
-            faces,
-            thickness: Some(Length(0.0)),
+            thickness: Some(cadmpeg_ir::features::PositiveLength::new(2.0).unwrap()),
             side: Some(ThickenSide::Forward),
         }
     ));
@@ -313,7 +284,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     let shell = |bodies, removed_faces| FeatureDefinition::Shell {
         bodies,
         removed_faces,
-        thickness: Some(Length(1.0)),
+        thickness: Some(cadmpeg_ir::features::PositiveLength::new(1.0).unwrap()),
         outward: Some(true),
         mode: None,
         join: None,
@@ -342,20 +313,17 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::MoveBody {
             bodies: bodies.clone(),
-            translation: Vector3::new(1.0, 2.0, 3.0),
+            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
+                .unwrap(),
             rotation: Some(AxisAngle {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-                angle: cadmpeg_ir::features::Angle(0.5),
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0
+                ))
+                .unwrap(),
+                angle: cadmpeg_ir::features::Angle::new(0.5).unwrap(),
             }),
-            copies: 0,
-        }
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::MoveBody {
-            bodies,
-            translation: Vector3::new(f64::NAN, 0.0, 0.0),
-            rotation: None,
             copies: 0,
         }
     ));
@@ -366,7 +334,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform(1.5),
+            factors: ScaleFactors::Uniform(cadmpeg_ir::features::NonZeroReal::new(1.5).unwrap()),
         }
     ));
     assert!(feature_definition_is_incomplete(
@@ -375,14 +343,14 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::Native("native:center".into())),
-            factors: ScaleFactors::Uniform(1.5),
+            factors: ScaleFactors::Uniform(cadmpeg_ir::features::NonZeroReal::new(1.5).unwrap()),
         }
     ));
 }
 
 #[test]
 fn knit_surfaces_require_resolved_faces_and_operation_settings() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, NonNegativeLength};
 
     let complete =
         |faces, merge_entities, create_solid, gap_tolerance| FeatureDefinition::KnitSurface {
@@ -399,37 +367,37 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
         faces.clone(),
         Some(true),
         Some(true),
-        Some(Length(0.1)),
+        Some(NonNegativeLength::new(0.1).unwrap()),
     )));
     assert!(!feature_definition_is_incomplete(&complete(
         faces.clone(),
         Some(false),
         Some(false),
-        Some(Length(0.1)),
+        Some(NonNegativeLength::new(0.1).unwrap()),
     )));
     assert!(feature_definition_is_incomplete(&complete(
         FaceSelection::Native("native:surface-stitch".into()),
         Some(true),
         Some(true),
-        Some(Length(0.1)),
+        Some(NonNegativeLength::new(0.1).unwrap()),
     )));
     assert!(feature_definition_is_incomplete(&complete(
         faces.clone(),
         None,
         Some(true),
-        Some(Length(0.1)),
+        Some(NonNegativeLength::new(0.1).unwrap()),
     )));
     assert!(feature_definition_is_incomplete(&complete(
         faces.clone(),
         Some(true),
         None,
-        Some(Length(0.1)),
+        Some(NonNegativeLength::new(0.1).unwrap()),
     )));
     assert!(feature_definition_is_incomplete(&complete(
         faces.clone(),
         Some(true),
         Some(true),
-        Some(Length(0.0)),
+        Some(NonNegativeLength::new(0.0).unwrap()),
     )));
     assert!(feature_definition_is_incomplete(&complete(
         faces,

@@ -45,16 +45,16 @@ fn neutral_parameter_is_count(
     name: &str,
     value: Option<&cadmpeg_ir::features::ParameterValue>,
 ) -> bool {
-    use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, PatternTransform};
 
     matches!(value, Some(ParameterValue::Integer(_)))
         || (matches!(name, "D1" | "D2")
             && matches!(
-                &feature.definition,
+                feature.evaluation.definition(),
                 FeatureDefinition::Pattern {
-                    pattern: PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. },
+                    pattern: admitted_pattern,
                     ..
-                }
+                } if matches!(admitted_pattern.definition(), PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. })
             ))
 }
 
@@ -245,14 +245,14 @@ pub(crate) fn patch_payload(
             )));
         }
         let native_value = match (&subtype, &parameter.value) {
-            (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.0,
+            (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.get(),
             (
                 PmiDimensionSubtype::Linear
                 | PmiDimensionSubtype::Diameter
                 | PmiDimensionSubtype::Radial
                 | PmiDimensionSubtype::Ordinate,
                 Some(ParameterValue::Length(length)),
-            ) => length.0 / 1000.0,
+            ) => length.get() / 1000.0,
             (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => *count as f64,
             _ => {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
@@ -329,7 +329,7 @@ pub(crate) fn apply_to_parameters(
     parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{
         DesignParameter, DimensionDisplay, Length, ParameterId, ParameterPmi, ParameterValue,
         PmiDimensionSubtype,
@@ -362,29 +362,57 @@ pub(crate) fn apply_to_parameters(
             PmiDimensionSubtype::Linear => (
                 format!("{millimetres}mm"),
                 None,
-                Some(ParameterValue::Length(Length(millimetres))),
+                Some(ParameterValue::Length(
+                    Length::new(millimetres).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected length must be finite".into(),
+                        )
+                    })?,
+                )),
             ),
             PmiDimensionSubtype::Angle => (
                 record.value.to_string(),
                 None,
-                Some(ParameterValue::Angle(cadmpeg_ir::features::Angle(
-                    record.value,
-                ))),
+                Some(ParameterValue::Angle(
+                    cadmpeg_ir::features::Angle::new(record.value).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected angle must be finite".into(),
+                        )
+                    })?,
+                )),
             ),
             PmiDimensionSubtype::Diameter => (
                 format!("<MOD-DIAM>{millimetres}mm"),
                 Some(DimensionDisplay::Diameter),
-                Some(ParameterValue::Length(Length(millimetres))),
+                Some(ParameterValue::Length(
+                    Length::new(millimetres).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected length must be finite".into(),
+                        )
+                    })?,
+                )),
             ),
             PmiDimensionSubtype::Radial => (
                 format!("R{millimetres}mm"),
                 Some(DimensionDisplay::Radius),
-                Some(ParameterValue::Length(Length(millimetres))),
+                Some(ParameterValue::Length(
+                    Length::new(millimetres).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected length must be finite".into(),
+                        )
+                    })?,
+                )),
             ),
             PmiDimensionSubtype::Ordinate => (
                 format!("{millimetres}mm"),
                 None,
-                Some(ParameterValue::Length(Length(millimetres))),
+                Some(ParameterValue::Length(
+                    Length::new(millimetres).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected length must be finite".into(),
+                        )
+                    })?,
+                )),
             ),
             PmiDimensionSubtype::Count => {
                 let Some(count) = exact_count(record.value) else {
@@ -429,12 +457,14 @@ pub(crate) fn apply_to_parameters(
             expression,
             display,
             value,
-            dependencies: Vec::new(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: Some(semantic),
             native_ref: None,
         });
     }
+
+    Ok(())
 }
 
 /// One `MessagePack` value with absolute source spans for in-place patching.

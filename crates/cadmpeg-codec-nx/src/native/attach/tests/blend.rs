@@ -16,11 +16,11 @@ fn nx_body_writing_blend_retains_unresolved_fillet_family() {
     assert_eq!(
         definition,
         Some(FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved,
                 tangency_weight: None,
-            }],
+            }),
         })
     );
     assert_eq!(definition.unwrap().body_output_family(), Some("fillet"));
@@ -47,8 +47,12 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
     assert_eq!(
         definition,
         Some(FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                FaceSelection::Unresolved,
+                FaceSelection::Unresolved
+            )
+            .unwrap(),
+
             radius: RadiusSpec::Unresolved,
         })
     );

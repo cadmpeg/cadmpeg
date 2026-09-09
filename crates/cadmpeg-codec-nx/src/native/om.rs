@@ -4582,7 +4582,7 @@ mod tests {
 
         assert_eq!(ir.model.parameters[2].value, None);
         assert_eq!(
-            ir.model.parameters[2].dependencies,
+            ir.model.parameters[2].dependencies.as_slice(),
             vec![ir.model.parameters[1].id.clone()]
         );
     }
@@ -4672,11 +4672,11 @@ mod tests {
         .expect("valid exactness fields");
 
         assert_eq!(
-            ir.model.parameters[2].dependencies,
+            ir.model.parameters[2].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert_eq!(
-            ir.model.parameters[3].dependencies,
+            ir.model.parameters[3].dependencies.as_slice(),
             [ir.model.parameters[1].id.clone()]
         );
         assert_eq!(
@@ -4774,26 +4774,27 @@ mod tests {
         );
         assert_eq!(ir.model.parameters[1].owner, ir.model.parameters[0].owner);
         assert_eq!(
-            ir.model.parameters[1].dependencies,
+            ir.model.parameters[1].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert_eq!(ir.model.parameters[3].owner, ir.model.parameters[2].owner);
         assert_eq!(
-            ir.model.parameters[3].dependencies,
+            ir.model.parameters[3].dependencies.as_slice(),
             [ir.model.parameters[2].id.clone()]
         );
         assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
         for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 5.0, 10.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(value),
+                cadmpeg_ir::features::Length::new(value).unwrap(),
             ));
         }
         assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 
         let mut inconsistent = ir.clone();
-        inconsistent.model.parameters[1].value = Some(
-            cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
-        );
+        inconsistent.model.parameters[1].value =
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length::new(1.0).unwrap(),
+            ));
         assert_eq!(
             feature_completeness::incomplete_expression_parameters(&inconsistent),
             [inconsistent.model.parameters[1].id.clone()].into()
@@ -4817,11 +4818,13 @@ mod tests {
         );
 
         let mut operation_owned = unevaluated;
-        operation_owned.model.features[0].definition =
-            cadmpeg_ir::features::FeatureDefinition::Native {
+        operation_owned.model.features[0]
+            .evaluation
+            .set_definition(cadmpeg_ir::features::FeatureDefinition::Native {
                 kind: "TEST_OPERATION".into(),
                 parameters: BTreeMap::default(),
-            };
+            })
+            .unwrap();
         assert_eq!(
             feature_completeness::incomplete_expression_parameters(&operation_owned),
             [operation_owned.model.parameters[1].id.clone()].into()
@@ -4921,14 +4924,14 @@ mod tests {
             ["p4", "p5", "p2", "p3"]
         );
         assert_eq!(
-            ir.model.parameters[1].dependencies,
+            ir.model.parameters[1].dependencies.as_slice(),
             [ir.model.parameters[0].id.clone()]
         );
         assert!(ir.model.parameters[2].dependencies.is_empty());
         assert!(ir.model.parameters[3].dependencies.is_empty());
         for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(value),
+                cadmpeg_ir::features::Length::new(value).unwrap(),
             ));
         }
         assert_eq!(
@@ -5616,7 +5619,7 @@ mod tests {
         assert!(handles[0].external_records.is_empty());
         assert_eq!(result.ir().model.features.len(), 1);
         assert!(matches!(
-            result.ir().model.features[0].definition,
+            result.ir().model.features[0].evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::TreeNode {
                 role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
                 ..
@@ -5630,8 +5633,8 @@ mod tests {
         assert!(matches!(
             parameter.value,
             Some(cadmpeg_ir::features::ParameterValue::Angle(
-                cadmpeg_ir::features::Angle(value)
-            )) if value == 120_f64.to_radians()
+                value
+            )) if value.get() == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
         let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());

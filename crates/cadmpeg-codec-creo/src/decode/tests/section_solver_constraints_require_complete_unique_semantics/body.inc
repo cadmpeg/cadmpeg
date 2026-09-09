@@ -572,7 +572,7 @@ offset: 30,
                 .definition).kind(),
             SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
-                angle: Angle(angle),
+                angle: Angle::new(angle).expect("finite angle fixture"),
             }
         );
         fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 34;
@@ -1196,9 +1196,9 @@ offset: 30,
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
-                radius: Length(1.0),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::FRAC_PI_2),
+                radius: Length::new(1.0).expect("finite length fixture"),
+                start_angle: Angle::new(0.0).expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture"),
             }).expect("valid test fixture"),
         ),
     ]);

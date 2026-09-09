@@ -532,13 +532,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        axis_features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::DatumAxis { origin, direction },
+        axis_features.as_slice(), [Feature {
+            evaluation,
             ..
-        }] if *origin == Point3::new(10.0, 20.0, 30.0)
-            && *direction == Vector3::new(0.0, -0.6, 0.8)
-    ));
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::DatumAxis { origin, direction },) if *origin == Point3::new(10.0, 20.0, 30.0)
+            && *direction == Vector3::new(0.0, -0.6, 0.8))));
 
     let compact_at = bytes.len();
     let mut compact = vec![0; 321];
@@ -1287,9 +1285,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group)),
         Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
-            thickness: Some(cadmpeg_ir::features::Length(10.0)),
+            thickness: Some(actual_thickness),
             side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
-        }) if native == "thicken-group"
+        }) if (native == "thicken-group") && actual_thickness.get() == 10.0
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
@@ -1374,10 +1372,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)),
         Some(cadmpeg_ir::features::FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Native(native),
-            thickness: Some(cadmpeg_ir::features::Length(5.0)),
+            thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        }) if native == "shell-group"
+        }) if (native == "shell-group") && actual_thickness.get() == 5.0
     ));
     let compact_shell_at = bytes.len();
     let mut compact_shell = vec![0; 268];
@@ -1490,10 +1488,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         Some(cadmpeg_ir::features::FeatureDefinition::Shell {
             bodies: Some(cadmpeg_ir::features::BodySelection::Native(body)),
             removed_faces: cadmpeg_ir::features::FaceSelection::Faces(removed),
-            thickness: Some(cadmpeg_ir::features::Length(2.5)),
+            thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        }) if body == "shell-group" && removed.is_empty()
+        }) if (body == "shell-group" && removed.is_empty()) && actual_thickness.get() == 2.5
     ));
     {
         let construction = exact_direct_face_operation(
@@ -1535,9 +1533,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         Some(cadmpeg_ir::features::FeatureDefinition::MoveFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             motion: cadmpeg_ir::features::FaceMotion::Offset {
-                distance: cadmpeg_ir::features::Length(2.54)
+                distance: actual_distance
             },
-        }) if native == "offset-group"
+        }) if (native == "offset-group") && actual_distance.get() == 2.54
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
@@ -1759,16 +1757,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::ExtendSurface {
-                faces: FaceSelection::Native(native),
-                distance: Some(Length(distance)),
-                method: cadmpeg_ir::features::SurfaceExtension::Linear,
-            },
+        features.as_slice(), [Feature {
+            evaluation,
             ..
-        }] if native.ends_with(":design-record#500") && *distance == 0.4
-    ));
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::ExtendSurface {
+                faces: FaceSelection::Native(native),
+                distance: Some(distance),
+                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+            },) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
         .copy_from_slice(&(-0.4f64).to_le_bytes());
@@ -1816,15 +1812,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
     );
     assert!(matches!(
-        features.as_slice(),
-        [Feature {
-            definition: FeatureDefinition::OffsetSurface {
-                faces: FaceSelection::Native(native),
-                distance: Some(Length(distance)),
-            },
+        features.as_slice(), [Feature {
+            evaluation,
             ..
-        }] if native.ends_with(":design-record#500") && *distance == -4.0
-    ));
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::OffsetSurface {
+                faces: FaceSelection::Native(native),
+                distance: Some(distance),
+            },) if native.ends_with(":design-record#500") && distance.get() == -4.0)));
 
     let grouped_record_index = 600u32;
     let grouped_member_record_index = 601u32;

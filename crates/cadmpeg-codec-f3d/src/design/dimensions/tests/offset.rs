@@ -74,7 +74,7 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     assert_eq!(&pairs[0].result, inset_bottom.id());
     assert_eq!(&pairs[1].source, top.id());
     assert_eq!(&pairs[1].result, inset_top.id());
-    assert!((distance.0 - 2.0).abs() <= 1.0e-9);
+    assert!((distance.get() - 2.0).abs() <= 1.0e-9);
     assert!(pairs.iter().all(|pair| pair.source_reversed));
 }
 
@@ -105,11 +105,11 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
         ),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
-            distance: Length(distance),
+            distance,
         }) if pairs.len() == 1
             && &pairs[0].source == source.id()
             && &pairs[0].result == result.id()
-            && (distance - 2.75).abs() <= 1.0e-9
+            && (distance.get() - 2.75).abs() <= 1.0e-9
     ));
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
@@ -167,12 +167,12 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
         ),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
-            distance: Length(distance),
+            distance,
         }) if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: false,
-        }] && (distance - 2.0).abs() <= 1.0e-9
+        }] && (distance.get() - 2.0).abs() <= 1.0e-9
     ));
 
     let mut skewed = result;
@@ -205,9 +205,9 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
             SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(3.0, -4.0),
-                radius: Length(radius),
-                start_angle: Angle(0.0),
-                end_angle: Angle(std::f64::consts::FRAC_PI_2),
+                radius: Length::new(radius).unwrap(),
+                start_angle: Angle::new(0.0).unwrap(),
+                end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             })
             .unwrap(),
         )
@@ -216,9 +216,9 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     let mut result = arc("generated:test:arc#result", 5.0);
     result.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
-        radius: Length(5.0),
-        start_angle: Angle(0.1),
-        end_angle: Angle(1.4),
+        radius: Length::new(5.0).unwrap(),
+        start_angle: Angle::new(0.1).unwrap(),
+        end_angle: Angle::new(1.4).unwrap(),
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &result)]);
@@ -234,20 +234,20 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
         definition,
         crate::design::dimensions::CountedOffset {
             pairs,
-            distance: Length(distance),
+            distance,
         } if pairs.len() == 1
             && &pairs[0].source == source.id()
             && &pairs[0].result == result.id()
             && pairs[0].source_reversed
-            && (distance - 3.0).abs() <= 1.0e-9
+            && (distance.get() - 3.0).abs() <= 1.0e-9
     ));
 
     let mut mismatched = result;
     mismatched.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(3.0, -4.0),
-        radius: Length(5.0),
-        start_angle: Angle(std::f64::consts::PI),
-        end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+        radius: Length::new(5.0).unwrap(),
+        start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+        end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).unwrap(),
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
@@ -268,7 +268,7 @@ fn counted_offset_accepts_concentric_full_circles() {
             SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(3.0, -4.0),
-                radius: Length(radius),
+                radius: Length::new(radius).unwrap(),
             })
             .unwrap(),
         )
@@ -286,12 +286,12 @@ fn counted_offset_accepts_concentric_full_circles() {
         ),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
-            distance: Length(distance),
+            distance,
         }) if pairs.as_slice() == [SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
             source_reversed: false,
-        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+        }] && (distance.get() - 1.5).abs() <= TEST_DISTANCE_EPSILON
     ));
 
     let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
@@ -304,18 +304,18 @@ fn counted_offset_accepts_concentric_full_circles() {
         ),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
-            distance: Length(distance),
+            distance,
         }) if pairs.as_slice() == [SketchOffsetPair {
             source: result.id().clone(),
             result: source.id().clone(),
             source_reversed: true,
-        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+        }] && (distance.get() - 1.5).abs() <= TEST_DISTANCE_EPSILON
     ));
 
     let mut displaced = result.clone();
     displaced.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(3.0, -3.9),
-        radius: Length(3.5),
+        radius: Length::new(3.5).unwrap(),
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
@@ -351,16 +351,16 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             center: Point3::new(30.0, -12.0, 9.0),
             normal: Vector3::new(1.0, 0.0, 0.0),
             reference_direction: Vector3::new(0.0, 1.0, 0.0),
-            radius: Length(2.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(0.0).unwrap(),
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
         .unwrap(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
             center: Point3::new(50.0, 40.0, -7.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(4.0),
+            radius: Length::new(4.0).unwrap(),
         })
         .unwrap(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
@@ -502,15 +502,15 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             sources: actual_sources,
             results: actual_results,
             normal,
-            distance: Length(3.0),
+            distance: actual_distance,
             parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
                 id: actual_parameter,
                 negated: true,
             }),
-        } if actual_sources == sources.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
+        } if (actual_sources == sources.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
             && actual_results == results.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
             && normal == Vector3::new(0.0, 0.0, 1.0)
-            && actual_parameter == parameter
+            && actual_parameter == parameter) && actual_distance.get() == 3.0
     ));
     assert!(spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",
@@ -633,9 +633,9 @@ fn counted_roles_require_matching_solved_geometry() {
         horizontal.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0, 2.0),
-            radius: Length(1.0),
-            start_angle: Angle(std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -650,9 +650,9 @@ fn counted_roles_require_matching_solved_geometry() {
         horizontal.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0, 5.0),
-            radius: Length(2.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(0.0),
+            radius: Length::new(2.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
         })
         .unwrap(),
     );
@@ -667,9 +667,9 @@ fn counted_roles_require_matching_solved_geometry() {
         tangent_arc.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-1.0, 3.0),
-            radius: Length(1.0),
-            start_angle: Angle(std::f64::consts::PI),
-            end_angle: Angle(2.0 * std::f64::consts::PI),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
+            end_angle: Angle::new(2.0 * std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -680,9 +680,9 @@ fn counted_roles_require_matching_solved_geometry() {
         tangent_arc.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(-2.0 - 2.0 / 2.0_f64.sqrt(), 2.0 + 2.0 / 2.0_f64.sqrt()),
-            radius: Length(1.0),
-            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
-            end_angle: Angle(0.0),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
         })
         .unwrap(),
     );
@@ -697,7 +697,7 @@ fn counted_roles_require_matching_solved_geometry() {
         tangent_arc.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
+            radius: Length::new(1.0).unwrap(),
         })
         .unwrap(),
     );
@@ -706,9 +706,9 @@ fn counted_roles_require_matching_solved_geometry() {
         tangent_arc.sketch.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(2.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(TEST_ANGLE_ROUNDING),
-            end_angle: Angle(std::f64::consts::PI),
+            radius: Length::new(1.0).unwrap(),
+            start_angle: Angle::new(TEST_ANGLE_ROUNDING).unwrap(),
+            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
         })
         .unwrap(),
     );
@@ -736,7 +736,7 @@ fn counted_roles_require_matching_solved_geometry() {
         .geometry
         .edit(|definition| {
             if let SketchGeometryDefinition::Arc { radius, .. } = definition {
-                *radius = Length(2.0);
+                *radius = Length::new(2.0).unwrap();
             }
         })
         .unwrap();

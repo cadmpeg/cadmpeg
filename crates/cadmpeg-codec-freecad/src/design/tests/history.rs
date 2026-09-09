@@ -43,15 +43,18 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("base feature");
     assert!(matches!(
-        source.definition,
+        source.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert!(matches!(
-        &base.definition,
+        base.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
             if source.as_str() == "fcstd:design:feature#Source"
     ));
-    assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
+    assert_eq!(
+        base.dependencies.as_slice(),
+        std::slice::from_ref(&source.id)
+    );
     assert!(result.ir().model.features.iter().all(|feature| {
         !matches!(
             feature.name.as_deref(),
@@ -88,10 +91,13 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("derived feature");
-    derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
-        source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
-            .expect("identity grammar"),
-    };
+    derived
+        .evaluation
+        .set_definition(cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
+            source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
+                .expect("identity grammar"),
+        })
+        .unwrap();
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
@@ -125,7 +131,7 @@ fn rejects_noncanonical_feature_base_carriers() {
         .find(|feature| feature.name.as_deref() == Some("MultiBase"))
         .expect("feature base");
     assert!(matches!(
-        &feature.definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase"
     ));
     assert_eq!(result.report().losses.len(), 1);
@@ -211,11 +217,8 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Body"))
         .expect("body");
-    let cadmpeg_ir::features::FeatureDefinition::TreeNode {
-        children,
-        active_child,
-        ..
-    } = &body.definition
+    let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } =
+        body.evaluation.definition()
     else {
         panic!("body tree node");
     };
@@ -226,7 +229,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#First", "fcstd:design:feature#Second"]
     );
-    assert_eq!(active_child.as_ref(), children.get(1));
+    assert_eq!(children.active_child().as_ref(), children.get(1));
     for child in children {
         assert_eq!(
             result
@@ -249,19 +252,21 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("Body"))
         .expect("body");
-    let cadmpeg_ir::features::FeatureDefinition::TreeNode { active_child, .. } =
-        &mut body.definition
-    else {
-        panic!("body tree node");
-    };
-    *active_child = Some(
-        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
-            .expect("identity grammar"),
-    );
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("active tree child")));
+    body.evaluation
+        .try_edit(|definition, _| {
+            let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } = definition
+            else {
+                panic!("body tree node");
+            };
+            assert!(children
+                .set_active_child(Some(
+                    cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
+                        .expect("identity grammar"),
+                ))
+                .is_err());
+        })
+        .unwrap();
+    assert_valid_document(&corrupted);
 }
 
 #[test]
@@ -303,7 +308,7 @@ fn rejects_ambiguous_body_history_carriers() {
                 .features
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some(name))
-                .map(|feature| &feature.definition)
+                .map(|feature| feature.evaluation.definition())
                 .expect("body feature"),
             FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Body"
         ));
@@ -357,7 +362,8 @@ fn transfers_stored_and_external_part_feature_families() {
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some(name))
                 .expect("stored feature")
-                .definition,
+                .evaluation
+                .definition(),
             cadmpeg_ir::features::FeatureDefinition::StoredGeometry
         ));
     }
@@ -368,14 +374,14 @@ fn transfers_stored_and_external_part_feature_families() {
         ("CurveNet", cadmpeg_ir::features::GeometryImportFormat::Brep),
     ] {
         assert!(matches!(
-            &result
+            result
                 .ir()
                 .model
                 .features
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some(name))
                 .expect("import feature")
-                .definition,
+                .evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::ImportedGeometry { path, format: actual }
                 if path.starts_with("models/") && *actual == format
         ));
@@ -423,21 +429,22 @@ fn transfers_datum_frames_from_persisted_placements() {
         )
         .expect("datums");
     let definition = |name: &str| {
-        &result
+        result
             .ir()
             .model
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
             .expect("datum")
-            .definition
+            .evaluation
+            .definition()
     };
     assert!(matches!(
         definition("Plane"),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { frame }
+            if frame.origin() == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && frame.normal() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && frame.u_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
     assert!(matches!(
         definition("Axis"),
@@ -452,11 +459,11 @@ fn transfers_datum_frames_from_persisted_placements() {
     ));
     assert!(matches!(
         definition("Frame"),
-        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem { origin, x_axis, y_axis, z_axis }
-            if *origin == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
-                && *x_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && *y_axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-                && *z_axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem { frame }
+            if frame.origin() == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
+                && frame.x_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && frame.y_axis() == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                && frame.z_axis() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -524,7 +531,9 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("width cell");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(
+            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+        ))
     );
     assert_eq!(
         width.properties.get("address").map(String::as_str),
@@ -544,7 +553,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
-    assert_eq!(length.dependencies, vec![width.id.clone()]);
+    assert_eq!(length.dependencies.as_slice(), vec![width.id.clone()]);
     let width_position = result
         .ir()
         .model
@@ -734,7 +743,10 @@ fn preserves_forward_declared_feature_dependencies() {
         .find(|feature| feature.name.as_deref() == Some("Second"))
         .expect("second feature");
 
-    assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
+    assert_eq!(
+        first.dependencies.as_slice(),
+        std::slice::from_ref(&second.id)
+    );
     assert!(second.ordinal < first.ordinal);
     assert_valid_document(result.ir());
 }
@@ -788,16 +800,17 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert_eq!(features.len(), 2);
     assert_eq!(features[0].ordinal, 0);
     assert_eq!(features[1].ordinal, 1);
-    assert!(features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Native { .. }
+    )));
     assert!(features
         .iter()
         .all(|feature| feature.dependencies.is_empty()));
     assert!(features.iter().all(|feature| {
         !features.iter().any(|candidate| {
             matches!(
-                &candidate.definition,
+                candidate.evaluation.definition(),
                 FeatureDefinition::TreeNode { children, .. } if children.contains(&feature.id)
             )
         })
@@ -818,8 +831,8 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
         .expect("namespace")
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
-    assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
-    assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_eq!(objects[0].dependencies.as_slice(), [objects[1].id.clone()]);
+    assert_eq!(objects[1].dependencies.as_slice(), [objects[0].id.clone()]);
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }
@@ -849,7 +862,10 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .expect("cyclic expression graph");
     assert!(result.ir().model.features.iter().all(|feature| {
         feature.dependencies.is_empty()
-            && matches!(feature.definition, FeatureDefinition::Native { .. })
+            && matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Native { .. }
+            )
     }));
     let parameters = result
         .ir()
@@ -911,7 +927,10 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sheet"))
         .expect("sheet feature");
-    assert!(matches!(sheet.definition, FeatureDefinition::Native { .. }));
+    assert!(matches!(
+        sheet.evaluation.definition(),
+        FeatureDefinition::Native { .. }
+    ));
     assert!(sheet.dependencies.is_empty());
     let parameters = result
         .ir()

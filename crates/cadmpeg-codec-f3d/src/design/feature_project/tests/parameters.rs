@@ -42,9 +42,12 @@ fn user_parameters_project_in_source_order_with_units_and_dependencies() {
     assert_eq!(projected[0].owner, None);
     assert_eq!(
         projected[0].value,
-        Some(ParameterValue::Length(Length(60.0)))
+        Some(ParameterValue::Length(Length::new(60.0).unwrap()))
     );
-    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].dependencies.as_slice(),
+        [projected[0].id.clone()]
+    );
     assert_eq!(
         projected[1].native_ref.as_deref(),
         Some("f3d:native:parameter#half")
@@ -94,7 +97,7 @@ fn parameters_project_all_design_database_unit_tokens() {
                 .iter()
                 .find(|parameter| parameter.name == format!("Value{ordinal}"))
                 .and_then(|parameter| parameter.value.clone()),
-            Some(ParameterValue::Length(Length(12.5)))
+            Some(ParameterValue::Length(Length::new(12.5).unwrap()))
         );
     }
     for ordinal in 5..7 {
@@ -103,7 +106,7 @@ fn parameters_project_all_design_database_unit_tokens() {
                 .iter()
                 .find(|parameter| parameter.name == format!("Value{ordinal}"))
                 .and_then(|parameter| parameter.value.clone()),
-            Some(ParameterValue::Angle(Angle(1.25)))
+            Some(ParameterValue::Angle(Angle::new(1.25).unwrap()))
         );
     }
     let unclassified = projected
@@ -172,7 +175,7 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         .iter()
         .find(|parameter| parameter.name == "Half")
         .expect("dependent parameter");
-    assert_eq!(half.dependencies, [source.id.clone()]);
+    assert_eq!(half.dependencies.as_slice(), [source.id.clone()]);
     let millimetres = projected
         .iter()
         .find(|parameter| parameter.name == "mm")
@@ -181,7 +184,10 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         .iter()
         .find(|parameter| parameter.name == "BareUnitName")
         .expect("consumer of bare unit-named parameter");
-    assert_eq!(bare_unit_name.dependencies, [millimetres.id.clone()]);
+    assert_eq!(
+        bare_unit_name.dependencies.as_slice(),
+        [millimetres.id.clone()]
+    );
 }
 
 #[test]
@@ -257,7 +263,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
     assert_eq!(features[0].suppressed, Some(true));
     assert!(matches!(
-        &features[0].definition,
+        features[0].evaluation.definition(),
         FeatureDefinition::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
             parameters,
@@ -456,11 +462,11 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let document = by_name_and_owner("Width", 20);
     let local = by_name_and_owner("Width", 21);
     assert_eq!(
-        by_name_and_owner("Half", 22).dependencies,
+        by_name_and_owner("Half", 22).dependencies.as_slice(),
         [local.id.clone()]
     );
     assert_eq!(
-        by_name_and_owner("Half", 23).dependencies,
+        by_name_and_owner("Half", 23).dependencies.as_slice(),
         [document.id.clone()]
     );
     assert!(by_name_and_owner("DocumentHalf", 25)
@@ -468,16 +474,19 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         .is_empty());
     let document_forward = by_name_and_owner("DocumentForward", 26);
     let document_later = by_name_and_owner("Later", 27);
-    assert_eq!(document_forward.dependencies, [document_later.id.clone()]);
+    assert_eq!(
+        document_forward.dependencies.as_slice(),
+        [document_later.id.clone()]
+    );
     assert!(document_later.ordinal < document_forward.ordinal);
     let cycle_a = by_name_and_owner("CycleA", 28);
     let cycle_b = by_name_and_owner("CycleB", 29);
     assert!(cycle_a.dependencies.is_empty());
-    assert_eq!(cycle_b.dependencies, [cycle_a.id.clone()]);
+    assert_eq!(cycle_b.dependencies.as_slice(), [cycle_a.id.clone()]);
     assert!(cycle_a.ordinal < cycle_b.ordinal);
     let preceding_shared = by_name_and_owner("Shared", 30);
     assert_eq!(
-        by_name_and_owner("SharedHalf", 31).dependencies,
+        by_name_and_owner("SharedHalf", 31).dependencies.as_slice(),
         [preceding_shared.id.clone()]
     );
 }
@@ -575,7 +584,10 @@ fn parameter_expressions_project_feature_dependencies() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("Depth parameter");
-    assert_eq!(depth.dependencies, std::slice::from_ref(&width.id));
+    assert_eq!(
+        depth.dependencies.as_slice(),
+        std::slice::from_ref(&width.id)
+    );
     let premature = parameters
         .iter()
         .find(|parameter| parameter.name == "Premature")
@@ -589,5 +601,8 @@ fn parameter_expressions_project_feature_dependencies() {
         .iter()
         .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
         .expect("target feature");
-    assert_eq!(target.dependencies, std::slice::from_ref(&source.id));
+    assert_eq!(
+        target.dependencies.as_slice(),
+        std::slice::from_ref(&source.id)
+    );
 }

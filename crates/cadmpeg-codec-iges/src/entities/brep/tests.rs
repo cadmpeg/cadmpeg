@@ -253,7 +253,7 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .iter()
         .find(|shell| shell.id == region.shells[1])
         .unwrap();
-    for face_id in &void_shell.faces {
+    for face_id in void_shell.faces() {
         let face = result
             .ir()
             .model
@@ -371,7 +371,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .iter()
         .find(|shell| shell.id == region.shells[0])
         .unwrap();
-    assert_eq!(shell.faces.len(), 4);
+    assert_eq!(shell.faces().len(), 4);
     let solid_edges = result
         .ir()
         .model
@@ -426,13 +426,13 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .iter()
         .find(|shell| shell.id.as_str() == "iges:model:shell#D23")
         .unwrap();
-    assert_eq!(shell.faces.len(), 1);
+    assert_eq!(shell.faces().len(), 1);
     let face = result
         .ir()
         .model
         .faces
         .iter()
-        .find(|face| face.id == shell.faces[0])
+        .find(|face| face.id == shell.faces()[0])
         .unwrap();
     let loop_ = result
         .ir()

@@ -570,13 +570,16 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    ir.model.shells.push(cadmpeg_ir::topology::Shell {
-        id: shell_id,
-        region: region_id,
-        faces: Vec::new(),
-        wire_edges: Vec::new(),
-        free_vertices: vertex_ids.to_vec(),
-    });
+    ir.model.shells.push(
+        cadmpeg_ir::topology::Shell::new(
+            shell_id,
+            region_id,
+            Vec::new(),
+            Vec::new(),
+            vertex_ids.to_vec(),
+        )
+        .unwrap(),
+    );
     for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
         ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
             id: vertex,

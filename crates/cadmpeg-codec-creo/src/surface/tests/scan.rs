@@ -853,14 +853,14 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .expect("decode");
 
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::Length(radius),
+                radius,
             }, ..
-        }] if (radius - 0.249_999_999_951_747_04).abs() < 1.0e-12)
+        }] if (radius.get() - 0.249_999_999_951_747_04).abs() < 1.0e-12)
     ));
 
     let cylinder_panel = [
@@ -890,7 +890,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -921,7 +921,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(partial), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -942,7 +942,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         .decode(&mut Cursor::new(conflicting), &DecodeOptions::default())
         .expect("decode");
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
@@ -990,13 +990,13 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         2
     );
     assert!(matches!(
-        result.ir().model.features[0].definition,
+        result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::Length(radius),
+                radius,
             }, ..
-        }] if radius.to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
+        }] if radius.get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
     ));
 }

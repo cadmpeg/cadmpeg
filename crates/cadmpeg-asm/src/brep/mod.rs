@@ -555,7 +555,7 @@ pub fn decode_with_header(
         stream,
         header_scale,
         format,
-    );
+    )?;
     project_subshell_faces(&mut out, records, &by_index, format);
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format);
     if purpose == DecodePurpose::Model {

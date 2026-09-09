@@ -5,7 +5,7 @@
 use super::*;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+    AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
     CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, HoleBottom, HoleKind, Length, LinearTermination, ParameterId,
@@ -69,7 +69,7 @@ fn design_configuration(
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
