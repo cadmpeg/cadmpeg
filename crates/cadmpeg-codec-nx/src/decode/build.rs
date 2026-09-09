@@ -1145,7 +1145,7 @@ pub(crate) fn try_decode_geometry(
         &scan.streams,
         &mut parsed,
         terminal_lineage,
-    );
+    )?;
     let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
         let selected_hits = selected
             .iter()

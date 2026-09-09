@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! JT display-model record extractors and their record types.
 
+pub(crate) mod admission;
 pub(crate) mod packet_role;
 mod version;
+
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 

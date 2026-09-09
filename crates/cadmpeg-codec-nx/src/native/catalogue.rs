@@ -715,7 +715,7 @@ fn note_display_jt_display_jt_documents(
     a: &mut AnnotationBuilder,
 ) {
     let annotation_stream = a.stream("nx:container");
-    for document in &m.display_jt.display_jt_documents {
+    for document in m.display_jt.graph.documents() {
         a.note(&document.id, &annotation_stream, document.source_offset)
             .tag("DISPLAY_JT_DOCUMENT");
         a.exactness(&document.id, Exactness::ByteExact);
@@ -877,8 +877,8 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: None,
             note: note_display_jt_display_jt_documents,
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_documents, r, ns),
-        len: |m| m.display_jt.display_jt_documents.len(),
+        emit: |m, r, ns| emit_arena(m.display_jt.graph.documents(), r, ns),
+        len: |m| m.display_jt.graph.documents().len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
@@ -886,10 +886,10 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_SEGMENT"),
-            note: |m, r, tag, a| note_container(&m.display_jt.display_jt_segments, r, tag, a),
+            note: |m, r, tag, a| note_container(m.display_jt.graph.segments(), r, tag, a),
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_segments, r, ns),
-        len: |m| m.display_jt.display_jt_segments.len(),
+        emit: |m, r, ns| emit_arena(m.display_jt.graph.segments(), r, ns),
+        len: |m| m.display_jt.graph.segments().len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
@@ -898,11 +898,11 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_SHAPE_LOD_ELEMENT"),
             note: |m, r, tag, a| {
-                note_container(&m.display_jt.display_jt_shape_lod_elements, r, tag, a);
+                note_container(m.display_jt.graph.shape_lod_elements(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_shape_lod_elements, r, ns),
-        len: |m| m.display_jt.display_jt_shape_lod_elements.len(),
+        emit: |m, r, ns| emit_arena(m.display_jt.graph.shape_lod_elements(), r, ns),
+        len: |m| m.display_jt.graph.shape_lod_elements().len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
@@ -1104,16 +1104,11 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT_SEQUENCE"),
             note: |m, r, tag, a| {
-                note_container(
-                    &m.display_jt.display_jt_compressed_element_sequences,
-                    r,
-                    tag,
-                    a,
-                );
+                note_container(m.display_jt.graph.compressed_element_sequences(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_compressed_element_sequences, r, ns),
-        len: |m| m.display_jt.display_jt_compressed_element_sequences.len(),
+        emit: |m, r, ns| emit_arena(m.display_jt.graph.compressed_element_sequences(), r, ns),
+        len: |m| m.display_jt.graph.compressed_element_sequences().len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
@@ -1122,11 +1117,11 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT"),
             note: |m, r, tag, a| {
-                note_container(&m.display_jt.display_jt_compressed_elements, r, tag, a);
+                note_container(m.display_jt.graph.compressed_elements(), r, tag, a);
             },
         },
-        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_compressed_elements, r, ns),
-        len: |m| m.display_jt.display_jt_compressed_elements.len(),
+        emit: |m, r, ns| emit_arena(m.display_jt.graph.compressed_elements(), r, ns),
+        len: |m| m.display_jt.graph.compressed_elements().len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
