@@ -131,9 +131,8 @@ fn native_procedural_surface_definition(
     }
     match procedural.definition() {
         ProceduralSurfaceDefinition::Deformable(definition_payload) => {
-            let construction = definition_payload.construction();
-
             use cadmpeg_ir::geometry::DeformableSurfaceData;
+            let construction = definition_payload.construction();
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::Malformed(
                     "deformable surface requires a native cache-fit tolerance".into(),
