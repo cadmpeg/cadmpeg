@@ -612,13 +612,12 @@ fn parse_placement_list(
     else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(view, 7, "PlacementList")?;
-    (0..count)
-        .map(|index| {
-            let offset = link_array::LEN + index * width * 7;
-            let values = (0..7)
-                .map(|component| read_real(view, offset + component * width, width))
-                .collect::<Vec<_>>();
+    list_layout::<7>(view, "PlacementList")?
+        .map(|positions| {
+            let values = positions
+                .into_iter()
+                .map(read_real)
+                .collect::<Result<Vec<_>, _>>()?;
             placement_components(&values).ok_or_else(|| {
                 CodecError::Malformed("PlacementList contains an invalid placement value".into())
             })
@@ -636,15 +635,10 @@ fn parse_vector_list(
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(view, 3, "ScaleList")?;
-    (0..count)
-        .map(|index| {
-            let offset = link_array::LEN + index * width * 3;
-            Ok([
-                read_real(view, offset, width),
-                read_real(view, offset + width, width),
-                read_real(view, offset + 2 * width, width),
-            ])
+    list_layout::<3>(view, "ScaleList")?
+        .map(|positions| {
+            let [x, y, z] = positions.map(read_real);
+            Ok([x?, y?, z?])
         })
         .collect()
 }
@@ -788,42 +782,79 @@ fn selected_placement<'a>(
     }
 }
 
-fn list_layout(
-    view: View<'_>,
-    components: usize,
+#[derive(Clone, Copy)]
+enum RealWidth {
+    Single,
+    Double,
+}
+
+impl RealWidth {
+    fn bytes(self) -> usize {
+        match self {
+            Self::Single => 4,
+            Self::Double => 8,
+        }
+    }
+}
+
+struct RealPosition<'a> {
+    view: View<'a>,
+    offset: usize,
+    width: RealWidth,
+}
+
+fn list_layout<'a, const N: usize>(
+    view: View<'a>,
     name: &str,
-) -> Result<(usize, usize), CodecError> {
-    let len = view.end().saturating_sub(view.start());
+) -> Result<impl Iterator<Item = [RealPosition<'a>; N]>, CodecError> {
+    let len = view.end() - view.start();
     if len < link_array::LEN {
         return Err(CodecError::malformed(format_args!("{name} is truncated")));
     }
     let mut head = view;
-    head.seek(view.start()).expect("window start");
-    let count = head.u32_le().expect("four-byte count") as usize;
-    let double_len =
-        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8));
-    let float_len =
-        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(4));
-    if len == double_len {
-        Ok((count, 8))
-    } else if len == float_len {
-        Ok((count, 4))
+    head.seek(view.start())
+        .ok_or_else(|| CodecError::malformed(format_args!("{name} header is out of bounds")))?;
+    let count = usize::try_from(
+        head.req_u32_le()
+            .map_err(|error| CodecError::malformed(format_args!("link-array count: {error:?}")))?,
+    )
+    .map_err(CodecError::malformed)?;
+    let encoded_len = |width: RealWidth| {
+        count
+            .checked_mul(N)
+            .and_then(|count| count.checked_mul(width.bytes()))
+            .and_then(|bytes| link_array::LEN.checked_add(bytes))
+    };
+    let width = if encoded_len(RealWidth::Double) == Some(len) {
+        RealWidth::Double
+    } else if encoded_len(RealWidth::Single) == Some(len) {
+        RealWidth::Single
     } else {
-        Err(CodecError::malformed(format_args!(
+        return Err(CodecError::malformed(format_args!(
             "{name} count {count} does not match {len} bytes"
-        )))
-    }
+        )));
+    };
+    Ok((0..count).map(move |index| {
+        std::array::from_fn(|component| RealPosition {
+            view,
+            offset: view.start() + link_array::LEN + (index * N + component) * width.bytes(),
+            width,
+        })
+    }))
 }
 
-fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
-    let mut cursor = view;
+fn read_real(position: RealPosition<'_>) -> Result<f64, CodecError> {
+    let mut cursor = position.view;
     cursor
-        .seek(view.start().saturating_add(offset))
-        .expect("bounded real");
-    if width == 8 {
-        cursor.f64_le().expect("bounded f64")
-    } else {
-        cursor.f32_le().expect("bounded f32") as f64
+        .seek(position.offset)
+        .ok_or_else(|| CodecError::malformed("real position is out of bounds"))?;
+    match position.width {
+        RealWidth::Double => cursor.req_f64_le().map_err(|error| {
+            CodecError::malformed(format_args!("link-array component: {error:?}"))
+        }),
+        RealWidth::Single => cursor.req_f32_le().map(f64::from).map_err(|error| {
+            CodecError::malformed(format_args!("link-array component: {error:?}"))
+        }),
     }
 }
 
