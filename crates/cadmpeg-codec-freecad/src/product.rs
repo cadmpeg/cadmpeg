@@ -637,7 +637,8 @@ fn parse_vector_list(
     list_layout::<3>(view, "ScaleList")?
         .map(|positions| {
             let [x, y, z] = positions.map(read_real);
-            crate::native::frame::FiniteVec3::try_from([x?, y?, z?]).map_err(malformed)
+            crate::native::frame::FiniteVec3::try_from([x?, y?, z?])
+                .map_err(|error| malformed(format!("element_scales: {error}")))
         })
         .collect()
 }
