@@ -14,8 +14,6 @@ use cadmpeg_ir::math::Point2;
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
-    /// Payload width of integer and enum fields.
-    pub int_width: RefWidth,
     /// Tagged-integer payload offset for the curve degree.
     pub degree_value_offset: usize,
     control_start: usize,
@@ -92,7 +90,6 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
                 pos += 9;
             }
             Some(PcurvePatchLayout {
-                int_width,
                 degree_value_offset,
                 control_start,
                 rational,
