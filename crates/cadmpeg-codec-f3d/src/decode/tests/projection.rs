@@ -41,10 +41,10 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
             "class_tag": "346",
             "paired_byte_offset": 325,
             "paired_class_tag": "262",
-            "recipe_record_index": 201,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
             "recipe_id": "f3d:test:recipe#201",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 352,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "bounded_face",
@@ -54,7 +54,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
             "recipe_nodes": [],
             "resolved_active_face": "f3d:brep:entity#30",
             "next_record_index": 202,
-            "next_byte_offset": 100
+            "next_byte_offset": 469
         }))
         .expect("active face operand"),
     );

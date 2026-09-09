@@ -117,16 +117,16 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
 
     let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand");
-    assert_eq!(operand.references.len(), 2);
-    assert_eq!(operand.references[0].design_reference, 2265);
-    assert_eq!(operand.references[0].form, 3);
-    assert_eq!(operand.references[1].design_reference, 2266);
-    assert_eq!(operand.references[1].form, 32);
+    assert_eq!(operand.references().len(), 2);
+    assert_eq!(operand.references()[0].design_reference, 2265);
+    assert_eq!(operand.references()[0].form, 3);
+    assert_eq!(operand.references()[1].design_reference, 2266);
+    assert_eq!(operand.references()[1].form, 32);
     assert_eq!(
-        operand.selector_tail.map(|tail| tail.value),
+        operand.selector_tail().map(|tail| tail.value),
         Some([7, 0, 0, 0])
     );
-    assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(220));
+    assert_eq!(operand.selector_tail().map(|tail| tail.offset), Some(220));
     assert_eq!(
         operand.owner,
         crate::records::topology::DesignOperandOwner::Group {
@@ -134,9 +134,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             group_member_ordinal: 0,
         }
     );
-    assert_eq!(operand.nested_record_index, 103);
+    assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.recipe_id, recipe.id);
-    assert_eq!(operand.next_byte_offset, next_at as u64);
+    assert_eq!(operand.next_byte_offset(), next_at as u64);
     operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut operand),
@@ -176,7 +176,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         std::slice::from_ref(&scope),
     );
     assert_eq!(
-        operand.references[0].candidate_faces,
+        operand.references()[0].candidate_faces,
         [
             FaceId::mint("test:model:face#other-selector").expect("identity grammar"),
             FaceId::mint("test:model:face#same-stream").expect("identity grammar")
@@ -198,9 +198,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     };
     let empty = parse_body_recipe_operand(&empty_bytes, &group, 0, &record, &empty_recipe)
         .expect("empty body recipe operand");
-    assert!(empty.references.is_empty());
-    assert_eq!(empty.nested_record_index, 103);
-    assert_eq!(empty.next_byte_offset, empty_next_at as u64);
+    assert!(empty.references().is_empty());
+    assert_eq!(empty.nested_record_index(), 103);
+    assert_eq!(empty.next_byte_offset(), empty_next_at as u64);
 
     let mut combine_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
@@ -261,7 +261,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         std::slice::from_ref(&combine_scope),
     );
     assert_eq!(
-        combine_operand.references[0].candidate_faces,
+        combine_operand.references()[0].candidate_faces,
         [FaceId::mint("test:model:face#same-stream").expect("identity grammar")]
     );
 
@@ -271,7 +271,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     bytes.splice(next_at..next_at, nested.iter().copied());
     let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand with nested recipe records");
-    assert_eq!(operand.next_byte_offset, (next_at + nested.len()) as u64);
+    assert_eq!(operand.next_byte_offset(), (next_at + nested.len()) as u64);
 }
 
 #[test]
@@ -371,16 +371,16 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
 
     let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("class-367 body recipe operand");
-    assert_eq!(operand.references.len(), 1);
-    assert_eq!(operand.references[0].design_reference, 301);
-    assert_eq!(operand.references[0].form, 33);
+    assert_eq!(operand.references().len(), 1);
+    assert_eq!(operand.references()[0].design_reference, 301);
+    assert_eq!(operand.references()[0].form, 33);
     assert_eq!(
-        operand.selector_tail.map(|tail| tail.value),
+        operand.selector_tail().map(|tail| tail.value),
         Some([1, 0, 0, 0])
     );
-    assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(208));
-    assert_eq!(operand.nested_record_index, 103);
-    assert_eq!(operand.next_byte_offset, next_at as u64);
+    assert_eq!(operand.selector_tail().map(|tail| tail.offset), Some(208));
+    assert_eq!(operand.nested_record_index(), 103);
+    assert_eq!(operand.next_byte_offset(), next_at as u64);
 }
 
 #[test]
@@ -463,10 +463,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         None,
     )
     .expect("edge recipe operand");
-    assert_eq!(edge_operand.record_index, 100);
-    assert_eq!(edge_operand.paired_byte_offset, paired_at);
-    assert_eq!(edge_operand.recipe_record_index, 103);
-    assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
+    assert_eq!(edge_operand.record_index(), 100);
+    assert_eq!(edge_operand.paired_byte_offset(), paired_at);
+    assert_eq!(edge_operand.recipe_record_index(), 103);
+    assert_eq!(edge_operand.recipe_record_byte_offset(), recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
     assert_eq!(edge_operand.resolved_edge_slot, None);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
@@ -545,7 +545,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("terminal construction-group edge recipe operand");
     assert_eq!(terminal_group_operand.next_record_index, 160);
-    assert_eq!(terminal_group_operand.next_byte_offset, next_at);
+    assert_eq!(terminal_group_operand.next_byte_offset(), next_at);
 
     let mut vertex_bytes = Vec::new();
     header(&mut vertex_bytes, *b"369", 200);
@@ -583,10 +583,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&vertex_recipe),
     )
     .expect("WorkPoint vertex recipe operand");
-    assert_eq!(parsed_vertex.paired_byte_offset, vertex_paired_at);
-    assert_eq!(parsed_vertex.recipe_record_index, 203);
-    assert_eq!(parsed_vertex.next_record_index, 205);
-    assert_eq!(parsed_vertex.next_byte_offset, vertex_next_at);
+    assert_eq!(parsed_vertex.paired_byte_offset(), vertex_paired_at);
+    assert_eq!(parsed_vertex.recipe_record_index(), 203);
+    assert_eq!(parsed_vertex.next_record_index(), 205);
+    assert_eq!(parsed_vertex.next_byte_offset(), vertex_next_at);
     assert_eq!(
         parsed_vertex.recipe_program,
         [-1, 3, 1, -1, 2, -1, 0, -1, 0, 0]
@@ -816,7 +816,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     terminal_resolved.recipe_state_id = Some(8);
     let mut terminal_unresolved = proven_operand.clone();
     terminal_unresolved.id = "f3d:Design/BulkStream.dat:edge-operand#104".into();
-    terminal_unresolved.record_index = 104;
+    let mut draft = terminal_unresolved.into_draft();
+    draft.record_index = 104;
+    draft.recipe_record_index = draft.record_index + 3;
+    terminal_unresolved = crate::records::topology::DesignEdgeOperand::try_new(draft).unwrap();
     terminal_unresolved.recipe_state_id = Some(8);
     terminal_unresolved.resolved_edge_slot = None;
     terminal_unresolved.changed_boundary_edge_slots.clear();
@@ -843,32 +846,37 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
         "{terminal:?}"
     );
-    let identity = |record_index, ordinal, edge| DesignEdgeIdentityOperand {
-        id: format!("f3d:Design/BulkStream.dat:edge-identity#{record_index}"),
-        scope_record_index: 1,
-        group_record_index: 90,
-        group_member_ordinal: ordinal,
-        record_index,
-        byte_offset: u64::from(record_index),
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
-        local_id: u64::from(record_index),
-        asset_id: crate::records::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+    let identity = |record_index, ordinal, edge| {
+        DesignEdgeIdentityOperand::try_new(
+            crate::records::topology::DesignEdgeIdentityOperandDraft {
+                id: format!("f3d:Design/BulkStream.dat:edge-identity#{record_index}"),
+                scope_record_index: 1,
+                group_record_index: 90,
+                group_member_ordinal: ordinal,
+                record_index,
+                byte_offset: u64::from(record_index),
+                class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+                layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
+                local_id: u64::from(record_index),
+                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: u64::from(record_index) + 42,
+                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: u64::from(record_index) + 118,
+                historical: None,
+                treatment_radius_candidates: Vec::new(),
+                transition_edge_candidates: Vec::new(),
+                resolved_edge_slots: Vec::new(),
+                resolved_edge_slot: edge,
+                resolution_identity_id: None,
+            },
         )
-        .unwrap(),
-        asset_id_offset: 0,
-        context_id: crate::records::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 0,
-        historical: None,
-        treatment_radius_candidates: Vec::new(),
-        transition_edge_candidates: Vec::new(),
-        resolved_edge_slots: Vec::new(),
-        resolved_edge_slot: edge,
-        resolution_identity_id: None,
+        .unwrap()
     };
     let mut recipe_unresolved = proven_operand.clone();
     recipe_unresolved.resolved_edge_slot = None;
@@ -1333,7 +1341,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("zero-delimited face node topology recipe structure");
     assert_eq!(zero_delimited_face, face);
     assert_eq!(edge_operand.next_record_index, 104);
-    assert_eq!(edge_operand.next_byte_offset, next_at);
+    assert_eq!(edge_operand.next_byte_offset(), next_at);
     bind_edge_operand_candidates(
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&recipe),
@@ -1461,9 +1469,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&face_recipe),
     )
     .expect("face recipe operand");
-    assert_eq!(operand.record_index, 100);
-    assert_eq!(operand.paired_byte_offset, face_paired_at);
-    assert_eq!(operand.recipe_record_index, 103);
+    assert_eq!(operand.record_index(), 100);
+    assert_eq!(operand.paired_byte_offset(), face_paired_at);
+    assert_eq!(operand.recipe_record_index(), 103);
     assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
     assert_eq!(operand.recipe_id, face_recipe.id);
     assert!(operand.resolved_face_slots.is_empty());
@@ -1513,7 +1521,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
     assert_eq!(operand.next_record_index, 104);
-    assert_eq!(operand.next_byte_offset, face_next_at);
+    assert_eq!(operand.next_byte_offset(), face_next_at);
 
     let mut prelude_bytes = face_bytes.clone();
     let prelude_words = [4i32, 5, 6, 7];
@@ -1556,7 +1564,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("face recipe bounded before its enclosing member limit");
     assert_eq!(bounded.next_record_index, 104);
-    assert_eq!(bounded.next_byte_offset, face_next_at);
+    assert_eq!(bounded.next_byte_offset(), face_next_at);
 
     let mut compact_bytes = Vec::new();
     header(&mut compact_bytes, *b"306", 100);
@@ -1701,7 +1709,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             byte_offset: 900,
             class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
             members: vec![crate::records::Located {
-                value: operand.record_index,
+                value: operand.record_index(),
                 offset: 924,
             }],
             lost_edge_references: Vec::new(),
@@ -1875,7 +1883,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     split_group
         .try_set_members(
-            vec![operand.record_index, operand.record_index + 1]
+            vec![operand.record_index(), operand.record_index() + 1]
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| crate::records::Located {
@@ -1895,7 +1903,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         node.recipe_structure = Some(split_structure.clone());
     }
     let mut split_context = split_selected.clone();
-    split_context.record_index += 1;
+    let mut draft = split_context.into_draft();
+    draft.record_index += 1;
+    draft.recipe_record_index = draft.record_index + 3;
+    split_context = crate::records::topology::DesignFaceOperand::try_new(draft).unwrap();
     if let Some(group) = &mut split_context.group {
         group.group_member_ordinal = 1;
     }

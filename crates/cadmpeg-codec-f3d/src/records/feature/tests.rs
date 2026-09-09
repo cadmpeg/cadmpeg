@@ -1832,3 +1832,56 @@ fn parameter_scope_located_absent_history_states_remain_legal() {
     assert_eq!(decoded, scope);
     assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
 }
+
+#[test]
+fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
+    use crate::records::feature::DesignVertexRecipe;
+    let wire = serde_json::json!({
+        "record_index": 2, "byte_offset": 10, "class_tag": "369",
+        "paired_byte_offset": 20, "paired_class_tag": "261",
+        "recipe_record_index": 5, "recipe_record_byte_offset": 30,
+        "recipe_id": "vertex", "recipe_prefix_offset": 41,
+        "recipe_prefix_bytes": "", "recipe_references": [],
+        "recipe_program_offset": 43, "recipe_program": [0],
+        "next_record_index": 7, "next_byte_offset": 50
+    });
+    let admitted: DesignVertexRecipe = serde_json::from_value(wire.clone()).unwrap();
+    let mut draft = admitted.into_draft();
+    draft.record_index = u32::MAX;
+    assert!(DesignVertexRecipe::try_new(draft).is_err());
+    for field in [
+        "recipe_record_index",
+        "recipe_prefix_offset",
+        "next_record_index",
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = (wire[field].as_u64().unwrap() + 1).into();
+        assert!(serde_json::from_value::<DesignVertexRecipe>(invalid).is_err());
+    }
+    let mut invalid = wire;
+    invalid["paired_byte_offset"] = 10.into();
+    assert!(serde_json::from_value::<DesignVertexRecipe>(invalid).is_err());
+}
+
+#[test]
+fn work_point_plane_carrier_is_bound_to_its_input_frame() {
+    use crate::records::feature::DesignWorkPointInput;
+    let wire = serde_json::json!({
+        "record_index": 7, "reference_offset": 0,
+        "carrier": { "kind": "work_plane", "selection": {
+            "class_tag": "300",
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 108,
+            "identity_record_index": 10, "identity_record_offset": 150,
+            "primary_identity": 19, "primary_identity_offset": 171,
+            "work_plane_scope_record_index": 20, "next_record_index": 11, "next_byte_offset": 179
+        }}
+    });
+    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
+    let mut draft = admitted.into_draft();
+    draft.record_index += 1;
+    assert!(DesignWorkPointInput::try_new(draft).is_err());
+    let mut invalid = wire;
+    invalid["carrier"]["selection"]["identity_record_index"] = 11.into();
+    assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+}

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 
 pub(crate) mod feature;
+mod frame_chain;
 pub(crate) mod topology;
 
 const IDENTITY_MATRIX: [[f64; 4]; 4] = [

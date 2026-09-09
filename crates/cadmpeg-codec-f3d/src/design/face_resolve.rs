@@ -49,7 +49,7 @@ pub(crate) fn resolved_face_group(
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let operand = matches.next()?;
         if matches.next().is_some() {
@@ -95,7 +95,7 @@ pub(crate) fn resolved_explicit_bounded_face_group(
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let operand = matches.next()?;
         if matches.next().is_some() {
@@ -138,7 +138,7 @@ pub(crate) fn resolved_direct_face_selection(
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                    == Some(&operand.record_index)
+                    == Some(&operand.record_index())
         })
         .collect::<Vec<_>>();
     matching.sort_by_key(|operand| operand.scope_reference_ordinal);
@@ -222,11 +222,11 @@ pub(crate) fn resolved_body_recipe_selection(
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
                 && operand.owner.group() == Some((group.record_index, ordinal))
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let operand = matches.next()?;
         if matches.next().is_some()
-            || operand.references.is_empty()
+            || operand.references().is_empty()
             || operand.resolved_body_slot.is_none()
             || operand.resolved_body_face_slots.is_empty()
         {
@@ -443,7 +443,7 @@ fn collect_extrude_profile_group_operands(
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(ordinal)
-                    && operand.record_index == *record_index
+                    && operand.record_index() == *record_index
             })
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
@@ -517,7 +517,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
                     && operand.scope_record_index == root.scope_record_index
                     && operand.group_record_index() == Some(child.record_index)
                     && operand.group_member_ordinal() == Some(0)
-                    && operand.record_index == *operand_record_index
+                    && operand.record_index() == *operand_record_index
                     && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
                     && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
                         &operand.recipe_prefix_bytes,
@@ -666,7 +666,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
             let mut matches = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *record_index
+                    && operand.record_index() == *record_index
             });
             let operand = matches.next()?;
             if matches.next().is_some()
@@ -980,7 +980,7 @@ fn split_face_updated_target_slots(
                 && operand.scope_record_index == group.scope_record_index
                 && operand.group_record_index() == Some(group.record_index)
                 && operand.group_member_ordinal() == Some(ordinal)
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
                 && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
         });
         let operand = matches.next()?;
@@ -1026,7 +1026,7 @@ fn historical_face_group_slots(
                 && operand.scope_record_index == group.scope_record_index
                 && operand.group_record_index() == Some(group.record_index)
                 && operand.group_member_ordinal() == Some(ordinal)
-                && operand.record_index == *record_index
+                && operand.record_index() == *record_index
         });
         let operand = matches.next()?;
         if matches.next().is_some() {
@@ -1738,7 +1738,7 @@ fn extrude_start_plane_geometry_candidates(
     let mut matching = operands.iter().filter(|operand| {
         native_stream(&operand.id) == native_stream(&group.id)
             && operand.scope_record_index == group.scope_record_index
-            && operand.record_index == *record_index
+            && operand.record_index() == *record_index
     });
     let operand = matching.next()?;
     if matching.next().is_some()
@@ -1826,7 +1826,7 @@ pub(crate) fn bind_extrude_start_planes(
             let mut matching_operands = resolution.operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *record_index
+                    && operand.record_index() == *record_index
             });
             let Some(operand) = matching_operands.next() else {
                 candidates.clear();
@@ -2010,7 +2010,7 @@ fn extrude_target_plane_candidate(
     let mut matching_operands = resolution.operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == group.scope_record_index
-            && operand.record_index == *record_index
+            && operand.record_index() == *record_index
     });
     let operand = matching_operands.next()?;
     if matching_operands.next().is_some() {
@@ -2066,7 +2066,7 @@ pub(crate) fn retain_face_operand_resolution(
             && group
                 .members()
                 .iter()
-                .any(|member| member.value == operand.record_index)
+                .any(|member| member.value == operand.record_index())
             && (face_operand_candidates(operand).contains(face)
                 || (face_operand_candidates(operand).is_empty()
                     && operand.resolved_face_slots.is_empty()
@@ -2249,10 +2249,10 @@ mod tests {
             "class_tag": "346",
             "paired_byte_offset": 325,
             "paired_class_tag": "262",
-            "recipe_record_index": 201,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
             "recipe_id": "f3d:test:recipe#201",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 352,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "bounded_face",
@@ -2281,7 +2281,7 @@ mod tests {
             "historical_support_contexts": [],
             "resolved_face_slots": [],
             "next_record_index": 202,
-            "next_byte_offset": 100
+            "next_byte_offset": 469
         }))
         .expect("legacy bounded-face operand");
         operand.recipe_references = vec![
@@ -2423,9 +2423,9 @@ mod tests {
                 "paired_byte_offset": 407,
                 "paired_class_tag": "258",
                 "recipe_record_index": record_index + 3,
-                "recipe_record_byte_offset": 0,
+                "recipe_record_byte_offset": 423,
                 "recipe_id": format!("f3d:test:recipe#{record_index}"),
-                "recipe_prefix_offset": 0,
+                "recipe_prefix_offset": 434,
                 "recipe_prefix_bytes": "",
                 "recipe_references": [],
                 "recipe_kind": "bounded_face",
@@ -2436,7 +2436,7 @@ mod tests {
                 "candidate_faces": preceding,
                 "preceding_candidate_faces": preceding,
                 "next_record_index": record_index + 4,
-                "next_byte_offset": 0
+                "next_byte_offset": 551
             }))
             .expect("legacy SplitFace target operand")
         }
@@ -2635,18 +2635,18 @@ mod tests {
             "record_index": record_index,
             "byte_offset": 0,
             "class_tag": "376",
-            "paired_byte_offset": 0,
+            "paired_byte_offset": 16,
             "paired_class_tag": "260",
             "recipe_record_index": record_index + 3,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_byte_offset": 32,
             "recipe_id": "f3d:test:recipe",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 43,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_program_offset": 0,
             "recipe_program": [-1, -1, 2],
             "next_record_index": record_index + 4,
-            "next_byte_offset": 0
+            "next_byte_offset": 160
         }))
         .expect("edge recipe operand");
         operand.recipe_references = references;
@@ -2862,10 +2862,10 @@ mod tests {
             "class_tag": "282",
             "paired_byte_offset": 12,
             "paired_class_tag": "259",
-            "recipe_record_index": 22,
+            "recipe_record_index": 24,
             "recipe_record_byte_offset": 24,
             "recipe_id": "f3d:test:recipe#22",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 35,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "bounded_face",
@@ -2976,10 +2976,10 @@ mod tests {
             "class_tag": "271",
             "paired_byte_offset": 325,
             "paired_class_tag": "261",
-            "recipe_record_index": 201,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
             "recipe_id": "f3d:test:recipe#201",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 352,
             "recipe_prefix_bytes": "",
             "recipe_references": [{
                 "selector": 1,
@@ -3016,7 +3016,7 @@ mod tests {
             "historical_support_contexts": [],
             "resolved_face_slots": [],
             "next_record_index": 202,
-            "next_byte_offset": 100
+            "next_byte_offset": 469
         }))
         .expect("nested bounded-face operand");
         let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
@@ -3164,10 +3164,10 @@ mod tests {
             "class_tag": "271",
             "paired_byte_offset": 325,
             "paired_class_tag": "261",
-            "recipe_record_index": 201,
-            "recipe_record_byte_offset": 0,
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 341,
             "recipe_id": "f3d:test:recipe#201",
-            "recipe_prefix_offset": 0,
+            "recipe_prefix_offset": 352,
             "recipe_prefix_bytes": "",
             "recipe_references": [],
             "recipe_kind": "face",
@@ -3183,7 +3183,7 @@ mod tests {
             "historical_support_contexts": [],
             "resolved_face_slots": [],
             "next_record_index": 202,
-            "next_byte_offset": 100
+            "next_byte_offset": 469
         }))
         .expect("target face operand")
     }

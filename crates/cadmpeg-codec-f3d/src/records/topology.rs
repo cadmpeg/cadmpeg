@@ -25,6 +25,82 @@ pub struct DesignSketchProfileOperand {
     /// Primary indexed-record identity named by the scope table.
     pub record_index: u32,
     /// Byte offset of the primary indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selected Sketch reference.
+    pub asset_id: DesignRelaxedGuidText,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// Full Design entity id of the selected Sketch.
+    pub entity_id: DesignEntityId,
+    /// Byte offset of the suffix's UTF-16LE code units.
+    entity_reference_offset: u64,
+    /// Exact nested profile-region selection, when its complete frame closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+}
+
+impl DesignSketchProfileOperand {
+    pub(crate) fn try_new(draft: DesignSketchProfileOperandDraft) -> Result<Self, String> {
+        if !(draft.byte_offset < draft.asset_id_offset
+            && draft.asset_id_offset < draft.entity_reference_offset
+            && draft.entity_reference_offset < draft.paired_byte_offset)
+        {
+            return Err(
+                "asset_id_offset/entity_reference_offset/paired_byte_offset must increase".into(),
+            );
+        }
+        let value = Self {
+            scope_reference_ordinal: draft.scope_reference_ordinal,
+            record_index: draft.record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            asset_id: draft.asset_id,
+            asset_id_offset: draft.asset_id_offset,
+            entity_id: draft.entity_id,
+            entity_reference_offset: draft.entity_reference_offset,
+            region_selection: draft.region_selection,
+            paired_class_tag: draft.paired_class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+        };
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignSketchProfileOperandDraft {
+        DesignSketchProfileOperandDraft {
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            asset_id: self.asset_id,
+            asset_id_offset: self.asset_id_offset,
+            entity_id: self.entity_id,
+            entity_reference_offset: self.entity_reference_offset,
+            region_selection: self.region_selection,
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.paired_byte_offset
+    }
+}
+
+/// Unadmitted DesignSketchProfileOperand fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignSketchProfileOperandDraft {
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
@@ -37,7 +113,6 @@ pub struct DesignSketchProfileOperand {
     /// Byte offset of the suffix's UTF-16LE code units.
     pub entity_reference_offset: u64,
     /// Exact nested profile-region selection, when its complete frame closes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub paired_class_tag: DesignClassTag,
@@ -82,7 +157,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
         if entity_id.suffix() != wire.entity_suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
-        Ok(Self {
+        Self::try_new(DesignSketchProfileOperandDraft {
             scope_reference_ordinal: wire.scope_reference_ordinal,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
@@ -100,6 +175,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
 
 impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
     fn from(value: DesignSketchProfileOperand) -> Self {
+        let value = value.into_draft();
         let entity_suffix = value.entity_id.suffix();
         Self {
             scope_reference_ordinal: value.scope_reference_ordinal,
@@ -938,14 +1014,14 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             draft
                 .auxiliary_paths
                 .iter()
-                .map(|record| record.record_index),
+                .map(|record| record.record_index()),
         )?;
         distinct_construction_records(
             "trailing_transforms",
             draft
                 .trailing_transforms
                 .iter()
-                .map(|record| record.record_index),
+                .map(|record| record.record_index()),
         )?;
         distinct_construction_records(
             "trailing_dual_transforms",
@@ -1022,7 +1098,7 @@ impl DesignConstructionOperandGroupFrame {
     ) -> Result<(), String> {
         distinct_construction_records(
             "auxiliary_paths",
-            records.iter().map(|record| record.record_index),
+            records.iter().map(|record| record.record_index()),
         )?;
         self.auxiliary_paths = records;
         Ok(())
@@ -1038,7 +1114,7 @@ impl DesignConstructionOperandGroupFrame {
     ) -> Result<(), String> {
         distinct_construction_records(
             "trailing_transforms",
-            records.iter().map(|record| record.record_index),
+            records.iter().map(|record| record.record_index()),
         )?;
         self.trailing_transforms = records;
         Ok(())
@@ -1197,7 +1273,82 @@ pub struct DesignConstructionOperandFlag {
 
 /// Affine placement named by a construction-operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignConstructionOperandTransformDraft",
+    into = "DesignConstructionOperandTransformDraft"
+)]
 pub struct DesignConstructionOperandTransform {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Per-file dynamic transform-record class tag.
+    pub class_tag: DesignClassTag,
+    /// Row-major local-to-model affine transform.
+    pub transform: SketchPlacementMatrix,
+    /// Per-file dynamic following-record class tag.
+    pub following_class_tag: DesignClassTag,
+}
+
+impl DesignConstructionOperandTransform {
+    pub(crate) fn try_new(draft: DesignConstructionOperandTransformDraft) -> Result<Self, String> {
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            1,
+            152,
+        )?;
+        let value = Self {
+            frame,
+            class_tag: draft.class_tag,
+            transform: draft.transform,
+            following_class_tag: draft.following_class_tag,
+        };
+        if value.following_record_index() != draft.following_record_index {
+            return Err("following_record_index disagrees with frame layout".into());
+        }
+        if value.transform_offset() != draft.transform_offset {
+            return Err("transform_offset disagrees with frame layout".into());
+        }
+        if value.following_byte_offset() != draft.following_byte_offset {
+            return Err("following_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignConstructionOperandTransformDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let following_record_index = self.following_record_index();
+        let transform_offset = self.transform_offset();
+        let following_byte_offset = self.following_byte_offset();
+        DesignConstructionOperandTransformDraft {
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            transform: self.transform,
+            transform_offset,
+            following_record_index,
+            following_byte_offset,
+            following_class_tag: self.following_class_tag,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn transform_offset(&self) -> u64 {
+        self.frame.offset(22)
+    }
+    pub(crate) fn following_record_index(&self) -> u32 {
+        self.frame.index(1)
+    }
+    pub(crate) fn following_byte_offset(&self) -> u64 {
+        self.frame.offset(152)
+    }
+}
+
+/// Unadmitted DesignConstructionOperandTransform fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignConstructionOperandTransformDraft {
     /// Indexed transform-record identity.
     pub record_index: u32,
     /// Transform-record header byte offset.
@@ -1214,6 +1365,28 @@ pub struct DesignConstructionOperandTransform {
     pub following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
     pub following_class_tag: DesignClassTag,
+}
+
+impl TryFrom<DesignConstructionOperandTransformDraft> for DesignConstructionOperandTransform {
+    type Error = String;
+    fn try_from(draft: DesignConstructionOperandTransformDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignConstructionOperandTransform> for DesignConstructionOperandTransformDraft {
+    fn from(value: DesignConstructionOperandTransform) -> Self {
+        let value = value.into_draft();
+        Self {
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            transform: value.transform,
+            transform_offset: value.transform_offset,
+            following_record_index: value.following_record_index,
+            following_byte_offset: value.following_byte_offset,
+            following_class_tag: value.following_class_tag,
+        }
+    }
 }
 
 /// Two ordered affine placements named by an operand group's trailing run.
@@ -1242,6 +1415,128 @@ pub struct DesignConstructionOperandDualTransform {
     into = "DesignConstructionOperandPathWire"
 )]
 pub struct DesignConstructionOperandPath {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Per-file dynamic path-record class tag.
+    pub class_tag: DesignClassTag,
+    /// Persistent entity identity carried by this path step.
+    pub entity_ref: u64,
+    /// Transform or compact selection-path layout.
+    placement: DesignConstructionPathPlacement,
+    /// Owning feature-scope record.
+    pub scope_record_index: u32,
+    /// Per-file dynamic following-record class tag.
+    pub following_class_tag: DesignClassTag,
+}
+
+impl DesignConstructionOperandPath {
+    pub(crate) fn try_new(draft: DesignConstructionOperandPathDraft) -> Result<Self, String> {
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            2,
+            if matches!(
+                draft.placement,
+                DesignConstructionPathPlacement::Transform(_)
+            ) {
+                190
+            } else {
+                62
+            },
+        )?;
+        let value = Self {
+            frame,
+            class_tag: draft.class_tag,
+            entity_ref: draft.entity_ref,
+            placement: draft.placement,
+            scope_record_index: draft.scope_record_index,
+            following_class_tag: draft.following_class_tag,
+        };
+        if value.entity_ref_offset() != draft.entity_ref_offset {
+            return Err("entity_ref_offset disagrees with frame layout".into());
+        }
+        if value.nested_record_index() != draft.nested_record_index {
+            return Err("nested_record_index disagrees with frame layout".into());
+        }
+        if value.following_record_index() != draft.following_record_index {
+            return Err("following_record_index disagrees with frame layout".into());
+        }
+        if value.scope_record_index_offset() != draft.scope_record_index_offset {
+            return Err("scope_record_index_offset disagrees with frame layout".into());
+        }
+        if value.nested_record_index_offset() != draft.nested_record_index_offset {
+            return Err("nested_record_index_offset disagrees with frame layout".into());
+        }
+        if value.following_byte_offset() != draft.following_byte_offset {
+            return Err("following_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignConstructionOperandPathDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let entity_ref_offset = self.entity_ref_offset();
+        let nested_record_index = self.nested_record_index();
+        let following_record_index = self.following_record_index();
+        let scope_record_index_offset = self.scope_record_index_offset();
+        let nested_record_index_offset = self.nested_record_index_offset();
+        let following_byte_offset = self.following_byte_offset();
+        DesignConstructionOperandPathDraft {
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            entity_ref: self.entity_ref,
+            entity_ref_offset,
+            placement: self.placement,
+            scope_record_index: self.scope_record_index,
+            scope_record_index_offset,
+            nested_record_index,
+            nested_record_index_offset,
+            following_record_index,
+            following_byte_offset,
+            following_class_tag: self.following_class_tag,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn entity_ref_offset(&self) -> u64 {
+        self.frame.offset(22)
+    }
+    pub(crate) fn placement(&self) -> DesignConstructionPathPlacement {
+        self.placement
+    }
+    pub(crate) fn scope_record_index_offset(&self) -> u64 {
+        self.frame.offset(
+            if matches!(
+                self.placement,
+                DesignConstructionPathPlacement::Transform(_)
+            ) {
+                163
+            } else {
+                35
+            },
+        )
+    }
+    pub(crate) fn nested_record_index(&self) -> u32 {
+        self.frame.index(2)
+    }
+    pub(crate) fn nested_record_index_offset(&self) -> u64 {
+        self.scope_record_index_offset() + 11
+    }
+    pub(crate) fn following_record_index(&self) -> u32 {
+        self.frame.index(1)
+    }
+    pub(crate) fn following_byte_offset(&self) -> u64 {
+        self.scope_record_index_offset() + 27
+    }
+}
+
+/// Unadmitted DesignConstructionOperandPath fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignConstructionOperandPathDraft {
     /// Indexed path-record identity.
     pub record_index: u32,
     /// Path-record header byte offset.
@@ -1310,14 +1605,14 @@ struct DesignConstructionOperandPathWire {
 impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPath {
     type Error = String;
     fn try_from(wire: DesignConstructionOperandPathWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Self::try_new(DesignConstructionOperandPathDraft {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
             entity_ref: wire.entity_ref,
             entity_ref_offset: wire.entity_ref_offset,
             placement: match (wire.transform, wire.transform_offset, wire.compact_variant) {
-                (Some(value), Some(offset), None) => DesignConstructionPathPlacement::Transform(Located { value, offset }),
+                (Some(value), Some(offset), None) if wire.byte_offset.checked_add(33) == Some(offset) => DesignConstructionPathPlacement::Transform(value),
                 (None, None, Some(variant)) => DesignConstructionPathPlacement::Compact(variant),
                 _ => return Err("transform and transform_offset must occur together and exclude compact_variant; compact_variant is required without transform".into()),
             },
@@ -1334,9 +1629,10 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
 
 impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
     fn from(record: DesignConstructionOperandPath) -> Self {
+        let record = record.into_draft();
         let (transform, transform_offset, compact_variant) = match record.placement {
             DesignConstructionPathPlacement::Transform(transform) => {
-                (Some(transform.value), Some(transform.offset), None)
+                (Some(transform), Some(record.byte_offset + 33), None)
             }
             DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
         };
@@ -1361,9 +1657,9 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
 }
 
 /// Placement layout carried by a persistent-entity selection path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DesignConstructionPathPlacement {
-    Transform(Located<SketchPlacementMatrix>),
+    Transform(SketchPlacementMatrix),
     Compact(bool),
 }
 
@@ -1379,6 +1675,112 @@ pub struct DesignConstructionOperandIdentity {
     /// Owning operand-group record.
     pub group_record_index: u32,
     /// Ordered identity-wrapper indexed records.
+    wrappers: Vec<DesignIdentityWrapper>,
+    /// Indexed identity of the record physically following the wrappers.
+    following_record_index: u32,
+    /// Indexed-header byte offset of the record following the wrappers.
+    following_byte_offset: u64,
+    /// Per-file dynamic class tag of the record following the wrappers.
+    following_class_tag: DesignClassTag,
+    /// Entity-tracking path between the outer wrappers and persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tracking_path: Option<DesignConstructionTrackingPath>,
+    /// Fixed-width persistent identity, when the following record has that grammar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    persistent_identity: Option<DesignConstructionPersistentIdentity>,
+}
+
+impl DesignConstructionOperandIdentity {
+    pub(crate) fn try_new(draft: DesignConstructionOperandIdentityDraft) -> Result<Self, String> {
+        let mut indices = std::collections::HashSet::new();
+        if !draft
+            .wrappers
+            .iter()
+            .all(|wrapper| indices.insert(wrapper.record_index))
+            || !draft
+                .wrappers
+                .windows(2)
+                .all(|pair| pair[0].byte_offset.checked_add(24) == Some(pair[1].byte_offset))
+        {
+            return Err("wrappers must have unique indices and stride-24 offsets".into());
+        }
+        if let Some(path) = &draft.tracking_path {
+            if draft.wrappers.last().is_some_and(|wrapper| {
+                wrapper.byte_offset.checked_add(24) != Some(path.wrapper_byte_offset())
+            }) || draft.following_record_index != path.following_record_index()
+                || draft.following_byte_offset != path.following_byte_offset()
+                || draft.following_class_tag != path.following_class_tag
+            {
+                return Err("tracking_path disagrees with following record or wrappers".into());
+            }
+        } else if draft.wrappers.last().is_some_and(|wrapper| {
+            wrapper.byte_offset.checked_add(24) != Some(draft.following_byte_offset)
+        }) {
+            return Err("following_byte_offset must follow wrappers by 24 bytes".into());
+        }
+        if draft
+            .persistent_identity
+            .as_ref()
+            .is_some_and(|persistent| {
+                draft.following_byte_offset.checked_add(21) != Some(persistent.local_id_offset())
+            })
+        {
+            return Err(
+                "persistent_identity.local_id_offset disagrees with following_byte_offset".into(),
+            );
+        }
+        let value = Self {
+            id: draft.id,
+            group_record_index: draft.group_record_index,
+            wrappers: draft.wrappers,
+            following_record_index: draft.following_record_index,
+            following_byte_offset: draft.following_byte_offset,
+            following_class_tag: draft.following_class_tag,
+            tracking_path: draft.tracking_path,
+            persistent_identity: draft.persistent_identity,
+        };
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignConstructionOperandIdentityDraft {
+        DesignConstructionOperandIdentityDraft {
+            id: self.id,
+            group_record_index: self.group_record_index,
+            wrappers: self.wrappers,
+            following_record_index: self.following_record_index,
+            following_byte_offset: self.following_byte_offset,
+            following_class_tag: self.following_class_tag,
+            tracking_path: self.tracking_path,
+            persistent_identity: self.persistent_identity,
+        }
+    }
+    pub(crate) fn wrappers(&self) -> &Vec<DesignIdentityWrapper> {
+        &self.wrappers
+    }
+    pub(crate) fn following_record_index(&self) -> u32 {
+        self.following_record_index
+    }
+    pub(crate) fn following_byte_offset(&self) -> u64 {
+        self.following_byte_offset
+    }
+    pub(crate) fn following_class_tag(&self) -> &DesignClassTag {
+        &self.following_class_tag
+    }
+    pub(crate) fn tracking_path(&self) -> &Option<DesignConstructionTrackingPath> {
+        &self.tracking_path
+    }
+    pub(crate) fn persistent_identity(&self) -> &Option<DesignConstructionPersistentIdentity> {
+        &self.persistent_identity
+    }
+}
+
+/// Unadmitted DesignConstructionOperandIdentity fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignConstructionOperandIdentityDraft {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning operand-group record.
+    pub group_record_index: u32,
+    /// Ordered identity-wrapper indexed records.
     pub wrappers: Vec<DesignIdentityWrapper>,
     /// Indexed identity of the record physically following the wrappers.
     pub following_record_index: u32,
@@ -1387,10 +1789,8 @@ pub struct DesignConstructionOperandIdentity {
     /// Per-file dynamic class tag of the record following the wrappers.
     pub following_class_tag: DesignClassTag,
     /// Entity-tracking path between the outer wrappers and persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tracking_path: Option<DesignConstructionTrackingPath>,
     /// Fixed-width persistent identity, when the following record has that grammar.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
 }
 
@@ -1436,7 +1836,7 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
         {
             return Err("wrapper_record_indices, wrapper_byte_offsets, and wrapper_class_tags must have equal lengths".into());
         }
-        Ok(Self {
+        Self::try_new(DesignConstructionOperandIdentityDraft {
             id: wire.id,
             group_record_index: wire.group_record_index,
             following_record_index: wire.following_record_index,
@@ -1467,6 +1867,7 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
     fn from(identity: DesignConstructionOperandIdentity) -> Self {
+        let identity = identity.into_draft();
         let mut wrapper_record_indices = Vec::with_capacity(identity.wrappers.len());
         let mut wrapper_byte_offsets = Vec::with_capacity(identity.wrappers.len());
         let mut wrapper_class_tags = Vec::with_capacity(identity.wrappers.len());
@@ -1497,6 +1898,161 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
     into = "DesignConstructionTrackingPathWire"
 )]
 pub struct DesignConstructionTrackingPath {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Outer tracking-wrapper dynamic class tag.
+    pub wrapper_class_tag: DesignClassTag,
+    /// Nested tracking-carrier dynamic class tag.
+    pub carrier_class_tag: DesignClassTag,
+    /// Primary persistent identity stored by the carrier.
+    pub primary_identity: u64,
+    /// Signed carrier selector.
+    pub selector: i32,
+    /// Carrier-kind discriminator.
+    pub kind: u32,
+    /// First optional related persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_related_identity: Option<u64>,
+    /// Second optional related persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_related_identity: Option<u64>,
+    /// Following-record dynamic class tag.
+    pub following_class_tag: DesignClassTag,
+}
+
+impl DesignConstructionTrackingPath {
+    pub(crate) fn try_new(draft: DesignConstructionTrackingPathDraft) -> Result<Self, String> {
+        if draft.first_related_identity.is_some_and(|identity| {
+            draft.wrapper_byte_offset.checked_add(110) != Some(identity.offset)
+        }) || draft.second_related_identity.is_some_and(|identity| {
+            draft
+                .wrapper_byte_offset
+                .checked_add(114 + u64::from(draft.first_related_identity.is_some()) * 8)
+                != Some(identity.offset)
+        }) {
+            return Err("related_identity_offset disagrees with tracking frame".into());
+        }
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.wrapper_record_index,
+            draft.wrapper_byte_offset,
+            2,
+            114 + u64::from(draft.first_related_identity.is_some()) * 8
+                + u64::from(draft.second_related_identity.is_some()) * 8,
+        )?;
+        let value = Self {
+            frame,
+            wrapper_class_tag: draft.wrapper_class_tag,
+            carrier_class_tag: draft.carrier_class_tag,
+            primary_identity: draft.primary_identity,
+            selector: draft.selector,
+            kind: draft.kind,
+            first_related_identity: draft.first_related_identity.map(|identity| identity.value),
+            second_related_identity: draft.second_related_identity.map(|identity| identity.value),
+            following_class_tag: draft.following_class_tag,
+        };
+        if value.carrier_record_index() != draft.carrier_record_index {
+            return Err("carrier_record_index disagrees with frame layout".into());
+        }
+        if value.carrier_byte_offset() != draft.carrier_byte_offset {
+            return Err("carrier_byte_offset disagrees with frame layout".into());
+        }
+        if value.primary_identity_offset() != draft.primary_identity_offset {
+            return Err("primary_identity_offset disagrees with frame layout".into());
+        }
+        if value.selector_offset() != draft.selector_offset {
+            return Err("selector_offset disagrees with frame layout".into());
+        }
+        if value.kind_offset() != draft.kind_offset {
+            return Err("kind_offset disagrees with frame layout".into());
+        }
+        if value.following_record_index() != draft.following_record_index {
+            return Err("following_record_index disagrees with frame layout".into());
+        }
+        if value.following_byte_offset() != draft.following_byte_offset {
+            return Err("following_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignConstructionTrackingPathDraft {
+        let first_related_identity = self.first_related_identity();
+        let second_related_identity = self.second_related_identity();
+        let wrapper_record_index = self.wrapper_record_index();
+        let wrapper_byte_offset = self.wrapper_byte_offset();
+        let carrier_record_index = self.carrier_record_index();
+        let carrier_byte_offset = self.carrier_byte_offset();
+        let primary_identity_offset = self.primary_identity_offset();
+        let selector_offset = self.selector_offset();
+        let kind_offset = self.kind_offset();
+        let following_record_index = self.following_record_index();
+        let following_byte_offset = self.following_byte_offset();
+        DesignConstructionTrackingPathDraft {
+            wrapper_record_index,
+            wrapper_byte_offset,
+            wrapper_class_tag: self.wrapper_class_tag,
+            carrier_record_index,
+            carrier_byte_offset,
+            carrier_class_tag: self.carrier_class_tag,
+            primary_identity: self.primary_identity,
+            primary_identity_offset,
+            selector: self.selector,
+            selector_offset,
+            kind: self.kind,
+            kind_offset,
+            first_related_identity,
+            second_related_identity,
+            following_record_index,
+            following_byte_offset,
+            following_class_tag: self.following_class_tag,
+        }
+    }
+    pub(crate) fn wrapper_record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn wrapper_byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn carrier_record_index(&self) -> u32 {
+        self.frame.index(1)
+    }
+    pub(crate) fn carrier_byte_offset(&self) -> u64 {
+        self.frame.offset(33)
+    }
+    pub(crate) fn primary_identity_offset(&self) -> u64 {
+        self.frame.offset(70)
+    }
+    pub(crate) fn selector_offset(&self) -> u64 {
+        self.frame.offset(90)
+    }
+    pub(crate) fn kind_offset(&self) -> u64 {
+        self.frame.offset(94)
+    }
+    pub(crate) fn first_related_identity(&self) -> Option<Located<u64>> {
+        self.first_related_identity.map(|value| Located {
+            value,
+            offset: self.frame.offset(110),
+        })
+    }
+    pub(crate) fn second_related_identity(&self) -> Option<Located<u64>> {
+        self.second_related_identity.map(|value| Located {
+            value,
+            offset: self
+                .frame
+                .offset(114 + u64::from(self.first_related_identity.is_some()) * 8),
+        })
+    }
+    pub(crate) fn following_record_index(&self) -> u32 {
+        self.frame.index(2)
+    }
+    pub(crate) fn following_byte_offset(&self) -> u64 {
+        self.frame.offset(
+            114 + u64::from(self.first_related_identity.is_some()) * 8
+                + u64::from(self.second_related_identity.is_some()) * 8,
+        )
+    }
+}
+
+/// Unadmitted DesignConstructionTrackingPath fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignConstructionTrackingPathDraft {
     /// Outer tracking-wrapper record identity.
     pub wrapper_record_index: u32,
     /// Outer tracking-wrapper header byte offset.
@@ -1522,10 +2078,8 @@ pub struct DesignConstructionTrackingPath {
     /// Byte offset of `kind`.
     pub kind_offset: u64,
     /// First optional related persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_related_identity: Option<Located<u64>>,
     /// Second optional related persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_related_identity: Option<Located<u64>>,
     /// Indexed record immediately following the carrier.
     pub following_record_index: u32,
@@ -1565,7 +2119,7 @@ struct DesignConstructionTrackingPathWire {
 impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingPath {
     type Error = String;
     fn try_from(wire: DesignConstructionTrackingPathWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Self::try_new(DesignConstructionTrackingPathDraft {
             wrapper_record_index: wire.wrapper_record_index,
             wrapper_byte_offset: wire.wrapper_byte_offset,
             wrapper_class_tag: wire.wrapper_class_tag.try_into()?,
@@ -1597,6 +2151,7 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
 
 impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire {
     fn from(value: DesignConstructionTrackingPath) -> Self {
+        let value = value.into_draft();
         Self {
             wrapper_record_index: value.wrapper_record_index,
             wrapper_byte_offset: value.wrapper_byte_offset,
@@ -1627,7 +2182,111 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignConstructionPersistentIdentityDraft",
+    into = "DesignConstructionPersistentIdentityDraft"
+)]
 pub struct DesignConstructionPersistentIdentity {
+    tail: PersistentIdentityTail,
+    /// Local persistent identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Byte offset of `local_id`.
+    local_id_offset: u64,
+    /// Asset UUID qualifying the local identity.
+    pub asset_id: DesignRelaxedGuidText,
+    /// UUID of the local identity context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Identity of the indexed record immediately following this identity.
+    pub next_record_index: u32,
+}
+
+impl DesignConstructionPersistentIdentity {
+    pub(crate) fn try_new(
+        draft: DesignConstructionPersistentIdentityDraft,
+    ) -> Result<Self, String> {
+        let base = draft
+            .local_id_offset
+            .checked_sub(21)
+            .ok_or("local_id_offset precedes identity header")?;
+        if draft.local_id_offset.checked_add(12) != Some(draft.asset_id_offset)
+            || draft.context_id_offset <= draft.asset_id_offset
+            || !(base.checked_add(190) == Some(draft.next_byte_offset)
+                || (base.checked_add(185) == Some(draft.tail_slot_offset)
+                    && draft.tail_slot_offset.checked_add(15) == Some(draft.next_byte_offset)))
+        {
+            return Err("persistent identity offsets disagree with frame layout".into());
+        }
+        let tail = if base.checked_add(190) == Some(draft.next_byte_offset) {
+            PersistentIdentityTail::Fixed {
+                tail_slot_offset: draft.tail_slot_offset,
+            }
+        } else {
+            PersistentIdentityTail::Extended
+        };
+        let value = Self {
+            tail,
+            local_id: draft.local_id,
+            local_id_offset: draft.local_id_offset,
+            asset_id: draft.asset_id,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            tail_slot_present: draft.tail_slot_present,
+            next_record_index: draft.next_record_index,
+        };
+        if value.asset_id_offset() != draft.asset_id_offset {
+            return Err("asset_id_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignConstructionPersistentIdentityDraft {
+        let tail_slot_offset = self.tail_slot_offset();
+        let next_byte_offset = self.next_byte_offset();
+        let asset_id_offset = self.asset_id_offset();
+        DesignConstructionPersistentIdentityDraft {
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset,
+            asset_id: self.asset_id,
+            asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset,
+            next_record_index: self.next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn local_id_offset(&self) -> u64 {
+        self.local_id_offset
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.local_id_offset + 12
+    }
+    pub(crate) fn context_id_offset(&self) -> u64 {
+        self.context_id_offset
+    }
+    pub(crate) fn tail_slot_offset(&self) -> u64 {
+        match self.tail {
+            PersistentIdentityTail::Fixed { tail_slot_offset } => tail_slot_offset,
+            PersistentIdentityTail::Extended => self.local_id_offset + 164,
+        }
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.local_id_offset
+            + match self.tail {
+                PersistentIdentityTail::Fixed { .. } => 169,
+                PersistentIdentityTail::Extended => 179,
+            }
+    }
+}
+
+/// Unadmitted DesignConstructionPersistentIdentity fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignConstructionPersistentIdentityDraft {
     /// Local persistent identity preceding the two UUID fields.
     pub local_id: u64,
     /// Byte offset of `local_id`.
@@ -1650,6 +2309,30 @@ pub struct DesignConstructionPersistentIdentity {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this identity.
     pub next_byte_offset: u64,
+}
+
+impl TryFrom<DesignConstructionPersistentIdentityDraft> for DesignConstructionPersistentIdentity {
+    type Error = String;
+    fn try_from(draft: DesignConstructionPersistentIdentityDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignConstructionPersistentIdentity> for DesignConstructionPersistentIdentityDraft {
+    fn from(value: DesignConstructionPersistentIdentity) -> Self {
+        let value = value.into_draft();
+        Self {
+            local_id: value.local_id,
+            local_id_offset: value.local_id_offset,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            context_id: value.context_id,
+            context_id_offset: value.context_id_offset,
+            tail_slot_present: value.tail_slot_present,
+            tail_slot_offset: value.tail_slot_offset,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
 }
 
 /// One radius assignment and its ordered edge group in a Fillet scope.
@@ -1882,7 +2565,136 @@ fn deserialize_historical_binding<'de, D: serde::Deserializer<'de>>(
 
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignExtrudeSelectionMemberDraft",
+    into = "DesignExtrudeSelectionMemberDraft"
+)]
 pub struct DesignExtrudeSelectionMember {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native member.
+    pub id: String,
+    /// Owning selection-group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: DesignRelaxedGuidText,
+    /// UUID of the local selection-identity context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Byte offset of the optional-slot marker.
+    #[serde(default)]
+    pub tail_slot_offset: u64,
+    /// Sketch geometry carrying `local_id`, when it resolves uniquely in
+    /// the selected Sketch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_geometry: Option<SketchRelationOperand>,
+    /// Construction-operand identity chains that terminate at this member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operand_identity_ids: Vec<String>,
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
+    pub historical: Option<HistoricalBinding>,
+    /// Identity of the indexed record immediately following this member.
+    pub next_record_index: u32,
+}
+
+impl DesignExtrudeSelectionMember {
+    pub(crate) fn try_new(draft: DesignExtrudeSelectionMemberDraft) -> Result<Self, String> {
+        if draft.context_id_offset <= draft.asset_id_offset {
+            return Err("context_id_offset must follow asset_id_offset".into());
+        }
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            0,
+            190,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            group_record_index: draft.group_record_index,
+            group_member_ordinal: draft.group_member_ordinal,
+            class_tag: draft.class_tag,
+            local_id: draft.local_id,
+            asset_id: draft.asset_id,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            tail_slot_present: draft.tail_slot_present,
+            tail_slot_offset: draft.tail_slot_offset,
+            resolved_geometry: draft.resolved_geometry,
+            operand_identity_ids: draft.operand_identity_ids,
+            historical: draft.historical,
+            next_record_index: draft.next_record_index,
+        };
+        if value.local_id_offset() != draft.local_id_offset {
+            return Err("local_id_offset disagrees with frame layout".into());
+        }
+        if value.asset_id_offset() != draft.asset_id_offset {
+            return Err("asset_id_offset disagrees with frame layout".into());
+        }
+        if value.next_byte_offset() != draft.next_byte_offset {
+            return Err("next_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignExtrudeSelectionMemberDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let local_id_offset = self.local_id_offset();
+        let asset_id_offset = self.asset_id_offset();
+        let next_byte_offset = self.next_byte_offset();
+        DesignExtrudeSelectionMemberDraft {
+            id: self.id,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            local_id: self.local_id,
+            local_id_offset,
+            asset_id: self.asset_id,
+            asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset,
+            resolved_geometry: self.resolved_geometry,
+            operand_identity_ids: self.operand_identity_ids,
+            historical: self.historical,
+            next_record_index: self.next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn local_id_offset(&self) -> u64 {
+        self.frame.offset(21)
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.frame.offset(33)
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.frame.offset(190)
+    }
+}
+
+/// Unadmitted DesignExtrudeSelectionMember fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignExtrudeSelectionMemberDraft {
     /// Globally unique deterministic identifier for this native member.
     pub id: String,
     /// Owning selection-group record.
@@ -1930,6 +2742,39 @@ pub struct DesignExtrudeSelectionMember {
     pub next_byte_offset: u64,
 }
 
+impl TryFrom<DesignExtrudeSelectionMemberDraft> for DesignExtrudeSelectionMember {
+    type Error = String;
+    fn try_from(draft: DesignExtrudeSelectionMemberDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignExtrudeSelectionMember> for DesignExtrudeSelectionMemberDraft {
+    fn from(value: DesignExtrudeSelectionMember) -> Self {
+        let value = value.into_draft();
+        Self {
+            id: value.id,
+            group_record_index: value.group_record_index,
+            group_member_ordinal: value.group_member_ordinal,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            local_id: value.local_id,
+            local_id_offset: value.local_id_offset,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            context_id: value.context_id,
+            context_id_offset: value.context_id_offset,
+            tail_slot_present: value.tail_slot_present,
+            tail_slot_offset: value.tail_slot_offset,
+            resolved_geometry: value.resolved_geometry,
+            operand_identity_ids: value.operand_identity_ids,
+            historical: value.historical,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
+}
+
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -1937,6 +2782,197 @@ pub struct DesignExtrudeSelectionMember {
     into = "DesignEntitySelectionOperandWire"
 )]
 pub struct DesignEntitySelectionOperand {
+    selection: EntitySelectionFrame,
+    frame: super::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning feature scope record.
+    pub scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Source per-file dynamic primary class tag.
+    class_tag: DesignClassTag,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: DesignRelaxedGuidText,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Byte offset of the nested identity record.
+    identity_record_offset: u64,
+    /// Primary entity identity in the nested identity pair; for a Sketch
+    /// curve selection, this is the owning Sketch entity suffix.
+    pub primary_identity: u64,
+    /// Input-state edge proofs derived from the two serialized identities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    /// History-qualified face proofs derived from the primary identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    /// Unique input-state edge selected by every available identity proof.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_edge_slot: Option<i64>,
+}
+
+impl DesignEntitySelectionOperand {
+    pub(crate) fn try_new(draft: DesignEntitySelectionOperandDraft) -> Result<Self, String> {
+        let selection = match draft.secondary {
+            None if draft.identity_record_offset.checked_add(21)
+                == Some(draft.primary_identity_offset) =>
+            {
+                EntitySelectionFrame::Primary {
+                    next_record_index: draft.next_record_index,
+                }
+            }
+            Some(secondary)
+                if draft.identity_record_offset.checked_add(29)
+                    == Some(draft.primary_identity_offset)
+                    && draft.identity_record_offset.checked_add(37)
+                        == Some(secondary.identity.offset)
+                    && secondary.curve_identity.is_none_or(|curve| {
+                        draft.identity_record_offset.checked_add(21) == Some(curve.offset)
+                    }) =>
+            {
+                EntitySelectionFrame::Pair {
+                    secondary: secondary.identity.value,
+                    curve: secondary.curve_identity.map(|identity| identity.value),
+                }
+            }
+            Some(secondary)
+                if draft.class_tag.as_str() == "338"
+                    && draft.identity_record_offset.checked_add(
+                        crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX as u64,
+                    ) == Some(draft.primary_identity_offset)
+                    && draft.identity_record_offset.checked_add(
+                        crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID as u64,
+                    ) == Some(secondary.identity.offset)
+                    && secondary.curve_identity.is_none() =>
+            {
+                EntitySelectionFrame::SketchCurve {
+                    secondary: secondary.identity.value,
+                }
+            }
+            _ => return Err(
+                "primary_identity_offset/secondary_identity_offset disagree with selection frame"
+                    .into(),
+            ),
+        };
+        draft
+            .identity_record_offset
+            .checked_add(selection.length())
+            .ok_or("next_byte_offset overflows")?;
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            if draft.secondary.is_some() { 4 } else { 3 },
+            0,
+        )?;
+        let value = Self {
+            selection,
+            frame,
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            group_record_index: draft.group_record_index,
+            group_member_ordinal: draft.group_member_ordinal,
+            class_tag: draft.class_tag,
+            asset_id: draft.asset_id,
+            asset_id_offset: draft.asset_id_offset,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            identity_record_offset: draft.identity_record_offset,
+            primary_identity: draft.primary_identity,
+            historical_edge_candidates: draft.historical_edge_candidates,
+            historical_face_candidates: draft.historical_face_candidates,
+            resolved_edge_slot: draft.resolved_edge_slot,
+        };
+        if value.identity_record_index() != draft.identity_record_index {
+            return Err("identity_record_index disagrees with frame layout".into());
+        }
+        if value.primary_identity_offset() != draft.primary_identity_offset {
+            return Err("primary_identity_offset disagrees with frame layout".into());
+        }
+        if value.secondary() != draft.secondary {
+            return Err("secondary disagrees with frame layout".into());
+        }
+        if value.next_record_index() != draft.next_record_index {
+            return Err("next_record_index disagrees with frame layout".into());
+        }
+        if value.next_byte_offset() != draft.next_byte_offset {
+            return Err("next_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignEntitySelectionOperandDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let identity_record_index = self.identity_record_index();
+        let primary_identity_offset = self.primary_identity_offset();
+        let secondary = self.secondary();
+        let next_record_index = self.next_record_index();
+        let next_byte_offset = self.next_byte_offset();
+        DesignEntitySelectionOperandDraft {
+            id: self.id,
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            asset_id: self.asset_id,
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            identity_record_index,
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            primary_identity_offset,
+            secondary,
+            historical_edge_candidates: self.historical_edge_candidates,
+            historical_face_candidates: self.historical_face_candidates,
+            resolved_edge_slot: self.resolved_edge_slot,
+            next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
+    pub(crate) fn identity_record_index(&self) -> u32 {
+        self.frame.index(3)
+    }
+    pub(crate) fn identity_record_offset(&self) -> u64 {
+        self.identity_record_offset
+    }
+    pub(crate) fn primary_identity_offset(&self) -> u64 {
+        self.identity_record_offset + self.selection.primary_delta()
+    }
+    pub(crate) fn secondary(&self) -> Option<DesignSecondaryIdentity<Located<u64>>> {
+        self.selection.secondary(self.identity_record_offset)
+    }
+    pub(crate) fn next_record_index(&self) -> u32 {
+        match self.selection {
+            EntitySelectionFrame::Primary { next_record_index } => next_record_index,
+            _ => self.frame.index(4),
+        }
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.identity_record_offset + self.selection.length()
+    }
+}
+
+/// Unadmitted DesignEntitySelectionOperand fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignEntitySelectionOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
     /// Owning feature scope record.
@@ -1971,13 +3007,10 @@ pub struct DesignEntitySelectionOperand {
     /// Secondary identity and any dependent curve identity, with their source locations.
     pub secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
     /// Input-state edge proofs derived from the two serialized identities.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
     /// History-qualified face proofs derived from the primary identity.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
     /// Unique input-state edge selected by every available identity proof.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
     /// Identity of the indexed record immediately following the identity record.
     pub next_record_index: u32,
@@ -2049,7 +3082,7 @@ struct DesignEntitySelectionOperandWire {
 impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand {
     type Error = String;
     fn try_from(wire: DesignEntitySelectionOperandWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Self::try_new(DesignEntitySelectionOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             group_record_index: wire.group_record_index,
@@ -2088,6 +3121,7 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
 
 impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
     fn from(record: DesignEntitySelectionOperand) -> Self {
+        let record = record.into_draft();
         Self {
             id: record.id,
             scope_record_index: record.scope_record_index,
@@ -2348,12 +3382,190 @@ pub struct DesignEntitySelectionEdgeCandidate {
     into = "DesignBodyRecipeOperandWire"
 )]
 pub struct DesignBodyRecipeOperand {
+    frame: super::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
     /// Owning feature scope record.
     pub scope_record_index: u32,
     /// Exact feature-scope ownership form.
     #[serde(flatten)]
+    pub owner: DesignOperandOwner,
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Asset UUID qualifying the persistent selection namespace.
+    pub asset_id: DesignRelaxedGuidText,
+    /// UUID of the selection context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Raw four-byte selector-tail member after the fixed `u32 2`.
+    ///
+    /// Class `365` varies this member without a settled neutral meaning;
+    /// class `367` stores `01 00 00 00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selector_tail: Option<Located<[u8; 4]>>,
+    /// Counted persistent Design references carried by this operand.
+    references: Vec<DesignBodyRecipeReference>,
+    /// Body construction recipe contained by this operand record.
+    pub recipe_id: String,
+    /// Unique input-state face selected by this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_face_slot: Option<i64>,
+    /// Exact ASM input state containing the resolved body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_body_state_id: Option<i64>,
+    /// Unique input-state body containing every reference's candidate faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_body_slot: Option<i64>,
+    /// Complete boundary-face set of the resolved body in its input state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_body_face_slots: Vec<i64>,
+    /// Byte offset of the indexed record immediately following this operand.
+    next_byte_offset: u64,
+}
+
+impl DesignBodyRecipeOperand {
+    pub(crate) fn try_new(draft: DesignBodyRecipeOperandDraft) -> Result<Self, String> {
+        if draft.context_id_offset <= draft.asset_id_offset
+            || draft.context_id_offset >= draft.next_byte_offset
+            || draft.next_byte_offset <= draft.nested_record_index_offset
+            || draft.selector_tail.is_some_and(|tail| {
+                tail.offset < draft.context_id_offset
+                    || tail
+                        .offset
+                        .checked_add(4)
+                        .is_none_or(|end| end > draft.next_byte_offset)
+            })
+        {
+            return Err(
+                "context_id_offset/selector_tail/next_byte_offset disagree with body frame".into(),
+            );
+        }
+        for (ordinal, reference) in draft.references.iter().enumerate() {
+            let offset = u64::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| ordinal.checked_mul(12))
+                .and_then(|delta| draft.byte_offset.checked_add(25)?.checked_add(delta));
+            if reference.design_reference == 0
+                || offset != Some(reference.design_reference_offset)
+                || offset.and_then(|offset| offset.checked_add(8)) != Some(reference.form_offset)
+            {
+                return Err("references contain an invalid identity or offset".into());
+            }
+        }
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            4,
+            u64::try_from(draft.references.len())
+                .ok()
+                .and_then(|count| count.checked_mul(12))
+                .and_then(|bytes| bytes.checked_add(44))
+                .ok_or("references length overflows")?,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            owner: draft.owner,
+            class_tag: draft.class_tag,
+            asset_id: draft.asset_id,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            selector_tail: draft.selector_tail,
+            references: draft.references,
+            recipe_id: draft.recipe_id,
+            resolved_face_slot: draft.resolved_face_slot,
+            resolved_body_state_id: draft.resolved_body_state_id,
+            resolved_body_slot: draft.resolved_body_slot,
+            resolved_body_face_slots: draft.resolved_body_face_slots,
+            next_byte_offset: draft.next_byte_offset,
+        };
+        if value.nested_record_index() != draft.nested_record_index {
+            return Err("nested_record_index disagrees with frame layout".into());
+        }
+        if value.next_record_index() != draft.next_record_index {
+            return Err("next_record_index disagrees with frame layout".into());
+        }
+        if value.nested_record_index_offset() != draft.nested_record_index_offset {
+            return Err("nested_record_index_offset disagrees with frame layout".into());
+        }
+        if value.asset_id_offset() != draft.asset_id_offset {
+            return Err("asset_id_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignBodyRecipeOperandDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let nested_record_index = self.nested_record_index();
+        let next_record_index = self.next_record_index();
+        let nested_record_index_offset = self.nested_record_index_offset();
+        let asset_id_offset = self.asset_id_offset();
+        DesignBodyRecipeOperandDraft {
+            id: self.id,
+            scope_record_index: self.scope_record_index,
+            owner: self.owner,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            asset_id: self.asset_id,
+            asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            selector_tail: self.selector_tail,
+            references: self.references,
+            nested_record_index,
+            nested_record_index_offset,
+            recipe_id: self.recipe_id,
+            resolved_face_slot: self.resolved_face_slot,
+            resolved_body_state_id: self.resolved_body_state_id,
+            resolved_body_slot: self.resolved_body_slot,
+            resolved_body_face_slots: self.resolved_body_face_slots,
+            next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.nested_record_index_offset() + 18
+    }
+    pub(crate) fn context_id_offset(&self) -> u64 {
+        self.context_id_offset
+    }
+    pub(crate) fn selector_tail(&self) -> Option<Located<[u8; 4]>> {
+        self.selector_tail
+    }
+    pub(crate) fn references(&self) -> &Vec<DesignBodyRecipeReference> {
+        &self.references
+    }
+    pub(crate) fn nested_record_index(&self) -> u64 {
+        u64::from(self.frame.index(3))
+    }
+    pub(crate) fn nested_record_index_offset(&self) -> u64 {
+        self.frame.offset(26 + self.references.len() as u64 * 12)
+    }
+    pub(crate) fn next_record_index(&self) -> u32 {
+        self.frame.index(4)
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.next_byte_offset
+    }
+}
+
+/// Unadmitted DesignBodyRecipeOperand fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignBodyRecipeOperandDraft {
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning feature scope record.
+    pub scope_record_index: u32,
+    /// Exact feature-scope ownership form.
     pub owner: DesignOperandOwner,
     /// Primary indexed-record identity.
     pub record_index: u32,
@@ -2373,7 +3585,6 @@ pub struct DesignBodyRecipeOperand {
     ///
     /// Class `365` varies this member without a settled neutral meaning;
     /// class `367` stores `01 00 00 00`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selector_tail: Option<Located<[u8; 4]>>,
     /// Counted persistent Design references carried by this operand.
     pub references: Vec<DesignBodyRecipeReference>,
@@ -2384,16 +3595,12 @@ pub struct DesignBodyRecipeOperand {
     /// Body construction recipe contained by this operand record.
     pub recipe_id: String,
     /// Unique input-state face selected by this operand.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_face_slot: Option<i64>,
     /// Exact ASM input state containing the resolved body.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_body_state_id: Option<i64>,
     /// Unique input-state body containing every reference's candidate faces.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_body_slot: Option<i64>,
     /// Complete boundary-face set of the resolved body in its input state.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolved_body_face_slots: Vec<i64>,
     /// Identity of the indexed record immediately following this operand.
     pub next_record_index: u32,
@@ -2462,7 +3669,7 @@ struct DesignBodyRecipeOperandWire {
 impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
     type Error = String;
     fn try_from(wire: DesignBodyRecipeOperandWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Self::try_new(DesignBodyRecipeOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             owner: wire.owner,
@@ -2494,6 +3701,7 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
 
 impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
     fn from(record: DesignBodyRecipeOperand) -> Self {
+        let record = record.into_draft();
         Self {
             id: record.id,
             scope_record_index: record.scope_record_index,
@@ -2661,6 +3869,125 @@ impl DesignEdgeIdentityLayout {
     into = "DesignEdgeIdentityOperandWire"
 )]
 pub struct DesignEdgeIdentityOperand {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning parameter-scope record.
+    pub scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Prologue framing, which fixes `local_id_offset` relative to
+    /// `byte_offset`.
+    layout: DesignEdgeIdentityLayout,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: DesignRelaxedGuidText,
+    /// UUID of the local selection-identity context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
+    pub historical: Option<HistoricalBinding>,
+    /// Complete radius-qualified deleted source-edge set proved by the owning
+    /// feature transition. The transition-scoped set repeats on each operand.
+    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    /// Complete deleted source-edge chain proved by the owning feature
+    /// transition. The transition-scoped chain repeats on each operand.
+    pub transition_edge_candidates: Vec<i64>,
+    /// Ordered deleted treatment edges selected by an embedded bounded-face
+    /// rule owned by this operand.
+    pub resolved_edge_slots: Vec<i64>,
+    /// Unique edge slot selected in the owning feature's preceding state.
+    pub resolved_edge_slot: Option<i64>,
+    /// Native identity or embedded bounded-face operand proving the resolved
+    /// edge selection.
+    pub resolution_identity_id: Option<String>,
+}
+
+impl DesignEdgeIdentityOperand {
+    pub(crate) fn try_new(draft: DesignEdgeIdentityOperandDraft) -> Result<Self, String> {
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            0,
+            draft.layout.local_id_offset() + 94,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            group_record_index: draft.group_record_index,
+            group_member_ordinal: draft.group_member_ordinal,
+            class_tag: draft.class_tag,
+            layout: draft.layout,
+            local_id: draft.local_id,
+            asset_id: draft.asset_id,
+            context_id: draft.context_id,
+            historical: draft.historical,
+            treatment_radius_candidates: draft.treatment_radius_candidates,
+            transition_edge_candidates: draft.transition_edge_candidates,
+            resolved_edge_slots: draft.resolved_edge_slots,
+            resolved_edge_slot: draft.resolved_edge_slot,
+            resolution_identity_id: draft.resolution_identity_id,
+        };
+        if value.asset_id_offset() != draft.asset_id_offset {
+            return Err("asset_id_offset disagrees with frame layout".into());
+        }
+        if value.context_id_offset() != draft.context_id_offset {
+            return Err("context_id_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignEdgeIdentityOperandDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let asset_id_offset = self.asset_id_offset();
+        let context_id_offset = self.context_id_offset();
+        DesignEdgeIdentityOperandDraft {
+            id: self.id,
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            layout: self.layout,
+            local_id: self.local_id,
+            asset_id: self.asset_id,
+            asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset,
+            historical: self.historical,
+            treatment_radius_candidates: self.treatment_radius_candidates,
+            transition_edge_candidates: self.transition_edge_candidates,
+            resolved_edge_slots: self.resolved_edge_slots,
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolution_identity_id: self.resolution_identity_id,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn layout(&self) -> DesignEdgeIdentityLayout {
+        self.layout
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.local_id_offset() + 18
+    }
+    pub(crate) fn context_id_offset(&self) -> u64 {
+        self.local_id_offset() + 94
+    }
+}
+
+/// Unadmitted DesignEdgeIdentityOperand fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignEdgeIdentityOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
     /// Owning parameter-scope record.
@@ -2709,8 +4036,7 @@ pub struct DesignEdgeIdentityOperand {
 impl DesignEdgeIdentityOperand {
     /// Byte offset of `local_id`, fixed by the prologue framing.
     pub fn local_id_offset(&self) -> u64 {
-        self.byte_offset
-            .saturating_add(self.layout.local_id_offset())
+        self.byte_offset() + self.layout.local_id_offset()
     }
 }
 
@@ -2760,7 +4086,7 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
                 "compact_layout disagrees with the framing local_id_offset names".to_owned(),
             );
         }
-        Ok(Self {
+        Self::try_new(DesignEdgeIdentityOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             group_record_index: wire.group_record_index,
@@ -2787,6 +4113,7 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
 impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
     fn from(operand: DesignEdgeIdentityOperand) -> Self {
         let local_id_offset = operand.local_id_offset();
+        let operand = operand.into_draft();
         Self {
             id: operand.id,
             scope_record_index: operand.scope_record_index,
@@ -2814,7 +4141,268 @@ impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
 
 /// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignEdgeOperandDraft", into = "DesignEdgeOperandDraft")]
 pub struct DesignEdgeOperand {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the recipe record's indexed header.
+    recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    pub recipe_id: String,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
+    /// Byte offset of the first i32 after the framed recipe-family name.
+    pub recipe_program_offset: u64,
+    /// Complete post-name i32 program ending at the next indexed record.
+    pub recipe_program: Vec<i32>,
+    /// Standard two-side structure decoded from the recipe program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_structure: Option<DesignEdgeRecipeStructure>,
+    /// Alternate two-clause structure decoded from a `SurfacePatch` edge
+    /// recipe program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
+    /// Ordered local topology references when every nonzero root and side scalar
+    /// is a valid prefix-reference ordinal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_topology_references: Option<Vec<NonZeroU32>>,
+    /// Active solved faces carrying the recipe's persistent Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_faces: Vec<FaceId>,
+    /// Candidate faces present in the ASM topology produced by the owning
+    /// edge-treatment feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_candidate_faces: Vec<FaceId>,
+    /// Stable edge slots on the result candidate-face boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_boundary_edge_slots: Vec<i64>,
+    /// Candidate faces present in the ASM topology immediately preceding the
+    /// owning edge-treatment feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_candidate_faces: Vec<FaceId>,
+    /// Candidate and effective prefix-reference faces in the terminal topology
+    /// used by a suppressed feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_candidate_faces: Vec<FaceId>,
+    /// Preceding candidate faces deleted or updated by the owning feature's
+    /// exact ASM state transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_candidate_faces: Vec<FaceId>,
+    /// Stable edge slots on the preceding candidate-face boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_boundary_edge_slots: Vec<i64>,
+    /// Stable edge slots on terminal candidate-face boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_boundary_edge_slots: Vec<i64>,
+    /// Preceding boundary-edge slots deleted or updated by the owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_boundary_edge_slots: Vec<i64>,
+    /// Preceding boundary-edge slots deleted by the owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted_boundary_edge_slots: Vec<i64>,
+    /// Preceding boundary-edge slots assigned a different record revision by
+    /// the owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated_boundary_edge_slots: Vec<i64>,
+    /// Deleted predecessor edges associated with inserted treatment-carrier radii.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    /// Ordered incident-loop topology for every changed boundary edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    /// Ordered incident-loop topology for terminal candidate-face boundaries
+    /// used by a suppressed feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    /// Boundary-edge sets of the prefix-reference faces in the terminal
+    /// topology, indexed by zero-based prefix-reference ordinal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_reference_edge_slots: Vec<Vec<i64>>,
+    /// Ordered historical topology context for each prefix reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
+    /// Topology entries grouped by source selector with evaluation-state edge
+    /// context matching the selector's incident-loop boundary counts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
+    /// Historical topology state against which the edge recipe was evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_state_id: Option<i64>,
+    /// Stable historical edge slot proven by the selector/reference candidate
+    /// intersection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_edge_slot: Option<i64>,
+    /// Selected historical carrier axis, when exact.
+    #[serde(
+        flatten,
+        serialize_with = "serialize_edge_resolved_axis",
+        deserialize_with = "deserialize_edge_resolved_axis"
+    )]
+    pub resolved_axis: Option<DesignAxis>,
+    /// Identity of the indexed record following the operand frame.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record following the operand frame.
+    next_byte_offset: u64,
+}
+
+impl DesignEdgeOperand {
+    pub(crate) fn try_new(draft: DesignEdgeOperandDraft) -> Result<Self, String> {
+        if !(draft.byte_offset < draft.paired_byte_offset
+            && draft.paired_byte_offset < draft.recipe_record_byte_offset
+            && draft.recipe_record_byte_offset < draft.next_byte_offset)
+        {
+            return Err(
+                "paired_byte_offset/recipe_record_byte_offset/next_byte_offset must increase"
+                    .into(),
+            );
+        }
+        draft
+            .recipe_record_byte_offset
+            .checked_add(11)
+            .ok_or("recipe_prefix_offset overflows")?;
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            3,
+            0,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            scope_reference_ordinal: draft.scope_reference_ordinal,
+            class_tag: draft.class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+            paired_class_tag: draft.paired_class_tag,
+            recipe_record_byte_offset: draft.recipe_record_byte_offset,
+            recipe_id: draft.recipe_id,
+            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_references: draft.recipe_references,
+            recipe_program_offset: draft.recipe_program_offset,
+            recipe_program: draft.recipe_program,
+            recipe_structure: draft.recipe_structure,
+            surface_patch_recipe_structure: draft.surface_patch_recipe_structure,
+            local_topology_references: draft.local_topology_references,
+            candidate_faces: draft.candidate_faces,
+            result_candidate_faces: draft.result_candidate_faces,
+            result_boundary_edge_slots: draft.result_boundary_edge_slots,
+            preceding_candidate_faces: draft.preceding_candidate_faces,
+            terminal_candidate_faces: draft.terminal_candidate_faces,
+            changed_candidate_faces: draft.changed_candidate_faces,
+            preceding_boundary_edge_slots: draft.preceding_boundary_edge_slots,
+            terminal_boundary_edge_slots: draft.terminal_boundary_edge_slots,
+            changed_boundary_edge_slots: draft.changed_boundary_edge_slots,
+            deleted_boundary_edge_slots: draft.deleted_boundary_edge_slots,
+            updated_boundary_edge_slots: draft.updated_boundary_edge_slots,
+            treatment_radius_candidates: draft.treatment_radius_candidates,
+            changed_boundary_edge_contexts: draft.changed_boundary_edge_contexts,
+            terminal_boundary_edge_contexts: draft.terminal_boundary_edge_contexts,
+            terminal_reference_edge_slots: draft.terminal_reference_edge_slots,
+            recipe_reference_contexts: draft.recipe_reference_contexts,
+            recipe_selectors: draft.recipe_selectors,
+            recipe_state_id: draft.recipe_state_id,
+            resolved_edge_slot: draft.resolved_edge_slot,
+            resolved_axis: draft.resolved_axis,
+            next_record_index: draft.next_record_index,
+            next_byte_offset: draft.next_byte_offset,
+        };
+        if value.recipe_record_index() != draft.recipe_record_index {
+            return Err("recipe_record_index disagrees with frame layout".into());
+        }
+        if value.recipe_prefix_offset() != draft.recipe_prefix_offset {
+            return Err("recipe_prefix_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignEdgeOperandDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let recipe_record_index = self.recipe_record_index();
+        let recipe_prefix_offset = self.recipe_prefix_offset();
+        DesignEdgeOperandDraft {
+            id: self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag,
+            recipe_record_index,
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: self.recipe_id,
+            recipe_prefix_offset,
+            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_references: self.recipe_references,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: self.recipe_program,
+            recipe_structure: self.recipe_structure,
+            surface_patch_recipe_structure: self.surface_patch_recipe_structure,
+            local_topology_references: self.local_topology_references,
+            candidate_faces: self.candidate_faces,
+            result_candidate_faces: self.result_candidate_faces,
+            result_boundary_edge_slots: self.result_boundary_edge_slots,
+            preceding_candidate_faces: self.preceding_candidate_faces,
+            terminal_candidate_faces: self.terminal_candidate_faces,
+            changed_candidate_faces: self.changed_candidate_faces,
+            preceding_boundary_edge_slots: self.preceding_boundary_edge_slots,
+            terminal_boundary_edge_slots: self.terminal_boundary_edge_slots,
+            changed_boundary_edge_slots: self.changed_boundary_edge_slots,
+            deleted_boundary_edge_slots: self.deleted_boundary_edge_slots,
+            updated_boundary_edge_slots: self.updated_boundary_edge_slots,
+            treatment_radius_candidates: self.treatment_radius_candidates,
+            changed_boundary_edge_contexts: self.changed_boundary_edge_contexts,
+            terminal_boundary_edge_contexts: self.terminal_boundary_edge_contexts,
+            terminal_reference_edge_slots: self.terminal_reference_edge_slots,
+            recipe_reference_contexts: self.recipe_reference_contexts,
+            recipe_selectors: self.recipe_selectors,
+            recipe_state_id: self.recipe_state_id,
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolved_axis: self.resolved_axis,
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.paired_byte_offset
+    }
+    pub(crate) fn recipe_record_index(&self) -> u32 {
+        self.frame.index(3)
+    }
+    pub(crate) fn recipe_record_byte_offset(&self) -> u64 {
+        self.recipe_record_byte_offset
+    }
+    pub(crate) fn recipe_prefix_offset(&self) -> u64 {
+        self.recipe_record_byte_offset + 11
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.next_byte_offset
+    }
+}
+
+/// Unadmitted DesignEdgeOperand fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignEdgeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
     /// Owning parameter-scope record.
@@ -2936,6 +4524,61 @@ pub struct DesignEdgeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+impl TryFrom<DesignEdgeOperandDraft> for DesignEdgeOperand {
+    type Error = String;
+    fn try_from(draft: DesignEdgeOperandDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+impl From<DesignEdgeOperand> for DesignEdgeOperandDraft {
+    fn from(value: DesignEdgeOperand) -> Self {
+        let value = value.into_draft();
+        Self {
+            id: value.id,
+            scope_record_index: value.scope_record_index,
+            scope_reference_ordinal: value.scope_reference_ordinal,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+            paired_class_tag: value.paired_class_tag,
+            recipe_record_index: value.recipe_record_index,
+            recipe_record_byte_offset: value.recipe_record_byte_offset,
+            recipe_id: value.recipe_id,
+            recipe_prefix_offset: value.recipe_prefix_offset,
+            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_references: value.recipe_references,
+            recipe_program_offset: value.recipe_program_offset,
+            recipe_program: value.recipe_program,
+            recipe_structure: value.recipe_structure,
+            surface_patch_recipe_structure: value.surface_patch_recipe_structure,
+            local_topology_references: value.local_topology_references,
+            candidate_faces: value.candidate_faces,
+            result_candidate_faces: value.result_candidate_faces,
+            result_boundary_edge_slots: value.result_boundary_edge_slots,
+            preceding_candidate_faces: value.preceding_candidate_faces,
+            terminal_candidate_faces: value.terminal_candidate_faces,
+            changed_candidate_faces: value.changed_candidate_faces,
+            preceding_boundary_edge_slots: value.preceding_boundary_edge_slots,
+            terminal_boundary_edge_slots: value.terminal_boundary_edge_slots,
+            changed_boundary_edge_slots: value.changed_boundary_edge_slots,
+            deleted_boundary_edge_slots: value.deleted_boundary_edge_slots,
+            updated_boundary_edge_slots: value.updated_boundary_edge_slots,
+            treatment_radius_candidates: value.treatment_radius_candidates,
+            changed_boundary_edge_contexts: value.changed_boundary_edge_contexts,
+            terminal_boundary_edge_contexts: value.terminal_boundary_edge_contexts,
+            terminal_reference_edge_slots: value.terminal_reference_edge_slots,
+            recipe_reference_contexts: value.recipe_reference_contexts,
+            recipe_selectors: value.recipe_selectors,
+            recipe_state_id: value.recipe_state_id,
+            resolved_edge_slot: value.resolved_edge_slot,
+            resolved_axis: value.resolved_axis,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3713,6 +5356,186 @@ pub enum DesignTopologyIncidentSide {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]
 pub struct DesignFaceOperand {
+    frame: super::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Owning construction-operand group, absent for a direct scope operand.
+    pub group: Option<DesignOperandGroup>,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: DesignClassTag,
+    /// Byte offset of the recipe record's indexed header.
+    recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    pub recipe_id: String,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
+    /// Exact face-recipe family.
+    pub recipe_kind: ConstructionRecipeKind,
+    /// Byte offset of the first i32 after the framed recipe-family name.
+    pub recipe_program_offset: u64,
+    /// Complete post-name i32 program ending at the next indexed record.
+    pub recipe_program: Vec<i32>,
+    /// Ordered nodes partitioning the program after its three-word header.
+    pub recipe_nodes: Vec<DesignFaceRecipeNode>,
+    /// Active solved faces carrying the recipe's persistent Design reference.
+    pub candidate_faces: Vec<FaceId>,
+    /// Candidate faces not explicitly named as topology context by a prefix
+    /// selector carrying the recipe's own Design reference.
+    pub unreferenced_candidate_faces: Vec<FaceId>,
+    /// Faces named by a prefix operand carrying the recipe's own token and
+    /// Design reference under a different native selector.
+    pub alternate_selector_candidate_faces: Vec<FaceId>,
+    /// Candidate faces present in the ASM topology immediately preceding the
+    /// owning feature.
+    pub preceding_candidate_faces: Vec<FaceId>,
+    /// Preceding candidate faces deleted or updated by the owning feature's
+    /// exact ASM state transition.
+    pub changed_candidate_faces: Vec<FaceId>,
+    /// Active candidates mapped through an invariant surface carrier to face
+    /// owners in the immediately preceding historical topology.
+    pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    /// Ordered stable historical face slots proven by the preceding topology
+    /// or exact feature transition.
+    pub resolved_face_slots: Vec<i64>,
+    /// Current active-BREP face identity proven by a legacy Extrude recipe
+    /// when no preceding historical slot exists.
+    pub resolved_active_face: Option<FaceId>,
+    /// Identity of the indexed record following the operand frame.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record following the operand frame.
+    next_byte_offset: u64,
+}
+
+impl DesignFaceOperand {
+    pub(crate) fn try_new(draft: DesignFaceOperandDraft) -> Result<Self, String> {
+        if !(draft.byte_offset < draft.paired_byte_offset
+            && draft.paired_byte_offset < draft.recipe_record_byte_offset
+            && draft.recipe_record_byte_offset < draft.next_byte_offset)
+        {
+            return Err(
+                "paired_byte_offset/recipe_record_byte_offset/next_byte_offset must increase"
+                    .into(),
+            );
+        }
+        draft
+            .recipe_record_byte_offset
+            .checked_add(11)
+            .ok_or("recipe_prefix_offset overflows")?;
+        let frame = super::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            3,
+            0,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            scope_record_index: draft.scope_record_index,
+            scope_reference_ordinal: draft.scope_reference_ordinal,
+            group: draft.group,
+            class_tag: draft.class_tag,
+            paired_byte_offset: draft.paired_byte_offset,
+            paired_class_tag: draft.paired_class_tag,
+            recipe_record_byte_offset: draft.recipe_record_byte_offset,
+            recipe_id: draft.recipe_id,
+            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_references: draft.recipe_references,
+            recipe_kind: draft.recipe_kind,
+            recipe_program_offset: draft.recipe_program_offset,
+            recipe_program: draft.recipe_program,
+            recipe_nodes: draft.recipe_nodes,
+            candidate_faces: draft.candidate_faces,
+            unreferenced_candidate_faces: draft.unreferenced_candidate_faces,
+            alternate_selector_candidate_faces: draft.alternate_selector_candidate_faces,
+            preceding_candidate_faces: draft.preceding_candidate_faces,
+            changed_candidate_faces: draft.changed_candidate_faces,
+            historical_support_contexts: draft.historical_support_contexts,
+            resolved_face_slots: draft.resolved_face_slots,
+            resolved_active_face: draft.resolved_active_face,
+            next_record_index: draft.next_record_index,
+            next_byte_offset: draft.next_byte_offset,
+        };
+        if value.recipe_record_index() != draft.recipe_record_index {
+            return Err("recipe_record_index disagrees with frame layout".into());
+        }
+        if value.recipe_prefix_offset() != draft.recipe_prefix_offset {
+            return Err("recipe_prefix_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignFaceOperandDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let recipe_record_index = self.recipe_record_index();
+        let recipe_prefix_offset = self.recipe_prefix_offset();
+        DesignFaceOperandDraft {
+            id: self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            group: self.group,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag,
+            recipe_record_index,
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: self.recipe_id,
+            recipe_prefix_offset,
+            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_references: self.recipe_references,
+            recipe_kind: self.recipe_kind,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: self.recipe_program,
+            recipe_nodes: self.recipe_nodes,
+            candidate_faces: self.candidate_faces,
+            unreferenced_candidate_faces: self.unreferenced_candidate_faces,
+            alternate_selector_candidate_faces: self.alternate_selector_candidate_faces,
+            preceding_candidate_faces: self.preceding_candidate_faces,
+            changed_candidate_faces: self.changed_candidate_faces,
+            historical_support_contexts: self.historical_support_contexts,
+            resolved_face_slots: self.resolved_face_slots,
+            resolved_active_face: self.resolved_active_face,
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.paired_byte_offset
+    }
+    pub(crate) fn recipe_record_index(&self) -> u32 {
+        self.frame.index(3)
+    }
+    pub(crate) fn recipe_record_byte_offset(&self) -> u64 {
+        self.recipe_record_byte_offset
+    }
+    pub(crate) fn recipe_prefix_offset(&self) -> u64 {
+        self.recipe_record_byte_offset + 11
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.next_byte_offset
+    }
+}
+
+/// Unadmitted DesignFaceOperand fields.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DesignFaceOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
     /// Owning parameter-scope record.
@@ -3887,7 +5710,7 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
                 )
             }
         };
-        Ok(Self {
+        Self::try_new(DesignFaceOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             scope_reference_ordinal: wire.scope_reference_ordinal,
@@ -3923,6 +5746,7 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
 
 impl From<DesignFaceOperand> for DesignFaceOperandWire {
     fn from(operand: DesignFaceOperand) -> Self {
+        let operand = operand.into_draft();
         let recipe_node_offsets = operand
             .recipe_nodes
             .iter()
@@ -4156,6 +5980,87 @@ fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(
             "postlude must be empty or [-1, value, -1, 0, 0, -1]",
         )),
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntitySelectionFrame {
+    Primary { next_record_index: u32 },
+    Pair { secondary: u64, curve: Option<u64> },
+    SketchCurve { secondary: u64 },
+}
+
+impl EntitySelectionFrame {
+    fn primary_delta(self) -> u64 {
+        match self {
+            Self::Primary { .. } => 21,
+            Self::Pair { .. } => 29,
+            Self::SketchCurve { .. } => {
+                crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX as u64
+            }
+        }
+    }
+    fn length(self) -> u64 {
+        match self {
+            Self::Primary { .. } => 29,
+            Self::Pair { .. } => 45,
+            Self::SketchCurve { .. } => crate::layout::class_338_sketch_curve_identity::LEN as u64,
+        }
+    }
+    fn secondary(self, offset: u64) -> Option<DesignSecondaryIdentity<Located<u64>>> {
+        match self {
+            Self::Primary { .. } => None,
+            Self::Pair { secondary, curve } => Some(DesignSecondaryIdentity {
+                identity: Located {
+                    value: secondary,
+                    offset: offset + 37,
+                },
+                curve_identity: curve.map(|value| Located {
+                    value,
+                    offset: offset + 21,
+                }),
+            }),
+            Self::SketchCurve { secondary } => Some(DesignSecondaryIdentity {
+                identity: Located {
+                    value: secondary,
+                    offset: offset
+                        + crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID
+                            as u64,
+                },
+                curve_identity: None,
+            }),
+        }
+    }
+}
+
+/// Mutable binding evidence for one fixed body-recipe reference.
+pub(crate) struct DesignBodyRecipeReferenceBindings<'a> {
+    pub design_reference: u64,
+    pub form: u32,
+    pub candidate_faces: &'a mut Vec<FaceId>,
+    pub preceding_candidate_faces: &'a mut Vec<FaceId>,
+    pub preceding_body_slots: &'a mut Vec<i64>,
+}
+
+impl DesignBodyRecipeOperand {
+    pub(crate) fn reference_bindings_mut(
+        &mut self,
+    ) -> impl Iterator<Item = DesignBodyRecipeReferenceBindings<'_>> {
+        self.references
+            .iter_mut()
+            .map(|reference| DesignBodyRecipeReferenceBindings {
+                design_reference: reference.design_reference,
+                form: reference.form,
+                candidate_faces: &mut reference.candidate_faces,
+                preceding_candidate_faces: &mut reference.preceding_candidate_faces,
+                preceding_body_slots: &mut reference.preceding_body_slots,
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PersistentIdentityTail {
+    Fixed { tail_slot_offset: u64 },
+    Extended,
 }
 
 #[cfg(test)]

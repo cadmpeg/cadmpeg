@@ -1807,7 +1807,7 @@ fn work_point_edge_operand<'a>(
     edge_operands: &'a [DesignEdgeOperand],
 ) -> Option<&'a DesignEdgeOperand> {
     let crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
-        input.carrier.as_deref()?
+        input.carrier().as_deref()?
     else {
         return None;
     };
@@ -1816,7 +1816,7 @@ fn work_point_edge_operand<'a>(
         operand.id == *operand_id
             && native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == scope.record_index
-            && operand.record_index == input.record_index
+            && operand.record_index() == input.record_index()
     });
     let operand = matching.next()?;
     matching.next().is_none().then_some(operand)
@@ -1827,7 +1827,7 @@ pub(crate) fn work_point_input_history_state_id(
     input: &crate::records::feature::DesignWorkPointInput,
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<i64> {
-    match input.carrier.as_deref()? {
+    match input.carrier().as_deref()? {
         crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
             work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
         }
@@ -1903,7 +1903,8 @@ fn project_work_point_construction(
         })
     };
     let plane = |input: &DesignWorkPointInput| {
-        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier.as_deref()? else {
+        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier().as_deref()?
+        else {
             return None;
         };
         scope_ids
@@ -1927,7 +1928,8 @@ fn project_work_point_construction(
             }
         }
         DesignWorkPointRuleForm::Vertex { input } => {
-            let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier.as_deref()?
+            let DesignWorkPointInputCarrier::VertexRecipe { recipe } =
+                input.carrier().as_deref()?
             else {
                 return None;
             };
@@ -2430,7 +2432,7 @@ fn project_full_round_fillet(
             && operand.scope_record_index == scope.record_index
             && operand.group_record_index() == Some(group.record_index)
             && operand.group_member_ordinal() == Some(0)
-            && operand.record_index == *member
+            && operand.record_index() == *member
     });
     let operand = operands.next()?;
     if operands.next().is_some() {
@@ -2587,7 +2589,7 @@ pub fn bind_sketch_feature_geometry(
                 sketch: spatial.id.clone(),
                 selections: vec![format!(
                     "{stream}:design-record-header#{}",
-                    profile_operand.byte_offset
+                    profile_operand.byte_offset()
                 )],
             };
             continue;
@@ -2748,17 +2750,14 @@ pub fn bind_work_point_sketch_point_constructions(
         let Some(point) = scope.work_point_construction() else {
             continue;
         };
-        let crate::records::feature::DesignWorkPointRuleForm::Vertex {
-            input:
-                crate::records::feature::DesignWorkPointInput {
-                    carrier: Some(carrier),
-                    record_index,
-                    ..
-                },
-        } = point.rule.form()
+        let crate::records::feature::DesignWorkPointRuleForm::Vertex { input } = point.rule.form()
         else {
             continue;
         };
+        let Some(carrier) = input.carrier() else {
+            continue;
+        };
+        let record_index = input.record_index();
         let crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { selection } =
             carrier.as_ref()
         else {
@@ -3014,13 +3013,13 @@ fn selected_historical_face_selection(
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == 0
-                && operand.record_index == *member
+                && operand.record_index() == *member
         })
         .collect::<Vec<_>>();
     let [selection] = selections.as_slice() else {
         return None;
     };
-    if selection.secondary.is_some() {
+    if selection.secondary().is_some() {
         return None;
     }
     let mut face_slots = selection
@@ -3119,7 +3118,7 @@ fn group_has_entity_selection(
                     && operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.record_index == *record_index
+                    && operand.record_index() == *record_index
             })
         })
 }
@@ -3163,13 +3162,13 @@ fn selected_work_planes<'a>(
                     && operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
-                    && operand.record_index == *member
+                    && operand.record_index() == *member
             })
             .collect::<Vec<_>>();
         let [selection] = selections.as_slice() else {
             return None;
         };
-        if selection.secondary.is_some() {
+        if selection.secondary().is_some() {
             return None;
         }
         let target_record_index = u32::try_from(selection.primary_identity)
@@ -3223,10 +3222,10 @@ fn resolved_split_face_path(
                 && selection.scope_record_index == scope.record_index
                 && selection.group_record_index == group.record_index
                 && selection.group_member_ordinal == ordinal
-                && selection.record_index == *member
+                && selection.record_index() == *member
         });
         let selection = selections.next()?;
-        if selections.next().is_some() || selection.secondary.is_some() {
+        if selections.next().is_some() || selection.secondary().is_some() {
             return None;
         }
         let edge_slot = selection.resolved_edge_slot?;
@@ -3552,7 +3551,7 @@ pub(crate) fn project_edge_flange(
                         && operand.scope_record_index == scope.record_index
                         && operand.group_record_index == target_group.record_index
                         && operand.group_member_ordinal == 0
-                        && operand.record_index == *target_operand_record_index
+                        && operand.record_index() == *target_operand_record_index
                 })
                 .collect::<Vec<_>>();
             let [target_selection] = target_selections.as_slice() else {
@@ -3826,7 +3825,7 @@ pub(crate) fn project_hem(
         .filter(|operand| {
             native_stream(&operand.id) == native_stream(&edge_group.id)
                 && operand.scope_record_index == edge_group.scope_record_index
-                && operand.record_index == operation.edge_operand_record_index()
+                && operand.record_index() == operation.edge_operand_record_index()
         })
         .collect::<Vec<_>>();
     let edge_slot = match edge_slot.as_slice() {
@@ -5682,7 +5681,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
         .filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
-                && operand.record_index == *axis_member
+                && operand.record_index() == *axis_member
         })
         .collect::<Vec<_>>();
     let axis = if let [axis_operand] = matches.as_slice() {
@@ -5747,7 +5746,7 @@ fn unresolved_historical_face_axis_selection(
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == axis_group.record_index
                 && operand.group_member_ordinal == 0
-                && operand.record_index == axis_member
+                && operand.record_index() == axis_member
         })
         .collect::<Vec<_>>();
     matches!(selections.as_slice(), [selection] if !selection.historical_face_candidates.is_empty())
@@ -5767,7 +5766,7 @@ fn revolve_face_axis_operand<'a>(
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index() == Some(axis_group.record_index)
                 && operand.group_member_ordinal() == Some(0)
-                && operand.record_index == axis_member
+                && operand.record_index() == axis_member
         })
         .collect::<Vec<_>>();
     let [operand] = operands.as_slice() else {
@@ -5827,7 +5826,7 @@ pub(crate) fn bind_revolve_face_axes(
                     && operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
-                    && operand.record_index == *member
+                    && operand.record_index() == *member
             })
             .collect::<Vec<_>>();
         let entity_face_slot = match selections.as_slice() {
@@ -5947,7 +5946,7 @@ fn resolve_sketch_axis_selection(
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == axis_group.record_index
                 && operand.group_member_ordinal == 0
-                && operand.record_index == axis_member
+                && operand.record_index() == axis_member
         })
         .collect::<Vec<_>>();
     let [selection] = selections.as_slice() else {
@@ -6755,7 +6754,7 @@ pub(crate) fn project_fixed_sweep(
                         native_stream(&operand.id) == Some(stream)
                             && operand.scope_record_index == scope.record_index
                             && operand.group_record_index == selection.record_index
-                            && operand.record_index == *member
+                            && operand.record_index() == *member
                     })
                 })
         {
@@ -7595,7 +7594,7 @@ pub(crate) fn project_split(
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == scope.record_index
                         && operand.scope_reference_ordinal == 1
-                        && operand.record_index == *tool_record_index
+                        && operand.record_index() == *tool_record_index
                         && operand.recipe_kind == ConstructionRecipeKind::Face
                         && operand.recipe_program.as_slice() == [0, -1]
                         && operand.recipe_nodes.is_empty()
