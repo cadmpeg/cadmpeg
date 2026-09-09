@@ -58,7 +58,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         placement_overrides: Vec::new(),
     };
 
-    let occurrences = super::project_occurrences(&table);
+    let occurrences = super::project_occurrences(&table).unwrap();
 
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");

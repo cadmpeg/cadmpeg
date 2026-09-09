@@ -278,22 +278,19 @@ pub fn design_for<'a>(table: &'a XrefTable, reference: &XrefReference) -> Option
 }
 
 /// Project each external-reference placement as one root product occurrence.
-pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
+pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     table
         .references
         .iter()
         .enumerate()
         .map(|(ordinal, reference)| {
-            let mut transform = reference.transform.unwrap_or([
+            let transform = reference.transform.unwrap_or([
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ]);
-            for row in transform.iter_mut().take(3) {
-                row[3] *= 10.0;
-            }
-            Occurrence {
+            Ok(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,
                     reference.occurrence_ordinal,
@@ -304,15 +301,14 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 },
                 parent: OccurrenceParent::Root,
                 ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
-                transform: cadmpeg_ir::transform::Transform::from_rows(transform)
-                    .expect("affine transform"),
+                transform: crate::design::components::neutral_transform(transform)?,
                 linked_prototype: None,
                 scale: [1.0; 3],
                 name: None,
                 visible: None,
                 link: None,
                 native_ref: Some(reference.id.clone()),
-            }
+            })
         })
         .collect()
 }
