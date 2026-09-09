@@ -2209,6 +2209,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let mut direct_records = Vec::new();
     let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
+    let mut tolerance_losses = Vec::new();
     let mut scale = 1.0_f64;
     while offset < data.len() {
         let chunk =
@@ -2237,17 +2238,19 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                     CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                 })?
             };
-            ir.tolerances.linear =
-                cadmpeg_ir::units::PositiveScalar::new(reader.f64().map_err(malformed)? * scale)
-                    .ok_or_else(|| {
-                        CodecError::malformed("linear tolerance must be positive and finite")
-                    })?;
+            ir.tolerances.linear = crate::decode::admitted_tolerance(
+                reader.f64().map_err(malformed)? * scale,
+                CadIr::empty().tolerances.linear,
+                "linear",
+                &mut tolerance_losses,
+            );
             let _relative_tolerance = reader.f64().map_err(malformed)?;
-            ir.tolerances.angular =
-                cadmpeg_ir::units::PositiveScalar::new(reader.f64().map_err(malformed)?)
-                    .ok_or_else(|| {
-                        CodecError::malformed("angular tolerance must be positive and finite")
-                    })?;
+            ir.tolerances.angular = crate::decode::admitted_tolerance(
+                reader.f64().map_err(malformed)?,
+                CadIr::empty().tolerances.angular,
+                "angular",
+                &mut tolerance_losses,
+            );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
             *omitted.entry(chunk.typecode).or_default() += 1;
             opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
@@ -2522,6 +2525,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 ))
             }
         })
+        .chain(tolerance_losses)
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity.retain_unknown_records("rhino", opaque_records);
@@ -3014,6 +3018,27 @@ mod tests {
         archive.extend(chunk(TCODE_COMMENT, b"legacy shell"));
         archive.extend(shell);
         archive
+    }
+
+    #[test]
+    fn v1_unset_angular_tolerance_keeps_decoded_points() {
+        let mut data = archive(&[[1.0, 2.0, 3.0]]);
+        let mut units = 1_i32.to_le_bytes().to_vec();
+        units.extend(2_i32.to_le_bytes());
+        for value in [0.01_f64, 0.02, 0.0] {
+            units.extend(value.to_le_bytes());
+        }
+        data.extend(chunk(TCODE_UNIT_AND_TOLERANCES, &units));
+        let decoded = decode_v1(&data).expect("unset angular tolerance must decode");
+        assert_eq!(decoded.ir.model.points.len(), 1);
+        assert_eq!(
+            decoded.ir.tolerances.angular,
+            CadIr::empty().tolerances.angular
+        );
+        assert!(decoded.body.losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::RedundantFieldRepaired.kind()
+                && loss.message.contains("angular tolerance 0")
+        }));
     }
 
     #[test]
