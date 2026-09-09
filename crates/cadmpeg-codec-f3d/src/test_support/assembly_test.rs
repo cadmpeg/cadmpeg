@@ -62,7 +62,7 @@ pub(crate) fn f3d_without_brep(
 pub(crate) fn synthetic_asm_text_stream() -> Vec<u8> {
     let mut text = String::new();
     text.push_str("21800 0 1 12           \n");
-    text.push_str("16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 8 Synthetic \n");
+    text.push_str("16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic \n");
     text.push_str("10 9.999999999999999547e-07 1.000000000000000036e-10 \n");
     text.push_str("asmheader $-1 -1 @11 218.0.1.400 #\n");
     text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
