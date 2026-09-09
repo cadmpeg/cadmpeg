@@ -41,33 +41,36 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-        id: "f3d:Design/BulkStream.dat:scope#12".into(),
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 1100,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 1100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![100, 200, 201],
-            vec![1085, 1096, 1107],
-            "reference_members",
-        )
-        .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Extrude
-            .try_into()
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 1080,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100, 200, 201],
+                vec![1085, 1096, 1107],
+                "reference_members",
+            )
             .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 1200,
-    })
+            payload: crate::records::feature::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 1200,
+        }
+        .with_fixture_layout(),
+    )
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
@@ -439,6 +442,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 "reference_members",
             )
             .unwrap();
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut tool_group = group.clone();
@@ -488,6 +497,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     compact_split_scope
         .try_edit(|draft| {
             draft.frame_length = 330;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (compact_features, _) = project_parameter_design(
@@ -664,6 +675,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 "reference_members",
             )
             .unwrap();
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut split_tool_group = group.clone();
@@ -743,6 +760,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     historical_split_scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut historical_split_tool = split_tool.clone();
@@ -780,6 +798,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.frame_length = 358;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 400, 500, 501]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut multiple_targets = split_target_group.clone();
@@ -810,6 +833,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.frame_length = 347;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 400, 500]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut construction_tool = split_tool_group.clone();
@@ -931,6 +959,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 "reference_members",
             )
             .unwrap();
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut delete_group = group.clone();
@@ -998,6 +1031,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .try_edit(|draft| {
             draft.frame_length = 263;
             draft.kind_offset = 1165;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1017,6 +1055,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_scope
         .try_edit(|draft| {
             draft.frame_length += 1;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1046,6 +1086,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .unwrap();
             draft.frame_length = 250 + reference_bytes;
             draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1089,6 +1134,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .try_edit(|draft| {
             draft.frame_length = 251 + reference_bytes;
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1109,6 +1159,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .try_edit(|draft| {
             draft.frame_length = 236 + reference_bytes;
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1147,6 +1202,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .try_edit(|draft| {
                 draft.frame_length = base_frame + reference_bytes;
                 draft.kind_offset = draft.byte_offset + base_kind + reference_bytes;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.reference_count_offset =
+                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.locate_fixture_references();
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let (features, _) = project_parameter_design(
@@ -1172,6 +1232,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .try_edit(|draft| {
             draft.frame_length = 250 + reference_bytes;
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_count_offset =
+                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+            draft.locate_fixture_references();
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -1208,6 +1273,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .try_edit(|draft| {
                 draft.frame_length = 232 + reference_bytes;
                 draft.kind_offset = draft.byte_offset + 135 + reference_bytes;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.reference_count_offset =
+                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.locate_fixture_references();
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let (features, _) = project_parameter_design(
@@ -1284,6 +1354,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                     settings_record_index: 301,
                 },
             );
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut stitch_group = remove_group;
@@ -1402,6 +1478,12 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             .try_edit(|draft| {
                 draft.reference_members =
                     crate::records::ReferenceRun::unlocated(vec![group_record_index]);
+                draft.locate_fixture_references();
+                draft.kind_offset =
+                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let record = DesignRecordHeader {
@@ -1439,6 +1521,14 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope
         .try_edit(|draft| {
             draft.byte_offset = 1000;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
@@ -1450,6 +1540,11 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             draft.reference_members = crate::records::ReferenceRun::unlocated(
                 (0..13).map(|index| 296_500 + index).collect(),
             );
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
@@ -1529,6 +1624,8 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     wrong_length
         .try_edit(|draft| {
             draft.frame_length = 537;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let group =

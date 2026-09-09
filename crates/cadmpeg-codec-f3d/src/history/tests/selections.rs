@@ -234,16 +234,16 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "record_index": 1,
             "frame_length": 200,
             "kind": "Fillet",
-            "kind_offset": 0,
+            "kind_offset": 32,
             "feature_ordinal": 1,
-            "feature_ordinal_offset": 0,
+            "feature_ordinal_offset": 128,
             "history_state_id": 8,
-            "history_state_id_offset": 0,
+            "history_state_id_offset": 24,
             "previous_history_state_id": 7,
-            "previous_history_state_id_offset": 0,
-            "reference_count_offset": 0,
-            "reference_members": [],
-            "reference_member_offsets": [],
+            "previous_history_state_id_offset": 158,
+            "reference_count_offset": 9,
+            "reference_members": [2],
+            "reference_member_offsets": [14],
             "paired_class_tag": "261",
             "paired_byte_offset": 200
         }))
@@ -1470,6 +1470,13 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
                 )
                 .unwrap()
             };
+            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let groups = vec![
@@ -1680,6 +1687,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)

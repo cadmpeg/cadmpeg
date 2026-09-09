@@ -469,6 +469,12 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 } else {
                     vec![1, 2, 3, 4, 5, operand_record_index]
                 });
+                draft.locate_fixture_references();
+                draft.kind_offset =
+                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
@@ -609,6 +615,12 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let group = |record_index: u32,
@@ -772,6 +784,12 @@ fn validation_checks_pipe_path_group_roles() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let path_group = DesignConstructionOperandGroup::try_from(
@@ -1256,51 +1274,56 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         },
     )
     .unwrap();
-    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-        id: "f3d:test:scope#10".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 10,
-        frame_length: 200,
-        kind_offset: 210,
-        payload: DesignScopePayload::Extrude(Some(crate::records::feature::DesignExtrudeScope {
-            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-                reference: None,
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-                direction_face_extend_values: [1, 2],
-                side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [177, 190],
-                first_side_target_ordinal: None,
-                extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [132, 136],
-                direction_reversed: false,
-                direction_reversed_offset: 140,
-                solid_operation: true,
-                solid_operation_offset: 141,
-                start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 142,
-            }),
-            extrude_profile: Some(profile),
-            ..crate::records::feature::DesignExtrudeScope::default()
-        })),
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 220,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:test:scope#10".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 10,
+            frame_length: 200,
+            kind_offset: 210,
+            payload: DesignScopePayload::Extrude(Some(
+                crate::records::feature::DesignExtrudeScope {
+                    extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                        reference: None,
+                        operation: DesignExtrudeOperation::NewBody,
+                        operation_offset: 128,
+                        direction_face_extend_values: [1, 2],
+                        side_extent_discriminators: [1, 0],
+                        side_extent_discriminator_offsets: [177, 190],
+                        first_side_target_ordinal: None,
+                        extent: DesignExtrudeExtent::OneSidedDistance,
+                        direction_face_extend_offsets: [132, 136],
+                        direction_reversed: false,
+                        direction_reversed_offset: 140,
+                        solid_operation: true,
+                        solid_operation_offset: 141,
+                        start: DesignExtrudeStart::ProfilePlane,
+                        start_offset: 142,
+                    }),
+                    extrude_profile: Some(profile),
+                    ..crate::records::feature::DesignExtrudeScope::default()
+                },
+            )),
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 220,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: Some(228),
-        reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![20, 30],
-            vec![184, 195],
-            "reference_members",
-        )
-        .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    })
+            previous_history_state_id: None,
+            previous_history_state_id_offset: Some(228),
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![20, 30],
+                vec![184, 195],
+                "reference_members",
+            )
+            .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
     .unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {

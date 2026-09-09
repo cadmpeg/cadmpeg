@@ -34,7 +34,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         .unwrap()
     }
 
-    let mut bytes = vec![0; 100];
+    let mut bytes = vec![0; 200];
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
     bytes[24] = 0;
     bytes[25] = 1;
@@ -48,6 +48,11 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
             draft.frame_length = bytes.len() as u64;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let box_owners = vec![
@@ -87,6 +92,12 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     cylinder_scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
@@ -163,6 +174,14 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         scope
             .try_edit(|draft| {
                 draft.byte_offset = 0;
+                draft.reference_count_offset = draft.byte_offset + 9;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.locate_fixture_references();
+                draft.kind_offset =
+                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
@@ -174,6 +193,10 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 draft.frame_length = frame_length as u64;
                 draft.reference_members =
                     crate::records::ReferenceRun::unlocated(reference_members);
+                draft.locate_fixture_references();
+                draft.kind_offset =
+                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let (reference_count, _, kind, feature_ordinal, previous) = if frame_length == 352 {

@@ -75,6 +75,7 @@ fn history_state_predecessors_are_component_qualified() {
         .try_edit(|draft| {
             draft.history_state_id = Some(8);
             draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
@@ -117,6 +118,14 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .try_edit(|draft| {
             draft.byte_offset = 900;
             draft.history_state_id = Some(7);
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut later = DesignParameterScope::empty(
@@ -128,6 +137,14 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .try_edit(|draft| {
             draft.byte_offset = 100;
             draft.previous_history_state_id = Some(7);
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![later.clone(), earlier.clone()];
@@ -280,6 +297,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .try_edit(|draft| {
             draft.history_state_id = Some(8);
             draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut successor = DesignParameterScope::empty(
@@ -291,6 +309,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .try_edit(|draft| {
             draft.history_state_id = Some(9);
             draft.previous_history_state_id = Some(8);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![successor.clone(), internal.clone(), predecessor.clone()];
@@ -617,6 +636,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         .try_edit(|draft| {
             draft.history_state_id = Some(1);
             draft.previous_history_state_id = Some(2);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut second_internal = DesignParameterScope::empty(
@@ -628,6 +648,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut consumer = DesignParameterScope::empty(
@@ -639,6 +660,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         .try_edit(|draft| {
             draft.history_state_id = Some(3);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![first_internal, second_internal, consumer];
@@ -708,6 +730,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
             .try_edit(|draft| {
                 draft.history_state_id = Some(8);
                 draft.previous_history_state_id = Some(7);
+                draft.layout_fixture_tail();
             })
             .unwrap();
         scope
@@ -721,6 +744,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         .try_edit(|draft| {
             draft.history_state_id = Some(9);
             draft.previous_history_state_id = Some(8);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![predecessor, internal(150), internal(160), successor.clone()];
@@ -865,34 +889,38 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
 #[test]
 fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| {
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
-            byte_offset,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index,
-            frame_length: 200,
-            kind_offset: byte_offset + 100,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
-            history_state_id: current,
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
+                byte_offset,
+                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                record_index,
+                frame_length: 200,
+                kind_offset: byte_offset + 100,
+                feature_ordinal: std::num::NonZeroU32::MIN,
+                feature_ordinal_offset: 0,
+                history_state_id: current,
 
-            previous_history_state_id: previous,
-            previous_history_state_id_offset: Some(byte_offset + 120),
-            reference_count_offset: byte_offset + 80,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                Vec::new(),
-                Vec::new(),
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-                .expect("nonempty family name")
-                .try_into()
+                previous_history_state_id: previous,
+                previous_history_state_id_offset: Some(byte_offset + 120),
+                reference_count_offset: byte_offset + 80,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![1],
+                    vec![0],
+                    "reference_members",
+                )
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            paired_byte_offset: byte_offset + 200,
-        })
+                payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
+                    .expect("nonempty family name")
+                    .try_into()
+                    .unwrap(),
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                    .unwrap(),
+                paired_byte_offset: byte_offset + 200,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap()
     };
     let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));

@@ -23,12 +23,19 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         .try_edit(|draft| {
             draft.frame_length = 637;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = 637;
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
@@ -451,6 +458,12 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
                 values.push(99);
                 crate::records::ReferenceRun::unlocated(values)
             };
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     assert_eq!(
@@ -476,6 +489,8 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     scope
         .try_edit(|draft| {
             draft.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
@@ -487,6 +502,11 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                 204, 205, 206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216,
                 217, 116, 117, 118, 119, 400,
             ]);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let owners = (0_usize..20)
@@ -616,6 +636,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         .try_edit(|draft| {
             draft.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
             draft.paired_byte_offset = draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
@@ -629,6 +650,12 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
                     .chain([1_034])
                     .collect(),
             );
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let owners = (0..28)
@@ -916,12 +943,19 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         .try_edit(|draft| {
             draft.frame_length = 399;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = 399;
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
 
@@ -1139,6 +1173,14 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                 )
                 .unwrap();
                 draft.feature_ordinal_offset = 334;
+                draft.locate_fixture_references();
+                draft.kind_offset =
+                    draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+                draft.previous_history_state_id_offset =
+                    draft.previous_history_state_id.map(|previous| {
+                        draft.history_state_id.get_or_insert(previous + 1);
+                        draft.feature_ordinal_offset + 30
+                    });
             })
             .unwrap();
 

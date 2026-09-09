@@ -145,8 +145,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         ))
         .expect("generated feature parameter is canonical")
     };
-    let mut scope =
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
+    let mut scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
             class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
@@ -221,8 +221,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: 300,
-        })
-        .unwrap();
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
             600,
@@ -1327,6 +1329,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     omitted_zero_offset_scope
         .try_edit(|draft| {
             draft.frame_length = 476;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let omitted_zero_offset = project_extrude(

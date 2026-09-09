@@ -153,6 +153,7 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {

@@ -899,21 +899,38 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
         1,
     ))
     .unwrap();
-    for (values, offsets) in [
-        ("[]", "[]"),
-        ("[10]", "[]"),
-        ("[10]", "[0]"),
-        ("[10,20,30]", "[]"),
-        ("[10,20,30]", "[0,11,22]"),
-    ] {
+    for (values, offsets) in [("[10]", "[14]"), ("[10,20,30]", "[14,25,36]")] {
         let wire = empty
             .replace(
-                "\"reference_members\":[]",
+                "\"reference_members\":[1]",
                 &format!("\"reference_members\":{values}"),
             )
             .replace(
-                "\"reference_member_offsets\":[]",
+                "\"reference_member_offsets\":[14]",
                 &format!("\"reference_member_offsets\":{offsets}"),
+            );
+        let count = serde_json::from_str::<Vec<u32>>(values).unwrap().len() as u64;
+        let kind_offset = 21 + 11 * count;
+        let wire = wire
+            .replace(
+                "\"kind_offset\":32",
+                &format!("\"kind_offset\":{kind_offset}"),
+            )
+            .replace(
+                "\"history_state_id_offset\":24",
+                &format!("\"history_state_id_offset\":{}", kind_offset - 8),
+            )
+            .replace(
+                "\"feature_ordinal_offset\":48",
+                &format!("\"feature_ordinal_offset\":{}", kind_offset + 16),
+            )
+            .replace(
+                "\"frame_length\":128",
+                &format!("\"frame_length\":{}", kind_offset + 96),
+            )
+            .replace(
+                "\"paired_byte_offset\":128",
+                &format!("\"paired_byte_offset\":{}", kind_offset + 96),
             );
         let scope: DesignParameterScope = serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&scope).unwrap(), wire);
@@ -938,11 +955,11 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
     for (values, offsets) in [("[]", "[0]"), ("[10]", "[0,11]"), ("[10,20,30]", "[0,11]")] {
         let wire = empty
             .replace(
-                "\"reference_members\":[]",
+                "\"reference_members\":[1]",
                 &format!("\"reference_members\":{values}"),
             )
             .replace(
-                "\"reference_member_offsets\":[]",
+                "\"reference_member_offsets\":[14]",
                 &format!("\"reference_member_offsets\":{offsets}"),
             );
         let error = serde_json::from_str::<DesignParameterScope>(&wire)
@@ -1615,11 +1632,17 @@ fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
 
 #[test]
 fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
-    for kind_offset in [0_u64, 8, 100, u64::MAX] {
+    for kind_offset in [32_u64, 100, u64::MAX - 88] {
         let mut scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
         scope
             .try_edit(|draft| {
+                draft.byte_offset = kind_offset - 32;
+                draft.frame_length = 120;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.reference_count_offset = draft.byte_offset + 9;
+                draft.locate_fixture_references();
                 draft.kind_offset = kind_offset;
+                draft.feature_ordinal_offset = kind_offset + 16;
             })
             .unwrap();
         let wire = serde_json::to_value(&scope).expect("serialize scope");

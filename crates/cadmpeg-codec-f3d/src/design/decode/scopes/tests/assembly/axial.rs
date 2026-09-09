@@ -43,6 +43,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
                     .chain([90, 91])
                     .collect(),
             );
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
@@ -173,6 +178,11 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
             draft.reference_members = crate::records::ReferenceRun::unlocated(
                 members.into_iter().chain([90, 91]).collect(),
             );
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)

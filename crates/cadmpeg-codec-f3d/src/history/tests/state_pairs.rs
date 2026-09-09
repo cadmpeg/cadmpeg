@@ -136,6 +136,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         .try_edit(|draft| {
             draft.history_state_id = Some(9);
             draft.previous_history_state_id = Some(2);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let next_scope = crate::records::feature::DesignParameterScope::empty(
@@ -291,6 +292,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         .try_edit(|draft| {
             draft.history_state_id = Some(10);
             draft.previous_history_state_id = Some(6);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![root, successor];

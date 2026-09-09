@@ -90,6 +90,12 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![221]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut features = vec![Feature {
@@ -1381,33 +1387,39 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .unwrap(),
     );
     native.design_parameter_scopes.push(
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: "native:unprojected-scope".into(),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index: 3,
-            frame_length: 1,
-            kind_offset: 0,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: 0,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                Vec::new(),
-                Vec::new(),
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: "native:unprojected-scope".into(),
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                record_index: 3,
+                frame_length: 200,
+                kind_offset: 0,
+                feature_ordinal: std::num::NonZeroU32::MIN,
+                feature_ordinal_offset: 0,
+                history_state_id: None,
+                previous_history_state_id: None,
+                previous_history_state_id_offset: None,
+                reference_count_offset: (0) + 9,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![1],
+                    vec![0],
+                    "reference_members",
+                )
+                .unwrap(),
+                payload: crate::records::feature::DesignFeatureKind::try_from(
+                    "Unsupported".to_owned(),
+                )
                 .expect("native family name")
                 .try_into()
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
-            paired_byte_offset: 1,
-        })
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap(),
     );
     assert_eq!(
@@ -1552,33 +1564,39 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 #[test]
 fn design_projection_gaps_require_unique_scope_state_dependencies() {
     let scope = |record_index, current, previous| {
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: format!("f3d:native:scope#{record_index}"),
-            byte_offset: u64::from(record_index),
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            frame_length: 1,
-            kind_offset: 0,
-            feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
-            feature_ordinal_offset: 0,
-            history_state_id: current,
-            previous_history_state_id: previous,
-            previous_history_state_id_offset: None,
-            reference_count_offset: 0,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                Vec::new(),
-                Vec::new(),
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: format!("f3d:native:scope#{record_index}"),
+                byte_offset: u64::from(record_index),
+                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                record_index,
+                frame_length: 200,
+                kind_offset: 0,
+                feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
+                feature_ordinal_offset: 0,
+                history_state_id: current,
+                previous_history_state_id: previous,
+                previous_history_state_id_offset: None,
+                reference_count_offset: (u64::from(record_index)) + 9,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![1],
+                    vec![0],
+                    "reference_members",
+                )
+                .unwrap(),
+                payload: crate::records::feature::DesignFeatureKind::try_from(
+                    "Unsupported".to_owned(),
+                )
                 .expect("native family name")
                 .try_into()
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
-            paired_byte_offset: u64::from(record_index) + 1,
-        })
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned())
+                    .unwrap(),
+                paired_byte_offset: u64::from(record_index) + 1,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap()
     };
     let mut native = F3dNative::default();
@@ -1643,6 +1661,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         .try_edit(|draft| {
             draft.history_state_id = Some(8);
             draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut successor = DesignParameterScope::empty(
@@ -1654,6 +1673,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         .try_edit(|draft| {
             draft.history_state_id = Some(9);
             draft.previous_history_state_id = Some(8);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let scopes = vec![successor, internal, predecessor];

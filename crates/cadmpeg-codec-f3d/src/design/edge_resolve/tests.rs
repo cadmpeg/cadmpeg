@@ -80,16 +80,16 @@ fn fixed_scope() -> DesignParameterScope {
         "record_index": 1,
         "frame_length": 200,
         "kind": "Fillet",
-        "kind_offset": 0,
+        "kind_offset": 32,
         "feature_ordinal": 1,
-        "feature_ordinal_offset": 0,
+        "feature_ordinal_offset": 128,
         "history_state_id": 8,
-        "history_state_id_offset": 0,
+        "history_state_id_offset": 24,
         "previous_history_state_id": 7,
-        "previous_history_state_id_offset": 0,
-        "reference_count_offset": 0,
+        "previous_history_state_id_offset": 158,
+        "reference_count_offset": 9,
         "reference_members": [2],
-        "reference_member_offsets": [0],
+        "reference_member_offsets": [14],
         "fixed_fillet_parameters": {
             "groups": [{
                 "tangency_weight": {
