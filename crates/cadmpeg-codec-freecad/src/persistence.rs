@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    DynamicPropertyMeta, ExtensionRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord,
-    ValueRecord,
+    DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
+    PropertyRecord, ValueRecord,
 };
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -409,7 +409,11 @@ fn parse_document(
         for link in links {
             if let Some(target) = link.object() {
                 if declared_names.contains(target) {
-                    link.object = cadmpeg_ir::products::NonEmptyString::new(object_id(target));
+                    link.set_object(
+                        cadmpeg_ir::products::NonEmptyString::new(object_id(target)).ok_or_else(
+                            || CodecError::malformed("link object identity must not be empty"),
+                        )?,
+                    );
                 }
             }
         }
@@ -743,11 +747,13 @@ fn local_link(
     } else {
         reject_link_aliases(node, &[object_attribute])?;
     }
-    Ok(LinkTarget {
+    LinkTarget::try_from(LinkTargetWire {
         document: None,
-        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, object_attribute)?),
+        document_attribute: None,
+        object: Some(required_attr(node, object_attribute)?.to_owned()),
         subelements: subelements.to_vec(),
     })
+    .map_err(CodecError::Malformed)
 }
 
 fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
@@ -797,11 +803,13 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
             ));
         }
     };
-    Ok(LinkTarget {
-        document: crate::native::ExternalDocument::from_file_attr(file),
-        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, "name")?),
+    LinkTarget::try_from(LinkTargetWire {
+        document: file.filter(|file| !file.is_empty()),
+        document_attribute: Some("file".to_owned()),
+        object: Some(required_attr(node, "name")?.to_owned()),
         subelements,
     })
+    .map_err(CodecError::Malformed)
 }
 
 fn restored_subelement(

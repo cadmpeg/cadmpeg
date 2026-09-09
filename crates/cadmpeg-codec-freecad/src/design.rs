@@ -569,8 +569,8 @@ fn body_tip(
     match property.links() {
         [] => BodyTipResolution::Valid(None),
         [link]
-            if link.subelements.is_empty()
-                && link.document.is_none()
+            if link.subelements().is_empty()
+                && link.document().is_none()
                 && link.document_attribute().is_none() =>
         {
             let Some(target) = link.object() else {
@@ -1327,7 +1327,7 @@ fn validate_external_geo_prefix(
 
 fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
     let object = crate::native::id_key(reference.object()?);
-    let subelement = reference.subelements.first()?;
+    let subelement = reference.subelements().first()?;
     Some(format!("{object}.{subelement}"))
 }
 
@@ -1492,7 +1492,7 @@ fn parse_sketch(
                         .and_then(|index| {
                             references.and_then(|property| property.links().get(index))
                         })
-                        .map(|reference| reference.subelements.clone())
+                        .map(|reference| reference.subelements().to_vec())
                         .unwrap_or_default(),
                 ),
             );
@@ -1529,14 +1529,14 @@ fn parse_sketch(
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed("object must not be empty")
                             })?,
-                        subelements: reference.subelements.clone(),
+                        subelements: reference.subelements().to_vec(),
                     })
                     .map_err(CodecError::malformed)?,
                 )
                 .with_construction(true)
                 .with_native_ref(Some(references.id.clone()))
                 .with_geometry_ref(Some(references.id.clone()))
-                .with_endpoint_refs(reference.subelements.clone()),
+                .with_endpoint_refs(reference.subelements().to_vec()),
             );
         }
     }
@@ -3953,7 +3953,7 @@ fn extrusion_definition(
     };
     let use_custom = bool_selector(properties, "UseCustomVector", false)?;
     let is_nonempty_link =
-        |link: &crate::native::LinkTarget| link.document.is_some() || link.object().is_some();
+        |link: &crate::native::LinkTarget| link.document().is_some() || link.object().is_some();
     let reference_axis = property(properties, "ReferenceAxis")
         .filter(|property| property.links().iter().any(is_nonempty_link));
     if reference_axis.is_some_and(|property| {
@@ -4456,7 +4456,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 }
 
 fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
-    link.document.is_some() || link.object().is_some_and(|object| !object.is_empty())
+    link.document().is_some() || link.object().is_some_and(|object| !object.is_empty())
 }
 
 fn singular_operand<'a>(
@@ -5327,7 +5327,7 @@ fn binder_definition(
             [property]
                 if property.type_name == "App::PropertyXLink"
                     && property.links().len() == 1
-                    && property.links()[0].subelements.is_empty() =>
+                    && property.links()[0].subelements().is_empty() =>
             {
                 property
                     .links()
@@ -5375,7 +5375,7 @@ fn binder_target(
     features: &HashMap<&str, FeatureId>,
 ) -> Option<BinderTarget> {
     let object = link.object()?;
-    if let Some(document) = link.document.as_ref() {
+    if let Some(document) = link.document() {
         return Some(BinderTarget::External {
             document: cadmpeg_ir::NonEmptyString::new(document.as_str())?,
             object: cadmpeg_ir::NonEmptyString::new(object)?,
@@ -5903,7 +5903,7 @@ fn plane_reference(
 }
 
 fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {
-    link.subelements
+    link.subelements()
         .iter()
         .flat_map(|selector| selector.split_ascii_whitespace())
         .filter(|selector| !selector.is_empty())

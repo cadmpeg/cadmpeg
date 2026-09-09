@@ -117,7 +117,7 @@ pub(crate) fn transfer_neutral(
                     ));
                 }
             };
-            Ok(ReferenceSelection::new(target, link.subelements.clone()))
+            Ok(ReferenceSelection::new(target, link.subelements().to_vec()))
         };
         let references = record
             .references
@@ -1049,7 +1049,7 @@ pub(crate) mod tests {
             .expect("dimension");
         assert_eq!(dimension.text, ["12.5 mm"]);
         assert_eq!(
-            dimension.references["References2D"][0].subelements,
+            dimension.references["References2D"][0].subelements(),
             ["Edge1"]
         );
         let note = annotations
@@ -1066,7 +1066,7 @@ pub(crate) mod tests {
             Some("fcstd:native:object#View")
         );
         assert_eq!(drawing_dimension.sources.len(), 2);
-        assert_eq!(drawing_dimension.sources[1].subelements, ["Edge2"]);
+        assert_eq!(drawing_dimension.sources[1].subelements(), ["Edge2"]);
         let neutral_dimension = result
             .ir()
             .model

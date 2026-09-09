@@ -115,21 +115,6 @@ impl JointRecord {
     }
 }
 
-fn empty_link_target() -> LinkTarget {
-    LinkTarget {
-        document: None,
-        object: None,
-        subelements: Vec::new(),
-    }
-}
-
-pub(crate) fn optional_reference(reference: LinkTarget) -> Option<LinkTarget> {
-    (reference.document.is_some()
-        || reference.object.is_some()
-        || !reference.subelements.is_empty())
-    .then_some(reference)
-}
-
 #[derive(Serialize, Deserialize)]
 struct JointRecordWire {
     id: String,
@@ -146,7 +131,9 @@ impl From<JointRecord> for JointRecordWire {
         let kind = value.kind().to_owned();
         let references = match &value.body {
             JointBody::Grounded { reference, .. } => {
-                vec![reference.clone().unwrap_or_else(empty_link_target)]
+                vec![reference
+                    .clone()
+                    .unwrap_or_else(LinkTarget::empty_link_target)]
             }
             JointBody::Pair { connectors, .. } => connectors
                 .iter()
@@ -154,7 +141,7 @@ impl From<JointRecord> for JointRecordWire {
                     connector
                         .reference
                         .clone()
-                        .unwrap_or_else(empty_link_target)
+                        .unwrap_or_else(LinkTarget::empty_link_target)
                 })
                 .collect(),
         };
@@ -183,7 +170,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
                 return Err("grounded joint cannot carry offsets".to_owned());
             }
             let mut references = wire.references.into_iter();
-            let reference = references.next().and_then(optional_reference);
+            let reference = references.next().and_then(LinkTarget::into_optional);
             if references.next().is_some() {
                 return Err("grounded joint must carry at most one reference".to_owned());
             }
@@ -199,8 +186,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
             let [first_offset, second_offset] = <[_; 2]>::try_from(wire.offsets)
                 .map_err(|_| "paired joint must carry two offsets".to_owned())?;
             let mut references = wire.references.into_iter();
-            let first_reference = references.next().and_then(optional_reference);
-            let second_reference = references.next().and_then(optional_reference);
+            let first_reference = references.next().and_then(LinkTarget::into_optional);
+            let second_reference = references.next().and_then(LinkTarget::into_optional);
             if references.next().is_some() {
                 return Err("paired joint carries more than two references".to_owned());
             }

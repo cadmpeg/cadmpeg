@@ -253,7 +253,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
-    assert_eq!(support.links()[0].subelements, vec!["Face1"]);
+    assert_eq!(support.links()[0].subelements(), vec!["Face1"]);
     let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
         panic!("support property is not persisted");
     };
@@ -617,6 +617,6 @@ fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     let empty = link(r#"<XLink file="" name="Body"/>"#);
     let absent = link(r#"<XLink name="Body"/>"#);
     assert_eq!(empty, absent);
-    assert_eq!(empty.document, None);
+    assert_eq!(empty.document(), None);
     assert_eq!(empty.document_attribute(), None);
 }
