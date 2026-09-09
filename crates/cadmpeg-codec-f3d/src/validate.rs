@@ -3696,7 +3696,6 @@ fn valid_work_plane_construction(
         design_stream(owner.id()) == native_stream
             && owner.record_index() == *extra_offset
             && owner.scope_record_index() == scope.record_index
-            && owner.evaluated_value().is_finite()
             && owner.evaluated_value() == 0.0
     }) else {
         return false;
