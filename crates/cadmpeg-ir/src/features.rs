@@ -1337,20 +1337,14 @@ pub enum ParameterValue {
     String(String),
 }
 
-fn deserialize_parameter_real<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<FiniteReal, D::Error> {
-    FiniteReal::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("value: {error}")))
-}
+crate::units::named_field!(deserialize_parameter_real, FiniteReal, "value");
 
 fn deserialize_dependencies<'de, D, T>(deserializer: D) -> Result<DistinctMembers<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de> + Eq + std::hash::Hash,
 {
-    DistinctMembers::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("dependencies: {error}")))
+    crate::units::deserialize_named(deserializer, "dependencies")
 }
 
 /// A polygon side count of at least three.

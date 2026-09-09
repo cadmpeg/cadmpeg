@@ -151,12 +151,11 @@ pub struct SourceObjectAssociation {
     pub instance_path: Vec<String>,
 }
 
-fn deserialize_object_id<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| D::Error::custom(format_args!("object_id: {error}")))
-}
+crate::units::named_field!(
+    deserialize_object_id,
+    crate::products::NonEmptyString,
+    "object_id"
+);
 
 /// Provenance for bytes identified by a typed location.
 ///

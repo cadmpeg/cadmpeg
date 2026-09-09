@@ -423,12 +423,7 @@ pub struct CopyOnChange {
     pub touched: Option<bool>,
 }
 
-fn deserialize_occurrence_scale<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<[FiniteReal; 3], D::Error> {
-    <[FiniteReal; 3]>::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format!("scale: {error}")))
-}
+crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
 
 impl Occurrence {
     /// Placement after applying the linked prototype contribution, when present.

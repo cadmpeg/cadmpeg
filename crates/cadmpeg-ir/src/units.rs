@@ -124,6 +124,16 @@ vector_wire!(
     "coordinates must be finite with squared norm greater than epsilon"
 );
 
+/// Define the concrete shim required by serde's field deserializer path.
+macro_rules! named_field {
+    ($name:ident, $value:ty, $field:literal) => {
+        fn $name<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<$value, D::Error> {
+            $crate::units::deserialize_named(deserializer, $field)
+        }
+    };
+}
+pub(crate) use named_field;
+
 pub(crate) fn deserialize_named<'de, D, T>(deserializer: D, field: &str) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -133,17 +143,9 @@ where
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 
-fn deserialize_linear<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<PositiveScalar, D::Error> {
-    deserialize_named(deserializer, "linear")
-}
+crate::units::named_field!(deserialize_linear, PositiveScalar, "linear");
 
-fn deserialize_angular<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<PositiveScalar, D::Error> {
-    deserialize_named(deserializer, "angular")
-}
+crate::units::named_field!(deserialize_angular, PositiveScalar, "angular");
 
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

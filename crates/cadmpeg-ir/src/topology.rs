@@ -1462,11 +1462,11 @@ pub struct Point {
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
 
-fn deserialize_tolerance<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::PositiveScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "tolerance")
-}
+crate::units::named_field!(
+    deserialize_tolerance,
+    Option<crate::units::PositiveScalar>,
+    "tolerance"
+);
 
 #[cfg(test)]
 mod tests {
