@@ -1007,7 +1007,7 @@ fn decode_container<'a>(
                         segment_token: style.identity.segment_token.clone(),
                         record_ordinal: style.identity.record_ordinal,
                         detail: detail.clone(),
-                    })
+                    });
                 })
                 .ok()
         })
