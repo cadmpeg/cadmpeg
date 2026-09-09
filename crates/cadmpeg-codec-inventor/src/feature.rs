@@ -236,6 +236,35 @@ pub(crate) struct PmDcLinkedHeader {
     pub(crate) next: crate::pmdc::PmDcReference,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) struct ClassId([u8; 16]);
+
+impl TryFrom<String> for ClassId {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() != 32 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("class_id must contain 32 hexadecimal digits".into());
+        }
+        let mut bytes = [0; 16];
+        for (byte, digits) in bytes.iter_mut().zip(value.as_bytes().chunks_exact(2)) {
+            let digit = |value: u8| match value {
+                b'0'..=b'9' => value - b'0',
+                _ => value.to_ascii_lowercase() - b'a' + 10,
+            };
+            *byte = digit(digits[0]) * 16 + digit(digits[1]);
+        }
+        Ok(Self(bytes))
+    }
+}
+
+impl From<ClassId> for String {
+    fn from(value: ClassId) -> Self {
+        type_id_string(value.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "PmDcFeatureLabelPayloadWire",
@@ -247,7 +276,7 @@ pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) index: u32,
     pub(crate) participants: PmDcReferenceList,
     name: NonEmptyString,
-    class_id: String,
+    class_id: ClassId,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -263,16 +292,13 @@ pub(crate) struct PmDcFeatureLabelPayloadWire {
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
     type Error = String;
     fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
-        if wire.class_id.len() != 32 {
-            return Err("class_id must contain 32 bytes".into());
-        }
         Ok(Self {
             save_version_major: wire.save_version_major,
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
             name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
-            class_id: wire.class_id,
+            class_id: ClassId::try_from(wire.class_id)?,
         })
     }
 }
@@ -285,14 +311,14 @@ impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
             index: value.index,
             participants: value.participants,
             name: value.name.as_str().to_owned(),
-            class_id: value.class_id,
+            class_id: value.class_id.into(),
         }
     }
 }
 
 impl PmDcFeatureLabelPayload {
-    pub(crate) fn class_id(&self) -> &str {
-        &self.class_id
+    pub(crate) fn class_id(&self) -> ClassId {
+        self.class_id
     }
 }
 
@@ -914,10 +940,18 @@ fn parse_label(
     .map_err(CodecError::malformed)
 }
 
-const EXTRUSION_CLASS_ID: &str = "3111a90cd0118b83000819b00524dc09";
-const FILLET_CLASS_ID: &str = "dc15f7f1d1114205000830b00524dc09";
-const CHAMFER_CLASS_ID: &str = "3f7100f9d2118b6f6000f0a89dccefb0";
-const HOLE_CLASS_ID: &str = "1a7d751fd2119c54a00020803603c8c9";
+const EXTRUSION_CLASS_ID: ClassId = ClassId([
+    0x31, 0x11, 0xa9, 0x0c, 0xd0, 0x11, 0x8b, 0x83, 0x00, 0x08, 0x19, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]);
+const FILLET_CLASS_ID: ClassId = ClassId([
+    0xdc, 0x15, 0xf7, 0xf1, 0xd1, 0x11, 0x42, 0x05, 0x00, 0x08, 0x30, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+]);
+const CHAMFER_CLASS_ID: ClassId = ClassId([
+    0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
+]);
+const HOLE_CLASS_ID: ClassId = ClassId([
+    0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
+]);
 
 #[derive(Clone, Copy)]
 pub(crate) enum FeatureFamily {
@@ -928,7 +962,7 @@ pub(crate) enum FeatureFamily {
 }
 
 impl FeatureFamily {
-    pub(crate) fn class_id(self) -> &'static str {
+    pub(crate) fn class_id(self) -> ClassId {
         match self {
             Self::Extrusion => EXTRUSION_CLASS_ID,
             Self::Fillet => FILLET_CLASS_ID,
@@ -946,7 +980,7 @@ impl FeatureFamily {
         }
     }
 
-    fn from_class_id(class_id: &str) -> Option<Self> {
+    fn from_class_id(class_id: ClassId) -> Option<Self> {
         [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
             .into_iter()
             .find(|family| family.class_id() == class_id)
@@ -1857,13 +1891,13 @@ mod tests {
         }
         let mut wire = valid;
         wire["class_id"] = serde_json::json!("z".repeat(32));
-        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_ok());
+        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
     fn test_label(
         owner_ordinal: u32,
         index: u32,
-        class_id: &str,
+        class_id: ClassId,
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
@@ -2808,6 +2842,6 @@ mod tests {
         });
         assert_eq!(parsed.name, "Extrude1");
         assert_eq!(parsed.participants.references().len(), 1);
-        assert_eq!(parsed.class_id, "abababababababababababababababab");
+        assert_eq!(parsed.class_id, ClassId([0xab; 16]));
     }
 }
