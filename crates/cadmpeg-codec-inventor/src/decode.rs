@@ -24,7 +24,7 @@ use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
-    InstancePropertiesEntry, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord,
+    ProteinAssetRecord, ProteinAssetRecordWire, ProteinEntryRecord, ProteinRecord,
     ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
@@ -292,28 +292,30 @@ fn decode_container<'a>(
         }
     };
     let material_catalog = crate::materials::project_catalog(&protein_instances);
+    let mut structural_issues = Vec::new();
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.records.iter().map(|asset| {
-                Ok::<_, CodecError>(ProteinAssetRecord {
-                    id: format!(
-                        "inventor:protein:asset#{}-{}",
-                        sha256_hex(instance.entry_name.as_bytes()),
-                        asset.ordinal
-                    ),
-                    entry_name: InstancePropertiesEntry::try_from(instance.entry_name.clone())
-                        .map_err(CodecError::malformed)?,
-                    asset: asset.clone(),
-                })
+            instance.records.iter().map(|asset| ProteinAssetRecordWire {
+                id: format!(
+                    "inventor:protein:asset#{}-{}",
+                    sha256_hex(instance.entry_name.as_bytes()),
+                    asset.ordinal
+                ),
+                entry_name: instance.entry_name.clone(),
+                ordinal: asset.ordinal,
+                asset: asset.clone(),
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .filter_map(|wire| admit_protein_asset(wire, &mut structural_issues))
+        .collect::<Vec<_>>();
     let protein_rejections = protein_instances
         .iter()
         .flat_map(|instance| {
-            instance.rejected.iter().map(|rejected| {
-                ProteinRejectionRecord::try_from(ProteinRejectionRecordWire {
+            instance
+                .rejected
+                .iter()
+                .map(|rejected| ProteinRejectionRecordWire {
                     id: format!(
                         "inventor:protein:rejection#{}-{}",
                         sha256_hex(instance.entry_name.as_bytes()),
@@ -323,13 +325,12 @@ fn decode_container<'a>(
                     ordinal: rejected.ordinal,
                     detail: rejected.detail.clone(),
                 })
-            })
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(CodecError::malformed)?;
+        .filter_map(|wire| admit_protein_rejection(wire, &mut structural_issues))
+        .collect::<Vec<_>>();
+    let protein_admission_issue_count = structural_issues.len();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
-    let mut structural_issues = Vec::new();
     let ufrx = match &container.ufrx {
         UfrxState::Absent => UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
@@ -506,7 +507,7 @@ fn decode_container<'a>(
             }
         }
     };
-    let ufrx_issue_count = structural_issues.len();
+    let ufrx_issue_count = structural_issues.len() - protein_admission_issue_count;
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -1260,6 +1261,11 @@ fn decode_container<'a>(
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     let mut losses = Vec::new();
+    if protein_admission_issue_count != 0 {
+        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+            "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
+        )));
+    }
     losses.extend(dialect_loss(&matched, &recovery));
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if !ctx.container_only()
@@ -1793,6 +1799,26 @@ fn admit_ufrx_record<T>(
 ) -> Option<T> {
     admitted
         .inspect_err(|detail| issues.push(structural_issue(scope, detail)))
+        .ok()
+}
+
+fn admit_protein_asset(
+    wire: ProteinAssetRecordWire,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<ProteinAssetRecord> {
+    let scope = wire.id.clone();
+    ProteinAssetRecord::try_from(wire)
+        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
+        .ok()
+}
+
+fn admit_protein_rejection(
+    wire: ProteinRejectionRecordWire,
+    issues: &mut Vec<StructuralIssueRecord>,
+) -> Option<ProteinRejectionRecord> {
+    let scope = wire.id.clone();
+    ProteinRejectionRecord::try_from(wire)
+        .inspect_err(|detail| issues.push(structural_issue(&scope, detail)))
         .ok()
 }
 
