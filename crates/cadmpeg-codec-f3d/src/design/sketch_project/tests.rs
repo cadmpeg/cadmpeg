@@ -544,7 +544,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     returned.push(SketchRelationReturnMember::from_index(175));
     curve_point_coincidence
         .try_edit(|draft| {
-            draft.return_members = returned.try_into().expect("uniform member resolution")
+            draft.return_members = returned.try_into().expect("uniform member resolution");
         })
         .unwrap();
     curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(
@@ -584,7 +584,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 )
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     spline_group
@@ -599,7 +599,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 )
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     spline_group.definition = crate::records::SketchRelationDefinition::new(
@@ -614,7 +614,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 crate::records::ReferenceRun::located(vec![crate::records::Located {
                     value: 999,
                     offset: 0,
-                }])
+                }]);
         })
         .unwrap();
     horizontal_point
@@ -624,7 +624,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 SketchRelationReturnMember::from_index(175),
             ])
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     horizontal_point.definition = crate::records::SketchRelationDefinition::new(
@@ -951,7 +951,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     midpoint_relation
@@ -961,7 +961,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationReturnMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     let mut coincident_point = point.clone();
@@ -989,7 +989,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     coincident_relation
@@ -999,7 +999,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationReturnMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     let mut horizontal_relation = relation.clone();
@@ -1014,14 +1014,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         .try_edit(|draft| {
             draft.members = (vec![SketchRelationMember::from_index(108)])
                 .try_into()
-                .expect("uniform member resolution")
+                .expect("uniform member resolution");
         })
         .unwrap();
     horizontal_relation
         .try_edit(|draft| {
             draft.return_members = (vec![SketchRelationReturnMember::from_index(108)])
                 .try_into()
-                .expect("uniform member resolution")
+                .expect("uniform member resolution");
         })
         .unwrap();
     let surface = SketchSurface {
@@ -1056,7 +1056,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
     point_on_surface_relation
@@ -1066,7 +1066,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 .map(SketchRelationReturnMember::from_index)
                 .collect::<Vec<_>>())
             .try_into()
-            .expect("uniform member resolution")
+            .expect("uniform member resolution");
         })
         .unwrap();
 

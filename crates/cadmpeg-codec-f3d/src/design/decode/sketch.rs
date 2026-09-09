@@ -2918,7 +2918,7 @@ pub(crate) fn bind_sketch_graph(
             owners.insert((*owner_scope, record_index), owner_reference);
         }
     }
-    for &(scope, owner_reference, ref members, ref returned) in &scoped_relations {
+    for &(scope, owner_reference, members, returned) in &scoped_relations {
         for record_index in members
             .iter()
             .map(|member| member.reference.record_index())
