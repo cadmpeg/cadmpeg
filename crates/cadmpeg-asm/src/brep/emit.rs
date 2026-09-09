@@ -126,7 +126,46 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Helix { construction }
             }
             DecodedProceduralSurfaceDefinition::TSpline(construction) => {
-                ProceduralSurfaceDefinition::TSpline { construction }
+                use crate::nurbs::proc_surface::EmbeddedTSplineSubtransform;
+                use cadmpeg_core::CodecError;
+                use cadmpeg_ir::geometry::{
+                    InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform,
+                    TSplineSurfaceConstruction,
+                };
+
+                let subtransform = match construction.subtransform {
+                    EmbeddedTSplineSubtransform::Inline {
+                        program,
+                        separator,
+                        values,
+                    } => TSplineSubtransform::Inline(
+                        InlineTSplineSubtransform::try_new(program, separator, values)
+                            .map_err(CodecError::malformed)?,
+                    ),
+                    EmbeddedTSplineSubtransform::Reference { index, resolved } => {
+                        TSplineSubtransform::Resolved {
+                            index: SubtypeTableIndex::try_new(index)
+                                .map_err(CodecError::malformed)?,
+                            transform: Box::new(resolved.ok_or_else(|| {
+                                CodecError::malformed("T-spline subtransform is unresolved")
+                            })?),
+                        }
+                    }
+                };
+                ProceduralSurfaceDefinition::TSpline {
+                    construction: Box::new(
+                        TSplineSurfaceConstruction::try_new(
+                            construction.parameter_ranges,
+                            construction.type_code,
+                            subtransform,
+                            construction.trailing_value,
+                            construction.discontinuities,
+                            construction.discontinuity_flag,
+                            construction.revision_form,
+                        )
+                        .map_err(CodecError::malformed)?,
+                    ),
+                }
             }
             DecodedProceduralSurfaceDefinition::Exact { spline } => {
                 ProceduralSurfaceDefinition::Exact { spline }

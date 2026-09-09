@@ -18,7 +18,6 @@ fn subtransform_wire_preserves_inline_and_reference_shapes() {
         json!({"kind": "inline", "program": "program", "separator": true, "values": "values"});
     for wire in [
         inline.clone(),
-        json!({"kind": "reference", "index": 0}),
         json!({"kind": "reference", "index": 4, "resolved": inline}),
     ] {
         let value: TSplineSubtransform = serde_json::from_value(wire.clone()).unwrap();
@@ -68,14 +67,6 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
     ] {
         assert!(admit(ranges, inline.clone()).is_err());
     }
-    assert!(admit(
-        [[0.0, 1.0]; 2],
-        TSplineSubtransform::Reference {
-            index: SubtypeTableIndex::try_new(0).unwrap(),
-            resolved: None,
-        },
-    )
-    .is_err());
     let wire = serde_json::to_value(&valid).unwrap();
     assert_eq!(
         serde_json::from_value::<TSplineSurfaceConstruction>(wire.clone()).unwrap(),
@@ -87,4 +78,15 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
     let mut unresolved = wire;
     unresolved["subtransform"] = json!({"kind": "reference", "index": 0});
     assert!(serde_json::from_value::<TSplineSurfaceConstruction>(unresolved).is_err());
+}
+
+#[test]
+fn subtransform_wire_rejects_missing_resolved_payload() {
+    for wire in [
+        json!({"kind": "reference", "index": 0}),
+        json!({"kind": "reference", "index": 0, "resolved": null}),
+    ] {
+        let error = serde_json::from_value::<TSplineSubtransform>(wire).unwrap_err();
+        assert_eq!(error.to_string(), "T-spline subtransform is unresolved");
+    }
 }
