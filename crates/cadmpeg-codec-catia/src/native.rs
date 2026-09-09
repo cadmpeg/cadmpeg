@@ -45,6 +45,7 @@ use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
 };
+use crate::unique_index::UniqueIndex;
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
@@ -8700,19 +8701,14 @@ fn resolve_owner_chart_support_aliases(
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
 ) {
-    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
-    for alias in aliases {
-        unique_by_tag
-            .entry(alias.tag())
-            .and_modify(|unique| *unique = None)
-            .or_insert(Some(alias));
-    }
+    let unique_by_tag = aliases
+        .iter()
+        .map(|alias| (alias.tag(), alias))
+        .collect::<UniqueIndex<_, _>>();
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = unique_by_tag
                 .get(&reference.value)
-                .copied()
-                .flatten()
                 .map(|row| CatiaOwnerChartAliasBinding {
                     row: row.id.clone(),
                     canonical_tag: row.canonical_surface_tag,
