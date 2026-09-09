@@ -332,7 +332,7 @@ pub enum SubdSymmetryKind {
 #[serde(try_from = "SubdRadialSymmetryWire")]
 pub struct SubdRadialSymmetry {
     segments: std::num::NonZeroU32,
-    sweep: f64,
+    sweep: crate::scalar::FiniteReal,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
@@ -360,9 +360,8 @@ impl SubdRadialSymmetry {
         sweep: f64,
         radial_maps: Vec<SubdRadialSymmetryMap>,
     ) -> Result<Self, SubdError> {
-        if !sweep.is_finite() {
-            return Err(SubdError("kind.radial.sweep must be finite".into()));
-        }
+        let sweep = crate::scalar::FiniteReal::new(sweep)
+            .ok_or_else(|| SubdError("kind.radial.sweep must be finite".into()))?;
         let mut selectors = std::collections::BTreeSet::new();
         for map in &radial_maps {
             if !selectors.insert(map.selector) {
@@ -387,7 +386,7 @@ impl SubdRadialSymmetry {
 
     /// Finite native radial sweep.
     pub const fn sweep(&self) -> f64 {
-        self.sweep
+        self.sweep.get()
     }
 
     /// Native maps with distinct selectors and distinct sources within each map.
