@@ -65,6 +65,7 @@ struct BinaryDirectory {
     offset: u32,
     entity_type: i64,
     parameter_pointer: i64,
+    /// Retains the wire fields in shared slot order for rendering beside the checked entity discriminator.
     values: [BinaryValue; 15],
 }
 
