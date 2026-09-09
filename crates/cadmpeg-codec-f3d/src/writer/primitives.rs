@@ -68,12 +68,8 @@ pub(crate) fn validate_assembly_projection(
     Ok(())
 }
 
-pub(crate) fn normalized_face_sense_to_native(
-    desired: Sense,
-    native_at_decode: Sense,
-    normalized_at_decode: Sense,
-) -> Sense {
-    if native_at_decode == normalized_at_decode {
+pub(crate) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: bool) -> Sense {
+    if !carrier_flipped {
         desired
     } else {
         match desired {

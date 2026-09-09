@@ -76,12 +76,22 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         assert_eq!(out.face_sidedness.len(), 1);
         assert_eq!(out.faces[0].sense, normalized);
         assert_eq!(out.face_sidedness[0].native_sense, native);
-        assert_eq!(out.face_sidedness[0].normalized_sense, normalized);
+        let wire = serde_value::to_value(&out.face_sidedness[0]).unwrap();
+        let serde_value::Value::Map(fields) = &wire else {
+            panic!("record object")
+        };
+        assert_eq!(
+            fields.get(&serde_value::Value::String("normalized_sense".into())),
+            Some(&serde_value::to_value(normalized).unwrap())
+        );
+        let restored: FaceSidedness = serde::Deserialize::deserialize(wire).unwrap();
+        assert_eq!(restored, out.face_sidedness[0]);
+        assert_eq!(out.face_sidedness[0].carrier_flipped, native != normalized);
         out.faces[0].sense = match normalized {
             Sense::Forward => Sense::Reversed,
             Sense::Reversed => Sense::Forward,
         };
-        assert_eq!(out.face_sidedness[0].normalized_sense, normalized);
+        assert_eq!(out.face_sidedness[0].carrier_flipped, native != normalized);
     }
 }
 

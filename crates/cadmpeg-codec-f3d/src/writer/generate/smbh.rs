@@ -1687,11 +1687,7 @@ fn native_face_sense(
         .face_sidedness
         .get(face.id.as_str())
         .map_or(face.sense, |metadata| {
-            normalized_face_sense_to_native(
-                face.sense,
-                metadata.native_sense,
-                metadata.normalized_sense,
-            )
+            normalized_face_sense_to_native(face.sense, metadata.carrier_flipped)
         })
 }
 
