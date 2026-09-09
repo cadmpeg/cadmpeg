@@ -414,12 +414,10 @@ mod tests {
             cadmpeg_registry::Identification::Native {
                 format, confidence, ..
             } => vec![(format, confidence)],
-            cadmpeg_registry::Identification::Ambiguous {
-                confidence,
-                candidates,
-            } => candidates
-                .into_iter()
-                .map(|format| (format, confidence))
+            cadmpeg_registry::Identification::Ambiguous(tie) => tie
+                .candidates()
+                .iter()
+                .map(|format| (*format, tie.confidence()))
                 .collect(),
             cadmpeg_registry::Identification::None | cadmpeg_registry::Identification::Cadir => {
                 Vec::new()
