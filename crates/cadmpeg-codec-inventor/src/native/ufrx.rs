@@ -967,7 +967,7 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: Sha256Hex::try_from("0".repeat(64)).unwrap(),
+            tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
         };
         let mut namespace = NativeNamespace::default();
         record.install(&mut namespace).expect("valid test fixture");
@@ -1013,7 +1013,7 @@ mod tests {
                 schema: 1,
                 section_versions: vec![1],
                 tail_len: 0,
-                tail_sha256: Sha256Hex::try_from("0".repeat(64)).unwrap(),
+                tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
                 detail: "schema".into(),
             },
         ] {
