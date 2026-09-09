@@ -236,7 +236,9 @@ fn decode_container<'a>(
                             value_kind: property_value_kind(&property.value),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
-                            raw_sha256: sha256_hex(property.raw.window()),
+                            raw_sha256: crate::native::digest::Sha256Hex::digest(
+                                property.raw.window(),
+                            ),
                         });
                     }
                 }
