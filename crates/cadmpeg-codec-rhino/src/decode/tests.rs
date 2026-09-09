@@ -1015,6 +1015,39 @@ fn candidate_rejections_distinguish_admission_from_validation() {
 }
 
 #[test]
+fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
+    for (knots, weights, expected) in [
+        (Vec::new(), None, "pcurve knot count 0"),
+        (vec![0.0, 0.0], None, "knots"),
+        (
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+            Some(vec![0.0; 5]),
+            "weights",
+        ),
+    ] {
+        let mut extrusion = cap_extrusion([true, false]);
+        extrusion.boundaries[0].start_pcurve.knots = knots;
+        extrusion.boundaries[0].start_pcurve.weights = weights;
+        let boundaries = vec![CommittedExtrusionBoundary {
+            boundary: &extrusion.boundaries[0],
+            directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
+        }];
+        let error = stage_extrusion_caps(
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::Annotations::default(),
+            "caps",
+            &test_association(),
+            &extrusion,
+            &boundaries,
+            &mut Vec::new(),
+        )
+        .expect_err("invalid cap pcurve");
+        assert!(error.starts_with("extrusion cap staging: "), "{error}");
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
     for (caps, expected_faces) in [([true, false], 1), ([false, true], 1), ([true, true], 2)] {
         let mut ir = CadIr::empty();
