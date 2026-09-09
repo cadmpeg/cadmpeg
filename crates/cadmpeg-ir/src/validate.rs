@@ -249,13 +249,15 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: crate::features::ConfigurationBodies::Resolved(Default::default()),
+            bodies: crate::features::ConfigurationBodies::Resolved(
+                crate::features::DistinctMembers::default(),
+            ),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
                     evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: crate::features::DistinctMembers::default(),
                     },
                     dependencies: Default::default(),
                     definition: FeatureDefinition::Sketch {
