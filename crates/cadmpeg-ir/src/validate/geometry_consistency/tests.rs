@@ -958,10 +958,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         pcurve: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
             .expect("valid identity"),
         isoparametric: None,
-        parameter_range: (Some([-10.0, 0.0]))
-            .map(crate::geometry::DirectedParameterRange::new)
-            .transpose()
-            .unwrap(),
+        parameter_range: Some(crate::geometry::DirectedParameterRange::new([-10.0, 0.0]).unwrap()),
     }];
     let ranged_coedge_id = coedge.id.clone();
     let negative = validate_neutral(&negative_parameterization, Vec::new());

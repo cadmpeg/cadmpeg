@@ -56,10 +56,9 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
         crate::topology::PcurveUse {
             pcurve: crate::ids::PcurveId::mint("test:model:pcurve#second").expect("valid identity"),
             isoparametric: Some(false),
-            parameter_range: (Some([0.0, 1.0]))
-                .map(crate::geometry::DirectedParameterRange::new)
-                .transpose()
-                .unwrap(),
+            parameter_range: Some(
+                crate::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+            ),
         },
     ];
     let json = serde_json::to_string(&uses).unwrap();
