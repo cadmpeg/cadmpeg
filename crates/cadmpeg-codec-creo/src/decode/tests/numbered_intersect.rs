@@ -29,11 +29,6 @@ use crate::decode::sweep::{
     signed_unit_chart,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
-    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
-    GeneratedFaceRef, Length, LinearTermination, RadiusSpec, RevolutionAxis,
-};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
@@ -41,6 +36,14 @@ use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
+use cadmpeg_ir::{
+    features::{
+        EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
+        FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
+        GeneratedFaceRef, LinearTermination, RadiusSpec, RevolutionAxis,
+    },
+    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -214,7 +217,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::features::NonZeroLength::new(8.0)
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
                             .expect("nonzero length fixture"),
                     },
                     draft: None,
@@ -299,7 +302,7 @@ fn hole_outline_placement_preserves_stored_plane_order() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(6.5)
+                length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
                     .expect("nonzero length fixture"),
             },
         ))

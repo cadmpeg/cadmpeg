@@ -4,7 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::{
+    features::{DesignParameter, ParameterId, ParameterValue},
+    scalar::{Angle, Length},
+};
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
 use crate::native::CatiaNative;
@@ -3319,7 +3322,7 @@ fn typed_parameter_evaluation(
         FormulaParameterType::Length => ParameterValue::Length(Length::new(value)?),
         FormulaParameterType::Angle => ParameterValue::Angle(Angle::new(value)?),
         FormulaParameterType::Real => {
-            ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(value)?)
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(value)?)
         }
         FormulaParameterType::Integer => {
             if value.fract() != 0.0 || value < i64::MIN as f64 || value >= -(i64::MIN as f64) {

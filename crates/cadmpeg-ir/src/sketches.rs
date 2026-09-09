@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
-use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::NonEmptyString;
 use crate::transform::Transform;
+use crate::{
+    features::ParameterId,
+    scalar::{Angle, Length},
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1300,7 +1303,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// Unit normal of the result curve set's common plane.
         normal: Vector3,
         /// Strictly positive operation-level offset magnitude.
-        distance: crate::features::Length,
+        distance: crate::scalar::Length,
         /// Signed driving offset-distance parameter, when dimensional.
         #[serde(flatten, with = "offset_parameter_wire")]
         #[cfg_attr(feature = "schema", schemars(with = "OffsetParameterWire"))]

@@ -5,13 +5,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureSourceContent, Length, ParameterId, ParameterValue,
-};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
+        FeatureId as IrFeatureId, FeatureSourceContent, ParameterId, ParameterValue,
+    },
+    scalar::{Angle, Length},
+};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
@@ -131,13 +134,13 @@ fn curve_expression_helix_feature_definition(
     let axis = helix_payload.axis();
 
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    let pitch = cadmpeg_ir::features::NonZeroLength::new(axial_pitch)?;
+    let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Helix {
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
-        radius: cadmpeg_ir::features::PositiveLength::new(helix.radius)?,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(helix.radius)?,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
-        revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+        revolutions: cadmpeg_ir::scalar::PositiveReal::new(helix.revolutions)?,
         start_angle: Angle::new(helix.start_angle)?,
         clockwise: helix.clockwise,
         segment_turns: None,
@@ -468,16 +471,14 @@ pub(crate) fn transfer_curve_expression_features(
                 display: None,
                 value: assignment.value.as_ref().and_then(|value| match value {
                     crate::curve::CurveExpressionValue::Number(value) => Some(
-                        ParameterValue::Real(cadmpeg_ir::features::FiniteReal::new(*value)?),
+                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
                     ),
                     crate::curve::CurveExpressionValue::Length(value) => Some(
-                        ParameterValue::Length(cadmpeg_ir::features::Length::new(*value)?),
+                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
                     ),
-                    crate::curve::CurveExpressionValue::Angle(value) => {
-                        Some(ParameterValue::Angle(cadmpeg_ir::features::Angle::new(
-                            value.to_radians(),
-                        )?))
-                    }
+                    crate::curve::CurveExpressionValue::Angle(value) => Some(
+                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
+                    ),
                     crate::curve::CurveExpressionValue::Quantity(_) => None,
                     crate::curve::CurveExpressionValue::String(value) => {
                         Some(ParameterValue::String(value.clone()))
@@ -555,7 +556,7 @@ pub(crate) fn transfer_curve_expression_features(
                     ))?,
                     axial_rise: Length::new(helix.height)?,
                     pitch: Length::new(helix.height / helix.revolutions)?,
-                    revolutions: cadmpeg_ir::features::PositiveReal::new(helix.revolutions)?,
+                    revolutions: cadmpeg_ir::scalar::PositiveReal::new(helix.revolutions)?,
                     start_angle: Angle::new(helix.start_angle)?,
                     clockwise: helix.clockwise,
                 })

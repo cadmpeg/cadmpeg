@@ -157,7 +157,6 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
 
 #[test]
 fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
-    use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         OffsetParameter, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
@@ -165,6 +164,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
         SketchOffsetPair,
     };
+    use crate::{features::ParameterId, scalar::Length};
 
     let entity = SketchEntityId::mint("synthetic:test:entity#0").unwrap();
     let parameter = ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar");
@@ -385,8 +385,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
 
 #[test]
 fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
-    use crate::features::Length;
     use crate::math::{Point2, Point3, Vector3};
+    use crate::scalar::Length;
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
@@ -550,12 +550,15 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
 
 #[test]
 fn spatial_sketch_geometry_round_trips_and_validates() {
-    use crate::features::{DesignParameter, Length, ParameterId, ParameterValue};
     use crate::sketches::{
         OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
         SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
         SpatialSketchId, SpatialSketchProfile,
+    };
+    use crate::{
+        features::{DesignParameter, ParameterId, ParameterValue},
+        scalar::Length,
     };
 
     let mut ir = unit_cube();
@@ -1078,7 +1081,7 @@ fn spatial_sketch_paths_round_trip_through_json() {
 fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
     crate::sketches::SketchPatternDirection::new(
         axis,
-        crate::features::Length::new(2.0).unwrap(),
+        crate::scalar::Length::new(2.0).unwrap(),
         None,
         None,
     )
@@ -1141,7 +1144,7 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
 
 #[test]
 fn circular_pattern_derives_count_and_indices_on_the_wire() {
-    use crate::features::Angle;
+    use crate::scalar::Angle;
     use crate::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinitionInput,
         SketchEntityId,
@@ -1184,10 +1187,10 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
 
 #[test]
 fn offset_parameter_keeps_the_paired_factor_wire_shape() {
-    use crate::features::{Length, ParameterId};
     use crate::sketches::{
         OffsetParameter, SketchConstraintDefinitionInput, SketchEntityId, SketchOffsetPair,
     };
+    use crate::{features::ParameterId, scalar::Length};
 
     let definition = SketchConstraintDefinitionInput::Offset {
         pairs: vec![SketchOffsetPair {
@@ -1219,8 +1222,8 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
 
 #[test]
 fn conic_bounds_keep_the_paired_wire_fields() {
-    use crate::features::{Angle, Length};
     use crate::math::Point2;
+    use crate::scalar::{Angle, Length};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let cases = [
@@ -1282,8 +1285,8 @@ fn conic_bounds_keep_the_paired_wire_fields() {
 
 #[test]
 fn text_placement_keeps_the_paired_wire_fields() {
-    use crate::features::{Angle, Length};
     use crate::math::Point2;
+    use crate::scalar::{Angle, Length};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition, TextPlacement};
 
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Text {
@@ -1397,7 +1400,7 @@ fn solver_scalar_class_uses_the_numeric_wire_discriminator() {
         first: 17,
         second: 18,
         difference: 19,
-        value: crate::features::Angle::new(0.5).unwrap(),
+        value: crate::scalar::Angle::new(0.5).unwrap(),
     };
     let wire = serde_json::to_value(&angle).unwrap();
     assert_eq!(
@@ -1444,7 +1447,7 @@ fn solver_scalar_class_rejects_a_constraint_slot_mismatch() {
             first: 17,
             second: 18,
             difference: 19,
-            value: crate::features::Angle::new(0.5).unwrap(),
+            value: crate::scalar::Angle::new(0.5).unwrap(),
         },
         SketchConstraintDefinitionInput::ScalarEquality {
             first: 17,
@@ -1708,8 +1711,8 @@ fn coordinate_locus_distinctness_is_checked_at_admission() {
 
 #[test]
 fn planar_geometry_admission_checks_each_numeric_family() {
-    use crate::features::{Angle, Length};
     use crate::math::Point2;
+    use crate::scalar::{Angle, Length};
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition as Definition};
 
     let point = Point2::new(0.0, 0.0);
@@ -1769,7 +1772,7 @@ fn planar_geometry_admission_checks_each_numeric_family() {
 
 #[test]
 fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
-    use crate::features::Length;
+    use crate::scalar::Length;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let wire = serde_json::json!({
@@ -1801,7 +1804,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
 
 #[test]
 fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
-    use crate::features::Length;
+    use crate::scalar::Length;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let wire = serde_json::json!({
@@ -1872,7 +1875,7 @@ fn sketch_text_style_admits_only_nonempty_names_and_three_integer_weights() {
 
 #[test]
 fn spatial_analytic_geometry_checks_separation_frames_and_angles() {
-    use crate::features::{Angle, Length};
+    use crate::scalar::{Angle, Length};
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition as Definition};
 
     let origin = Point3::new(0.0, 0.0, 0.0);
@@ -1947,7 +1950,7 @@ fn spatial_analytic_geometry_checks_separation_frames_and_angles() {
 
 #[test]
 fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
-    use crate::features::Angle;
+    use crate::scalar::Angle;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
 
     let wire = serde_json::json!({
@@ -2169,7 +2172,7 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
 
 #[test]
 fn circular_pattern_admission_checks_angles_and_entity_ownership() {
-    use crate::features::Angle;
+    use crate::scalar::Angle;
     use crate::sketches::{SketchCircularPattern, SketchCircularPatternInstance, SketchEntityId};
 
     let center = SketchEntityId::mint("test:test:sketch-entity#center").unwrap();
@@ -2230,7 +2233,7 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
 
 #[test]
 fn rectangular_pattern_admission_checks_directions_and_distinct_members() {
-    use crate::features::Length;
+    use crate::scalar::Length;
     use crate::sketches::{
         SketchEntityId, SketchPatternDirection, SketchPatternInstance, SketchRectangularPattern,
     };
@@ -2284,11 +2287,11 @@ fn rectangular_pattern_admission_checks_directions_and_distinct_members() {
 
 #[test]
 fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
-    use crate::features::{Length, ParameterId};
     use crate::sketches::{
         SketchConstraintDefinition, SketchConstraintDefinitionInput as Kind,
         SketchDistanceMeasurement, SketchEntityId, SketchLocus, SketchOffsetPair,
     };
+    use crate::{features::ParameterId, scalar::Length};
 
     let a = SketchEntityId::mint("test:test:sketch-entity#a").unwrap();
     let b = SketchEntityId::mint("test:test:sketch-entity#b").unwrap();
@@ -2431,7 +2434,7 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
 
 #[test]
 fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
-    use crate::features::{Angle, Length};
+    use crate::scalar::{Angle, Length};
     use crate::sketches::{
         SketchConstraintDefinition, SketchConstraintDefinitionInput as Kind, SketchEntityId,
         SketchLabelValue, SketchLocus, SketchOffsetPair,
@@ -2542,7 +2545,7 @@ fn spatial_constraint_admission_rejects_local_invalid_states() {
         SpatialSketchConstraintDefinitionInput as Kind, SpatialSketchEntityId,
         SpatialSketchEntityPair,
     };
-    use crate::features::Length;
+    use crate::scalar::Length;
     let id =
         |name: &str| SpatialSketchEntityId::mint(format!("test:entity:spatial#{name}")).unwrap();
     let a = id("a");

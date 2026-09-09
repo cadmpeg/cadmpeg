@@ -392,9 +392,9 @@ fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
 
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 

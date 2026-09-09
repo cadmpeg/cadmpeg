@@ -2330,8 +2330,9 @@ pub(crate) fn project_fixed_fillet_with_corners(
     vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FilletGroup, Length, RadiusSpec, VariableRadius,
+    use cadmpeg_ir::{
+        features::{FeatureDefinition, FilletGroup, RadiusSpec, VariableRadius},
+        scalar::Length,
     };
 
     let fixed = scope.fixed_fillet_parameters()?;
@@ -2339,7 +2340,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
     let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match group.law() {
         crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
             .then_some(RadiusSpec::Constant {
-                radius: cadmpeg_ir::features::PositiveLength::new(radius.value * 10.0)?,
+                radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value * 10.0)?,
             }),
         crate::records::feature::DesignFixedFilletLaw::Variable {
             start,
@@ -2468,7 +2469,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 radius,
                 tangency_weight: fixed_group
                     .tangency_weight()
-                    .map(|tangency| cadmpeg_ir::features::FiniteReal::try_from(tangency.value))
+                    .map(|tangency| cadmpeg_ir::scalar::FiniteReal::try_from(tangency.value))
                     .transpose()
                     .ok()?,
             })

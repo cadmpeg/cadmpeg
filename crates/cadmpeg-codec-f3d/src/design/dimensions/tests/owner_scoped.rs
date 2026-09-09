@@ -157,8 +157,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             let SketchGeometryDefinition::Circle { radius, .. } = definition else {
                 unreachable!("test entity is circular")
             };
-            *radius =
-                cadmpeg_ir::features::Length::new(radius.get() + RADIUS_PERTURBATION).unwrap();
+            *radius = cadmpeg_ir::scalar::Length::new(radius.get() + RADIUS_PERTURBATION).unwrap();
         })
         .unwrap();
     assert!(matches!(
@@ -203,8 +202,8 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(2.0, 3.0),
         radius: Length::new(5.0).unwrap(),
-        start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-        end_angle: cadmpeg_ir::features::Angle::new(1.0).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
     })
     .unwrap();
     assert!(
@@ -213,7 +212,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     );
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(2.0, 3.0),
-        major_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
+        major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
         major_radius: Length::new(5.0).unwrap(),
         minor_radius: Length::new(3.0).unwrap(),
         bounds: None,

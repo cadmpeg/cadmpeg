@@ -20,13 +20,16 @@ use crate::records::topology::{
 };
 use crate::records::{DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand};
 use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SpatialSketch, SpatialSketchEntity,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     SpatialSketchProfile,
+};
+use cadmpeg_ir::{
+    features::{PathRef, ProfileRef, SketchProfileRegion},
+    scalar::{Angle, Length},
 };
 
 fn group() -> DesignConstructionOperandGroup {

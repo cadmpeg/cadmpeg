@@ -21,10 +21,11 @@ use crate::decode::report::append_design_intent_losses;
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
-    use cadmpeg_ir::features::{
-        FaceSelection, HoleKind, HolePlacement, Length, LinearTermination, ProfileRef,
-    };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, ProfileRef},
+        scalar::Length,
+    };
 
     let directed = HolePlacement::Directed {
         position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
@@ -64,14 +65,14 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             vec![axis.clone()],
             None,
             LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             },
         ),
         (
             vec![axis],
             Some(HoleKind::Chamfer {
-                diameter: cadmpeg_ir::features::PositiveLength::new(7.0).unwrap(),
-                angle: cadmpeg_ir::features::InteriorAngle::new(0.5).unwrap(),
+                diameter: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
+                angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
             }),
             LinearTermination::ThroughAll,
         ),
@@ -130,31 +131,31 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 
     for kind in [
         HoleKind::Chamfer {
-            diameter: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(0.5).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
         },
         HoleKind::Counterbore {
-            diameter: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
-            depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
         },
         HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
-            depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-            drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(0.5).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
         },
         HoleKind::Countersink {
-            diameter: cadmpeg_ir::features::PositiveLength::new(4.0).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(0.5).unwrap(),
+            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
         },
         HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
-                cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
+                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 None,
             )
             .unwrap(),
 
-            depth: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-            angle: cadmpeg_ir::features::InteriorAngle::new(0.5).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
         },
     ] {
         assert!(hole_feature_is_incomplete(
@@ -210,11 +211,11 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         class: None,
         modeled: false,
         cosmetic: true,
-        pitch: Some(cadmpeg_ir::features::PositiveLength::new(1.0).unwrap()),
-        major_diameter: Some(cadmpeg_ir::features::PositiveLength::new(5.0).unwrap()),
+        pitch: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
+        major_diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         hand: ThreadHand::Right,
         depth: HoleThreadDepth::Blind {
-            depth: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
         },
         clearance: None,
     };
@@ -257,7 +258,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(!extrude_extent_is_incomplete(
         &ExtrudeExtent::TwoSided {
             first: side(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(5.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
             }),
             second: side(LinearTermination::ThroughAll),
         },
@@ -283,7 +284,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(termination_is_incomplete(
         &LinearTermination::OffsetFromFace {
             face: FaceSelection::Native("nx:face-selection#2".to_string()),
-            offset: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+            offset: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
         }
     ));
     assert!(termination_is_incomplete(&LinearTermination::ToVertex {
@@ -329,7 +330,7 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ),
-        thickness: Some(cadmpeg_ir::features::PositiveLength::new(2.0).unwrap()),
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
         side: Some(RibSide::Centered),
         draft: RibDraft::None,
     };
@@ -389,10 +390,11 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
 
 #[test]
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
-    use cadmpeg_ir::features::{
-        Length, PathRef, PatternKind, PatternStage, PatternStageCombination, PatternTransform,
-    };
     use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::{
+        features::{PathRef, PatternKind, PatternStage, PatternStageCombination, PatternTransform},
+        scalar::Length,
+    };
 
     let linear = PatternKind::new(PatternTransform::Linear {
         direction: Some(Vector3::new(1.0, 0.0, 0.0)),
@@ -735,7 +737,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(5.0).unwrap(),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
                 },
                 draft: None,
             },
@@ -853,7 +855,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         }),
         Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::features::PositiveAngle::new(1.0).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
             },
         }),
         Some(true),
@@ -1024,10 +1026,11 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 
 #[test]
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
-    use cadmpeg_ir::features::{
-        FaceSelection, HoleKind, HolePlacement, Length, LinearTermination, ProfileRef,
-    };
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::{
+        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, ProfileRef},
+        scalar::Length,
+    };
 
     let placement = HolePlacement::Directed {
         position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -1248,7 +1251,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         expression: "2".into(),
         display: None,
         value: Some(ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+            cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
         dependencies: Default::default(),
         properties: Default::default(),
@@ -1312,8 +1315,9 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{
-        BooleanOp, Feature, FeatureDefinition, FeatureId, Length, UnresolvedFamily,
+    use cadmpeg_ir::{
+        features::{BooleanOp, Feature, FeatureDefinition, FeatureId, UnresolvedFamily},
+        scalar::Length,
     };
     use std::collections::BTreeMap;
 
@@ -1332,9 +1336,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Block {
                 dimensions: Some([
-                    cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-                    cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                    cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
@@ -1404,7 +1408,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
         })
         .unwrap();
@@ -1436,7 +1440,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     for incomplete in [
         draft(
             None,
-            Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+            Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             Some(false),
         ),
         draft(
@@ -1446,7 +1450,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ),
         draft(
             Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+            Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             None,
         ),
     ] {
@@ -1526,7 +1530,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             ]))
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::features::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
         })
         .unwrap();
     losses.clear();
@@ -1544,7 +1548,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .unwrap())
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::features::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
         })
         .unwrap();
     losses.clear();
@@ -1631,7 +1635,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
         }
         .body_output_family(),
@@ -1782,7 +1786,7 @@ fn nx_shell_completeness_requires_each_construction_field() {
         removed_faces: FaceSelection::Faces(vec![
             FaceId::mint("test:model:face#opening").expect("identity grammar")
         ]),
-        thickness: Some(cadmpeg_ir::features::PositiveLength::new(2.0).unwrap()),
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
         outward: Some(false),
         mode: Some(ShellMode::Skin),
         join: Some(ShellJoin::Intersection),

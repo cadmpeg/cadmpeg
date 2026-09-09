@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::{
-    Angle, FaceSelection, Length, LinearPatternDirection, PatternKind, PatternScaleCenter,
-    PatternStage, PatternStageCombination, PatternTransform,
-};
 use crate::math::{Point3, Vector3};
+use crate::{
+    features::{
+        FaceSelection, LinearPatternDirection, PatternKind, PatternScaleCenter, PatternStage,
+        PatternStageCombination, PatternTransform,
+    },
+    scalar::{Angle, Length},
+};
 use serde_json::json;
 
 fn linear(count: u32) -> PatternTransform {

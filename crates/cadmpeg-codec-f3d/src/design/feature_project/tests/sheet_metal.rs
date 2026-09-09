@@ -290,8 +290,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::features::PositiveLength::new(15.0).unwrap(),
+                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
+                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
                 }
             ])
             .unwrap(),
@@ -445,7 +445,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::Symmetric {
-            width: cadmpeg_ir::features::PositiveLength::new(30.0).unwrap(),
+            width: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
         }
     );
     let mut distinct_parameters = per_edge_parameters.clone();
@@ -545,12 +545,12 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         SheetMetalFlangeWidth::TwoSidesPerEdge {
             widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::PositiveLength::new(30.0).unwrap(),
-                    second: cadmpeg_ir::features::PositiveLength::new(15.0).unwrap(),
+                    first: cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
+                    second: cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap(),
                 },
                 SheetMetalFlangeTwoSidedWidth {
-                    first: cadmpeg_ir::features::PositiveLength::new(20.0).unwrap(),
-                    second: cadmpeg_ir::features::PositiveLength::new(40.0).unwrap(),
+                    first: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
+                    second: cadmpeg_ir::scalar::PositiveLength::new(40.0).unwrap(),
                 },
             ])
             .unwrap(),
@@ -1304,14 +1304,14 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::GapLength {
-            gap: cadmpeg_ir::features::NonNegativeLength::new(0.2).unwrap(),
-            length: cadmpeg_ir::features::PositiveLength::new(100.0).unwrap(),
+            gap: cadmpeg_ir::scalar::NonNegativeLength::new(0.2).unwrap(),
+            length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
         }
     );
     assert_eq!(direction, SheetMetalHemDirection::Unresolved);
     assert_eq!(
         bend_radius,
-        cadmpeg_ir::features::PositiveLength::new(2.5).unwrap()
+        cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()
     );
 
     let FeatureDefinition::SheetMetalHem { form, .. } = rolled else {
@@ -1320,8 +1320,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::Rolled {
-            radius: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
-            angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+            angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         }
     );
 
@@ -1331,9 +1331,9 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     assert_eq!(
         form,
         SheetMetalHemForm::Teardrop {
-            gap: cadmpeg_ir::features::NonNegativeLength::new(2.5).unwrap(),
-            length: cadmpeg_ir::features::PositiveLength::new(100.0).unwrap(),
-            radius: cadmpeg_ir::features::PositiveLength::new(5.0).unwrap(),
+            gap: cadmpeg_ir::scalar::NonNegativeLength::new(2.5).unwrap(),
+            length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
         }
     );
 }

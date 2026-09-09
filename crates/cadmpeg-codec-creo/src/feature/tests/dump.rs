@@ -449,7 +449,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(1.0).unwrap()
+            cadmpeg_ir::scalar::Angle::new(1.0).unwrap()
         ))
     );
     assert!(relation.dependencies.is_empty());
@@ -457,7 +457,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(
         relation.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
-            cadmpeg_ir::features::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
+            cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
     let model_feature = result
@@ -821,7 +821,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     assert!(result.ir().model.parameters.iter().all(|parameter| {
         parameter.value
             == Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ))
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

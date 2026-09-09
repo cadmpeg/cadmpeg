@@ -162,8 +162,8 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     use crate::native::features::holes::SimpleHoleExtent;
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
-    use cadmpeg_ir::features::{HoleKind, Length};
     use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::{features::HoleKind, scalar::Length};
 
     let operations = ["simple-a".to_string(), "simple-b".to_string()];
     let templates = operations
@@ -214,8 +214,8 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), Length::new(5.1).unwrap()))
         .collect();
     let chamfer = HoleKind::Chamfer {
-        diameter: cadmpeg_ir::features::PositiveLength::new(7.1).unwrap(),
-        angle: cadmpeg_ir::features::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
+        angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
     };
     let chamfers = operations
         .iter()
@@ -397,7 +397,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         vec![parameter(
             "synthetic:test:id#p1",
             Some(ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
             )),
             vec![ParameterId::mint("synthetic:test:id#missing").expect("identity grammar")],
         )],
@@ -405,14 +405,14 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
             parameter(
                 "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
-                    cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                 )),
                 Vec::new(),
             ),
             parameter(
                 "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
-                    cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
                 )),
                 Vec::new(),
             ),
@@ -421,14 +421,14 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
             parameter(
                 "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
-                    cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                 )),
                 Vec::new(),
             ),
             parameter(
                 "synthetic:test:id#p2",
                 Some(ParameterValue::Real(
-                    cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
                 )),
                 vec![ParameterId::mint("synthetic:test:id#p1").expect("identity grammar")],
             ),
@@ -1365,13 +1365,13 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     assert_eq!(
         ir.model.parameters[0].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(2.0 * 25.4).unwrap()
+            cadmpeg_ir::scalar::Length::new(2.0 * 25.4).unwrap()
         ))
     );
     assert_eq!(
         ir.model.parameters[1].value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(6.0 * 25.4).unwrap()
+            cadmpeg_ir::scalar::Length::new(6.0 * 25.4).unwrap()
         ))
     );
     assert_eq!(

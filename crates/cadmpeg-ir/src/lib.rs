@@ -66,6 +66,7 @@ pub mod products;
 mod provenance;
 pub mod references;
 pub mod report;
+pub mod scalar;
 pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;

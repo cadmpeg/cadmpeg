@@ -3162,7 +3162,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
 
     if !native_kind.starts_with("Linear Dimension")
@@ -3590,7 +3590,7 @@ pub(crate) fn annotation_offset_dimension_definition(
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
     if !parameter.source_kind().starts_with("Linear Dimension")
@@ -5461,7 +5461,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
 
 pub(crate) struct CountedOffset {
     pub pairs: Vec<cadmpeg_ir::sketches::SketchOffsetPair>,
-    pub distance: cadmpeg_ir::features::Length,
+    pub distance: cadmpeg_ir::scalar::Length,
 }
 
 pub(crate) fn exact_counted_offset(
@@ -5470,7 +5470,7 @@ pub(crate) fn exact_counted_offset(
     secondary_ids: &HashMap<u32, u64>,
     linear_tolerance: f64,
 ) -> Option<CountedOffset> {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::SketchOffsetPair;
 
     if loci.len() != entities.len() || loci.len() < 2 || !loci.len().is_multiple_of(2) {
@@ -5597,7 +5597,7 @@ pub(crate) fn exact_offset_constraint(
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
-    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
     if relation.unknown_constraint_bits() != 0

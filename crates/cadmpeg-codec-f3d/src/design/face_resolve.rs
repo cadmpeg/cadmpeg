@@ -2168,14 +2168,12 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
     point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
-pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
+pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
     (parameter
         .unit()
         .map(|field| field.value.as_str())
         .is_some_and(design_angle_unit))
-    .then_some(cadmpeg_ir::features::Angle::new(
-        parameter.evaluated_value(),
-    )?)
+    .then_some(cadmpeg_ir::scalar::Angle::new(parameter.evaluated_value())?)
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.

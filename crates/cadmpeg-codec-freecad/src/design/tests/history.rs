@@ -532,7 +532,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         width.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::features::FiniteReal::new(5.0).unwrap()
+            cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
     assert_eq!(

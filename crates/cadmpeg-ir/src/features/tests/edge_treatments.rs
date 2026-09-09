@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::{ChamferSpec, Length, RadiusSpec, VariableRadii, VariableRadius};
+use crate::{
+    features::{ChamferSpec, RadiusSpec, VariableRadii, VariableRadius},
+    scalar::Length,
+};
 use serde_json::json;
 
 fn point(parameter: f64, radius: f64) -> VariableRadius {

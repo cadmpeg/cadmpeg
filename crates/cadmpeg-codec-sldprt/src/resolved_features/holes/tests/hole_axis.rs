@@ -364,8 +364,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
-        depth: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
     };
     placements
         .get_or_insert_default()
@@ -396,8 +396,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: cadmpeg_ir::features::PositiveLength::new(6.0).unwrap(),
-        depth: cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
+        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
     };
 
     *shape = cadmpeg_ir::features::HoleShape::new(
@@ -618,7 +618,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
                 unreachable!();
             };
             *extent = Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             });
             *bottom = Some(HoleBottom::Flat);
         })
@@ -645,7 +645,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
                 unreachable!();
             };
             *extent = Some(LinearTermination::Blind {
-                length: cadmpeg_ir::features::NonZeroLength::new(9.0).unwrap(),
+                length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
             });
         })
         .unwrap();
@@ -673,13 +673,13 @@ fn hole_topology_uses_exact_cylinder_spans() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
+        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
+        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
 
@@ -778,12 +778,12 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let diameter = &shape.diameter();
     assert_eq!(
         *diameter,
-        Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap())
+        Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())
     );
     assert_eq!(
         *extent,
         Some(LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap()
+            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()
         })
     );
 }
@@ -816,13 +816,13 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
+        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
     };
     *extent = Some(LinearTermination::Blind {
-        length: cadmpeg_ir::features::NonZeroLength::new(10.0).unwrap(),
+        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: cadmpeg_ir::features::InteriorAngle::new(2.0).unwrap(),
+        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
         depth_to_tip: false,
     });
     placements

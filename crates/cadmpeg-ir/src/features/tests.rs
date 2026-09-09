@@ -28,12 +28,15 @@ fn native_feature_kind_preserves_the_source_spelling() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{
-        Angle, ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue,
-    };
     use crate::ids::BodyId;
+    use crate::{
+        features::{
+            ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
+            DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
+            ParameterId, ParameterValue,
+        },
+        scalar::{Angle, Length},
+    };
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
@@ -96,7 +99,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 
     ir.model.configurations[0].parameter_values = BTreeMap::from([(
         ParameterId::mint("synthetic:test:parameter#missing-value").expect("identity grammar"),
-        ParameterValue::Real(crate::features::FiniteReal::new(1.0).unwrap()),
+        ParameterValue::Real(crate::scalar::FiniteReal::new(1.0).unwrap()),
     )]);
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
@@ -478,25 +481,28 @@ fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
 
 #[test]
 fn feature_extents_round_trip_through_json() {
-    use crate::features::{
-        AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, Length, LinearTermination,
-        RevolveExtent,
-    };
     use crate::ids::FaceId;
+    use crate::{
+        features::{
+            AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, LinearTermination,
+            RevolveExtent,
+        },
+        scalar::Length,
+    };
 
     let extents = vec![
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::features::NonZeroLength::new(12.5).unwrap(),
+                    length: crate::scalar::NonZeroLength::new(12.5).unwrap(),
                 },
-                draft: Some(crate::features::SlopeAngle::new(0.1).unwrap()),
+                draft: Some(crate::scalar::SlopeAngle::new(0.1).unwrap()),
             },
         },
         ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::features::NonZeroLength::new(25.0).unwrap(),
+                    length: crate::scalar::NonZeroLength::new(25.0).unwrap(),
                 },
                 draft: None,
             },
@@ -504,9 +510,9 @@ fn feature_extents_round_trip_through_json() {
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::features::NonZeroLength::new(10.0).unwrap(),
+                    length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
                 },
-                draft: Some(crate::features::SlopeAngle::new(0.2).unwrap()),
+                draft: Some(crate::scalar::SlopeAngle::new(0.2).unwrap()),
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ToFace {
@@ -534,20 +540,20 @@ fn feature_extents_round_trip_through_json() {
     let revolve_extents = vec![
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: crate::features::PositiveAngle::new(std::f64::consts::PI).unwrap(),
+                angle: crate::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
             },
         },
         RevolveExtent::Symmetric {
             termination: AngularTermination::Angle {
-                angle: crate::features::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                angle: crate::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
         },
         RevolveExtent::TwoSided {
             first: AngularTermination::Angle {
-                angle: crate::features::PositiveAngle::new(0.25).unwrap(),
+                angle: crate::scalar::PositiveAngle::new(0.25).unwrap(),
             },
             second: AngularTermination::Angle {
-                angle: crate::features::PositiveAngle::new(0.75).unwrap(),
+                angle: crate::scalar::PositiveAngle::new(0.75).unwrap(),
             },
         },
     ];
@@ -567,7 +573,7 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     assert_eq!(
         blind,
         LinearTermination::Blind {
-            length: crate::features::NonZeroLength::new(12.5).unwrap()
+            length: crate::scalar::NonZeroLength::new(12.5).unwrap()
         }
     );
     assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
@@ -578,7 +584,7 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     assert_eq!(
         angle,
         AngularTermination::Angle {
-            angle: crate::features::PositiveAngle::new(1.25).unwrap()
+            angle: crate::scalar::PositiveAngle::new(1.25).unwrap()
         }
     );
     assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
@@ -625,8 +631,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
         shape: crate::features::SweepShape::new(
             SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: crate::features::SweepCircularRegion::new(
-                    crate::features::PositiveLength::new(3.0).unwrap(),
-                    Some(crate::features::PositiveLength::new(1.0).unwrap()),
+                    crate::scalar::PositiveLength::new(3.0).unwrap(),
+                    Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
                 )
                 .unwrap(),
             }),
@@ -681,8 +687,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
     assert!(report.is_ok(), "{report:#?}");
 
     assert!(crate::features::SweepCircularRegion::new(
-        crate::features::PositiveLength::new(2.0).unwrap(),
-        Some(crate::features::PositiveLength::new(2.0).unwrap()),
+        crate::scalar::PositiveLength::new(2.0).unwrap(),
+        Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
     )
     .is_err());
     let FeatureDefinition::Sweep { mut shape, .. } = definition else {
@@ -750,7 +756,10 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
 
 #[test]
 fn flex_modes_round_trip_and_validate() {
-    use crate::features::{Angle, FlexMode, Length};
+    use crate::{
+        features::FlexMode,
+        scalar::{Angle, Length},
+    };
 
     let modes = vec![
         FlexMode::Bending {
@@ -760,7 +769,7 @@ fn flex_modes_round_trip_and_validate() {
             angle: Angle::new(1.0).unwrap(),
         },
         FlexMode::Tapering {
-            factor: crate::features::PositiveReal::new(1.5).unwrap(),
+            factor: crate::scalar::PositiveReal::new(1.5).unwrap(),
         },
         FlexMode::Stretching {
             distance: Length::new(12.0).unwrap(),
@@ -783,7 +792,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_the_legacy_layout() {
     assert_eq!(
         kind,
         HoleKind::PartialCounterbore {
-            diameter: Some(crate::features::PositiveLength::new(10.0).unwrap()),
+            diameter: Some(crate::scalar::PositiveLength::new(10.0).unwrap()),
             depth: None,
         }
     );
@@ -1907,71 +1916,6 @@ fn topology_membership_admission() {
 }
 
 #[test]
-fn feature_scalars_reject_nonfinite_constructor_and_serde_values() {
-    use crate::features::{Angle, Length};
-    use serde::de::value::{Error, F64Deserializer};
-
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(Length::new(value).is_none());
-        assert!(Angle::new(value).is_none());
-        assert!(
-            <Length as serde::Deserialize>::deserialize(F64Deserializer::<Error>::new(value))
-                .is_err()
-        );
-        assert!(
-            <Angle as serde::Deserialize>::deserialize(F64Deserializer::<Error>::new(value))
-                .is_err()
-        );
-    }
-    for value in [-10.0, 0.0, 10.0] {
-        let length = Length::new(value).unwrap();
-        let angle = Angle::new(value).unwrap();
-        assert_eq!(length.get(), value);
-        assert_eq!(angle.get(), value);
-        assert_eq!(
-            serde_json::to_value(length).unwrap(),
-            serde_json::json!(value)
-        );
-        assert_eq!(
-            serde_json::to_value(angle).unwrap(),
-            serde_json::json!(value)
-        );
-        assert_eq!(
-            serde_json::from_value::<Length>(serde_json::json!(value)).unwrap(),
-            length
-        );
-        assert_eq!(
-            serde_json::from_value::<Angle>(serde_json::json!(value)).unwrap(),
-            angle
-        );
-    }
-}
-
-#[test]
-fn positive_lengths_reject_zero_negative_and_nonfinite_values() {
-    use crate::features::PositiveLength;
-    use serde::de::value::{Error, F64Deserializer};
-
-    for value in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(PositiveLength::new(value).is_none());
-        assert!(<PositiveLength as serde::Deserialize>::deserialize(
-            F64Deserializer::<Error>::new(value)
-        )
-        .is_err());
-    }
-    let length = PositiveLength::new(2.5).unwrap();
-    assert_eq!(length.get(), 2.5);
-    assert_eq!(
-        serde_json::to_value(length).unwrap(),
-        serde_json::json!(2.5)
-    );
-    assert_eq!(
-        serde_json::from_str::<PositiveLength>("2.5").unwrap(),
-        length
-    );
-}
-
-#[test]
 fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
     use super::{PrimitiveSolid, PrimitiveSolidKind};
     use serde_json::{json, Value};
@@ -2072,44 +2016,8 @@ fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
 }
 
 #[test]
-fn bounded_feature_scalars_reject_out_of_domain_values_on_every_admission_route() {
-    use crate::features::{
-        FiniteReal, Fraction, InteriorAngle, NonNegativeLength, NonZeroLength, NonZeroReal,
-        PositiveAngle, PositiveReal, SlopeAngle,
-    };
-    use serde::de::value::{Error, F64Deserializer};
-    use std::f64::consts::{FRAC_PI_2, PI, TAU};
-
-    macro_rules! check {
-        ($ty:ty, valid: [$($valid:expr),*], invalid: [$($invalid:expr),*]) => {
-            for value in [$($valid),*] {
-                let admitted = <$ty>::new(value).unwrap();
-                assert_eq!(admitted.get().to_bits(), value.to_bits());
-                let wire = serde_json::to_string(&admitted).unwrap();
-                let decoded: $ty = serde_json::from_str(&wire).unwrap();
-                assert_eq!(decoded.get().to_bits(), value.to_bits());
-            }
-            for value in [$($invalid,)* f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-                assert!(<$ty>::new(value).is_none());
-                assert!(<$ty as serde::Deserialize>::deserialize(F64Deserializer::<Error>::new(value)).is_err());
-            }
-        };
-    }
-
-    check!(NonNegativeLength, valid: [-0.0, 0.0, 2.0], invalid: [-1.0]);
-    check!(SlopeAngle, valid: [-1.0, -0.0, 0.0, 1.0], invalid: [-FRAC_PI_2, FRAC_PI_2, PI]);
-    check!(InteriorAngle, valid: [0.5, FRAC_PI_2], invalid: [-1.0, 0.0, PI]);
-    check!(PositiveAngle, valid: [1.0, TAU, 2.0 * TAU], invalid: [-1.0, -0.0, 0.0]);
-    check!(FiniteReal, valid: [-10.0, -0.0, 0.0, 10.0], invalid: []);
-    check!(PositiveReal, valid: [0.5, 10.0], invalid: [-1.0, -0.0, 0.0]);
-    check!(NonZeroLength, valid: [-2.0, 0.5], invalid: [-0.0, 0.0]);
-    check!(NonZeroReal, valid: [-2.0, 0.5], invalid: [-0.0, 0.0]);
-    check!(Fraction, valid: [-0.0, 0.0, 0.5, 1.0], invalid: [-0.5, 1.5]);
-}
-
-#[test]
 fn scale_factors_admit_only_finite_nonzero_components() {
-    use crate::features::{NonZeroReal, ScaleFactors};
+    use crate::{features::ScaleFactors, scalar::NonZeroReal};
     for value in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(NonZeroReal::new(value).is_none());
     }
@@ -2394,10 +2302,11 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
 
 #[test]
 fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
-    use crate::features::{
-        FeatureCircularArc, FeatureDefinition, FeatureEllipticArc, PositiveLength,
-    };
     use crate::geometry::DirectedParameterRange;
+    use crate::{
+        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc},
+        scalar::PositiveLength,
+    };
     let center = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
     let major_axis = Vector3::new(3.0, 0.0, 0.0);
@@ -2517,7 +2426,7 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
 
 #[test]
 fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_travel() {
-    use crate::features::{HelicalSweepTravel, Length};
+    use crate::{features::HelicalSweepTravel, scalar::Length};
     for [height, radial_growth] in [[-2.0, 0.0], [0.0, -3.0], [2.0, -3.0]] {
         let travel = HelicalSweepTravel::new(
             Length::new(height).unwrap(),

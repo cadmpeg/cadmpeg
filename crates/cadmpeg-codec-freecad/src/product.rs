@@ -320,7 +320,7 @@ pub(crate) fn transfer_neutral(
             let scale: [f64; 3] =
                 std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
             let [x, y, z] = scale.map(|value| {
-                cadmpeg_ir::features::FiniteReal::new(value)
+                cadmpeg_ir::scalar::FiniteReal::new(value)
                     .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
             });
             let scale = [x?, y?, z?];
@@ -475,7 +475,7 @@ pub(crate) fn transfer_neutral(
             ordinal: 0,
             transform: Transform::from_rows(local_transform).expect("affine transform"),
             linked_prototype: None,
-            scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some(object.clone()),
             visible: None,
             link: None,

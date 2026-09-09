@@ -3,15 +3,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
-    DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
-    ParameterId, ParameterValue, PatternKind, PatternSeed, PatternTransform,
-};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{
+    features::{
+        BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, LinearTermination, ParameterId,
+        ParameterValue, PatternKind, PatternSeed, PatternTransform,
+    },
+    scalar::Length,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -50,7 +53,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                         plane: None,
                     },
                 },
-                angle: Some(cadmpeg_ir::features::SlopeAngle::new(0.1).unwrap()),
+                angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
             },
         ),
@@ -300,12 +303,12 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 shape: cadmpeg_ir::features::HoleShape::new(
                     cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::features::PositiveLength::new(4.0).unwrap()),
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
                 .unwrap(),
 
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(12.0).unwrap(),
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                 }),
                 bottom: Some(HoleBottom::Flat),
                 taper_angle: None,
@@ -410,7 +413,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     let mut edited_diameter = shape.diameter();
     let diameter = &mut edited_diameter;
     *placements = None;
-    *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
+    *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
     *extent = Some(LinearTermination::ThroughAll);
     *bottom = None;
 

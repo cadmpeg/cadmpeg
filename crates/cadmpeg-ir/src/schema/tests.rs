@@ -87,7 +87,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     )
                     .unwrap(),
                     radius: RadiusSpec::Constant {
-                        radius: crate::features::PositiveLength::new(1.0).unwrap(),
+                        radius: crate::scalar::PositiveLength::new(1.0).unwrap(),
                     },
                     tangency_weight: None,
                 }),

@@ -175,7 +175,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:test:circle#inner",
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length::new(4.0).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
         })
         .unwrap(),
     );
@@ -183,7 +183,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:test:circle#outer",
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(4.25).unwrap(),
         })
         .unwrap(),
     );
@@ -203,7 +203,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:test:circle#displaced",
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.001, -2.0),
-            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(4.25).unwrap(),
         })
         .unwrap(),
     );
@@ -218,7 +218,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:test:circle#tolerant-center",
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.000_000_5, -2.0),
-            radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(4.25).unwrap(),
         })
         .unwrap(),
     );
@@ -258,7 +258,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         "generated:test:circle#tolerant-outer",
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
-            radius: cadmpeg_ir::features::Length::new(4.250_000_5).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(4.250_000_5).unwrap(),
         })
         .unwrap(),
     );
@@ -299,7 +299,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         331,
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: cadmpeg_ir::features::Length::new(11.1125).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(11.1125).unwrap(),
         })
         .unwrap(),
     );
@@ -307,9 +307,9 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         796,
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, -19.05),
-            radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(0.975_682_713_4).unwrap(),
         })
         .unwrap(),
     );
@@ -317,9 +317,9 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         782,
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, 19.05),
-            radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(0.975_682_713_4).unwrap(),
         })
         .unwrap(),
     );
@@ -690,9 +690,9 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
         "generated:test:arc#bounded",
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(3.0, 0.0),
-            radius: cadmpeg_ir::features::Length::new(1.0).unwrap(),
-            start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
-            end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
         .unwrap(),
     );

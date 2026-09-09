@@ -1190,7 +1190,7 @@ impl<'a> Builder<'a> {
                 }
             };
             if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
             {
                 continue;
             }
@@ -1290,7 +1290,7 @@ impl<'a> Builder<'a> {
                     }
                 };
                 if !is_identity(&transform.rows())
-                    || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                    || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
                 {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1349,7 +1349,7 @@ impl<'a> Builder<'a> {
                 }
             };
             if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::features::FiniteReal::get) != [1.0; 3]
+                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
             {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,

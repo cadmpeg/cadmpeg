@@ -23,8 +23,8 @@ use crate::records::{
     SketchInputKind,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::{HashMap, HashSet};
 

@@ -598,7 +598,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
-            cadmpeg_ir::features::Length::new(12.5).unwrap()
+            cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
 }

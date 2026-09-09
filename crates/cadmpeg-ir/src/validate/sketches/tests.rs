@@ -3,12 +3,15 @@
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
-use crate::features::{Angle, ExtrudeDirection, Length};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
 use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use crate::{
+    features::ExtrudeDirection,
+    scalar::{Angle, Length},
+};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
@@ -122,8 +125,8 @@ fn mixed_full_circle_arc_validate_as_offsets() {
 
 #[test]
 fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
-    use crate::features::Length;
     use crate::math::{Point2, Point3, Vector3};
+    use crate::scalar::Length;
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -535,7 +538,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                            length: crate::scalar::NonZeroLength::new(1.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -623,7 +626,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::features::NonZeroLength::new(1.0).unwrap(),
+                            length: crate::scalar::NonZeroLength::new(1.0).unwrap(),
                         },
                         draft: None,
                     },

@@ -7,16 +7,19 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue,
-};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchLocus,
+};
+use cadmpeg_ir::{
+    features::{
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId,
+        ParameterValue,
+    },
+    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 

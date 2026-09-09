@@ -113,7 +113,7 @@ pub fn project_canvas_images(
                     )
                 })?,
                 opacity: Some(
-                    cadmpeg_ir::features::Fraction::new(f64::from(opacity)).ok_or_else(|| {
+                    cadmpeg_ir::scalar::Fraction::new(f64::from(opacity)).ok_or_else(|| {
                         CodecError::malformed(
                             "Canvas opacity must be finite and between zero and one",
                         )

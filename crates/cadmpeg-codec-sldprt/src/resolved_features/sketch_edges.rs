@@ -132,7 +132,7 @@ pub(super) fn project_edge(
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                         center,
-                        radius: cadmpeg_ir::features::Length::new(*radius)?,
+                        radius: cadmpeg_ir::scalar::Length::new(*radius)?,
                     })
                     .ok()?,
                 )
@@ -141,12 +141,12 @@ pub(super) fn project_edge(
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center,
-                        radius: cadmpeg_ir::features::Length::new(*radius)?,
-                        start_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                        radius: cadmpeg_ir::scalar::Length::new(*radius)?,
+                        start_angle: cadmpeg_ir::scalar::Angle::new(parameters.map_or_else(
                             || (start.v - center.v).atan2(start.u - center.u),
                             |range| range[0],
                         ))?,
-                        end_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                        end_angle: cadmpeg_ir::scalar::Angle::new(parameters.map_or_else(
                             || (end.v - center.v).atan2(end.u - center.u),
                             |range| range[1],
                         ))?,
@@ -193,17 +193,17 @@ pub(super) fn project_edge(
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center,
-                    major_angle: cadmpeg_ir::features::Angle::new(major_angle)?,
-                    major_radius: cadmpeg_ir::features::Length::new(*major_radius)?,
-                    minor_radius: cadmpeg_ir::features::Length::new(*minor_radius)?,
+                    major_angle: cadmpeg_ir::scalar::Angle::new(major_angle)?,
+                    major_radius: cadmpeg_ir::scalar::Length::new(*major_radius)?,
+                    minor_radius: cadmpeg_ir::scalar::Length::new(*minor_radius)?,
                     bounds: if full {
                         None
                     } else {
                         Some([
-                            cadmpeg_ir::features::Angle::new(
+                            cadmpeg_ir::scalar::Angle::new(
                                 parameters.map_or_else(|| parameter(start), |range| range[0]),
                             )?,
-                            cadmpeg_ir::features::Angle::new(
+                            cadmpeg_ir::scalar::Angle::new(
                                 parameters.map_or_else(|| parameter(end), |range| range[1]),
                             )?,
                         ])

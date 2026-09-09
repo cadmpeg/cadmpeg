@@ -5,6 +5,10 @@
 //! radians.
 
 use crate::math::{Point2, Vector3};
+pub use crate::scalar::{
+    FiniteReal as FiniteScalar, NonNegativeReal as NonNegativeScalar,
+    PositiveReal as PositiveScalar,
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,67 +35,8 @@ enum CanonicalLengthUnitWire {
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
-const DEFAULT_LINEAR_TOLERANCE: f64 = 1.0e-6;
-const DEFAULT_ANGULAR_TOLERANCE: f64 = 1.0e-10;
-
-macro_rules! checked_scalar {
-    ($name:ident, $doc:literal, $value:ident, $valid:expr, $error:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
-        pub struct $name(f64);
-
-        impl $name {
-            /// Construct a value that satisfies this scalar's numeric contract.
-            pub const fn new($value: f64) -> Option<Self> {
-                if $valid {
-                    Some(Self($value))
-                } else {
-                    None
-                }
-            }
-
-            /// Return the numeric value.
-            pub const fn get(self) -> f64 {
-                self.0
-            }
-
-            pub(crate) const fn as_raw(&self) -> &f64 {
-                &self.0
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                Self::new(f64::deserialize(deserializer)?)
-                    .ok_or_else(|| serde::de::Error::custom($error))
-            }
-        }
-    };
-}
-
-checked_scalar!(
-    FiniteScalar,
-    "A finite signed scalar.",
-    value,
-    value.is_finite(),
-    "value must be finite"
-);
-checked_scalar!(
-    PositiveScalar,
-    "A positive finite scalar.",
-    value,
-    value.is_finite() && value > 0.0,
-    "value must be positive and finite"
-);
-checked_scalar!(
-    NonNegativeScalar,
-    "A nonnegative finite scalar.",
-    value,
-    value.is_finite() && value >= 0.0,
-    "value must be nonnegative and finite"
-);
+const DEFAULT_LINEAR_TOLERANCE: PositiveScalar = PositiveScalar::new(1.0e-6).unwrap();
+const DEFAULT_ANGULAR_TOLERANCE: PositiveScalar = PositiveScalar::new(1.0e-10).unwrap();
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -215,8 +160,8 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: PositiveScalar(DEFAULT_LINEAR_TOLERANCE),
-            angular: PositiveScalar(DEFAULT_ANGULAR_TOLERANCE),
+            linear: DEFAULT_LINEAR_TOLERANCE,
+            angular: DEFAULT_ANGULAR_TOLERANCE,
         }
     }
 }
@@ -353,13 +298,6 @@ impl TryFrom<Point2> for NonzeroPoint2 {
 impl From<NonzeroPoint2> for Point2 {
     fn from(value: NonzeroPoint2) -> Self {
         value.0
-    }
-}
-
-impl FiniteScalar {
-    /// Reverse the sign.
-    pub const fn negated(self) -> Self {
-        Self(-self.0)
     }
 }
 

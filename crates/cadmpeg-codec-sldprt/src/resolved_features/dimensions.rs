@@ -27,10 +27,13 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
+use cadmpeg_ir::{
+    features::FeatureDefinition,
+    scalar::{Angle, Length},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -798,7 +801,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     (
                         match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                             center,
-                            radius: cadmpeg_ir::features::Length::new(radius).ok_or_else(|| {
+                            radius: cadmpeg_ir::scalar::Length::new(radius).ok_or_else(|| {
                                 cadmpeg_core::CodecError::Malformed(
                                     "SolidWorks projected length must be finite".into(),
                                 )

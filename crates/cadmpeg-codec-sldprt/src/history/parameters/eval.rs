@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-expression parser and arithmetic.
 
-use cadmpeg_ir::features::{Angle, FiniteReal, Length, ParameterId, ParameterValue};
+use cadmpeg_ir::{
+    features::{ParameterId, ParameterValue},
+    scalar::{Angle, FiniteReal, Length},
+};
 use std::collections::HashMap;
 
 use super::ParameterAliasView;
@@ -667,7 +670,7 @@ mod tests {
         add_parameter_values, exponentiate_parameter_value, multiply_parameter_values,
         ParameterFunction,
     };
-    use cadmpeg_ir::features::{FiniteReal, ParameterValue};
+    use cadmpeg_ir::{features::ParameterValue, scalar::FiniteReal};
 
     #[test]
     fn real_arithmetic_rejects_non_finite_results_at_construction() {

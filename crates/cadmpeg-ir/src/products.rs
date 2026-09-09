@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
-use crate::features::FiniteReal;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -702,7 +702,7 @@ mod tests {
             ordinal: 0,
             transform: translation(x),
             linked_prototype: None,
-            scale: [crate::features::FiniteReal::ONE; 3],
+            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

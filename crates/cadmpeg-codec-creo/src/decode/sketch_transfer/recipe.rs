@@ -208,7 +208,7 @@ pub(in super::super) fn feature_revolution_extent(
     unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).map(|_| {
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::features::PositiveAngle::FULL_TURN,
+                angle: cadmpeg_ir::scalar::PositiveAngle::FULL_TURN,
             },
         }
     })

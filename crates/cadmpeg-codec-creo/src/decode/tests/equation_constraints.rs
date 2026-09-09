@@ -11,10 +11,13 @@ use crate::decode::sketch_transfer::constraints::{
     section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
 };
 use crate::feature::definitions::ScalarLane;
-use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
     SketchLocus,
+};
+use cadmpeg_ir::{
+    features::ParameterId,
+    scalar::{Angle, Length},
 };
 use std::collections::BTreeSet;
 

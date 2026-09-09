@@ -160,7 +160,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: crate::features::NonZeroLength::new(10.0).unwrap(),
+                        length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
                     },
                     draft: None,
                 },
@@ -507,7 +507,10 @@ fn document_parameters_can_feed_feature_parameters() {
 
 #[test]
 fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
-    use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
+    use crate::{
+        features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId},
+        scalar::Length,
+    };
 
     let mut ir = unit_cube();
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
@@ -758,11 +761,14 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 
 #[test]
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
-    use crate::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
-        DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-        ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef, Length,
-        LinearTermination, PatternKind, PatternSeed, PatternTransform, ProfileRef,
+    use crate::{
+        features::{
+            BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+            DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+            ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef,
+            LinearTermination, PatternKind, PatternSeed, PatternTransform, ProfileRef,
+        },
+        scalar::Length,
     };
     use std::collections::{BTreeMap, HashSet};
 
@@ -856,7 +862,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::features::NonZeroLength::new(5.0).unwrap(),
+                            length: crate::scalar::NonZeroLength::new(5.0).unwrap(),
                         },
                         draft: None,
                     },
@@ -1099,7 +1105,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
                     Point2::new(10.0, 5.0),
                 ])
                 .unwrap(),
-                opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
+                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
             },
         ),
         native_ref: None,
@@ -1155,7 +1161,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
             asset: asset_id,
             faces: FaceSelection::Faces(vec![face_id]),
             mapping: DecalMapping::FitToFaces,
-            opacity: Some(crate::features::Fraction::new(0.75).unwrap()),
+            opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
         }),
         native_ref: None,
     });

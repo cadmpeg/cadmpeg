@@ -3,8 +3,8 @@
 use super::super::markers::spatial_vertex_coordinates;
 use super::{append_spatial_vertex, arc_angle_relation_kind, patch_spatial_vertex, solved_tangent};
 use crate::records::SketchRelationKind;
-use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 #[test]
@@ -44,7 +44,7 @@ fn generated_arc_angles_use_only_exact_native_quadrants() {
 
 #[test]
 fn solved_tangent_treats_arcs_as_bounded_circles() {
-    use cadmpeg_ir::features::Angle;
+    use cadmpeg_ir::scalar::Angle;
 
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(-2.0, 1.0),
