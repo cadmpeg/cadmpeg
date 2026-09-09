@@ -983,12 +983,7 @@ pub enum LocationRef {
 
 impl From<usize> for LocationRef {
     fn from(index: usize) -> Self {
-        std::num::NonZeroUsize::new(index).map_or(Self::Identity, |index| {
-            Self::Table(TableRef {
-                index,
-                table: std::marker::PhantomData,
-            })
-        })
+        TableRef::optional(index).map_or(Self::Identity, Self::Table)
     }
 }
 
@@ -1042,12 +1037,15 @@ impl<T> Clone for TableRef<T> {
 impl<T> TableRef<T> {
     /// Admits a nonzero table index.
     pub fn new(index: usize) -> Result<Self, String> {
-        std::num::NonZeroUsize::new(index)
-            .map(|index| Self {
-                index,
-                table: std::marker::PhantomData,
-            })
-            .ok_or_else(|| "table reference must be nonzero".to_owned())
+        Self::optional(index).ok_or_else(|| "table reference must be nonzero".to_owned())
+    }
+
+    /// Admits an optional one-based table index.
+    pub fn optional(index: usize) -> Option<Self> {
+        std::num::NonZeroUsize::new(index).map(|index| Self {
+            index,
+            table: std::marker::PhantomData,
+        })
     }
 
     /// Returns the one-based wire index.
@@ -1280,10 +1278,7 @@ impl TryFrom<TextTShapeWire> for TextTShape {
             ) => TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-                    index,
-                    table: std::marker::PhantomData,
-                }),
+                surface: TableRef::optional(surface),
                 location: location.into(),
                 triangulation: triangulation
                     .map(TableRef::new)
@@ -2389,10 +2384,7 @@ fn parse_binary_tshape(
             TextTShapeGeometry::Face {
                 natural_restriction,
                 tolerance,
-                surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-                    index,
-                    table: std::marker::PhantomData,
-                }),
+                surface: TableRef::optional(surface),
                 location: location.into(),
                 triangulation: triangulation
                     .map(TableRef::new)
@@ -4096,10 +4088,7 @@ fn parse_face_geometry(
     Ok(TextTShapeGeometry::Face {
         natural_restriction,
         tolerance,
-        surface: std::num::NonZeroUsize::new(surface).map(|index| TableRef {
-            index,
-            table: std::marker::PhantomData,
-        }),
+        surface: TableRef::optional(surface),
         location: location.into(),
         triangulation: triangulation
             .map(TableRef::new)
