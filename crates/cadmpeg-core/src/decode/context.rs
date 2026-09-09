@@ -329,7 +329,7 @@ impl<'a> DecodeContext<'a> {
         source: View<'_>,
         spec: ExpandSpec,
     ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
-        self.begin_expand_as(source, spec, "expanded")
+        self.begin_expansion(source, spec, None)
     }
 
     /// Begins a labeled expansion so the derived space resolves to `label`.
@@ -338,6 +338,15 @@ impl<'a> DecodeContext<'a> {
         source: View<'_>,
         spec: ExpandSpec,
         label: impl Into<String>,
+    ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
+        self.begin_expansion(source, spec, Some(label.into()))
+    }
+
+    fn begin_expansion(
+        &self,
+        source: View<'_>,
+        spec: ExpandSpec,
+        member: Option<String>,
     ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
@@ -385,7 +394,7 @@ impl<'a> DecodeContext<'a> {
             ctx: self,
             spec,
             location: source.location(),
-            label: label.into(),
+            member,
             source_end: source.end() as u64,
             buffer,
         })
@@ -451,7 +460,7 @@ impl<'a> DecodeContext<'a> {
         parent: View<'v>,
         range: ByteRange,
     ) -> Result<View<'v>, CodecError> {
-        self.register_slice_as(parent, range, "stored")
+        self.register_child_slice(parent, range, None)
     }
 
     /// Registers a labeled stored child range so the space resolves to `label`.
@@ -460,6 +469,15 @@ impl<'a> DecodeContext<'a> {
         parent: View<'v>,
         range: ByteRange,
         label: impl Into<String>,
+    ) -> Result<View<'v>, CodecError> {
+        self.register_child_slice(parent, range, Some(label.into()))
+    }
+
+    fn register_child_slice<'v>(
+        &self,
+        parent: View<'v>,
+        range: ByteRange,
+        member: Option<String>,
     ) -> Result<View<'v>, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
@@ -478,8 +496,9 @@ impl<'a> DecodeContext<'a> {
                 ))
             })?;
         let space = self.allocate_space(
-            label.into(),
+            member.clone().unwrap_or_else(|| "stored".into()),
             SpaceDerivation::StoredSlice {
+                member,
                 parent: parent.space(),
                 range,
             },
@@ -528,7 +547,7 @@ pub struct ExpandWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
     spec: ExpandSpec,
     location: SourceLocation,
-    label: String,
+    member: Option<String>,
     source_end: u64,
     buffer: Vec<u8>,
 }
@@ -580,8 +599,9 @@ impl<'a> ExpandWriter<'_, 'a> {
         }
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
         let space = self.ctx.allocate_space(
-            self.label,
+            self.member.clone().unwrap_or_else(|| "expanded".into()),
             SpaceDerivation::Expanded {
+                member: self.member,
                 parent: self.location.space,
                 source_range: ByteRange {
                     start: self.location.offset,
