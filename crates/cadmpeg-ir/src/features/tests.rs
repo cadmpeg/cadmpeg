@@ -1868,7 +1868,7 @@ fn body_selection_admission_rejects_invalid_members() {
 #[test]
 fn topology_membership_admission() {
     use super::{DistinctMembers, FeatureResultTopology};
-    let id = crate::ids::FeatureResultTopologyId::mint("test:result#1").unwrap();
+    let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
     let feature = super::FeatureId::mint("test:feature#1").unwrap();
     assert!(FeatureResultTopology::new(
         id.clone(),
@@ -1895,13 +1895,13 @@ fn topology_membership_admission() {
     assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
     assert!(
         serde_json::from_value::<super::ConfigurationBodies>(serde_json::json!([
-            "test:body#1",
-            "test:body#1"
+            "test:model:body#1",
+            "test:model:body#1"
         ]))
         .is_err()
     );
     assert!(serde_json::from_value::<FeatureResultTopology>(
-        serde_json::json!({"id":"test:result#1","output_of":"test:feature#1"})
+        serde_json::json!({"id":"test:model:feature-result#1","output_of":"test:feature#1"})
     )
     .is_err());
 }
