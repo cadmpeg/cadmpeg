@@ -488,7 +488,9 @@ mod tests {
     fn bridge_wire_rejects_invalid_construction_radius() {
         let native =
             crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
-        let relation = native.consolidated_owner_packets[0].owner_chart().unwrap();
+        let relation = native.consolidated_owner_packets[0]
+            .owner_chart()
+            .expect("supported owner chart");
         for radius in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut wire =
                 CatiaOwnerChartBridgeWire::from_bridge(relation.bridge.clone(), relation.carrier);
@@ -501,7 +503,8 @@ mod tests {
             };
             *construction_radius = radius;
             assert_eq!(
-                wire.into_bridge(relation.carrier).unwrap_err(),
+                wire.into_bridge(relation.carrier)
+                    .expect_err("invalid construction radius"),
                 "construction_radius must be finite and positive"
             );
         }
