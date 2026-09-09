@@ -1146,3 +1146,21 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
     );
     assert_eq!(persistence.type_6_values.unresolved_count, 0);
 }
+
+#[test]
+fn value_kind_shares_payload_types_and_preserves_identity_tokens() {
+    let unsigned: [ValueKind<NumericPayload<u32>>; 4] = [
+        ValueKind::TYPE5,
+        ValueKind::TYPE7,
+        ValueKind::TYPE9,
+        ValueKind::TYPE11,
+    ];
+    assert_eq!(
+        unsigned.map(ValueKind::as_str),
+        ["type_5", "type_7", "type_9", "type_11"]
+    );
+    let real: [ValueKind<NumericPayload<Real>>; 2] = [ValueKind::REAL, ValueKind::TYPE6];
+    assert_eq!(real.map(ValueKind::as_str), ["real", "type_6"]);
+    let strings: [ValueKind<StringValue>; 2] = [ValueKind::TYPE3, ValueKind::TYPE4];
+    assert_eq!(strings.map(ValueKind::as_str), ["type_3", "type_4"]);
+}

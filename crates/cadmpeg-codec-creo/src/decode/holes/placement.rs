@@ -91,7 +91,7 @@ pub struct CapOutline {
     pub surface_id: u32,
     pub origin: [f64; 3],
     pub normal: [f64; 3],
-    pub corners: Option<[[f64; 3]; 2]>,
+    pub corners: [[f64; 3]; 2],
 }
 
 pub fn cap_square_center_radius(
@@ -128,7 +128,7 @@ pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder>
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
-    let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
+    let (center, radius) = cap_square_center_radius(cap.corners, axis_index)?;
     let radial_axis = (0..3).find(|index| *index != axis_index)?;
     let mut ref_direction = [0.0; 3];
     ref_direction[radial_axis] = 1.0;
@@ -153,7 +153,7 @@ pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCyli
     let mut centers = Vec::<[f64; 3]>::new();
     let mut radii = Vec::new();
     for cap in caps {
-        let (center, radius) = cap_square_center_radius(cap.corners?, axis_index)?;
+        let (center, radius) = cap_square_center_radius(cap.corners, axis_index)?;
         centers.push(center);
         radii.push(radius);
     }

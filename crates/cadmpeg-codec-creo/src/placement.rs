@@ -93,6 +93,21 @@ impl FeatureSectionTransform {
         self.v_axis
     }
 
+    fn flipped_v(self) -> Self {
+        Self {
+            v_axis: scale(self.v_axis, -1.0),
+            ..self
+        }
+    }
+
+    fn flipped_u_and_v(self) -> Self {
+        Self {
+            u_axis: scale(self.u_axis, -1.0),
+            v_axis: scale(self.v_axis, -1.0),
+            ..self
+        }
+    }
+
     /// Right-handed normal derived from the section axes.
     pub fn normal(&self) -> [f64; 3] {
         cross(self.u_axis, self.v_axis)
@@ -616,21 +631,21 @@ fn unique_carrier_reference_id(section: &crate::feature::FeatureSection3d) -> Op
 }
 
 fn apply_section_orientation(
-    transform: &mut FeatureSectionTransform,
+    mut transform: FeatureSectionTransform,
     section: &crate::feature::FeatureSection3d,
-) {
+) -> FeatureSectionTransform {
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
-        transform.v_axis = scale(transform.v_axis, -1.0);
+        transform = transform.flipped_v();
     }
     if section.orientation.section_flip == Some(BinaryFlag::Set) {
-        transform.v_axis = scale(transform.v_axis, -1.0);
+        transform = transform.flipped_v();
     }
     if reference_flip_for_reference(section, unique_carrier_reference_id(section))
         == Some(BinaryFlag::Set)
     {
-        transform.u_axis = scale(transform.u_axis, -1.0);
-        transform.v_axis = scale(transform.v_axis, -1.0);
+        transform = transform.flipped_u_and_v();
     }
+    transform
 }
 
 fn definition_local_frame_transform(
@@ -1107,10 +1122,7 @@ pub(crate) fn resolve(
         let carrier_transform =
             generated_cylinder_section_transform(definition, sources, entity_tables)
                 .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
-                .map(|mut transform| {
-                    apply_section_orientation(&mut transform, section);
-                    transform
-                });
+                .map(|transform| apply_section_orientation(transform, section));
         let mut reference_ids = section.reference_plane_datum_geometry_id.map_or_else(
             || section.reference_planes.entity_ids().collect(),
             |id| vec![id],

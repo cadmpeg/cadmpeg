@@ -1611,7 +1611,10 @@ fn serialize_surface_named_value<S: serde::Serializer>(
             None,
             Some(array.count()),
             array.values().to_vec(),
-            array.tokens().to_vec(),
+            array.tokens().map_or_else(
+                || array.values().iter().map(|_| Vec::new()).collect(),
+                <[Vec<u8>]>::to_vec,
+            ),
             Vec::new(),
         ),
         crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
@@ -2014,8 +2017,8 @@ pub(super) fn surface_parameter_records(
                 terminal_scalar_frame: record.terminal_scalar_frame.clone(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
-                        values: frame.values,
-                        prefixes: frame.prefixes,
+                        values: frame.values(),
+                        prefixes: frame.prefixes(),
                     }
                 }),
                 positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
