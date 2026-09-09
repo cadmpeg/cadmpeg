@@ -365,6 +365,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     snapshot_scope
         .try_edit(|draft| {
             draft.frame_length = 485;
+            draft.paired_byte_offset = 485;
             draft.kind_offset = 373;
             draft.feature_ordinal_offset = 397;
             draft.history_state_id = Some(7);
@@ -382,13 +383,6 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         .unwrap();
     snapshot_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
-    snapshot_scope
-        .try_edit(|draft| {
-            draft.paired_byte_offset = 485;
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
         .expect("body-snapshot Base Feature frame is canonical");
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
