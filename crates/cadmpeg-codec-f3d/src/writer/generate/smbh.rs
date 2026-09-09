@@ -2,7 +2,7 @@
 //! SMBH body encoders and edge/vertex/point normalization for source-less
 //! generation.
 
-use cadmpeg_asm::brep::records::EndpointSlot;
+use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::F3dNative;
@@ -1749,9 +1749,12 @@ fn native_tolerant_vertex_tail(
     let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
     // The unset evaluated slot has no neutral tolerance; the native tail
     // carries the fact and the sentinel is written back.
-    let tolerance = match (vertex.tolerance, stored) {
-        (Some(tolerance), _) => tolerance.get(),
-        (None, Some(_)) => -1.0,
+    let tolerance = match (vertex.tolerance, stored.map(|tail| tail.evaluated_slot)) {
+        (Some(tolerance), _) => Some(tolerance.get()),
+        (None, Some(EvaluatedToleranceSlot::Unset)) => Some(-1.0),
+        // The source record ended before the evaluated slot; only the
+        // leading slots are written back.
+        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated)) => None,
         (None, None) => return,
     };
     // The record stores three f64 tolerance slots: the two leading slots
@@ -1768,6 +1771,9 @@ fn native_tolerant_vertex_tail(
     for value in leading {
         native_f64(records, value);
     }
+    let Some(tolerance) = tolerance else {
+        return;
+    };
     native_f64(
         records,
         if tolerance < 0.0 {

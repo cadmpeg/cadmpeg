@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edit validators that diff the target against the baseline and build edit sets.
 
-use cadmpeg_asm::brep::records::EndpointSlot;
+use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
@@ -443,12 +443,25 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
-        let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
-            Some(tolerance) => tolerance.get(),
-            None if after.evaluated_unset => -1.0,
-            None => {
+        if (before.evaluated_slot == EvaluatedToleranceSlot::Absent)
+            != (after.evaluated_slot == EvaluatedToleranceSlot::Absent)
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-vertex tail edit changes record width: {id}"
+            )));
+        }
+        let tolerance = match (
+            target_vertices[after.vertex.as_str()].tolerance,
+            after.evaluated_slot,
+        ) {
+            (Some(tolerance), EvaluatedToleranceSlot::Evaluated) => tolerance.get(),
+            (None, EvaluatedToleranceSlot::Unset) => -1.0,
+            // The record ends before the slot; there is nothing to patch.
+            (None, EvaluatedToleranceSlot::Absent) => continue,
+            (Some(_), EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Unset)
+            | (None, EvaluatedToleranceSlot::Evaluated) => {
                 return Err(CodecError::malformed(format_args!(
-                    "tolerant vertex {id} has no tolerance"
+                    "tolerant vertex {id} tail disagrees with its vertex tolerance"
                 )))
             }
         };
@@ -463,7 +476,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
         }
         if tolerance
             != baseline_vertices[after.vertex.as_str()].tolerance.map_or(
-                if before.evaluated_unset {
+                if before.evaluated_slot == EvaluatedToleranceSlot::Unset {
                     -1.0
                 } else {
                     tolerance

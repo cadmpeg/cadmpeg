@@ -359,7 +359,7 @@ fn project_all_dimension_constraints(
                     name: crate::design::literals::nonempty(field),
                     role,
                 }),
-                object_index: record_index,
+                object_index: Some(record_index),
                 native_ref: geometry
                     .filter(|_| !projected.contains_key(&(scope, record_index)))
                     .map(|(_, _, native_ref)| native_ref.to_owned()),
@@ -857,7 +857,7 @@ fn project_all_dimension_constraints(
                                     name: crate::design::literals::nonempty("locus"),
                                     role: Some(operand.role),
                                 }),
-                                object_index: 0,
+                                object_index: None,
                                 native_ref: None,
                             },
                             Some(index) => {
@@ -949,7 +949,7 @@ fn project_all_dimension_constraints(
                         name: crate::design::literals::nonempty("locus"),
                         role: Some(pair.loci()[0].role),
                     }),
-                    object_index: 0,
+                    object_index: None,
                     native_ref: None,
                 },
                 native_operand(
@@ -1097,7 +1097,7 @@ fn project_all_dimension_constraints(
                                     name: crate::design::literals::nonempty("recipe"),
                                     role: None,
                                 }),
-                                object_index: record.record_index,
+                                object_index: Some(record.record_index),
                                 native_ref: Some(record.id.clone()),
                             })
                             .collect(),
@@ -1277,7 +1277,7 @@ fn project_all_dimension_constraints(
                         name: crate::design::literals::nonempty("companion_payload"),
                         role: None,
                     }),
-                    object_index: companion.record_index,
+                    object_index: Some(companion.record_index),
                     native_ref: Some(companion.id.clone()),
                 }],
             })
@@ -2590,11 +2590,11 @@ pub fn project_spatial_dimension_constraints(
                             .filter(|operand| {
                                 operand_field(operand).is_some_and(|field| {
                                     field == "locus" || field.ends_with("_locus")
-                                }) && operand.object_index != 0
+                                }) && operand.object_index.is_some()
                             })
                             .map(|operand| {
                                 spatial_by_record
-                                    .get(&(scope, operand.object_index))
+                                    .get(&(scope, operand.object_index?))
                                     .copied()
                             })
                             .collect::<Option<Vec<_>>>()?;
@@ -2776,7 +2776,7 @@ pub fn project_spatial_dimension_constraints(
                             ),
                             role: None,
                         }),
-                        object_index: companion.record_index,
+                        object_index: Some(companion.record_index),
                         native_ref: Some(companion.id.clone()),
                     }],
                 },
@@ -3099,7 +3099,7 @@ fn spatial_reflection_symmetry(
         .filter(|operand| operand_field(operand) == Some("locus"))
         .map(|operand| {
             spatial_by_record
-                .get(&(scope, operand.object_index))
+                .get(&(scope, operand.object_index?))
                 .copied()
         })
         .collect::<Option<Vec<_>>>()?;
@@ -3205,7 +3205,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     }
     let roles = loci
         .iter()
-        .map(|operand| Some((operand.object_index, operand_role(operand)?)))
+        .map(|operand| Some((operand.object_index?, operand_role(operand)?)))
         .collect::<Option<HashMap<_, _>>>()?;
     if roles.len() != loci.len() {
         return None;
@@ -3213,7 +3213,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     let result_records = returns
         .chunks_exact(2)
         .map(|pair| pair[1].object_index)
-        .collect::<HashSet<_>>();
+        .collect::<Option<HashSet<_>>>()?;
     let result_ids = result_records
         .iter()
         .filter_map(|record| {
@@ -3244,8 +3244,8 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     let mut results = Vec::with_capacity(source_count);
     let mut used = HashSet::new();
     for operands in returns.chunks_exact(2) {
-        let source_record = operands[0].object_index;
-        let result_record = operands[1].object_index;
+        let source_record = operands[0].object_index?;
+        let result_record = operands[1].object_index?;
         if !matches!(roles.get(&source_record), Some(role) if *role != 0)
             || roles.get(&result_record) != Some(&0)
             || !used.insert(source_record)

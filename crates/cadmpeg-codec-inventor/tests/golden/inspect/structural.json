@@ -28,7 +28,6 @@
     },
     {
       "attributes": {
-        "allocation": "mini",
         "directory_id": "2",
         "start_sector": "4294967294"
       },

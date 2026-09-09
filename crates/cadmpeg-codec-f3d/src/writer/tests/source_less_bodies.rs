@@ -413,7 +413,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
             trailing_field: Some(0),
-            evaluated_unset: false,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated,
         }];
     }
     let error = F3dCodec

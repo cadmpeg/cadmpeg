@@ -59,7 +59,7 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         .iter()
         .find(|entry| entry.name == "REFERENCE")
         .expect("native summary witness");
-    assert_eq!(references.role, ContainerRole::StepExternalReferences);
+    assert_eq!(references.role, ContainerRole::ExternalReferences);
     assert_eq!(references.compression, EntryCompression::None);
     assert_eq!(references.attributes["external_count"], "1");
 }

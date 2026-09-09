@@ -182,7 +182,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 1,
+                    object_index: Some(1),
                     native_ref: Some("wrapper".into()),
                 },
                 SketchNativeOperand {
@@ -191,7 +191,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 2,
+                    object_index: Some(2),
                     native_ref: Some("marker-b".into()),
                 },
             ],
@@ -292,7 +292,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 1,
+                    object_index: Some(1),
                     native_ref: Some("marker-a".into()),
                 },
                 cadmpeg_ir::sketches::SketchNativeOperand {
@@ -301,7 +301,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
                     )
                     .expect("source operand kind is nonempty"),
                     field: None,
-                    object_index: 3,
+                    object_index: Some(3),
                     native_ref: Some("marker-c".into()),
                 },
             ],
@@ -440,7 +440,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             }) if native_kind.as_str() == format!("sldprt:marker-relation:{}", kind.native_code())
                 && entities == vec![SketchEntityId::mint("synthetic:test:id#second").unwrap()]
                 && operands.len() == 1
-                && operands[0].object_index == 1
+                && operands[0].object_index == Some(1)
                 && operands[0].native_ref.as_deref() == Some("entity-marker")
         ));
     }

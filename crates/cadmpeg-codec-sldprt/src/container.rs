@@ -800,7 +800,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
         entries.push(ContainerEntry {
             name: stream.path.clone(),
             role: ContainerRole::CompoundStream,
-            compression: EntryCompression::CompoundFile,
+            compression: EntryCompression::Stored,
             compressed_size: stream.payload.len() as u64,
             uncompressed_size: stream.payload.len() as u64,
             attributes,

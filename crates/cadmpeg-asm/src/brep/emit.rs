@@ -4,9 +4,10 @@
 
 use super::count_kind;
 use super::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, EndpointSlot, FaceContainment, FaceNativeKey,
-    FaceSidedness, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail,
-    TolerantVertexTail, TransformHints, VertexOwnership,
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, EndpointSlot, EvaluatedToleranceSlot,
+    FaceContainment, FaceNativeKey, FaceSidedness, TolerantCoedgeExtension,
+    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
+    VertexOwnership,
 };
 use crate::ids::IdFormat;
 use crate::nurbs;
@@ -3480,12 +3481,19 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
-                                evaluated_unset: matches!(
-                                    r.chunk(8),
-                                    Some(Token::Double(value)) if *value < 0.0
-                                ),
-                                trailing_field: match r.chunk(9) {
-                                    Some(Token::Long(value)) => Some(*value),
+                                evaluated_slot: match r.chunk(8) {
+                                    Some(Token::Double(value)) if *value < 0.0 => {
+                                        EvaluatedToleranceSlot::Unset
+                                    }
+                                    Some(Token::Double(_)) => EvaluatedToleranceSlot::Evaluated,
+                                    _ => EvaluatedToleranceSlot::Absent,
+                                },
+                                // The trailing LONG follows the evaluated
+                                // slot; without that slot there is no tail.
+                                trailing_field: match (r.chunk(8), r.chunk(9)) {
+                                    (Some(Token::Double(_)), Some(Token::Long(value))) => {
+                                        Some(*value)
+                                    }
                                     _ => None,
                                 },
                             });

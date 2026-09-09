@@ -363,7 +363,7 @@ fn saved_line_joins_through_order_table() {
                 .as_ref()
                 .and_then(|field| field.role)
                 .is_none()
-            && operand.object_index == 11
+            && operand.object_index == Some(11)
     }));
     let mut equation_only_incidence = constrained.clone();
     equation_only_incidence
@@ -386,7 +386,7 @@ fn saved_line_joins_through_order_table() {
     };
     assert!(operands.iter().any(|operand| {
         operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
-            && operand.object_index == 11
+            && operand.object_index == Some(11)
     }));
     let mut missing_equation = equation_only_incidence.clone();
     missing_equation
@@ -483,12 +483,12 @@ fn saved_line_joins_through_order_table() {
         operand.native_kind == "skamp_ptr"
             && operand.field.as_ref().map(|field| field.name.as_str())
                 == Some("triples_ptr.skamp_id")
-            && operand.object_index == 5
+            && operand.object_index == Some(5)
     }));
     assert!(operands.iter().any(|operand| {
         operand.native_kind == "triples_ptr"
             && operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
-            && operand.object_index == 11
+            && operand.object_index == Some(11)
     }));
     declared_solver_rows(&mut native_join.relations.as_mut().expect("relations").triples).push(
         crate::feature::FeatureRelationTriple {

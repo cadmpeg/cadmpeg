@@ -59,7 +59,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
                     operands: vec![cadmpeg_ir::sketches::SketchNativeOperand {
                         native_kind: cadmpeg_ir::products::NonEmptyString::new("entity").unwrap(),
                         field: None,
-                        object_index: 1,
+                        object_index: Some(1),
                         native_ref: None,
                     }],
                 },

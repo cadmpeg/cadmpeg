@@ -575,7 +575,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             && matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
                 native_kind,
                 field: Some(cadmpeg_ir::sketches::NativeOperandField { name: field, role: None }),
-                object_index: 22,
+                object_index: Some(22),
                 native_ref: Some(operand_ref),
             }] if native_kind == "dimension_companion"
                 && field == "companion_payload"

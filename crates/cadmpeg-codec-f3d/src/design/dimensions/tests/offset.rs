@@ -436,7 +436,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                     .expect("source field name is nonempty"),
                 role: Some(1),
             }),
-            object_index: record_index(entity),
+            object_index: Some(record_index(entity)),
             native_ref: entity.native_ref.clone(),
         })
         .chain(results.iter().map(|entity| {
@@ -448,7 +448,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                         .expect("source field name is nonempty"),
                     role: Some(0),
                 }),
-                object_index: record_index(entity),
+                object_index: Some(record_index(entity)),
                 native_ref: entity.native_ref.clone(),
             }
         }))
@@ -461,7 +461,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                 .expect("source field name is nonempty"),
             role: Some(0),
         }),
-        object_index: 100,
+        object_index: Some(100),
         native_ref: Some(format!("{stream}:design-entity#100")),
     });
     operands.extend(sources.iter().zip(&results).flat_map(|(source, result)| {
@@ -473,7 +473,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
                     .expect("source field name is nonempty"),
                 role: None,
             }),
-            object_index: record_index(entity),
+            object_index: Some(record_index(entity)),
             native_ref: entity.native_ref.clone(),
         })
     }));
@@ -547,7 +547,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     by_record.insert((stream, 99), &outside_source);
     let mut non_permutation = operands.clone();
     let first_return = sources.len() + results.len() + 1;
-    non_permutation[first_return].object_index = 99;
+    non_permutation[first_return].object_index = Some(99);
     non_permutation[first_return].native_ref = outside_source.native_ref.clone();
     assert!(spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",

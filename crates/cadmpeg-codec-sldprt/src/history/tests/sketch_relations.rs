@@ -81,10 +81,10 @@ fn decode_projects_owned_native_sketch_relation() {
             && relation_parameter == &parameter.id
             && operands.len() == 2
             && operands[0].native_kind == "d6"
-            && operands[0].object_index == 0
+            && operands[0].object_index == Some(0)
             && operands[0].native_ref.is_some()
             && operands[1].native_kind == "d6"
-            && operands[1].object_index == 2
+            && operands[1].object_index == Some(2)
             && operands[1].native_ref.is_none()
     ));
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;

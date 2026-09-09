@@ -464,14 +464,10 @@ impl<'a> CompoundSnapshot<'a> {
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
-                        attributes.insert(
-                            "allocation".into(),
-                            stream
-                                .allocation()
-                                .unwrap_or(CompoundAllocation::Mini)
-                                .label()
-                                .into(),
-                        );
+                        // An empty stream owns no sectors and has no allocation.
+                        if let Some(allocation) = stream.allocation() {
+                            attributes.insert("allocation".into(), allocation.label().into());
+                        }
                         attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),

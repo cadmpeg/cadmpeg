@@ -30,7 +30,7 @@
       "compressed_size": 0,
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity_records",
+      "role": "entity-records",
       "uncompressed_size": 0
     }
   ],

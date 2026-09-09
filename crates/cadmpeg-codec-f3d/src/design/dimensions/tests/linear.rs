@@ -1167,8 +1167,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         SketchConstraintDefinitionInput::Native { ref operands, .. }
             if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
                 == [
-                    (Some("first_locus"), Some(7), 40),
-                    (Some("second_locus"), Some(8), 40),
+                    (Some("first_locus"), Some(7), Some(40)),
+                    (Some("second_locus"), Some(8), Some(40)),
                 ]
     ));
 
@@ -1242,9 +1242,9 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 ..
             } if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
             == [
-                (Some("locus"), Some(0), 40),
-                (Some("owner"), Some(0), 100),
-                (Some("return"), None, 40),
+                (Some("locus"), Some(0), Some(40)),
+                (Some("owner"), Some(0), Some(100)),
+                (Some("return"), None, Some(40)),
             ]
     )));
 

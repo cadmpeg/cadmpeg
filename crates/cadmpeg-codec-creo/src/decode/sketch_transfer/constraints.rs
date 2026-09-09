@@ -81,7 +81,7 @@ pub(in super::super) fn native_section_segment_verhor_definition(
                     .expect("source field name is nonempty"),
                 role: None,
             }),
-            object_index: external_id,
+            object_index: Some(external_id),
             native_ref: Some(sketch_native_ref(sketch)),
         }],
     })
@@ -504,7 +504,7 @@ pub(in super::super) fn native_section_segment_radius_definition(
                         .expect("source field name is nonempty"),
                     role: None,
                 }),
-                object_index: external_id,
+                object_index: Some(external_id),
                 native_ref: Some(sketch_native_ref(sketch)),
             },
             SketchNativeOperand {
@@ -515,7 +515,7 @@ pub(in super::super) fn native_section_segment_radius_definition(
                         .expect("source field name is nonempty"),
                     role: None,
                 }),
-                object_index: dimension_ordinal,
+                object_index: Some(dimension_ordinal),
                 native_ref: Some(sketch_native_ref(sketch)),
             },
         ],
@@ -1338,7 +1338,7 @@ pub(in super::super) fn section_equation_native_constraints(
                             .expect("source field name is nonempty"),
                         role: None,
                     }),
-                    object_index: equation.equation_id,
+                    object_index: Some(equation.equation_id),
                     native_ref: Some(native_ref.clone()),
                 }];
                 operands.extend(equation.arguments.iter().enumerate().filter_map(
@@ -1353,7 +1353,7 @@ pub(in super::super) fn section_equation_native_constraints(
                                 .expect("source field name is nonempty"),
                                 role: None,
                             }),
-                            object_index,
+                            object_index: Some(object_index),
                             native_ref: Some(native_ref.clone()),
                         })
                     },
@@ -1753,7 +1753,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
             native_kind: cadmpeg_ir::products::NonEmptyString::new("relat_ptr")
                 .expect("source operand kind is nonempty"),
             field: None,
-            object_index: relation.relation_id,
+            object_index: Some(relation.relation_id),
             native_ref: Some(native_ref.clone()),
         });
     }
@@ -1766,7 +1766,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
                     .expect("source field name is nonempty"),
                 role: None,
             }),
-            object_index: incidence.id,
+            object_index: Some(incidence.id),
             native_ref: Some(native_ref.clone()),
         });
     }
@@ -1780,7 +1780,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
                     .expect("source field name is nonempty"),
                 role: None,
             }),
-            object_index: equation_id,
+            object_index: Some(equation_id),
             native_ref: Some(native_ref.clone()),
         });
     }
@@ -1797,7 +1797,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
                         .expect("source field name is nonempty"),
                         role: None,
                     }),
-                    object_index,
+                    object_index: Some(object_index),
                     native_ref: Some(native_ref.clone()),
                 })
             }));

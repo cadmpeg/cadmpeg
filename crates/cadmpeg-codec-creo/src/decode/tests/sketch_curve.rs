@@ -177,7 +177,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
     );
-    assert_eq!(operands[0].object_index, 12);
+    assert_eq!(operands[0].object_index, Some(12));
     segment.kind = crate::feature::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
@@ -354,12 +354,12 @@ fn dimension_identity_includes_its_feature_definition() {
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
     );
-    assert_eq!(operands[0].object_index, 42);
+    assert_eq!(operands[0].object_index, Some(42));
     assert_eq!(
         operands[1].field.as_ref().map(|field| field.name.as_str()),
         Some("radius")
     );
-    assert_eq!(operands[1].object_index, 0);
+    assert_eq!(operands[1].object_index, Some(0));
     let circle_entity = SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
         .expect("valid test fixture");
     let retained_without_parameter = section_segment_radius_constraints_for_emitted(
@@ -504,12 +504,12 @@ fn dimension_identity_includes_its_feature_definition() {
         operands[0].field.as_ref().map(|field| field.name.as_str()),
         Some("ext_id")
     );
-    assert_eq!(operands[0].object_index, 42);
+    assert_eq!(operands[0].object_index, Some(42));
     assert_eq!(
         operands[1].field.as_ref().map(|field| field.name.as_str()),
         Some("radius2")
     );
-    assert_eq!(operands[1].object_index, 7);
+    assert_eq!(operands[1].object_index, Some(7));
     definition
         .segments
         .as_mut()

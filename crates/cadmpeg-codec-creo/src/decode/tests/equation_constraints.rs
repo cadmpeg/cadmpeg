@@ -75,17 +75,17 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     assert_eq!(native_properties["null_argument_ordinals"], "0");
     assert_eq!(operands.len(), 3);
     assert_eq!(operands[0].native_kind, "eqtn_arr");
-    assert_eq!(operands[0].object_index, 1);
+    assert_eq!(operands[0].object_index, Some(1));
     assert_eq!(
         operands[1].field.as_ref().map(|field| field.name.as_str()),
         Some("arguments[1]")
     );
-    assert_eq!(operands[1].object_index, 2);
+    assert_eq!(operands[1].object_index, Some(2));
     assert_eq!(
         operands[2].field.as_ref().map(|field| field.name.as_str()),
         Some("arguments[2]")
     );
-    assert_eq!(operands[2].object_index, 3);
+    assert_eq!(operands[2].object_index, Some(3));
     assert!(
         section_equation_native_constraints(&definition, &sketch, &BTreeSet::from([28]),)
             .is_empty()
