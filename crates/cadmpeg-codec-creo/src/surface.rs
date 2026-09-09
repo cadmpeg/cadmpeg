@@ -7594,10 +7594,10 @@ fn named_spline_scalar_slot(
             .map(|(value, next)| (Some(value), next));
     }
     if matches!(head, 0x28 | 0x41) {
-        return named_ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
+        return scalar::ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
     }
     if name == "params" && head == 0x2d {
-        return named_ieee8(body, offset, 0x40).map(|(value, next)| (Some(value), next));
+        return scalar::ieee8(body, offset, 0x40).map(|(value, next)| (Some(value), next));
     }
     if matches!(head, 0x2d | 0x46) {
         return scalar::decode_in_lane(body, offset, cache)
@@ -7636,7 +7636,7 @@ fn named_spline_scalar_slot(
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
     }
     if name == "end_u_tangts" && head == 0x31 {
-        return named_ieee7(body, offset, 0x40).map(|(value, next)| (Some(value), next));
+        return scalar::ieee7(body, offset, 0x40).map(|(value, next)| (Some(value), next));
     }
     if name == "end_uv_deriv" && matches!(head, 0x7d | 0x8f) {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
@@ -7648,31 +7648,7 @@ fn named_spline_scalar_slot(
 fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     let second = body.get(offset)?.wrapping_sub(0x8b);
     let first = if second >= 0x80 { 0x3f } else { 0x40 };
-    let tail = body.get(offset + 1..offset + 7)?;
-    let mut raw = [0; 8];
-    raw[0] = first;
-    raw[1] = second;
-    raw[2..].copy_from_slice(tail);
-    // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
-    Some((f64::from_be_bytes(raw), offset + 7))
-}
-
-fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
-    let tail = body.get(offset + 1..offset + 8)?;
-    let mut raw = [0; 8];
-    raw[0] = first;
-    raw[1..].copy_from_slice(tail);
-    // Injected IEEE byte 0 plus seven file bytes; not a contiguous window.
-    Some((f64::from_be_bytes(raw), offset + 8))
-}
-
-fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
-    let tail = body.get(offset + 1..offset + 7)?;
-    let mut raw = [0; 8];
-    raw[0] = first;
-    raw[1..7].copy_from_slice(tail);
-    // Injected IEEE byte 0 plus six file bytes and a zero low byte; not a contiguous window.
-    Some((f64::from_be_bytes(raw), offset + 7))
+    scalar::ieee7_with_prefix(body, offset, first, second)
 }
 
 fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {

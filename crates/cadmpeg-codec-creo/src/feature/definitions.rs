@@ -1408,11 +1408,7 @@ fn decode_parameter_scalar(
             let second = prefix.wrapping_sub(0x8b);
             (if second >= 0x80 { 0x3f } else { 0x40 }, second)
         };
-        let mut raw = [0; 8];
-        raw[0] = first;
-        raw[1] = second;
-        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+        return scalar::ieee7_with_prefix(payload, offset, first, second);
     }
     if let Some((value, next)) =
         scalar::decode_in_lane(payload, offset, cache).filter(|(_, next)| *next <= end)
@@ -1467,30 +1463,35 @@ pub(crate) fn decode_variable_scalar(
             &[0xc0, 0x05]
         });
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x4f && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     let variable_dict = match prefix {
@@ -1515,6 +1516,7 @@ pub(crate) fn decode_variable_scalar(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x18
@@ -1551,6 +1553,7 @@ pub(crate) fn decode_section_coordinate_scalar(
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     decode_variable_scalar(payload, offset, end, cache)
@@ -5293,12 +5296,14 @@ pub(crate) fn saved_section_scalar(
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     if prefix == 0x2d && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     if matches!(prefix, 0x74 | 0x75) && offset + 7 <= end {
@@ -5306,18 +5311,21 @@ pub(crate) fn saved_section_scalar(
         raw[0] = 0x3f;
         raw[1] = prefix.wrapping_sub(0x8b);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x99 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&[0xc0, 0x0e]);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0xdd && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&[0x40, 0x0c]);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     let supplied_head = match prefix {
@@ -5330,12 +5338,14 @@ pub(crate) fn saved_section_scalar(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     scalar::decode_in_lane(payload, offset, cache)
@@ -5621,6 +5631,7 @@ pub(crate) fn saved_arc_scalar(
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     let arc_dict = match payload.get(offset).copied() {
@@ -5646,6 +5657,7 @@ pub(crate) fn saved_arc_scalar(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
+        // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
     let decoded = saved_section_scalar(payload, offset, end, cache);
@@ -6131,20 +6143,16 @@ pub(crate) fn saved_spline_parameter(
         return Some((0.0, offset + 1));
     }
     if matches!(prefix, 0x6d | 0x85 | 0x93 | 0x9e) {
-        let tail = payload.get(offset + 1..offset + 7)?;
         let second = prefix.wrapping_sub(0x8b);
-        let mut raw = [0; 8];
-        raw[0] = if second >= 0x80 { 0x3f } else { 0x40 };
-        raw[1] = second;
-        raw[2..].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+        return scalar::ieee7_with_prefix(
+            payload,
+            offset,
+            if second >= 0x80 { 0x3f } else { 0x40 },
+            second,
+        );
     }
     if prefix == 0x2d {
-        let tail = payload.get(offset + 1..offset + 8)?;
-        let mut raw = [0; 8];
-        raw[0] = 0x40;
-        raw[1..].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 8));
+        return scalar::ieee8(payload, offset, 0x40);
     }
     scalar::decode_in_lane(payload, offset, cache)
 }

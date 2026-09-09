@@ -28,8 +28,7 @@ the emitted dialect id") is a Rust duty and lives with the per-codec golden
 suites. This checker derives each dialect's snapshot domain from those
 checked-in results and uses it directly as the read-score gate.
 
-Run ``--self-test`` to execute the synthesized-violation suite in
-``scripts/test_check_dialect_support.py``; every rule below fires there.
+Run ``python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py`` for checker tests.
 """
 
 from __future__ import annotations
@@ -39,7 +38,6 @@ import datetime
 import json
 import re
 import sys
-import unittest
 from collections import Counter
 from pathlib import Path
 
@@ -49,7 +47,6 @@ ROOT = Path(__file__).resolve().parent.parent
 IDENTITY_REL = Path("docs") / "dialects.toml"
 SUPPORT_REL = Path("docs") / "dialect-support.toml"
 EVALUATIONS_REL = Path("docs") / "evaluations.toml"
-SELF_TEST_REL = Path("scripts") / "test_check_dialect_support.py"
 
 ROW_KEYS = frozenset({"dialect", "read", "write", "refusal", "reason"})
 REQUIRED_ROW_KEYS = ("dialect", "read", "write")
@@ -495,17 +492,6 @@ def check(root: Path) -> tuple[list[str], str]:
     return failures, summary
 
 
-def self_test() -> int:
-    """Run the synthesized-violation suite; every rule above fires there."""
-    suite = unittest.defaultTestLoader.discover(
-        start_dir=str(ROOT / "scripts"),
-        pattern=SELF_TEST_REL.name,
-        top_level_dir=str(ROOT / "scripts"),
-    )
-    result = unittest.TextTestRunner(verbosity=1).run(suite)
-    return 0 if result.wasSuccessful() else 1
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -515,14 +501,7 @@ def main(argv: list[str] | None = None) -> int:
         default=ROOT,
         help="repository root (default: parent of scripts/)",
     )
-    parser.add_argument(
-        "--self-test",
-        action="store_true",
-        help="run the synthesized-violation suite instead of checking the registry",
-    )
     args = parser.parse_args(argv)
-    if args.self_test:
-        return self_test()
     failures, summary = check(args.root.resolve())
     if failures:
         for failure in failures:

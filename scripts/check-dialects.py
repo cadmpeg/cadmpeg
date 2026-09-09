@@ -14,8 +14,7 @@ Capability -- what cadmpeg does with each dialect, including fixture gating
 -- lives in ``docs/dialect-support.toml`` and is checked by the sibling
 ``scripts/check-dialect-support.py``.
 
-Run ``--self-test`` to execute the synthesized-violation suite in
-``scripts/test_check_dialects.py``; every rule below fires there.
+Run ``python3 -m unittest discover -q -s scripts -p test_check_dialects.py`` for checker tests.
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ import argparse
 import re
 import sys
 import tomllib
-import unittest
 from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
@@ -32,7 +30,6 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_REL = Path("docs") / "dialects.toml"
 ID_CONFORMANCE_REL = Path("docs") / "dialect-id-conformance.toml"
-SELF_TEST_REL = Path("scripts") / "test_check_dialects.py"
 
 
 class GeneratedIdOwner(NamedTuple):
@@ -582,17 +579,6 @@ def write_generated_id_modules(root: Path, rows: list[dict]) -> list[str]:
     return []
 
 
-def self_test() -> int:
-    """Run the synthesized-violation suite; every rule above fires there."""
-    suite = unittest.defaultTestLoader.discover(
-        start_dir=str(ROOT / "scripts"),
-        pattern=SELF_TEST_REL.name,
-        top_level_dir=str(ROOT / "scripts"),
-    )
-    result = unittest.TextTestRunner(verbosity=1).run(suite)
-    return 0 if result.wasSuccessful() else 1
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -603,18 +589,11 @@ def main(argv: list[str] | None = None) -> int:
         help="repository root (default: parent of scripts/)",
     )
     parser.add_argument(
-        "--self-test",
-        action="store_true",
-        help="run the synthesized-violation suite instead of checking the registry",
-    )
-    parser.add_argument(
         "--write-generated",
         action="store_true",
         help="regenerate per-format Rust dialect-id constants",
     )
     args = parser.parse_args(argv)
-    if args.self_test:
-        return self_test()
     root = args.root.resolve()
     failures, summary = check(root, generated=not args.write_generated)
     if not failures and args.write_generated:

@@ -29,6 +29,7 @@ impl ShiftedBinary64 {
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
         bytes[0] += 0x10;
+        // endian-exception: reconstructed-scalar
         f64::from_be_bytes(bytes)
     }
 
@@ -91,6 +92,7 @@ impl ShiftedBinary32 {
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
         bytes[0] -= 0x10;
+        // endian-exception: reconstructed-scalar
         f64::from(f32::from_be_bytes(bytes))
     }
 }
