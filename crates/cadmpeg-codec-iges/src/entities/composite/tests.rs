@@ -1687,7 +1687,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
                 .curve()
                 .as_ref()
                 .is_some_and(|id| id.as_str() == "iges:model:curve#D7"))
-            .and_then(|edge| edge.param_range()),
+            .and_then(cadmpeg_ir::topology::Edge::param_range),
         Some([0.0, 2.0])
     );
     let face = result

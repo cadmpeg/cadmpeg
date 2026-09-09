@@ -1444,7 +1444,7 @@ mod tests {
             &transfer,
             Some(&graph_scope)
         )
-        .unwrap()
+        .expect("valid sketch constraint transfer")
         .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
@@ -1456,7 +1456,7 @@ mod tests {
         transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
         assert_eq!(
             transfer_native_sketch_constraints(&mut ir, &native, &transfer, Some(&graph_scope))
-                .unwrap(),
+                .expect("valid sketch constraint transfer"),
             HashSet::from(["catia:outer:object-record#constraint-field".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1581,7 +1581,7 @@ mod tests {
             &transfer,
             Some(&graph_scope)
         )
-        .unwrap()
+        .expect("valid sketch constraint transfer")
         .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
@@ -1604,7 +1604,7 @@ mod tests {
             &transfer,
             Some(&graph_scope)
         )
-        .unwrap()
+        .expect("valid sketch constraint transfer")
         .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
     }
@@ -1614,7 +1614,8 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap(),
+            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+                .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1683,7 +1684,8 @@ mod tests {
             incoming_storage_references: Vec::new(),
         });
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap();
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            .expect("valid sketch constraint transfer");
 
         assert!(ir.model.parameters.is_empty());
 
@@ -1714,7 +1716,8 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap();
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1743,7 +1746,8 @@ mod tests {
             );
         }
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap();
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1770,7 +1774,8 @@ mod tests {
             .with_native_ref(Some("source-record".to_string())),
         );
 
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap();
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+            .expect("valid sketch constraint transfer");
 
         let constraint = &ir.model.sketch_constraints[0];
         let SketchConstraintDefinitionInput::Native { entities, .. } = constraint.definition.kind()
@@ -1785,7 +1790,8 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = fixture(true);
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap(),
+            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+                .expect("valid sketch constraint transfer"),
             HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
@@ -1802,7 +1808,8 @@ mod tests {
             .push(range.incoming_references[0].clone());
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap(),
+            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+                .expect("valid sketch constraint transfer"),
             HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());
@@ -1820,7 +1827,8 @@ mod tests {
         );
 
         assert_eq!(
-            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)).unwrap(),
+            transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope))
+                .expect("valid sketch constraint transfer"),
             HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());

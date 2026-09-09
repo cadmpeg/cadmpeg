@@ -1104,7 +1104,8 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &emitted
     ));
     let mut native = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:test").unwrap(),
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:test")
+            .expect("nonempty native kind"),
         entities: vec![first.clone(), second],
         parameter: None,
         operands: Vec::new(),
@@ -1144,7 +1145,8 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &parameters
     ));
     let mut native_parameter = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:test").unwrap(),
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:test")
+            .expect("nonempty native kind"),
         entities: Vec::new(),
         parameter: Some(
             ParameterId::mint("synthetic:test:id#missing".to_string()).expect("identity grammar"),

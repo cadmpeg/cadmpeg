@@ -479,7 +479,7 @@ mod consolidated_revolution_binding_tests {
                 Some(curve_id.clone()),
                 Some([0.0, 1.0]),
             )
-            .unwrap(),
+            .expect("valid edge carrier"),
             start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
                 .expect("identity grammar"),
             end: VertexId::mint("catia:test:vertex#vertex%231".to_string())

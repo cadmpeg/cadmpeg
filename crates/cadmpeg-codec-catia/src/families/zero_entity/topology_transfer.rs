@@ -644,7 +644,9 @@ pub(crate) fn transfer_closed_face_topology(
                 };
                 let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
                 let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
-                let use_curve = if curve != first_curve {
+                let use_curve = if curve == first_curve {
+                    None
+                } else {
                     Some(cadmpeg_ir::topology::CoedgeUseCurve {
                         curve: curve.clone(),
                         parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
@@ -652,8 +654,6 @@ pub(crate) fn transfer_closed_face_topology(
                         )
                         .ok()?,
                     })
-                } else {
-                    None
                 };
                 let pcurves = occurrence
                     .pcurve

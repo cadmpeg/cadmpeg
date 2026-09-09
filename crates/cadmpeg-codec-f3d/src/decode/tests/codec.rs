@@ -177,7 +177,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             .edges
             .iter()
             .find(|edge| edge.curve().is_some())
-            .and_then(|edge| edge.param_range()),
+            .and_then(cadmpeg_ir::topology::Edge::param_range),
         Some(expected_range)
     );
     assert_eq!(round_trip.ir().model.faces[0].sense, expected_face_sense);
