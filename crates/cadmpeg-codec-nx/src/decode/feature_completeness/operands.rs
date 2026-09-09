@@ -8,7 +8,6 @@ use cadmpeg_ir::features::{
     PathRef, PatternKind, PatternTransform, ProfileRef, RevolveConstruction, RevolveExtent,
     RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
 };
-use cadmpeg_ir::ids::BodyId;
 use std::collections::BTreeSet;
 
 /// Non-zero hole-axis direction acceptance.
@@ -381,40 +380,6 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => true,
-    }
-}
-
-pub(crate) fn explicit_body_ids(selection: &BodySelection) -> Option<Vec<BodyId>> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.clone())
-        }
-        BodySelection::ResolvedSet { members } => Some(members.bodies().cloned().collect()),
-        BodySelection::Unresolved
-        | BodySelection::Historical { .. }
-        | BodySelection::HistoricalSet { .. }
-        | BodySelection::HistoricalUnorderedSet { .. }
-        | BodySelection::Generated { .. }
-        | BodySelection::Local { .. }
-        | BodySelection::Native(_)
-        | BodySelection::NativeSet(_) => None,
-    }
-}
-
-pub(crate) fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
-        BodySelection::ResolvedSet { members } => Some(members.len()),
-        BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::Unresolved
-        | BodySelection::Historical { .. }
-        | BodySelection::HistoricalSet { .. }
-        | BodySelection::HistoricalUnorderedSet { .. }
-        | BodySelection::Generated { .. }
-        | BodySelection::Native(_)
-        | BodySelection::NativeSet(_) => None,
     }
 }
 
