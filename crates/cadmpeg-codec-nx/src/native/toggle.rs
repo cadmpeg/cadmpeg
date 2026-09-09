@@ -103,6 +103,13 @@ pub struct SavedToggleStream {
     pub trailer_source_offset: u64,
 }
 
+impl SavedToggleStream {
+    /// Native identity of the saved-toggle stream.
+    pub const fn id() -> &'static str {
+        "nx:saved-toggle:stream#0"
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct SavedToggleStreamWire {
     id: String,
@@ -116,8 +123,8 @@ struct SavedToggleStreamWire {
 impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
     type Error = &'static str;
     fn try_from(wire: SavedToggleStreamWire) -> Result<Self, Self::Error> {
-        if wire.id != "nx:saved-toggle:stream#0" {
-            return Err("SavedToggleStream.id must be nx:saved-toggle:stream#0");
+        if wire.id != Self::id() {
+            return Err("SavedToggleStream.id is not the saved-toggle stream identity");
         }
         if wire.version != 1 {
             return Err("SavedToggleStream.version must be 1");
@@ -145,7 +152,7 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
 }
 impl From<SavedToggleStream> for SavedToggleStreamWire {
     fn from(value: SavedToggleStream) -> Self {
-        let id = "nx:saved-toggle:stream#0".to_string();
+        let id = SavedToggleStream::id().to_string();
         let version = 1;
         let raw_count = value.entry_count.to_le_bytes();
         Self {

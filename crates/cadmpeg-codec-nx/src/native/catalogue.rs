@@ -17,6 +17,8 @@ use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStat
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 
+use std::borrow::Cow;
+
 use serde::Serialize;
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
@@ -46,12 +48,18 @@ fn emit_arena<T: Serialize>(
 /// A record noted into the shared `nx:container` stream: its id and the source
 /// offset the note points at.
 trait ContainerNoted {
-    fn container_note(&self) -> (&str, u64);
+    fn container_note(&self) -> (Cow<'_, str>, u64);
 }
 
 impl ContainerNoted for SavedToggleStream {
-    fn container_note(&self) -> (&str, u64) {
-        ("nx:saved-toggle:stream#0", self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(SavedToggleStream::id()), self.source_offset)
+    }
+}
+
+impl ContainerNoted for SavedToggleEntry {
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Owned(self.id()), self.source_offset())
     }
 }
 
@@ -73,7 +81,7 @@ fn note_container<T: ContainerNoted>(
     let stream = a.stream("nx:container");
     for record in records {
         let (id, offset) = record.container_note();
-        let note = a.note(id, &stream, offset);
+        let note = a.note(&id, &stream, offset);
         if let Some(tag) = tag {
             note.tag(tag);
         }
@@ -102,403 +110,406 @@ fn note_per_stream<T: StreamNoted>(
 }
 
 impl ContainerNoted for DisplayJtSegment {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FastLoadComponentPrototype {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FastLoadComponentOccurrence {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FastLoadComponentUuid {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtShapeLodElement {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtTriStripLodHeader {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtInitialFaceDegreeSymbols {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtTopologyPacketSequence {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtCompressedVertexRecordsHeader {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexCoordinateArrayHeader {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexCoordinates {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexNormals {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexColors {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexTextureCoordinates {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtVertexFlags {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtGeometricTransformAttribute {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtMaterialAttribute {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtPolygonMesh {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtCompressedElementSequence {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtCompressedElement {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtStringPropertyAtom {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtShapeLodBinding {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtBaseNodeData {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtGroupNodeData {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtInstanceNode {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtPartitionNode {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtRangeLodNode {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DisplayJtTriStripShapeNode {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for SegmentIndexRow {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for SegmentStreamLink {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for SegmentBodyBinding {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for SegmentBodyLineageStatus {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockObjectFrame {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.object.offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.object.offset)
     }
 }
 impl ContainerNoted for OffsetStoreNamedPoint {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchNamedPointBlockUse {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchPrecedingNamedPointUse {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchDatumCsysDependency {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockAbrReferenceLane {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for SegmentOmLink {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.location.source_offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.location.source_offset())
     }
 }
 impl ContainerNoted for OmRecordArea {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for OmAuditTrailRow {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset())
     }
 }
 impl ContainerNoted for OmOperationStateJournalGroup {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for OmOperationStateCounter {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for OmRollForwardStateGroup {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for OmOperationStateMessage {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for OmOperationStateStatus {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset())
     }
 }
 impl ContainerNoted for OmOperationStateSlotLane {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationLabel {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchRecord {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchPayloadFixedPair {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchPayloadMixedPair {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureSketchFixedPoint {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureOperationRecord {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.span.source_offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.span.source_offset())
     }
 }
 impl ContainerNoted for FeatureUnlabeledOperationRecord {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset())
     }
 }
 impl ContainerNoted for FeatureOperationBodyWrite {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationObjectReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationCommonFrame {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationTerminalFrame {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.frame.offset())
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.frame.offset())
     }
 }
 impl ContainerNoted for FeatureOperationStateJournalUse {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.operation_source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.operation_source_offset)
     }
 }
 impl ContainerNoted for FeaturePayloadString {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureBodyReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureInputBlock {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureBooleanOperation {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for ExpressionDeclaration {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlValue {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlForm {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlClassReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlIndexValue {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockControlHandlePair {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for ObjectRecordHandlePair {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for ObjectUuidValue {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FastLoadComponentObjectGroup {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for DataBlockReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for FeatureParameterBinding {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for StoreHeader {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.header().id, self.header().source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (
+            Cow::Borrowed(&self.header().id),
+            self.header().source_offset,
+        )
     }
 }
 impl ContainerNoted for ExternalReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for ExternalReferenceRecord {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for MaterialTextureAsset {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 impl ContainerNoted for MaterialTextureCatalogEntry {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
     }
 }
 
@@ -2556,17 +2567,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         exactness: Exactness::ByteExact,
         phase: Phase::GroupB {
             tag: Some("SAVED_TOGGLE_ENTRY"),
-            note: |m, r, tag, a| {
-                let stream = a.stream("nx:container");
-                for entry in &m.toggle.entries {
-                    let id = entry.id();
-                    let note = a.note(&id, &stream, entry.source_offset());
-                    if let Some(tag) = tag {
-                        note.tag(tag);
-                    }
-                    a.exactness(&id, r.exactness);
-                }
-            },
+            note: |m, r, tag, a| note_container(&m.toggle.entries, r, tag, a),
         },
         emit: |m, r, ns| emit_arena(&m.toggle.entries, r, ns),
         len: |m| m.toggle.entries.len(),
