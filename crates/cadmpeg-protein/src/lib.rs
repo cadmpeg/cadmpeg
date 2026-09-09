@@ -157,11 +157,7 @@ pub struct DecodeOutcome {
 /// logical record without discarding later valid records.
 pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome, CodecError> {
     let schemas = schemas(protein)?;
-    let Some(frames) = framing::record_frames(instance) else {
-        return Err(CodecError::Malformed(
-            "Protein InstanceProperties page framing is invalid".into(),
-        ));
-    };
+    let frames = framing::record_frames(instance)?;
     let mut outcome = DecodeOutcome::default();
     for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal = u64::try_from(ordinal).map_err(|_| {
@@ -972,10 +968,10 @@ mod tests {
         assert_eq!(frames[1].bytes(), [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(framing::record_frames(&[]).is_none());
+        assert!(framing::record_frames(&[]).is_err());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(framing::record_frames(&truncated).is_none());
+        assert!(framing::record_frames(&truncated).is_err());
     }
 
     #[test]
