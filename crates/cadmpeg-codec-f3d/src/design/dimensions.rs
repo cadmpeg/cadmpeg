@@ -366,12 +366,12 @@ fn project_all_dimension_constraints(
             }
         };
     let native_definition = |scope: &str,
-                             source_kind: &str,
+                             source_kind: cadmpeg_ir::products::NonEmptyString,
                              state: Option<u64>,
                              operands: &[(&'static str, Option<u32>, u32)],
                              parameter| {
         Some(Definition::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new(source_kind)?,
+            native_kind: source_kind,
             native_state: state,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
@@ -739,7 +739,7 @@ fn project_all_dimension_constraints(
                 .or_else(|| {
                     native_definition(
                         scope,
-                        parameter.source_kind(),
+                        parameter.source_kind_name(),
                         None,
                         &[
                             ("first_locus", Some(pair.loci()[0].role), indices[0]),
@@ -800,7 +800,7 @@ fn project_all_dimension_constraints(
                     );
                     native_definition(
                         scope,
-                        parameter.source_kind(),
+                        parameter.source_kind_name(),
                         Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
@@ -866,9 +866,7 @@ fn project_all_dimension_constraints(
                         })
                         .collect();
                     Some(Definition::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            parameter.source_kind(),
-                        )?,
+                        native_kind: parameter.source_kind_name(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -966,9 +964,7 @@ fn project_all_dimension_constraints(
                 sketch,
                 definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                     Definition::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            parameter.source_kind(),
-                        )?,
+                        native_kind: parameter.source_kind_name(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1085,9 +1081,7 @@ fn project_all_dimension_constraints(
                     | (_, _, Some(definition), _)
                     | (_, _, _, Some(definition)) => Some(definition),
                     _ => Some(Definition::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            parameter.source_kind(),
-                        )?,
+                        native_kind: parameter.source_kind_name(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
@@ -1271,7 +1265,7 @@ fn project_all_dimension_constraints(
         }
         let definition = exact_definition.or_else(|| {
             Some(Definition::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(parameter.source_kind())?,
+                native_kind: parameter.source_kind_name(),
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -2767,9 +2761,7 @@ pub fn project_spatial_dimension_constraints(
             sketch,
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                        parameter.source_kind(),
-                    )?,
+                    native_kind: parameter.source_kind_name(),
                     native_state: None,
                     parameter: Some(parameter_id),
                     operands: vec![SketchNativeOperand {

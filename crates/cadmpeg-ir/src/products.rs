@@ -108,6 +108,23 @@ impl NonEmptyString {
     }
 }
 
+/// Builds a [`NonEmptyString`] from a format literal whose first character is literal text.
+#[macro_export]
+macro_rules! nonempty_literal {
+    ($template:literal $(, $argument:expr)* $(,)?) => {{
+        const FIRST: char = {
+            let bytes = $template.as_bytes();
+            assert!(
+                !bytes.is_empty() && bytes[0].is_ascii() && bytes[0] != b'{',
+                "a nonempty literal must start with literal ASCII text",
+            );
+            bytes[0] as char
+        };
+        let rendered = format!($template $(, $argument)*);
+        $crate::products::NonEmptyString::prefixed(FIRST, &rendered[1..])
+    }};
+}
+
 impl PartialEq<str> for NonEmptyString {
     fn eq(&self, other: &str) -> bool {
         self.0 == other

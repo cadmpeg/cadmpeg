@@ -59,15 +59,22 @@ pub(crate) fn is_reference_relation_parameter(
         == Some(RELATION_PARAMETER_ROLE_REFERENCE)
 }
 
-fn relation_native_kind(family: FeatureInputRelationFamily) -> &'static str {
+fn relation_native_kind(
+    family: FeatureInputRelationFamily,
+) -> cadmpeg_ir::products::NonEmptyString {
+    use cadmpeg_ir::nonempty_literal;
     match family {
-        FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
-        FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
-        FeatureInputRelationFamily::PointLineDistance => "sgPntLineDist",
-        FeatureInputRelationFamily::PointPointHorizontalDistance => "sgPntPntHorDist",
-        FeatureInputRelationFamily::PointPointVerticalDistance => "sgPntPntVertDist",
-        FeatureInputRelationFamily::Angle => "sgAnglDim",
-        FeatureInputRelationFamily::CircleDiameter => "sgCircleDim",
+        FeatureInputRelationFamily::LineLineDistance => nonempty_literal!("sgLLDist"),
+        FeatureInputRelationFamily::PointPointDistance => nonempty_literal!("sgPntPntDist"),
+        FeatureInputRelationFamily::PointLineDistance => nonempty_literal!("sgPntLineDist"),
+        FeatureInputRelationFamily::PointPointHorizontalDistance => {
+            nonempty_literal!("sgPntPntHorDist")
+        }
+        FeatureInputRelationFamily::PointPointVerticalDistance => {
+            nonempty_literal!("sgPntPntVertDist")
+        }
+        FeatureInputRelationFamily::Angle => nonempty_literal!("sgAnglDim"),
+        FeatureInputRelationFamily::CircleDiameter => nonempty_literal!("sgCircleDim"),
     }
 }
 
@@ -309,11 +316,7 @@ pub(crate) fn project_spatial_relation_bindings(
                     })
                 })
                 .flatten();
-            let Some(native_kind) =
-                cadmpeg_ir::products::NonEmptyString::new(relation_native_kind(relation.family))
-            else {
-                continue;
-            };
+            let native_kind = relation_native_kind(relation.family);
             let definition = typed_definition.unwrap_or_else(|| {
                 SpatialSketchConstraintDefinitionInput::Native {
                     native_kind,
@@ -2427,7 +2430,7 @@ pub(crate) fn project_relation_bindings(
                         && relation_constraint_is_inactive(parameter, definition, sketch_entities))
                 })
                 .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
-                    native_kind: super::names::checked_nonempty_name(native_kind),
+                    native_kind,
                     native_state: None,
                     native_flags: None,
                     native_properties: std::collections::BTreeMap::new(),

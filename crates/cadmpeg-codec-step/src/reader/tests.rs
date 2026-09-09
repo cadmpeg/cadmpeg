@@ -893,3 +893,10 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn step_source_ids_keep_the_hash_prefixed_spelling() {
+    for id in [0, 1, 42, u64::MAX] {
+        assert_eq!(super::step_source_id(id).as_str(), format!("#{id}"));
+    }
+}

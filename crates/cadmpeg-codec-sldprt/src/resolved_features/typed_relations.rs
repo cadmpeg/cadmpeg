@@ -14,7 +14,6 @@ use super::markers::{
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
     sketch_marker_prefix_at,
 };
-use super::names::checked_nonempty_name;
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
@@ -32,6 +31,7 @@ use super::{
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::nonempty_literal;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
@@ -131,7 +131,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .links()
             .iter()
             .map(|link| SketchNativeOperand {
-                native_kind: checked_nonempty_name("sldprt:marker-local-id"),
+                native_kind: nonempty_literal!("sldprt:marker-local-id"),
                 field: None,
                 object_index: u32::from(link.local_id),
                 native_ref: Some(link.entity_ref.clone()),
@@ -139,7 +139,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().filter_map(|owner| {
             Some(SketchNativeOperand {
-                native_kind: checked_nonempty_name("sldprt:marker-constraint-owner"),
+                native_kind: nonempty_literal!("sldprt:marker-constraint-owner"),
                 field: None,
                 object_index: owner.object_index().or(owner.local_id())?,
                 native_ref: Some(owner.id.clone()),
@@ -148,10 +148,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         SketchConstraintDefinitionInput::Native {
             native_kind: match marker.kind {
                 SketchInputKind::Relation(kind) => {
-                    checked_nonempty_name(format!("sldprt:marker-relation:{}", kind.native_code()))
+                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
                 }
                 kind @ (SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)) => {
-                    checked_nonempty_name(format!("sldprt:marker-relation:{}", kind.native_code()))
+                    nonempty_literal!("sldprt:marker-relation:{}", kind.native_code())
                 }
                 _ => unreachable!("non-relation markers were rejected"),
             },

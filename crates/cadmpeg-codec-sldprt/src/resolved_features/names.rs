@@ -5,20 +5,22 @@ use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::products::NonEmptyString;
 
-/// A native kind name admitted by the nonempty string owner.
-pub(super) fn checked_nonempty_name(value: impl Into<String>) -> NonEmptyString {
-    NonEmptyString::new(value).expect("native kind name must not be empty")
-}
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
 
 pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonEmptyString {
-    checked_nonempty_name(match kind {
-        FeatureInputOperandKind::D6 => "d6".into(),
-        FeatureInputOperandKind::E1 => "e1".into(),
+    match kind {
+        FeatureInputOperandKind::D6 => NonEmptyString::prefixed('d', 6),
+        FeatureInputOperandKind::E1 => NonEmptyString::prefixed('e', 1),
         FeatureInputOperandKind::Native(tag) => {
             let [first, second] = tag.value().to_le_bytes();
-            format!("{first:02x}{second:02x}")
+            NonEmptyString::prefixed(
+                HEX_DIGITS[usize::from(first >> 4)],
+                format_args!("{:x}{second:02x}", first & 0x0f),
+            )
         }
-    })
+    }
 }
 
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {

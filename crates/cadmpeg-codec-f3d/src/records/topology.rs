@@ -370,6 +370,7 @@ pub struct DesignExtrudeSelectionGroup {
     pub variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub paired_class_tag: DesignClassTag,
+    offsets: [u64; 4],
 }
 
 /// Counted selection group owned by an Extrude parameter scope.
@@ -464,6 +465,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             opaque_scalar: wire.opaque_scalar,
             variant: wire.variant,
             paired_class_tag: wire.paired_class_tag.try_into()?,
+            offsets,
         })
     }
 }
@@ -534,20 +536,16 @@ impl DesignExtrudeSelectionGroup {
         &self.members
     }
     pub(crate) fn member_count_offset(&self) -> u64 {
-        Self::offsets(self.byte_offset, self.members.len())
-            .expect("admitted selection group offsets")[0]
+        self.offsets[0]
     }
     pub(crate) fn opaque_index_offset(&self) -> u64 {
-        Self::offsets(self.byte_offset, self.members.len())
-            .expect("admitted selection group offsets")[1]
+        self.offsets[1]
     }
     pub(crate) fn opaque_scalar_offset(&self) -> u64 {
-        Self::offsets(self.byte_offset, self.members.len())
-            .expect("admitted selection group offsets")[2]
+        self.offsets[2]
     }
     pub(crate) fn paired_byte_offset(&self) -> u64 {
-        Self::offsets(self.byte_offset, self.members.len())
-            .expect("admitted selection group offsets")[3]
+        self.offsets[3]
     }
     pub(crate) fn opaque_scalar(&self) -> f64 {
         self.opaque_scalar

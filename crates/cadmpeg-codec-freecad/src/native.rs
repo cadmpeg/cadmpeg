@@ -1155,14 +1155,9 @@ impl LinkArray {
     pub(crate) fn try_new(
         count: Option<u64>,
         transforms: Vec<FiniteFrame>,
-        scales: Vec<[f64; 3]>,
+        scales: Vec<FiniteVec3>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
-        let scales = scales
-            .into_iter()
-            .map(FiniteVec3::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("element_scales: {error}"))?;
         let lengths = [
             transforms.len() as u64,
             scales.len() as u64,
@@ -1506,7 +1501,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                         .map(FiniteFrame::try_from)
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|error| format!("element_transforms: {error}"))?,
-                    wire.element_scales,
+                    wire.element_scales
+                        .into_iter()
+                        .map(FiniteVec3::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("element_scales: {error}"))?,
                     wire.element_objects,
                 )?,
                 link_transform: wire.link_transform,
@@ -2125,7 +2124,6 @@ impl LinkTarget {
         })
     }
 
-    #[doc(hidden)]
     fn empty_link_target() -> Self {
         Self {
             document: None,
