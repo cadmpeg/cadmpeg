@@ -125,24 +125,22 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
 
-    let occurrence = DesignComponentOccurrence {
-        id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
-        class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
-        record_index: 382,
-        byte_offset: 0,
-        component_record_index: 305,
-        component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
-        component_guid_offset: 0,
-        occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-        occurrence_guid_offset: 0,
-        placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
-            ordinal: std::num::NonZeroU32::MIN,
-            transform: crate::records::Located {
-                value: transform.try_into().unwrap(),
-                offset: 209,
+    let occurrence = DesignComponentOccurrence::try_new(
+        crate::records::feature::DesignComponentOccurrenceDraft {
+            id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
+            class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
+            record_index: 382,
+            byte_offset: 0,
+            component_record_index: 305,
+            component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
+            occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
+            placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+                ordinal: std::num::NonZeroU32::MIN,
+                transform: transform.try_into().unwrap(),
             },
         },
-    };
+    )
+    .unwrap();
     (bytes, scope, occurrence)
 }
 

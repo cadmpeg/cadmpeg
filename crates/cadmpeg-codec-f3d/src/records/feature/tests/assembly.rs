@@ -795,3 +795,72 @@ fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
     };
     wire["tail_value_offsets"] = serde_json::json!([tail, tail + 12]);
 }
+
+#[test]
+fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
+    use crate::records::feature::{
+        DesignComponentOccurrence as Occurrence, DesignComponentOccurrenceDraft as Draft,
+        DesignComponentOccurrencePlacement as Placement,
+    };
+    let draft = |base, placement| Draft {
+        id: "occurrence".into(),
+        class_tag: "327".to_owned().try_into().unwrap(),
+        record_index: 7,
+        byte_offset: base,
+        component_record_index: 8,
+        component_guid: "00000001-1111-4111-8111-111111111111"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        occurrence_guid: "00000002-1111-4111-8111-111111111111"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        placement,
+    };
+    let matrix = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (placement, last_offset) in [
+        (Placement::Base, 124),
+        (
+            Placement::Explicit {
+                ordinal: std::num::NonZeroU32::MIN,
+                transform: matrix.try_into().unwrap(),
+            },
+            209,
+        ),
+    ] {
+        let occurrence = Occurrence::try_new(draft(100, placement)).unwrap();
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["component_guid_offset"], 148);
+        assert_eq!(wire["occurrence_guid_offset"], 224);
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
+            occurrence
+        );
+        for field in [
+            "component_guid_offset",
+            "occurrence_guid_offset",
+            "transform_offset",
+        ] {
+            if field == "transform_offset" && matches!(placement, Placement::Base) {
+                continue;
+            }
+            let mut invalid = wire.clone();
+            invalid[field] = 0.into();
+            assert!(serde_json::from_value::<Occurrence>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        let boundary = Occurrence::try_new(draft(u64::MAX - last_offset, placement)).unwrap();
+        assert!(
+            serde_json::from_value::<Occurrence>(serde_json::to_value(boundary).unwrap()).is_ok()
+        );
+        assert!(Occurrence::try_new(draft(u64::MAX - last_offset + 1, placement)).is_err());
+    }
+}

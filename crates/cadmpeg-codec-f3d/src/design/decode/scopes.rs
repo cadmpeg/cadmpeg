@@ -2098,7 +2098,7 @@ pub(crate) fn exact_derived_instance_construction(
             native_stream(&occurrence.id) == Some(stream)
                 && occurrence.class_tag.as_str() == "380"
                 && occurrence.record_index == carrier_record_index
-                && occurrence.byte_offset < relation_at as u64
+                && occurrence.byte_offset() < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(transform)
         })
         .collect::<Vec<_>>();
@@ -2901,7 +2901,7 @@ fn exact_copy_paste_component_operation(
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
                 && occurrence.record_index == copied_occurrence_record_index
-                && occurrence.byte_offset < relation_at as u64
+                && occurrence.byte_offset() < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
         })
         .collect::<Vec<_>>();
@@ -2912,7 +2912,7 @@ fn exact_copy_paste_component_operation(
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
-                && occurrence.byte_offset < copied.byte_offset
+                && occurrence.byte_offset() < copied.byte_offset()
                 && occurrence
                     .component_guid
                     .as_str()
@@ -2985,13 +2985,13 @@ fn bind_component_pattern_occurrences(
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream.as_str())
-                && occurrence.byte_offset < byte_offset
+                && occurrence.byte_offset() < byte_offset
                 && occurrence
                     .component_guid
                     .as_str()
                     .eq_ignore_ascii_case(component_guid)
                 && matches!(
-                    occurrence.placement,
+                    occurrence.placement(),
                     crate::records::feature::DesignComponentOccurrencePlacement::Base
                 )
         })
