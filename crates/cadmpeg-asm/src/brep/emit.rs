@@ -2361,7 +2361,13 @@ fn emit_carrier_curve(
         geometry,
         source_object: None,
     });
-    match procedural_curve_defs.remove(&i) {
+    let admission_cause = |error| match error {
+        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
+        cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
+            "invalid procedural curve cache tolerance"
+        }
+    };
+    let procedural = match procedural_curve_defs.remove(&i) {
         Some(super::ProceduralCurveSource::Cached {
             construction,
             cache_fit_tolerance,
@@ -2691,47 +2697,33 @@ fn emit_carrier_curve(
                     }
                 })
             })();
-            let definition = match definition {
-                Ok(definition) => definition,
-                Err(cause) => {
-                    count_kind(&mut out.stats.procedural_curve_kinds, cause);
-                    return Ok(());
-                }
-            };
-            let procedural = ProceduralCurve::try_new(
-                ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
-                    .expect("valid owning format and numeric record index"),
-                definition,
-                cache_fit_tolerance,
-            )
-            .map_err(|error| match error {
-                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
-                cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
-                    "invalid procedural curve cache tolerance"
-                }
-            })?;
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
-        }
-        Some(super::ProceduralCurveSource::Cacheless(definition)) => {
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                ProceduralCurve::new(
+            definition.and_then(|definition| {
+                ProceduralCurve::try_new(
                     ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                         .expect("valid owning format and numeric record index"),
-                    *definition,
+                    definition,
+                    cache_fit_tolerance,
                 )
-                .map_err(|error| match error {
-                    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
-                    cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
-                        "invalid procedural curve cache tolerance"
-                    }
-                })?,
-            ));
+                .map_err(admission_cause)
+            })
         }
-        None => {}
+        Some(super::ProceduralCurveSource::Cacheless(definition)) => ProceduralCurve::new(
+            ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
+                .expect("valid owning format and numeric record index"),
+            *definition,
+        )
+        .map_err(admission_cause),
+        None => return Ok(()),
+    };
+    match procedural {
+        Ok(procedural) => out.procedural_curves.push((
+            CurveId::mint(id(format, i)).expect("identity grammar"),
+            procedural,
+        )),
+        Err(cause) => {
+            count_kind(&mut out.stats.procedural_curve_kinds, cause);
+            return Ok(());
+        }
     }
     Ok(())
 }
