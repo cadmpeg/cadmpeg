@@ -32,6 +32,9 @@ macro_rules! checked_feature_geometry {
 
             /// Return the geometric value.
             pub const fn get(self) -> $raw { self.0 }
+
+            /// Borrow the geometric value.
+            pub const fn as_raw(&self) -> &$raw { &self.0 }
         }
 
         impl PartialEq<$raw> for $name {
@@ -75,6 +78,13 @@ checked_feature_geometry!(
     [value.x, value.y, value.z].into_iter().all(f64::is_finite),
     "FiniteVector3 components must be finite"
 );
+impl FiniteVector3 {
+    /// Reverse all components.
+    pub fn negated(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+
 checked_feature_geometry!(
     /// A direction with finite nonzero norm.
     FeatureDirection3, Vector3, value,

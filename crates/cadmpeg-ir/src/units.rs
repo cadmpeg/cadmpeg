@@ -4,6 +4,7 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+use crate::math::{Point2, Vector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,10 @@ macro_rules! checked_scalar {
             pub const fn get(self) -> f64 {
                 self.0
             }
+
+            pub(crate) const fn as_raw(&self) -> &f64 {
+                &self.0
+            }
         }
 
         impl<'de> Deserialize<'de> for $name {
@@ -104,6 +109,11 @@ impl<const N: usize> FiniteVector<N> {
     /// Return the coordinates.
     pub const fn get(self) -> [f64; N] {
         self.0
+    }
+
+    /// Borrow the coordinates.
+    pub const fn as_raw(&self) -> &[f64; N] {
+        &self.0
     }
 }
 
@@ -220,6 +230,143 @@ impl Tolerances {
             angular: PositiveScalar::new(angular)
                 .ok_or_else(|| "angular tolerance must be positive and finite".to_owned())?,
         })
+    }
+}
+
+const EPS_UNIT_FRAME: f64 = 1.0e-9;
+
+/// A direction with unit length within the analytic frame tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Vector3", into = "Vector3")]
+pub struct UnitVector3(Vector3);
+
+impl UnitVector3 {
+    /// Admit a unit direction.
+    pub fn new(value: Vector3) -> Option<Self> {
+        ((value.norm() - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
+    }
+    /// Borrow the direction.
+    pub const fn as_raw(&self) -> &Vector3 {
+        &self.0
+    }
+    /// Reverse the direction.
+    pub fn reversed(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+impl TryFrom<Vector3> for UnitVector3 {
+    type Error = &'static str;
+    fn try_from(value: Vector3) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("direction must have unit length")
+    }
+}
+impl From<UnitVector3> for Vector3 {
+    fn from(value: UnitVector3) -> Self {
+        value.0
+    }
+}
+
+/// Two perpendicular unit directions within the analytic frame tolerance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrthonormalFrame3 {
+    axis: UnitVector3,
+    reference: UnitVector3,
+}
+impl OrthonormalFrame3 {
+    /// Admit two perpendicular unit directions.
+    pub fn new(axis: Vector3, reference: Vector3) -> Option<Self> {
+        let axis = UnitVector3::new(axis)?;
+        let reference = UnitVector3::new(reference)?;
+        (axis.0.dot(reference.0).abs() <= EPS_UNIT_FRAME).then_some(Self { axis, reference })
+    }
+    /// Borrow the first direction.
+    pub const fn axis(&self) -> &Vector3 {
+        self.axis.as_raw()
+    }
+    /// Borrow the second direction.
+    pub const fn reference(&self) -> &Vector3 {
+        self.reference.as_raw()
+    }
+    /// Reverse the first direction.
+    pub fn reverse_axis(&mut self) {
+        self.axis = self.axis.reversed();
+    }
+    /// Reverse the second direction.
+    pub fn reverse_reference(&mut self) {
+        self.reference = self.reference.reversed();
+    }
+}
+
+/// A parameter-space point with finite coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Point2", into = "Point2")]
+pub struct FinitePoint2(Point2);
+impl FinitePoint2 {
+    /// The parameter-space origin.
+    pub const ZERO: Self = Self(Point2 { u: 0.0, v: 0.0 });
+    /// Admit finite coordinates.
+    pub fn new(value: Point2) -> Option<Self> {
+        FiniteVector::new([value.u, value.v]).map(|_| Self(value))
+    }
+    /// Borrow the point.
+    pub const fn as_raw(&self) -> &Point2 {
+        &self.0
+    }
+}
+impl TryFrom<Point2> for FinitePoint2 {
+    type Error = &'static str;
+    fn try_from(value: Point2) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("coordinates must be finite")
+    }
+}
+impl From<FinitePoint2> for Point2 {
+    fn from(value: FinitePoint2) -> Self {
+        value.0
+    }
+}
+
+/// A finite parameter-space direction whose squared norm exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "Point2", into = "Point2")]
+pub struct NonzeroPoint2(Point2);
+impl NonzeroPoint2 {
+    /// The unit-u direction.
+    pub const U_AXIS: Self = Self(Point2 { u: 1.0, v: 0.0 });
+    /// Admit the shared nonzero-vector contract.
+    pub fn new(value: Point2) -> Option<Self> {
+        NonzeroVector::new([value.u, value.v]).map(|_| Self(value))
+    }
+    /// Borrow the direction.
+    pub const fn as_raw(&self) -> &Point2 {
+        &self.0
+    }
+}
+impl TryFrom<Point2> for NonzeroPoint2 {
+    type Error = &'static str;
+    fn try_from(value: Point2) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("direction must be finite with squared norm greater than epsilon")
+    }
+}
+impl From<NonzeroPoint2> for Point2 {
+    fn from(value: NonzeroPoint2) -> Self {
+        value.0
+    }
+}
+
+impl FiniteScalar {
+    /// Reverse the sign.
+    pub const fn negated(self) -> Self {
+        Self(-self.0)
+    }
+}
+
+impl FiniteVector<2> {
+    /// Reverse coordinate order and signs.
+    pub const fn reversed_negated(self) -> Self {
+        Self([-self.0[1], -self.0[0]])
     }
 }
 

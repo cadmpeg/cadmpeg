@@ -6,10 +6,15 @@
 //! coedge a [`Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::transform::{Transform, Transform2};
+use crate::units::{
+    FinitePoint2, FiniteScalar, FiniteVector, NonNegativeScalar, NonzeroPoint2, OrthonormalFrame3,
+    PositiveScalar, UnitVector3,
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -1158,29 +1163,16 @@ impl<'de> Deserialize<'de> for PolylineCurve {
     }
 }
 
-const EPS_ANALYTIC_FRAME: f64 = 1.0e-9;
-
-fn analytic_unit_vector(value: Vector3) -> bool {
-    (value.norm() - 1.0).abs() <= EPS_ANALYTIC_FRAME
-}
-
-fn analytic_frame(axis: Vector3, reference: Vector3) -> bool {
-    analytic_unit_vector(axis)
-        && analytic_unit_vector(reference)
-        && axis.dot(reference).abs() <= EPS_ANALYTIC_FRAME
-}
-
 /// Plane with a finite origin and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "PlaneSurfaceWire")]
+#[serde(try_from = "PlaneSurfaceWire", into = "PlaneSurfaceWire")]
 pub struct PlaneSurface {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
+    origin: FinitePoint3,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PlaneSurfaceWire {
     origin: Point3,
@@ -1191,42 +1183,49 @@ struct PlaneSurfaceWire {
 impl PlaneSurface {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("PlaneSurface.origin must be finite");
-        }
-        if !analytic_frame(normal, u_axis) {
-            return Err("PlaneSurface.normal/u_axis must form an orthonormal frame");
-        }
-        Ok(Self {
-            origin,
-            normal,
-            u_axis,
-        })
+        let frame = OrthonormalFrame3::new(normal, u_axis)
+            .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("PlaneSurface.origin must be finite")?;
+        Ok(Self { frame, origin })
     }
 
     /// Return the origin.
     #[must_use]
     pub const fn origin(&self) -> &Point3 {
-        &self.origin
+        self.origin.as_raw()
     }
 
     /// Return the normal.
     #[must_use]
     pub const fn normal(&self) -> &Vector3 {
-        &self.normal
+        self.frame.axis()
     }
 
     /// Return the u axis.
     #[must_use]
     pub const fn u_axis(&self) -> &Vector3 {
-        &self.u_axis
+        self.frame.reference()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3) {
-        (&self.origin, &self.normal, &self.u_axis)
+        (
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+        )
+    }
+}
+
+impl From<PlaneSurface> for PlaneSurfaceWire {
+    fn from(value: PlaneSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            normal: *value.normal(),
+            u_axis: *value.u_axis(),
+        }
     }
 }
 
@@ -1240,15 +1239,14 @@ impl TryFrom<PlaneSurfaceWire> for PlaneSurface {
 /// Circular cylinder with a positive radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "CylinderSurfaceWire")]
+#[serde(try_from = "CylinderSurfaceWire", into = "CylinderSurfaceWire")]
 pub struct CylinderSurface {
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    origin: FinitePoint3,
+    radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CylinderSurfaceWire {
     origin: Point3,
@@ -1265,22 +1263,14 @@ impl CylinderSurface {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("CylinderSurface.origin must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CylinderSurface.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("CylinderSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius <= 0.0 {
-            return Err("CylinderSurface.radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("CylinderSurface.origin must be finite")?;
+        let radius = PositiveScalar::new(radius)
+            .ok_or("CylinderSurface.radius must be positive and finite")?;
         Ok(Self {
+            frame,
             origin,
-            axis,
-            ref_direction,
             radius,
         })
     }
@@ -1288,32 +1278,48 @@ impl CylinderSurface {
     /// Return the origin.
     #[must_use]
     pub const fn origin(&self) -> &Point3 {
-        &self.origin
+        self.origin.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the ref direction.
     #[must_use]
     pub const fn ref_direction(&self) -> &Vector3 {
-        &self.ref_direction
+        self.frame.reference()
     }
 
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.origin, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<CylinderSurface> for CylinderSurfaceWire {
+    fn from(value: CylinderSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1327,17 +1333,16 @@ impl TryFrom<CylinderSurfaceWire> for CylinderSurface {
 /// Elliptical cone with finite parameters and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ConeSurfaceWire")]
+#[serde(try_from = "ConeSurfaceWire", into = "ConeSurfaceWire")]
 pub struct ConeSurface {
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
-    ratio: f64,
-    half_angle: f64,
+    origin: FinitePoint3,
+    radius: NonNegativeScalar,
+    ratio: PositiveScalar,
+    half_angle: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ConeSurfaceWire {
     origin: Point3,
@@ -1358,31 +1363,18 @@ impl ConeSurface {
         ratio: f64,
         half_angle: f64,
     ) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("ConeSurface.origin must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("ConeSurface.radius must be finite");
-        }
-        if !ratio.is_finite() {
-            return Err("ConeSurface.ratio must be finite");
-        }
-        if !half_angle.is_finite() {
-            return Err("ConeSurface.half_angle must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("ConeSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius < 0.0 {
-            return Err("ConeSurface.radius must be nonnegative");
-        }
-        if ratio <= 0.0 {
-            return Err("ConeSurface.ratio must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
+        let origin = FinitePoint3::new(origin).ok_or("ConeSurface.origin must be finite")?;
+        let radius = NonNegativeScalar::new(radius)
+            .ok_or("ConeSurface.radius must be nonnegative and finite")?;
+        let ratio =
+            PositiveScalar::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
+        let half_angle =
+            FiniteScalar::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
         Ok(Self {
+            frame,
             origin,
-            axis,
-            ref_direction,
             radius,
             ratio,
             half_angle,
@@ -1392,37 +1384,37 @@ impl ConeSurface {
     /// Return the origin.
     #[must_use]
     pub const fn origin(&self) -> &Point3 {
-        &self.origin
+        self.origin.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the ref direction.
     #[must_use]
     pub const fn ref_direction(&self) -> &Vector3 {
-        &self.ref_direction
+        self.frame.reference()
     }
 
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 
     /// Return the ratio.
     #[must_use]
     pub const fn ratio(&self) -> f64 {
-        self.ratio
+        self.ratio.get()
     }
 
     /// Return the half angle.
     #[must_use]
     pub const fn half_angle(&self) -> f64 {
-        self.half_angle
+        self.half_angle.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -1430,13 +1422,26 @@ impl ConeSurface {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64, &f64) {
         (
-            &self.origin,
-            &self.axis,
-            &self.ref_direction,
-            &self.radius,
-            &self.ratio,
-            &self.half_angle,
+            self.origin.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+            self.ratio.as_raw(),
+            self.half_angle.as_raw(),
         )
+    }
+}
+
+impl From<ConeSurface> for ConeSurfaceWire {
+    fn from(value: ConeSurface) -> Self {
+        Self {
+            origin: *value.origin(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+            ratio: value.ratio(),
+            half_angle: value.half_angle(),
+        }
     }
 }
 
@@ -1457,15 +1462,14 @@ impl TryFrom<ConeSurfaceWire> for ConeSurface {
 /// Sphere with a signed nonzero radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SphereSurfaceWire")]
+#[serde(try_from = "SphereSurfaceWire", into = "SphereSurfaceWire")]
 pub struct SphereSurface {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    center: FinitePoint3,
+    radius: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SphereSurfaceWire {
     center: Point3,
@@ -1482,22 +1486,16 @@ impl SphereSurface {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("SphereSurface.center must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("SphereSurface.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("SphereSurface.axis/ref_direction must form an orthonormal frame");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
         if radius == 0.0 {
             return Err("SphereSurface.radius must be nonzero");
         }
+        let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
+        let radius = FiniteScalar::new(radius).ok_or("SphereSurface.radius must be finite")?;
         Ok(Self {
+            frame,
             center,
-            axis,
-            ref_direction,
             radius,
         })
     }
@@ -1505,32 +1503,48 @@ impl SphereSurface {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the ref direction.
     #[must_use]
     pub const fn ref_direction(&self) -> &Vector3 {
-        &self.ref_direction
+        self.frame.reference()
     }
 
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.center, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<SphereSurface> for SphereSurfaceWire {
+    fn from(value: SphereSurface) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1544,16 +1558,15 @@ impl TryFrom<SphereSurfaceWire> for SphereSurface {
 /// Torus with a positive major radius, signed tube radius, and orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "TorusSurfaceWire")]
+#[serde(try_from = "TorusSurfaceWire", into = "TorusSurfaceWire")]
 pub struct TorusSurface {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: FiniteScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct TorusSurfaceWire {
     center: Point3,
@@ -1572,28 +1585,19 @@ impl TorusSurface {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("TorusSurface.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("TorusSurface.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("TorusSurface.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("TorusSurface.axis/ref_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("TorusSurface.major_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
         if minor_radius == 0.0 {
             return Err("TorusSurface.minor_radius must be nonzero");
         }
+        let center = FinitePoint3::new(center).ok_or("TorusSurface.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("TorusSurface.major_radius must be positive and finite")?;
+        let minor_radius =
+            FiniteScalar::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
         Ok(Self {
+            frame,
             center,
-            axis,
-            ref_direction,
             major_radius,
             minor_radius,
         })
@@ -1602,31 +1606,31 @@ impl TorusSurface {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the ref direction.
     #[must_use]
     pub const fn ref_direction(&self) -> &Vector3 {
-        &self.ref_direction
+        self.frame.reference()
     }
 
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> f64 {
-        self.major_radius
+        self.major_radius.get()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -1634,12 +1638,24 @@ impl TorusSurface {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.ref_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<TorusSurface> for TorusSurfaceWire {
+    fn from(value: TorusSurface) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -1661,8 +1677,8 @@ impl TryFrom<TorusSurfaceWire> for TorusSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LineCurveWire")]
 pub struct LineCurve {
-    origin: Point3,
-    direction: Vector3,
+    origin: FinitePoint3,
+    direction: UnitVector3,
 }
 
 #[derive(Deserialize)]
@@ -1675,37 +1691,34 @@ struct LineCurveWire {
 impl LineCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.direction = Vector3::new(-self.direction.x, -self.direction.y, -self.direction.z);
+        self.direction = self.direction.reversed();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, direction: Vector3) -> Result<Self, &'static str> {
-        if !(origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()) {
-            return Err("LineCurve.origin must be finite");
-        }
-        if !analytic_unit_vector(direction) {
-            return Err("LineCurve.direction must have unit length");
-        }
+        let origin = FinitePoint3::new(origin).ok_or("LineCurve.origin must be finite")?;
+        let direction =
+            UnitVector3::new(direction).ok_or("LineCurve.direction must have unit length")?;
         Ok(Self { origin, direction })
     }
 
     /// Return the origin.
     #[must_use]
     pub const fn origin(&self) -> &Point3 {
-        &self.origin
+        self.origin.as_raw()
     }
 
     /// Return the direction.
     #[must_use]
     pub const fn direction(&self) -> &Vector3 {
-        &self.direction
+        self.direction.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3) {
-        (&self.origin, &self.direction)
+        (self.origin.as_raw(), self.direction.as_raw())
     }
 }
 
@@ -1719,15 +1732,14 @@ impl TryFrom<LineCurveWire> for LineCurve {
 /// Circle with a positive radius and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "CircleCurveWire")]
+#[serde(try_from = "CircleCurveWire", into = "CircleCurveWire")]
 pub struct CircleCurve {
-    center: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    radius: f64,
+    center: FinitePoint3,
+    radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CircleCurveWire {
     center: Point3,
@@ -1739,7 +1751,7 @@ struct CircleCurveWire {
 impl CircleCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.axis = Vector3::new(-self.axis.x, -self.axis.y, -self.axis.z);
+        self.frame.reverse_axis();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
@@ -1749,22 +1761,14 @@ impl CircleCurve {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("CircleCurve.center must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CircleCurve.radius must be finite");
-        }
-        if !analytic_frame(axis, ref_direction) {
-            return Err("CircleCurve.axis/ref_direction must form an orthonormal frame");
-        }
-        if radius <= 0.0 {
-            return Err("CircleCurve.radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("CircleCurve.axis/ref_direction must form an orthonormal frame")?;
+        let center = FinitePoint3::new(center).ok_or("CircleCurve.center must be finite")?;
+        let radius =
+            PositiveScalar::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
         Ok(Self {
+            frame,
             center,
-            axis,
-            ref_direction,
             radius,
         })
     }
@@ -1772,32 +1776,48 @@ impl CircleCurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the ref direction.
     #[must_use]
     pub const fn ref_direction(&self) -> &Vector3 {
-        &self.ref_direction
+        self.frame.reference()
     }
 
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
-        (&self.center, &self.axis, &self.ref_direction, &self.radius)
+        (
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.radius.as_raw(),
+        )
+    }
+}
+
+impl From<CircleCurve> for CircleCurveWire {
+    fn from(value: CircleCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            ref_direction: *value.ref_direction(),
+            radius: value.radius(),
+        }
     }
 }
 
@@ -1811,16 +1831,15 @@ impl TryFrom<CircleCurveWire> for CircleCurve {
 /// Ellipse with ordered positive radii and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "EllipseCurveWire")]
+#[serde(try_from = "EllipseCurveWire", into = "EllipseCurveWire")]
 pub struct EllipseCurve {
-    center: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct EllipseCurveWire {
     center: Point3,
@@ -1833,7 +1852,7 @@ struct EllipseCurveWire {
 impl EllipseCurve {
     /// Reverse the curve parameter direction.
     pub fn reverse_parameterization(&mut self) {
-        self.axis = Vector3::new(-self.axis.x, -self.axis.y, -self.axis.z);
+        self.frame.reverse_axis();
     }
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
@@ -1844,31 +1863,19 @@ impl EllipseCurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("EllipseCurve.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("EllipseCurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("EllipseCurve.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("EllipseCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("EllipseCurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("EllipseCurve.minor_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("EllipseCurve.axis/major_direction must form an orthonormal frame")?;
         if major_radius < minor_radius {
             return Err("EllipseCurve.major_radius must be at least minor_radius");
         }
+        let center = FinitePoint3::new(center).ok_or("EllipseCurve.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("EllipseCurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
         Ok(Self {
+            frame,
             center,
-            axis,
-            major_direction,
             major_radius,
             minor_radius,
         })
@@ -1877,31 +1884,31 @@ impl EllipseCurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the major direction.
     #[must_use]
     pub const fn major_direction(&self) -> &Vector3 {
-        &self.major_direction
+        self.frame.reference()
     }
 
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> f64 {
-        self.major_radius
+        self.major_radius.get()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -1909,12 +1916,24 @@ impl EllipseCurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.major_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<EllipseCurve> for EllipseCurveWire {
+    fn from(value: EllipseCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -1934,15 +1953,14 @@ impl TryFrom<EllipseCurveWire> for EllipseCurve {
 /// Parabola with a positive focal distance and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ParabolaCurveWire")]
+#[serde(try_from = "ParabolaCurveWire", into = "ParabolaCurveWire")]
 pub struct ParabolaCurve {
-    vertex: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    focal_distance: f64,
+    vertex: FinitePoint3,
+    focal_distance: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ParabolaCurveWire {
     vertex: Point3,
@@ -1959,22 +1977,14 @@ impl ParabolaCurve {
         major_direction: Vector3,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if !(vertex.x.is_finite() && vertex.y.is_finite() && vertex.z.is_finite()) {
-            return Err("ParabolaCurve.vertex must be finite");
-        }
-        if !focal_distance.is_finite() {
-            return Err("ParabolaCurve.focal_distance must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("ParabolaCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if focal_distance <= 0.0 {
-            return Err("ParabolaCurve.focal_distance must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")?;
+        let vertex = FinitePoint3::new(vertex).ok_or("ParabolaCurve.vertex must be finite")?;
+        let focal_distance = PositiveScalar::new(focal_distance)
+            .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
         Ok(Self {
+            frame,
             vertex,
-            axis,
-            major_direction,
             focal_distance,
         })
     }
@@ -1982,25 +1992,25 @@ impl ParabolaCurve {
     /// Return the vertex.
     #[must_use]
     pub const fn vertex(&self) -> &Point3 {
-        &self.vertex
+        self.vertex.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the major direction.
     #[must_use]
     pub const fn major_direction(&self) -> &Vector3 {
-        &self.major_direction
+        self.frame.reference()
     }
 
     /// Return the focal distance.
     #[must_use]
     pub const fn focal_distance(&self) -> f64 {
-        self.focal_distance
+        self.focal_distance.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2008,11 +2018,22 @@ impl ParabolaCurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64) {
         (
-            &self.vertex,
-            &self.axis,
-            &self.major_direction,
-            &self.focal_distance,
+            self.vertex.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.focal_distance.as_raw(),
         )
+    }
+}
+
+impl From<ParabolaCurve> for ParabolaCurveWire {
+    fn from(value: ParabolaCurve) -> Self {
+        Self {
+            vertex: *value.vertex(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            focal_distance: value.focal_distance(),
+        }
     }
 }
 
@@ -2031,16 +2052,15 @@ impl TryFrom<ParabolaCurveWire> for ParabolaCurve {
 /// Hyperbola with positive radii and an orthonormal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HyperbolaCurveWire")]
+#[serde(try_from = "HyperbolaCurveWire", into = "HyperbolaCurveWire")]
 pub struct HyperbolaCurve {
-    center: Point3,
-    axis: Vector3,
-    major_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint3,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
+    frame: OrthonormalFrame3,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct HyperbolaCurveWire {
     center: Point3,
@@ -2054,11 +2074,7 @@ impl HyperbolaCurve {
     /// Return the opposite branch with unchanged radii.
     #[must_use]
     pub fn opposite_branch(mut self) -> Self {
-        self.major_direction = Vector3::new(
-            -self.major_direction.x,
-            -self.major_direction.y,
-            -self.major_direction.z,
-        );
+        self.frame.reverse_reference();
         self
     }
 
@@ -2070,28 +2086,16 @@ impl HyperbolaCurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite()) {
-            return Err("HyperbolaCurve.center must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("HyperbolaCurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("HyperbolaCurve.minor_radius must be finite");
-        }
-        if !analytic_frame(axis, major_direction) {
-            return Err("HyperbolaCurve.axis/major_direction must form an orthonormal frame");
-        }
-        if major_radius <= 0.0 {
-            return Err("HyperbolaCurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("HyperbolaCurve.minor_radius must be positive");
-        }
+        let frame = OrthonormalFrame3::new(axis, major_direction)
+            .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")?;
+        let center = FinitePoint3::new(center).ok_or("HyperbolaCurve.center must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("HyperbolaCurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
         Ok(Self {
+            frame,
             center,
-            axis,
-            major_direction,
             major_radius,
             minor_radius,
         })
@@ -2100,31 +2104,31 @@ impl HyperbolaCurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.frame.axis()
     }
 
     /// Return the major direction.
     #[must_use]
     pub const fn major_direction(&self) -> &Vector3 {
-        &self.major_direction
+        self.frame.reference()
     }
 
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> f64 {
-        self.major_radius
+        self.major_radius.get()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2132,12 +2136,24 @@ impl HyperbolaCurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point3, &Vector3, &Vector3, &f64, &f64) {
         (
-            &self.center,
-            &self.axis,
-            &self.major_direction,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.frame.axis(),
+            self.frame.reference(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
+    }
+}
+
+impl From<HyperbolaCurve> for HyperbolaCurveWire {
+    fn from(value: HyperbolaCurve) -> Self {
+        Self {
+            center: *value.center(),
+            axis: *value.axis(),
+            major_direction: *value.major_direction(),
+            major_radius: value.major_radius(),
+            minor_radius: value.minor_radius(),
+        }
     }
 }
 
@@ -2159,7 +2175,7 @@ impl TryFrom<HyperbolaCurveWire> for HyperbolaCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DegenerateCurveWire")]
 pub struct DegenerateCurve {
-    point: Point3,
+    point: FinitePoint3,
 }
 
 #[derive(Deserialize)]
@@ -2171,16 +2187,14 @@ struct DegenerateCurveWire {
 impl DegenerateCurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(point: Point3) -> Result<Self, &'static str> {
-        if !(point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) {
-            return Err("DegenerateCurve.point must be finite");
-        }
+        let point = FinitePoint3::new(point).ok_or("DegenerateCurve.point must be finite")?;
         Ok(Self { point })
     }
 
     /// Return the point.
     #[must_use]
     pub const fn point(&self) -> &Point3 {
-        &self.point
+        self.point.as_raw()
     }
 }
 
@@ -2196,8 +2210,8 @@ impl TryFrom<DegenerateCurveWire> for DegenerateCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LinePcurveWire")]
 pub struct LinePcurve {
-    origin: Point2,
-    direction: Point2,
+    origin: FinitePoint2,
+    direction: NonzeroPoint2,
 }
 
 #[derive(Deserialize)]
@@ -2210,41 +2224,35 @@ struct LinePcurveWire {
 impl LinePcurve {
     /// Unit-u line through the parameter-space origin.
     pub const U_AXIS: Self = Self {
-        origin: Point2 { u: 0.0, v: 0.0 },
-        direction: Point2 { u: 1.0, v: 0.0 },
+        origin: FinitePoint2::ZERO,
+        direction: NonzeroPoint2::U_AXIS,
     };
 
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point2, direction: Point2) -> Result<Self, &'static str> {
-        if !(origin.u.is_finite() && origin.v.is_finite()) {
-            return Err("LinePcurve.origin must be finite");
-        }
-        if !(direction.u.is_finite() && direction.v.is_finite()) {
-            return Err("LinePcurve.direction must be finite");
-        }
-        if direction.u.hypot(direction.v) <= 0.0 {
-            return Err("LinePcurve.direction must be nonzero");
-        }
+        let origin = FinitePoint2::new(origin).ok_or("LinePcurve.origin must be finite")?;
+        let direction = NonzeroPoint2::new(direction)
+            .ok_or("LinePcurve.direction must be finite with squared norm greater than epsilon")?;
         Ok(Self { origin, direction })
     }
 
     /// Return the origin.
     #[must_use]
     pub const fn origin(&self) -> &Point2 {
-        &self.origin
+        self.origin.as_raw()
     }
 
     /// Return the direction.
     #[must_use]
     pub const fn direction(&self) -> &Point2 {
-        &self.direction
+        self.direction.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2) {
-        (&self.origin, &self.direction)
+        (self.origin.as_raw(), self.direction.as_raw())
     }
 }
 
@@ -2260,12 +2268,12 @@ impl TryFrom<LinePcurveWire> for LinePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PolarHarmonicPcurveWire")]
 pub struct PolarHarmonicPcurve {
-    radial_center: Point2,
-    radial_cos: Point2,
-    radial_sin: Point2,
-    axial_origin: f64,
-    axial_cos: f64,
-    axial_sin: f64,
+    radial_center: FinitePoint2,
+    radial_cos: FinitePoint2,
+    radial_sin: FinitePoint2,
+    axial_origin: FiniteScalar,
+    axial_cos: FiniteScalar,
+    axial_sin: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -2289,27 +2297,21 @@ impl PolarHarmonicPcurve {
         axial_cos: f64,
         axial_sin: f64,
     ) -> Result<Self, &'static str> {
-        if !(radial_center.u.is_finite() && radial_center.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_center must be finite");
-        }
-        if !(radial_cos.u.is_finite() && radial_cos.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_cos must be finite");
-        }
-        if !(radial_sin.u.is_finite() && radial_sin.v.is_finite()) {
-            return Err("PolarHarmonicPcurve.radial_sin must be finite");
-        }
-        if !axial_origin.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_origin must be finite");
-        }
-        if !axial_cos.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_cos must be finite");
-        }
-        if !axial_sin.is_finite() {
-            return Err("PolarHarmonicPcurve.axial_sin must be finite");
-        }
         if !(radial_cos.u.hypot(radial_cos.v) > 0.0 || radial_sin.u.hypot(radial_sin.v) > 0.0) {
             return Err("PolarHarmonicPcurve.radial_cos/radial_sin must not both be zero");
         }
+        let radial_center = FinitePoint2::new(radial_center)
+            .ok_or("PolarHarmonicPcurve.radial_center must be finite")?;
+        let radial_cos =
+            FinitePoint2::new(radial_cos).ok_or("PolarHarmonicPcurve.radial_cos must be finite")?;
+        let radial_sin =
+            FinitePoint2::new(radial_sin).ok_or("PolarHarmonicPcurve.radial_sin must be finite")?;
+        let axial_origin = FiniteScalar::new(axial_origin)
+            .ok_or("PolarHarmonicPcurve.axial_origin must be finite")?;
+        let axial_cos =
+            FiniteScalar::new(axial_cos).ok_or("PolarHarmonicPcurve.axial_cos must be finite")?;
+        let axial_sin =
+            FiniteScalar::new(axial_sin).ok_or("PolarHarmonicPcurve.axial_sin must be finite")?;
         Ok(Self {
             radial_center,
             radial_cos,
@@ -2323,37 +2325,37 @@ impl PolarHarmonicPcurve {
     /// Return the radial center.
     #[must_use]
     pub const fn radial_center(&self) -> &Point2 {
-        &self.radial_center
+        self.radial_center.as_raw()
     }
 
     /// Return the radial cos.
     #[must_use]
     pub const fn radial_cos(&self) -> &Point2 {
-        &self.radial_cos
+        self.radial_cos.as_raw()
     }
 
     /// Return the radial sin.
     #[must_use]
     pub const fn radial_sin(&self) -> &Point2 {
-        &self.radial_sin
+        self.radial_sin.as_raw()
     }
 
     /// Return the axial origin.
     #[must_use]
     pub const fn axial_origin(&self) -> f64 {
-        self.axial_origin
+        self.axial_origin.get()
     }
 
     /// Return the axial cos.
     #[must_use]
     pub const fn axial_cos(&self) -> f64 {
-        self.axial_cos
+        self.axial_cos.get()
     }
 
     /// Return the axial sin.
     #[must_use]
     pub const fn axial_sin(&self) -> f64 {
-        self.axial_sin
+        self.axial_sin.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2361,12 +2363,12 @@ impl PolarHarmonicPcurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64, &f64) {
         (
-            &self.radial_center,
-            &self.radial_cos,
-            &self.radial_sin,
-            &self.axial_origin,
-            &self.axial_cos,
-            &self.axial_sin,
+            self.radial_center.as_raw(),
+            self.radial_cos.as_raw(),
+            self.radial_sin.as_raw(),
+            self.axial_origin.as_raw(),
+            self.axial_cos.as_raw(),
+            self.axial_sin.as_raw(),
         )
     }
 }
@@ -2390,10 +2392,10 @@ impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SphericalGreatCirclePcurveWire")]
 pub struct SphericalGreatCirclePcurve {
-    azimuth_origin: f64,
-    azimuth_rate: f64,
-    plane_phase: f64,
-    plane_slope: f64,
+    azimuth_origin: FiniteScalar,
+    azimuth_rate: FiniteScalar,
+    plane_phase: FiniteScalar,
+    plane_slope: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -2413,21 +2415,17 @@ impl SphericalGreatCirclePcurve {
         plane_phase: f64,
         plane_slope: f64,
     ) -> Result<Self, &'static str> {
-        if !azimuth_origin.is_finite() {
-            return Err("SphericalGreatCirclePcurve.azimuth_origin must be finite");
-        }
-        if !azimuth_rate.is_finite() {
-            return Err("SphericalGreatCirclePcurve.azimuth_rate must be finite");
-        }
-        if !plane_phase.is_finite() {
-            return Err("SphericalGreatCirclePcurve.plane_phase must be finite");
-        }
-        if !plane_slope.is_finite() {
-            return Err("SphericalGreatCirclePcurve.plane_slope must be finite");
-        }
         if azimuth_rate == 0.0 {
             return Err("SphericalGreatCirclePcurve.azimuth_rate must be nonzero");
         }
+        let azimuth_origin = FiniteScalar::new(azimuth_origin)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_origin must be finite")?;
+        let azimuth_rate = FiniteScalar::new(azimuth_rate)
+            .ok_or("SphericalGreatCirclePcurve.azimuth_rate must be finite")?;
+        let plane_phase = FiniteScalar::new(plane_phase)
+            .ok_or("SphericalGreatCirclePcurve.plane_phase must be finite")?;
+        let plane_slope = FiniteScalar::new(plane_slope)
+            .ok_or("SphericalGreatCirclePcurve.plane_slope must be finite")?;
         Ok(Self {
             azimuth_origin,
             azimuth_rate,
@@ -2439,25 +2437,25 @@ impl SphericalGreatCirclePcurve {
     /// Return the azimuth origin.
     #[must_use]
     pub const fn azimuth_origin(&self) -> f64 {
-        self.azimuth_origin
+        self.azimuth_origin.get()
     }
 
     /// Return the azimuth rate.
     #[must_use]
     pub const fn azimuth_rate(&self) -> f64 {
-        self.azimuth_rate
+        self.azimuth_rate.get()
     }
 
     /// Return the plane phase.
     #[must_use]
     pub const fn plane_phase(&self) -> f64 {
-        self.plane_phase
+        self.plane_phase.get()
     }
 
     /// Return the plane slope.
     #[must_use]
     pub const fn plane_slope(&self) -> f64 {
-        self.plane_slope
+        self.plane_slope.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2465,10 +2463,10 @@ impl SphericalGreatCirclePcurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&f64, &f64, &f64, &f64) {
         (
-            &self.azimuth_origin,
-            &self.azimuth_rate,
-            &self.plane_phase,
-            &self.plane_slope,
+            self.azimuth_origin.as_raw(),
+            self.azimuth_rate.as_raw(),
+            self.plane_phase.as_raw(),
+            self.plane_slope.as_raw(),
         )
     }
 }
@@ -2490,10 +2488,10 @@ impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CirclePcurveWire")]
 pub struct CirclePcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2513,27 +2511,17 @@ impl CirclePcurve {
         y_axis: Point2,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("CirclePcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("CirclePcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("CirclePcurve.y_axis must be finite");
-        }
-        if !radius.is_finite() {
-            return Err("CirclePcurve.radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("CirclePcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("CirclePcurve.y_axis must be nonzero");
         }
-        if radius <= 0.0 {
-            return Err("CirclePcurve.radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("CirclePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("CirclePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("CirclePcurve.y_axis must be finite")?;
+        let radius =
+            PositiveScalar::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2545,32 +2533,37 @@ impl CirclePcurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point2 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the x axis.
     #[must_use]
     pub const fn x_axis(&self) -> &Point2 {
-        &self.x_axis
+        self.x_axis.as_raw()
     }
 
     /// Return the y axis.
     #[must_use]
     pub const fn y_axis(&self) -> &Point2 {
-        &self.y_axis
+        self.y_axis.as_raw()
     }
 
     /// Return the radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
-        (&self.center, &self.x_axis, &self.y_axis, &self.radius)
+        (
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.radius.as_raw(),
+        )
     }
 }
 
@@ -2586,11 +2579,11 @@ impl TryFrom<CirclePcurveWire> for CirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "EllipsePcurveWire")]
 pub struct EllipsePcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2612,33 +2605,19 @@ impl EllipsePcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("EllipsePcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("EllipsePcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("EllipsePcurve.y_axis must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("EllipsePcurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("EllipsePcurve.minor_radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("EllipsePcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("EllipsePcurve.y_axis must be nonzero");
         }
-        if major_radius <= 0.0 {
-            return Err("EllipsePcurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("EllipsePcurve.minor_radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("EllipsePcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("EllipsePcurve.y_axis must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2651,31 +2630,31 @@ impl EllipsePcurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point2 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the x axis.
     #[must_use]
     pub const fn x_axis(&self) -> &Point2 {
-        &self.x_axis
+        self.x_axis.as_raw()
     }
 
     /// Return the y axis.
     #[must_use]
     pub const fn y_axis(&self) -> &Point2 {
-        &self.y_axis
+        self.y_axis.as_raw()
     }
 
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> f64 {
-        self.major_radius
+        self.major_radius.get()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2683,11 +2662,11 @@ impl EllipsePcurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
         (
-            &self.center,
-            &self.x_axis,
-            &self.y_axis,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
     }
 }
@@ -2710,9 +2689,9 @@ impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HarmonicPcurveWire")]
 pub struct HarmonicPcurve {
-    center: Point2,
-    cosine: Point2,
-    sine: Point2,
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
 }
 
 #[derive(Deserialize)]
@@ -2726,18 +2705,12 @@ struct HarmonicPcurveWire {
 impl HarmonicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HarmonicPcurve.center must be finite");
-        }
-        if !(cosine.u.is_finite() && cosine.v.is_finite()) {
-            return Err("HarmonicPcurve.cosine must be finite");
-        }
-        if !(sine.u.is_finite() && sine.v.is_finite()) {
-            return Err("HarmonicPcurve.sine must be finite");
-        }
         if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
             return Err("HarmonicPcurve.cosine/sine must not both be zero");
         }
+        let center = FinitePoint2::new(center).ok_or("HarmonicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HarmonicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HarmonicPcurve.sine must be finite")?;
         Ok(Self {
             center,
             cosine,
@@ -2748,26 +2721,30 @@ impl HarmonicPcurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point2 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the cosine.
     #[must_use]
     pub const fn cosine(&self) -> &Point2 {
-        &self.cosine
+        self.cosine.as_raw()
     }
 
     /// Return the sine.
     #[must_use]
     pub const fn sine(&self) -> &Point2 {
-        &self.sine
+        self.sine.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (&self.center, &self.cosine, &self.sine)
+        (
+            self.center.as_raw(),
+            self.cosine.as_raw(),
+            self.sine.as_raw(),
+        )
     }
 }
 
@@ -2783,10 +2760,10 @@ impl TryFrom<HarmonicPcurveWire> for HarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ParabolaPcurveWire")]
 pub struct ParabolaPcurve {
-    vertex: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    focal_distance: f64,
+    vertex: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    focal_distance: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2806,27 +2783,17 @@ impl ParabolaPcurve {
         y_axis: Point2,
         focal_distance: f64,
     ) -> Result<Self, &'static str> {
-        if !(vertex.u.is_finite() && vertex.v.is_finite()) {
-            return Err("ParabolaPcurve.vertex must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("ParabolaPcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("ParabolaPcurve.y_axis must be finite");
-        }
-        if !focal_distance.is_finite() {
-            return Err("ParabolaPcurve.focal_distance must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("ParabolaPcurve.y_axis must be nonzero");
         }
-        if focal_distance <= 0.0 {
-            return Err("ParabolaPcurve.focal_distance must be positive");
-        }
+        let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("ParabolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("ParabolaPcurve.y_axis must be finite")?;
+        let focal_distance = PositiveScalar::new(focal_distance)
+            .ok_or("ParabolaPcurve.focal_distance must be positive and finite")?;
         Ok(Self {
             vertex,
             x_axis,
@@ -2838,25 +2805,25 @@ impl ParabolaPcurve {
     /// Return the vertex.
     #[must_use]
     pub const fn vertex(&self) -> &Point2 {
-        &self.vertex
+        self.vertex.as_raw()
     }
 
     /// Return the x axis.
     #[must_use]
     pub const fn x_axis(&self) -> &Point2 {
-        &self.x_axis
+        self.x_axis.as_raw()
     }
 
     /// Return the y axis.
     #[must_use]
     pub const fn y_axis(&self) -> &Point2 {
-        &self.y_axis
+        self.y_axis.as_raw()
     }
 
     /// Return the focal distance.
     #[must_use]
     pub const fn focal_distance(&self) -> f64 {
-        self.focal_distance
+        self.focal_distance.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2864,10 +2831,10 @@ impl ParabolaPcurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64) {
         (
-            &self.vertex,
-            &self.x_axis,
-            &self.y_axis,
-            &self.focal_distance,
+            self.vertex.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.focal_distance.as_raw(),
         )
     }
 }
@@ -2884,11 +2851,11 @@ impl TryFrom<ParabolaPcurveWire> for ParabolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolaPcurveWire")]
 pub struct HyperbolaPcurve {
-    center: Point2,
-    x_axis: Point2,
-    y_axis: Point2,
-    major_radius: f64,
-    minor_radius: f64,
+    center: FinitePoint2,
+    x_axis: FinitePoint2,
+    y_axis: FinitePoint2,
+    major_radius: PositiveScalar,
+    minor_radius: PositiveScalar,
 }
 
 #[derive(Deserialize)]
@@ -2910,33 +2877,19 @@ impl HyperbolaPcurve {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HyperbolaPcurve.center must be finite");
-        }
-        if !(x_axis.u.is_finite() && x_axis.v.is_finite()) {
-            return Err("HyperbolaPcurve.x_axis must be finite");
-        }
-        if !(y_axis.u.is_finite() && y_axis.v.is_finite()) {
-            return Err("HyperbolaPcurve.y_axis must be finite");
-        }
-        if !major_radius.is_finite() {
-            return Err("HyperbolaPcurve.major_radius must be finite");
-        }
-        if !minor_radius.is_finite() {
-            return Err("HyperbolaPcurve.minor_radius must be finite");
-        }
         if x_axis.u.hypot(x_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.x_axis must be nonzero");
         }
         if y_axis.u.hypot(y_axis.v) <= 0.0 {
             return Err("HyperbolaPcurve.y_axis must be nonzero");
         }
-        if major_radius <= 0.0 {
-            return Err("HyperbolaPcurve.major_radius must be positive");
-        }
-        if minor_radius <= 0.0 {
-            return Err("HyperbolaPcurve.minor_radius must be positive");
-        }
+        let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
+        let x_axis = FinitePoint2::new(x_axis).ok_or("HyperbolaPcurve.x_axis must be finite")?;
+        let y_axis = FinitePoint2::new(y_axis).ok_or("HyperbolaPcurve.y_axis must be finite")?;
+        let major_radius = PositiveScalar::new(major_radius)
+            .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
+        let minor_radius = PositiveScalar::new(minor_radius)
+            .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2949,31 +2902,31 @@ impl HyperbolaPcurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point2 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the x axis.
     #[must_use]
     pub const fn x_axis(&self) -> &Point2 {
-        &self.x_axis
+        self.x_axis.as_raw()
     }
 
     /// Return the y axis.
     #[must_use]
     pub const fn y_axis(&self) -> &Point2 {
-        &self.y_axis
+        self.y_axis.as_raw()
     }
 
     /// Return the major radius.
     #[must_use]
     pub const fn major_radius(&self) -> f64 {
-        self.major_radius
+        self.major_radius.get()
     }
 
     /// Return the minor radius.
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius
+        self.minor_radius.get()
     }
 
     /// Borrow the carrier parameters in constructor order.
@@ -2981,11 +2934,11 @@ impl HyperbolaPcurve {
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2, &f64, &f64) {
         (
-            &self.center,
-            &self.x_axis,
-            &self.y_axis,
-            &self.major_radius,
-            &self.minor_radius,
+            self.center.as_raw(),
+            self.x_axis.as_raw(),
+            self.y_axis.as_raw(),
+            self.major_radius.as_raw(),
+            self.minor_radius.as_raw(),
         )
     }
 }
@@ -3008,9 +2961,9 @@ impl TryFrom<HyperbolaPcurveWire> for HyperbolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolicPcurveWire")]
 pub struct HyperbolicPcurve {
-    center: Point2,
-    cosine: Point2,
-    sine: Point2,
+    center: FinitePoint2,
+    cosine: FinitePoint2,
+    sine: FinitePoint2,
 }
 
 #[derive(Deserialize)]
@@ -3024,18 +2977,12 @@ struct HyperbolicPcurveWire {
 impl HyperbolicPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(center: Point2, cosine: Point2, sine: Point2) -> Result<Self, &'static str> {
-        if !(center.u.is_finite() && center.v.is_finite()) {
-            return Err("HyperbolicPcurve.center must be finite");
-        }
-        if !(cosine.u.is_finite() && cosine.v.is_finite()) {
-            return Err("HyperbolicPcurve.cosine must be finite");
-        }
-        if !(sine.u.is_finite() && sine.v.is_finite()) {
-            return Err("HyperbolicPcurve.sine must be finite");
-        }
         if !(cosine.u.hypot(cosine.v) > 0.0 || sine.u.hypot(sine.v) > 0.0) {
             return Err("HyperbolicPcurve.cosine/sine must not both be zero");
         }
+        let center = FinitePoint2::new(center).ok_or("HyperbolicPcurve.center must be finite")?;
+        let cosine = FinitePoint2::new(cosine).ok_or("HyperbolicPcurve.cosine must be finite")?;
+        let sine = FinitePoint2::new(sine).ok_or("HyperbolicPcurve.sine must be finite")?;
         Ok(Self {
             center,
             cosine,
@@ -3046,26 +2993,30 @@ impl HyperbolicPcurve {
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point2 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the cosine.
     #[must_use]
     pub const fn cosine(&self) -> &Point2 {
-        &self.cosine
+        self.cosine.as_raw()
     }
 
     /// Return the sine.
     #[must_use]
     pub const fn sine(&self) -> &Point2 {
-        &self.sine
+        self.sine.as_raw()
     }
 
     /// Borrow the carrier parameters in constructor order.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&Point2, &Point2, &Point2) {
-        (&self.center, &self.cosine, &self.sine)
+        (
+            self.center.as_raw(),
+            self.cosine.as_raw(),
+            self.sine.as_raw(),
+        )
     }
 }
 
@@ -3153,7 +3104,7 @@ impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "OffsetPcurveWire")]
 pub struct OffsetPcurve {
-    distance: f64,
+    distance: FiniteScalar,
     basis: Box<PcurveGeometry>,
 }
 
@@ -3167,16 +3118,14 @@ struct OffsetPcurveWire {
 impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
-        if !distance.is_finite() {
-            return Err("OffsetPcurve.distance must be finite");
-        }
+        let distance = FiniteScalar::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
         Ok(Self { distance, basis })
     }
 
     /// Return the distance.
     #[must_use]
     pub const fn distance(&self) -> f64 {
-        self.distance
+        self.distance.get()
     }
 
     /// Return the basis.
@@ -3189,7 +3138,7 @@ impl OffsetPcurve {
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub fn parts(&self) -> (&f64, &PcurveGeometry) {
-        (&self.distance, &self.basis)
+        (self.distance.as_raw(), &self.basis)
     }
 }
 
@@ -6014,13 +5963,13 @@ const EPS_HELIX_CURVE_RADIUS: f64 = 1.0e-9;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixPathConstructionWire")]
 pub struct HelixPathConstruction {
-    angle_range: [f64; 2],
-    center: Point3,
-    major: Vector3,
-    minor: Vector3,
-    pitch: Vector3,
-    apex_factor: f64,
-    axis: Vector3,
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteScalar,
+    axis: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -6046,19 +5995,6 @@ impl HelixPathConstruction {
         apex_factor: f64,
         axis: Vector3,
     ) -> Result<Self, &'static str> {
-        if !angle_range.iter().all(|value| value.is_finite())
-            || ![center.x, center.y, center.z]
-                .into_iter()
-                .chain(
-                    [major, minor, pitch, axis]
-                        .into_iter()
-                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
-                )
-                .chain([apex_factor])
-                .all(f64::is_finite)
-        {
-            return Err("helix surface path fields must be finite");
-        }
         let major_length = (major.x.powi(2) + major.y.powi(2) + major.z.powi(2)).sqrt();
         let minor_length = (minor.x.powi(2) + minor.y.powi(2) + minor.z.powi(2)).sqrt();
         if !(major_length > 0.0
@@ -6068,6 +6004,19 @@ impl HelixPathConstruction {
             return Err("helix surface path major and minor must define a circular path");
         }
 
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixPathConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixPathConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixPathConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixPathConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixPathConstruction.pitch must be finite")?;
+        let apex_factor = FiniteScalar::new(apex_factor)
+            .ok_or("HelixPathConstruction.apex_factor must be finite")?;
+        let axis = FiniteVector3::new(axis).ok_or("HelixPathConstruction.axis must be finite")?;
         Ok(Self {
             angle_range,
             center,
@@ -6081,43 +6030,43 @@ impl HelixPathConstruction {
     /// Return the angle range.
     #[must_use]
     pub const fn angle_range(&self) -> &[f64; 2] {
-        &self.angle_range
+        self.angle_range.as_raw()
     }
 
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the major.
     #[must_use]
     pub const fn major(&self) -> &Vector3 {
-        &self.major
+        self.major.as_raw()
     }
 
     /// Return the minor.
     #[must_use]
     pub const fn minor(&self) -> &Vector3 {
-        &self.minor
+        self.minor.as_raw()
     }
 
     /// Return the pitch.
     #[must_use]
     pub const fn pitch(&self) -> &Vector3 {
-        &self.pitch
+        self.pitch.as_raw()
     }
 
     /// Return the apex factor.
     #[must_use]
     pub const fn apex_factor(&self) -> f64 {
-        self.apex_factor
+        self.apex_factor.get()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.axis.as_raw()
     }
 
     /// Borrow the payload parameters in constructor order.
@@ -6135,13 +6084,13 @@ impl HelixPathConstruction {
         &Vector3,
     ) {
         (
-            &self.angle_range,
-            &self.center,
-            &self.major,
-            &self.minor,
-            &self.pitch,
-            &self.apex_factor,
-            &self.axis,
+            self.angle_range.as_raw(),
+            self.center.as_raw(),
+            self.major.as_raw(),
+            self.minor.as_raw(),
+            self.pitch.as_raw(),
+            self.apex_factor.as_raw(),
+            self.axis.as_raw(),
         )
     }
 }
@@ -6166,13 +6115,13 @@ impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCurveConstructionWire")]
 pub struct HelixCurveConstruction {
-    angle_range: [f64; 2],
-    center: Point3,
-    major: Vector3,
-    minor: Vector3,
-    pitch: Vector3,
-    apex_factor: f64,
-    axis: Vector3,
+    angle_range: FiniteVector<2>,
+    center: FinitePoint3,
+    major: FiniteVector3,
+    minor: FiniteVector3,
+    pitch: FiniteVector3,
+    apex_factor: FiniteScalar,
+    axis: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -6198,19 +6147,6 @@ impl HelixCurveConstruction {
         apex_factor: f64,
         axis: Vector3,
     ) -> Result<Self, &'static str> {
-        if !angle_range.iter().all(|value| value.is_finite())
-            || ![center.x, center.y, center.z]
-                .into_iter()
-                .chain(
-                    [major, minor, pitch, axis]
-                        .into_iter()
-                        .flat_map(|vector| [vector.x, vector.y, vector.z]),
-                )
-                .chain([apex_factor])
-                .all(f64::is_finite)
-        {
-            return Err("helix curve fields must be finite");
-        }
         if angle_range[0] > angle_range[1] {
             return Err("helix curve angle_range must be ordered");
         }
@@ -6224,6 +6160,19 @@ impl HelixCurveConstruction {
             return Err("helix curve major and minor radii must agree");
         }
 
+        let angle_range = FiniteVector::new(angle_range)
+            .ok_or("HelixCurveConstruction.angle_range must be finite")?;
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        let apex_factor = FiniteScalar::new(apex_factor)
+            .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
+        let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
             angle_range,
             center,
@@ -6237,43 +6186,43 @@ impl HelixCurveConstruction {
     /// Return the angle range.
     #[must_use]
     pub const fn angle_range(&self) -> &[f64; 2] {
-        &self.angle_range
+        self.angle_range.as_raw()
     }
 
     /// Return the center.
     #[must_use]
     pub const fn center(&self) -> &Point3 {
-        &self.center
+        self.center.as_raw()
     }
 
     /// Return the major.
     #[must_use]
     pub const fn major(&self) -> &Vector3 {
-        &self.major
+        self.major.as_raw()
     }
 
     /// Return the minor.
     #[must_use]
     pub const fn minor(&self) -> &Vector3 {
-        &self.minor
+        self.minor.as_raw()
     }
 
     /// Return the pitch.
     #[must_use]
     pub const fn pitch(&self) -> &Vector3 {
-        &self.pitch
+        self.pitch.as_raw()
     }
 
     /// Return the apex factor.
     #[must_use]
     pub const fn apex_factor(&self) -> f64 {
-        self.apex_factor
+        self.apex_factor.get()
     }
 
     /// Return the axis.
     #[must_use]
     pub const fn axis(&self) -> &Vector3 {
-        &self.axis
+        self.axis.as_raw()
     }
 
     /// Borrow the payload parameters in constructor order.
@@ -6291,13 +6240,13 @@ impl HelixCurveConstruction {
         &Vector3,
     ) {
         (
-            &self.angle_range,
-            &self.center,
-            &self.major,
-            &self.minor,
-            &self.pitch,
-            &self.apex_factor,
-            &self.axis,
+            self.angle_range.as_raw(),
+            self.center.as_raw(),
+            self.major.as_raw(),
+            self.minor.as_raw(),
+            self.pitch.as_raw(),
+            self.apex_factor.as_raw(),
+            self.axis.as_raw(),
         )
     }
 }
@@ -6320,10 +6269,10 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
 impl HelixCurveConstruction {
     /// Reverse the native interval and signed path fields.
     pub fn reverse_parameterization(&mut self) {
-        self.angle_range = [-self.angle_range[1], -self.angle_range[0]];
-        self.minor = Vector3::new(-self.minor.x, -self.minor.y, -self.minor.z);
-        self.pitch = Vector3::new(-self.pitch.x, -self.pitch.y, -self.pitch.z);
-        self.apex_factor = -self.apex_factor;
+        self.angle_range = self.angle_range.reversed_negated();
+        self.minor = self.minor.negated();
+        self.pitch = self.pitch.negated();
+        self.apex_factor = self.apex_factor.negated();
     }
 
     /// Scale lengths atomically and retain the old path when admission fails.
@@ -6331,17 +6280,17 @@ impl HelixCurveConstruction {
         let vector =
             |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
         let candidate = Self::try_new(
-            self.angle_range,
+            self.angle_range.get(),
             Point3::new(
                 self.center.x * scale,
                 self.center.y * scale,
                 self.center.z * scale,
             ),
-            vector(self.major),
-            vector(self.minor),
-            vector(self.pitch),
-            self.apex_factor,
-            self.axis,
+            vector(self.major.get()),
+            vector(self.minor.get()),
+            vector(self.pitch.get()),
+            self.apex_factor.get(),
+            self.axis.get(),
         )?;
         *self = candidate;
         Ok(())
@@ -6353,8 +6302,8 @@ impl HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
-    length: f64,
-    radius: f64,
+    length: FiniteScalar,
+    radius: FiniteScalar,
 }
 
 #[derive(Deserialize)]
@@ -6367,24 +6316,25 @@ struct HelixCircleProfileWire {
 impl HelixCircleProfile {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(length: f64, radius: f64) -> Result<Self, &'static str> {
-        if !length.is_finite() {
-            return Err("helix circle profile length must be finite");
-        }
-        if !radius.is_finite() || radius == 0.0 {
+        if radius == 0.0 {
             return Err("helix circle profile radius must be finite and nonzero");
         }
+        let length =
+            FiniteScalar::new(length).ok_or("helix circle profile length must be finite")?;
+        let radius =
+            FiniteScalar::new(radius).ok_or("helix circle profile radius must be finite")?;
         Ok(Self { length, radius })
     }
     /// Native profile length.
     #[must_use]
     pub const fn length(&self) -> f64 {
-        self.length
+        self.length.get()
     }
 
     /// Signed circular profile radius.
     #[must_use]
     pub const fn radius(&self) -> f64 {
-        self.radius
+        self.radius.get()
     }
 }
 
@@ -6452,8 +6402,8 @@ pub enum HelixSurfaceProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixSurfaceConstructionWire")]
 pub struct HelixSurfaceConstruction {
-    angle_range: [f64; 2],
-    dimension_range: [f64; 2],
+    angle_range: FiniteVector<2>,
+    dimension_range: FiniteVector<2>,
     path: HelixPathConstruction,
     profile: HelixSurfaceProfile,
 }
@@ -6475,13 +6425,10 @@ impl HelixSurfaceConstruction {
         path: HelixPathConstruction,
         profile: HelixSurfaceProfile,
     ) -> Result<Self, &'static str> {
-        if !angle_range
-            .iter()
-            .chain(dimension_range.iter())
-            .all(|value| value.is_finite())
-        {
-            return Err("helix surface angle_range and dimension_range must be finite");
-        }
+        let angle_range =
+            FiniteVector::new(angle_range).ok_or("helix surface angle_range must be finite")?;
+        let dimension_range = FiniteVector::new(dimension_range)
+            .ok_or("helix surface dimension_range must be finite")?;
         Ok(Self {
             angle_range,
             dimension_range,
@@ -6492,13 +6439,13 @@ impl HelixSurfaceConstruction {
     /// Return the angle range.
     #[must_use]
     pub const fn angle_range(&self) -> &[f64; 2] {
-        &self.angle_range
+        self.angle_range.as_raw()
     }
 
     /// Return the dimension range.
     #[must_use]
     pub const fn dimension_range(&self) -> &[f64; 2] {
-        &self.dimension_range
+        self.dimension_range.as_raw()
     }
 
     /// Return the path.
@@ -6525,8 +6472,8 @@ impl HelixSurfaceConstruction {
         &HelixSurfaceProfile,
     ) {
         (
-            &self.angle_range,
-            &self.dimension_range,
+            self.angle_range.as_raw(),
+            self.dimension_range.as_raw(),
             &self.path,
             &self.profile,
         )
@@ -11362,7 +11309,7 @@ impl IntcurveSupportContext {
 pub struct TolerantIntersectionConstruction {
     supports: [SurfaceId; 2],
     endpoints: [Point3; 2],
-    tolerance: f64,
+    tolerance: NonNegativeScalar,
 }
 
 #[derive(Deserialize)]
@@ -11396,8 +11343,8 @@ impl TolerantIntersectionConstruction {
         {
             return Err("tolerant intersection endpoints must be finite");
         }
-        FitTolerance::try_new(tolerance)
-            .map_err(|_| "tolerant intersection tolerance must be finite and non-negative")?;
+        let tolerance = NonNegativeScalar::new(tolerance)
+            .ok_or("tolerant intersection tolerance must be finite and non-negative")?;
         Ok(Self {
             supports,
             endpoints,
@@ -11420,14 +11367,14 @@ impl TolerantIntersectionConstruction {
     /// Return the tolerance.
     #[must_use]
     pub const fn tolerance(&self) -> f64 {
-        self.tolerance
+        self.tolerance.get()
     }
 
     /// Support surfaces, endpoint witnesses, and maximum admitted deviation.
     #[must_use]
     #[deprecated(note = "use the named parameter accessors")]
     pub const fn parts(&self) -> (&[SurfaceId; 2], &[Point3; 2], &f64) {
-        (&self.supports, &self.endpoints, &self.tolerance)
+        (&self.supports, &self.endpoints, self.tolerance.as_raw())
     }
 }
 
@@ -13935,42 +13882,42 @@ impl PcurveGeometry {
         let isotropic = u_scale == v_scale;
         let scaled = match self {
             Self::Line(line) => Self::Line(LinePcurve::try_new(
-                scale(line.origin),
-                scale(line.direction),
+                scale(*line.origin()),
+                scale(*line.direction()),
             )?),
             Self::Circle(circle) if isotropic => Self::Circle(CirclePcurve::try_new(
-                scale(circle.center),
-                circle.x_axis,
-                circle.y_axis,
-                circle.radius * u_scale,
+                scale(*circle.center()),
+                *circle.x_axis(),
+                *circle.y_axis(),
+                circle.radius() * u_scale,
             )?),
             Self::Circle(circle) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(circle.center),
+                scale(*circle.center()),
                 scale(Point2::new(
-                    circle.radius * circle.x_axis.u,
-                    circle.radius * circle.x_axis.v,
+                    circle.radius() * circle.x_axis().u,
+                    circle.radius() * circle.x_axis().v,
                 )),
                 scale(Point2::new(
-                    circle.radius * circle.y_axis.u,
-                    circle.radius * circle.y_axis.v,
+                    circle.radius() * circle.y_axis().u,
+                    circle.radius() * circle.y_axis().v,
                 )),
             )?),
             Self::Ellipse(ellipse) if isotropic => Self::Ellipse(EllipsePcurve::try_new(
-                scale(ellipse.center),
-                ellipse.x_axis,
-                ellipse.y_axis,
-                ellipse.major_radius * u_scale,
-                ellipse.minor_radius * u_scale,
+                scale(*ellipse.center()),
+                *ellipse.x_axis(),
+                *ellipse.y_axis(),
+                ellipse.major_radius() * u_scale,
+                ellipse.minor_radius() * u_scale,
             )?),
             Self::Ellipse(ellipse) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(ellipse.center),
+                scale(*ellipse.center()),
                 scale(Point2::new(
-                    ellipse.major_radius * ellipse.x_axis.u,
-                    ellipse.major_radius * ellipse.x_axis.v,
+                    ellipse.major_radius() * ellipse.x_axis().u,
+                    ellipse.major_radius() * ellipse.x_axis().v,
                 )),
                 scale(Point2::new(
-                    ellipse.minor_radius * ellipse.y_axis.u,
-                    ellipse.minor_radius * ellipse.y_axis.v,
+                    ellipse.minor_radius() * ellipse.y_axis().u,
+                    ellipse.minor_radius() * ellipse.y_axis().v,
                 )),
             )?),
             Self::Parabola(parabola) => {
@@ -13978,39 +13925,39 @@ impl PcurveGeometry {
                     return Err("parabola coordinate scaling must be isotropic".into());
                 }
                 Self::Parabola(ParabolaPcurve::try_new(
-                    scale(parabola.vertex),
-                    parabola.x_axis,
-                    parabola.y_axis,
-                    parabola.focal_distance * u_scale,
+                    scale(*parabola.vertex()),
+                    *parabola.x_axis(),
+                    *parabola.y_axis(),
+                    parabola.focal_distance() * u_scale,
                 )?)
             }
             Self::Hyperbola(hyperbola) if isotropic => Self::Hyperbola(HyperbolaPcurve::try_new(
-                scale(hyperbola.center),
-                hyperbola.x_axis,
-                hyperbola.y_axis,
-                hyperbola.major_radius * u_scale,
-                hyperbola.minor_radius * u_scale,
+                scale(*hyperbola.center()),
+                *hyperbola.x_axis(),
+                *hyperbola.y_axis(),
+                hyperbola.major_radius() * u_scale,
+                hyperbola.minor_radius() * u_scale,
             )?),
             Self::Hyperbola(hyperbola) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbola.center),
+                scale(*hyperbola.center()),
                 scale(Point2::new(
-                    hyperbola.major_radius * hyperbola.x_axis.u,
-                    hyperbola.major_radius * hyperbola.x_axis.v,
+                    hyperbola.major_radius() * hyperbola.x_axis().u,
+                    hyperbola.major_radius() * hyperbola.x_axis().v,
                 )),
                 scale(Point2::new(
-                    hyperbola.minor_radius * hyperbola.y_axis.u,
-                    hyperbola.minor_radius * hyperbola.y_axis.v,
+                    hyperbola.minor_radius() * hyperbola.y_axis().u,
+                    hyperbola.minor_radius() * hyperbola.y_axis().v,
                 )),
             )?),
             Self::Harmonic(harmonic) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(harmonic.center),
-                scale(harmonic.cosine),
-                scale(harmonic.sine),
+                scale(*harmonic.center()),
+                scale(*harmonic.cosine()),
+                scale(*harmonic.sine()),
             )?),
             Self::Hyperbolic(hyperbolic) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(hyperbolic.center),
-                scale(hyperbolic.cosine),
-                scale(hyperbolic.sine),
+                scale(*hyperbolic.center()),
+                scale(*hyperbolic.cosine()),
+                scale(*hyperbolic.sine()),
             )?),
             Self::Nurbs { nurbs } => {
                 let mut nurbs = nurbs.clone();
@@ -14038,7 +13985,7 @@ impl PcurveGeometry {
                 }
                 let mut basis = offset.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Offset(OffsetPcurve::try_new(offset.distance * u_scale, basis)?)
+                Self::Offset(OffsetPcurve::try_new(offset.distance() * u_scale, basis)?)
             }
             Self::Transformed { basis, transform } => {
                 if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0

@@ -1072,3 +1072,21 @@ mod procedural_surface_payloads;
 mod procedural_curve_payloads;
 
 mod revolution_payloads;
+
+#[test]
+fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
+    let origin = Point2::new(0.0, 0.0);
+    let below = f64::EPSILON.sqrt() / 2.0;
+    let above = f64::EPSILON.sqrt() * 2.0;
+    for u in [0.0, 1e-300, below] {
+        assert!(LinePcurve::try_new(origin, Point2::new(u, 0.0)).is_err());
+        let wire =
+            serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
+        assert!(serde_json::from_value::<LinePcurve>(wire).is_err());
+    }
+    let wire =
+        serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
+    let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
+    assert_eq!(serde_json::to_value(line).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<LinePcurve>(wire).unwrap(), line);
+}
