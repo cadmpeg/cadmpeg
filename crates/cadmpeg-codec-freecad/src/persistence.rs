@@ -750,7 +750,7 @@ fn local_link(
     LinkTarget::try_from(LinkTargetWire {
         document: None,
         document_attribute: None,
-        object: Some(required_attr(node, object_attribute)?.to_owned()),
+        object: Some(required_attr(node, object_attribute)?),
         subelements: subelements.to_vec(),
     })
     .map_err(CodecError::Malformed)
@@ -806,7 +806,7 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
     LinkTarget::try_from(LinkTargetWire {
         document: file.filter(|file| !file.is_empty()),
         document_attribute: Some("file".to_owned()),
-        object: Some(required_attr(node, "name")?.to_owned()),
+        object: Some(required_attr(node, "name")?),
         subelements,
     })
     .map_err(CodecError::Malformed)
