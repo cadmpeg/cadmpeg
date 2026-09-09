@@ -480,10 +480,7 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(
-        scan: &'a Scan<'a>,
-        expand: crate::mesh::MeshExpand<'a>,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
@@ -523,7 +520,7 @@ impl<'a> DecodeContext<'a> {
         };
         context.retain_object_records();
         context.retain_opaque_records();
-        Ok(context)
+        context
     }
 
     #[cfg(test)]
@@ -5498,11 +5495,8 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance 
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(
-    scan: &Scan<'_>,
-    expand: crate::mesh::MeshExpand<'_>,
-) -> Result<Decoded, CodecError> {
-    let mut context = DecodeContext::new(scan, expand)?;
+pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> Decoded {
+    let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
@@ -5562,7 +5556,7 @@ pub(crate) fn decode(
             &format!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    Ok(context.commit())
+    context.commit()
 }
 
 #[cfg(test)]
@@ -5587,9 +5581,7 @@ pub(crate) fn with_expand<R>(
 
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
-    with_expand(scan, |expand| {
-        seal_for_test(decode(scan, expand).expect("valid tolerances"), false)
-    })
+    with_expand(scan, |expand| seal_for_test(decode(scan, expand), false))
 }
 
 #[cfg(test)]
