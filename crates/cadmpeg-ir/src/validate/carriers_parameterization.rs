@@ -868,20 +868,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Circle(_) => {
-                    // Canonical periodic domain: the start angle wrapped into
-                    // one turn, the sweep at most a full turn. An arc crossing
-                    // the seam ends past `τ`. A full-period edge retains
-                    // its serialized phase, which may use any equivalent
-                    // angular branch.
-                    let sweep = end - start;
-                    let full_period = (sweep - tau).abs()
-                        < EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9;
-                    valid &= sweep
-                        <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
-                        && (full_period || (0.0..tau).contains(&start));
-                }
-                CurveGeometry::Ellipse(_) => {
+                CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains
