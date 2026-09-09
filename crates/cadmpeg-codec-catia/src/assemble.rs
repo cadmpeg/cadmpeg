@@ -1181,7 +1181,7 @@ mod route_tests {
                         extension: 0,
                     },
                 )
-                .unwrap(),
+                .expect("finite ordered exact-spline fixture ranges"),
             ))
             .expect("valid replacement fixture definition");
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
