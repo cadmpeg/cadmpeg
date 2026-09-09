@@ -735,7 +735,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
-                .filter(|(_, radius)| radius.is_finite() && *radius > 0.0)
                 .and_then(|((center, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::CircleCurve::try_new(
                         center,
@@ -751,9 +750,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "ELLIPSE", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
                 .and_then(
                     |(((center, axis, reference_direction), first_radius), second_radius)| {
                         let first_radius = first_radius * record_scale;
@@ -783,7 +779,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
-                .filter(|(_, focal_distance)| focal_distance.is_finite() && *focal_distance > 0.0)
                 .and_then(|((vertex, axis, major_direction), focal_distance)| {
                     cadmpeg_ir::geometry::ParabolaCurve::try_new(
                         vertex,
@@ -799,9 +794,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number))
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
                 .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
                         cadmpeg_ir::geometry::HyperbolaCurve::try_new(
@@ -1374,7 +1366,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .map(SurfaceGeometry::Plane)
             }),
             "CYLINDRICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "CYLINDRICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::CylinderSurface::try_new(
                         origin,
@@ -1386,9 +1378,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .map(SurfaceGeometry::Cylinder)
                 }),
             "CONICAL_SURFACE" => placement
-                .zip(nonnegative(named_parameter(record, "CONICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
-                .filter(|(_, angle)| angle.is_finite())
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
                     cadmpeg_ir::geometry::ConeSurface::try_new(
                         origin,
@@ -1402,7 +1393,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .map(SurfaceGeometry::Cone)
                 }),
             "SPHERICAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, "SPHERICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
                     cadmpeg_ir::geometry::SphereSurface::try_new(
                         center,
@@ -1414,8 +1405,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .map(SurfaceGeometry::Sphere)
                 }),
             "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
-                .zip(positive(named_parameter(record, surface_type, 2)))
-                .zip(positive(named_parameter(record, surface_type, 3)))
+                .zip(named_parameter(record, surface_type, 2).and_then(Value::number))
+                .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
                         cadmpeg_ir::geometry::TorusSurface::try_new(
@@ -4041,18 +4032,6 @@ fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
     ))
 }
 
-fn positive(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn nonnegative(value: Option<&Value>) -> Option<f64> {
-    value
-        .and_then(Value::number)
-        .filter(|value| value.is_finite() && *value >= 0.0)
-}
-
 #[derive(Clone, Copy)]
 enum DefaultNurbsKnotKind {
     Uniform,
@@ -4293,7 +4272,7 @@ fn decode_pcurve_geometry(
                 "CIRCLE" => {
                     let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let radius = positive(named_parameter(record, "CIRCLE", 2))?;
+                    let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Circle(
                         cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius)
@@ -4303,8 +4282,10 @@ fn decode_pcurve_geometry(
                 "ELLIPSE" => {
                     let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
-                    let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
+                    let major_radius =
+                        named_parameter(record, "ELLIPSE", 2).and_then(Value::number)?;
+                    let minor_radius =
+                        named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
                         cadmpeg_ir::geometry::EllipsePcurve::try_new(
@@ -4320,7 +4301,8 @@ fn decode_pcurve_geometry(
                 "PARABOLA" => {
                     let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
                     let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
+                    let focal_distance =
+                        named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
                         cadmpeg_ir::geometry::ParabolaPcurve::try_new(
@@ -4335,8 +4317,10 @@ fn decode_pcurve_geometry(
                 "HYPERBOLA" => {
                     let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
                     let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
-                    let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
+                    let major_radius =
+                        named_parameter(record, "HYPERBOLA", 2).and_then(Value::number)?;
+                    let minor_radius =
+                        named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
                         cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
