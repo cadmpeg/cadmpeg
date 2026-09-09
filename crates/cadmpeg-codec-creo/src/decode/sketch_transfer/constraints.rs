@@ -53,12 +53,7 @@ pub(in super::super) fn section_segment_verhor_definition(
         (crate::feature::FeatureSegmentKind::Line(_), 1) => {
             Some(SketchConstraintDefinitionInput::Horizontal { entity })
         }
-        _ => Some(native_section_segment_verhor_definition(
-            sketch,
-            entity,
-            segment.external_id,
-            verhor,
-        )),
+        _ => native_section_segment_verhor_definition(sketch, entity, segment.external_id, verhor),
     }
 }
 
@@ -67,9 +62,9 @@ pub(in super::super) fn native_section_segment_verhor_definition(
     entity: SketchEntityId,
     external_id: u32,
     verhor: u32,
-) -> SketchConstraintDefinitionInput {
-    SketchConstraintDefinitionInput::Native {
-        native_kind: "creo:segtab:verhor".into(),
+) -> Option<SketchConstraintDefinitionInput> {
+    Some(SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:segtab:verhor")?,
         native_state: None,
         native_flags: None,
         native_properties: BTreeMap::from([("verhor".to_string(), verhor.to_string())]),
@@ -86,7 +81,7 @@ pub(in super::super) fn native_section_segment_verhor_definition(
             object_index: external_id,
             native_ref: Some(sketch_native_ref(sketch)),
         }],
-    }
+    })
 }
 
 pub(in super::super) fn reconcile_constraint_entity_references(
@@ -486,9 +481,9 @@ pub(in super::super) fn native_section_segment_radius_definition(
     external_id: u32,
     field: &str,
     dimension_ordinal: u32,
-) -> SketchConstraintDefinitionInput {
-    SketchConstraintDefinitionInput::Native {
-        native_kind: format!("creo:segtab:{field}"),
+) -> Option<SketchConstraintDefinitionInput> {
+    Some(SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_ir::products::NonEmptyString::new(format!("creo:segtab:{field}"))?,
         native_state: None,
         native_flags: None,
         native_properties: BTreeMap::from([(
@@ -521,7 +516,7 @@ pub(in super::super) fn native_section_segment_radius_definition(
                 native_ref: Some(sketch_native_ref(sketch)),
             },
         ],
-    }
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -648,7 +643,7 @@ fn section_segment_radius_constraint(
                 binding.external_id,
                 binding.field.key(),
                 binding.ordinal,
-            ),
+            )?,
             if binding.field == SegmentRadiusField::Secondary {
                 "segtab-radius2"
             } else {
@@ -731,13 +726,16 @@ fn reconcile_section_segment_radius_constraint(
     let Some(entity) = sketch_entity_id(sketch, &binding.suffix) else {
         return false;
     };
-    *constraint_definition = native_section_segment_radius_definition(
+    let Some(native_definition) = native_section_segment_radius_definition(
         sketch,
         entity,
         binding.external_id,
         binding.field.key(),
         binding.ordinal,
-    );
+    ) else {
+        return false;
+    };
+    *constraint_definition = native_definition;
     reconcile_constraint_entity_references(constraint_definition, emitted)
         && reconcile_constraint_parameter_reference(constraint_definition, available_parameters)
 }
@@ -1366,7 +1364,10 @@ pub(in super::super) fn section_equation_native_constraints(
                         sketch: sketch.clone(),
                         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                             SketchConstraintDefinitionInput::Native {
-                                native_kind: format!("creo:equation:{}", equation.function_id),
+                                native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                    "creo:equation:{}",
+                                    equation.function_id
+                                ))?,
                                 native_state: Some(u64::from(active)),
                                 native_flags: None,
                                 native_properties,
@@ -1686,10 +1687,13 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     relation: &crate::feature::FeatureRelation,
-) -> SketchConstraintDefinitionInput {
+) -> Option<SketchConstraintDefinitionInput> {
     let Some(relations) = definition.relations.as_ref() else {
-        return SketchConstraintDefinitionInput::Native {
-            native_kind: format!("creo:relation:{}", relation.relation_type),
+        return Some(SketchConstraintDefinitionInput::Native {
+            native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                "creo:relation:{}",
+                relation.relation_type
+            ))?,
             native_state: Some(u64::from(relation.used)),
             native_flags: None,
             native_properties: BTreeMap::from([
@@ -1703,7 +1707,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
             entities: Vec::new(),
             parameter: None,
             operands: Vec::new(),
-        };
+        });
     };
     let unique_relation_id = feature_relation_table_complete(relations)
         && relations
@@ -1796,15 +1800,18 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
             }));
         }
     }
-    SketchConstraintDefinitionInput::Native {
-        native_kind: format!("creo:relation:{}", relation.relation_type),
+    Some(SketchConstraintDefinitionInput::Native {
+        native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+            "creo:relation:{}",
+            relation.relation_type
+        ))?,
         native_state: Some(u64::from(relation.used)),
         native_flags: None,
         native_properties,
         entities,
         parameter,
         operands,
-    }
+    })
 }
 
 pub(in super::super) fn reconcile_section_dimension_constraint(
@@ -1821,8 +1828,12 @@ pub(in super::super) fn reconcile_section_dimension_constraint(
     if entity_reconciled && parameter_reconciled {
         return true;
     }
-    *constraint_definition =
-        native_section_dimension_constraint_definition(definition, sketch, relation);
+    let Some(native_definition) =
+        native_section_dimension_constraint_definition(definition, sketch, relation)
+    else {
+        return false;
+    };
+    *constraint_definition = native_definition;
     reconcile_constraint_entity_references(constraint_definition, emitted)
         && reconcile_constraint_parameter_reference(constraint_definition, available_parameters)
 }
@@ -2107,9 +2118,9 @@ pub(in super::super) fn section_dimension_constraints(
                 })();
                 let active =
                     joined_incidence.map(|incidence| section_skamp_active(incidence.status));
-                let constraint_definition = typed.unwrap_or_else(|| {
+                let constraint_definition = typed.or_else(|| {
                     native_section_dimension_constraint_definition(definition, sketch, relation)
-                });
+                })?;
                 (
                     SketchConstraint {
                         id: if unique_relation_id {
