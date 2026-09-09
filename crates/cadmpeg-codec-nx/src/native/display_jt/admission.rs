@@ -147,7 +147,8 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                 sequence.segment_type,
                 sequence.source_offset,
             )?;
-            for (ordinal, id) in sequence.elements.iter().enumerate() {
+            let mut next_offset = 0u64;
+            for (ordinal, id) in sequence.elements().iter().enumerate() {
                 let element = elements.get(id.as_str()).ok_or_else(|| {
                     invalid(&sequence.id, "elements contains an unresolved identity")
                 })?;
@@ -159,6 +160,21 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
                         "elements disagrees with element.segment or element.ordinal",
                     ));
                 }
+                if u64::from(element.inflated_offset) != next_offset {
+                    return Err(invalid(
+                        &element.id,
+                        "inflated_offset disagrees with the preceding element extent",
+                    ));
+                }
+                next_offset = next_offset
+                    .checked_add(25 + u64::from(element.body_byte_len()))
+                    .ok_or_else(|| invalid(&sequence.id, "framed_byte_len overflows"))?;
+            }
+            if next_offset.checked_add(20) != Some(u64::from(sequence.framed_byte_len())) {
+                return Err(invalid(
+                    &sequence.id,
+                    "framed_byte_len disagrees with element body_byte_len values and end marker",
+                ));
             }
         }
         Ok(Self(wire))
@@ -225,7 +241,10 @@ fn by_id<'a, T>(
 }
 
 fn invalid(id: &str, field: &str) -> NativeConvertError {
-    NativeConvertError::InvalidCollection(format!("display_jt {id}: {field}"))
+    NativeConvertError::InvalidCollection(format!(
+        "{}: display_jt {id}: {field}",
+        crate::loss::NxLossCode::DisplayJtGraphRejected.code()
+    ))
 }
 
 #[cfg(test)]

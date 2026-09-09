@@ -1460,7 +1460,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
         .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
-        let census = crate::deltas::walk(&stream.inflated);
+        let census = crate::deltas::census::walk(&stream.inflated);
         if census.transmit_header.is_some() {
             attributes.insert(format!("deltas.{index}.transmit_headers"), "1".to_string());
         }

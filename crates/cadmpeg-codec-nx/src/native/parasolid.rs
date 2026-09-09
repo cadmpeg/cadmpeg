@@ -8,8 +8,8 @@ use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
 use serde::{Deserialize, Serialize};
 
+use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
-use crate::deltas::Census;
 use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
@@ -133,7 +133,10 @@ pub(crate) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::walk(&stream.inflated).into_events().records {
+        for record in crate::deltas::census::walk(&stream.inflated)
+            .into_events()
+            .records
+        {
             let crate::deltas::record_family::RecordFamily::Group {
                 node_id,
                 selector,
@@ -289,7 +292,7 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
         Record(crate::deltas::Record),
         Tombstone(u32),
     }
-    let census = crate::deltas::walk(bytes).into_events();
+    let census = crate::deltas::census::walk(bytes).into_events();
     let mut events = census
         .records
         .into_iter()
@@ -914,7 +917,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         .iter()
         .map(|stream| {
             (stream.kind() == crate::parasolid::StreamKind::Deltas)
-                .then(|| crate::deltas::walk(&stream.inflated))
+                .then(|| crate::deltas::census::walk(&stream.inflated))
         })
         .collect();
     parasolid_deltas_events_with_censuses(streams, delta_censuses)
@@ -953,7 +956,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         let census = delta_censuses
             .get_mut(stream_ordinal)
             .and_then(Option::take)
-            .unwrap_or_else(|| crate::deltas::walk(&stream.inflated));
+            .unwrap_or_else(|| crate::deltas::census::walk(&stream.inflated));
         let mut residual_start = 0;
         for (covered_start, covered_end) in census.covered_spans() {
             if residual_start < covered_start {
@@ -2325,7 +2328,8 @@ pub struct ParasolidEntity51StructuredUse {
 }
 
 /// Resolved registered class of one Parasolid type-81 attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(into = "ParasolidAttributeClassUseWire")]
 pub struct ParasolidAttributeClassUse {
     /// Globally unique relation identity.
     pub id: String,
@@ -2337,6 +2341,29 @@ pub struct ParasolidAttributeClassUse {
     pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ParasolidAttributeClassUseWire {
+    id: String,
+    stream_ordinal: u32,
+    entity_51_record: String,
+    definition_xmt: NonNullXmt,
+    attribute_definition: String,
+}
+
+impl From<ParasolidAttributeClassUse> for ParasolidAttributeClassUseWire {
+    fn from(value: ParasolidAttributeClassUse) -> Self {
+        Self {
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            entity_51_record: value.entity_51_record,
+            definition_xmt: value.definition_xmt,
+            attribute_definition: value.attribute_definition,
+        }
+    }
 }
 
 /// Value-record family assigned to one declared Parasolid attribute field.
@@ -2406,7 +2433,8 @@ pub struct ParasolidAttributeFieldUse {
 }
 
 /// Resolved class of one topology-owned Parasolid attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(into = "ParasolidTopologyAttributeClassUseWire")]
 pub struct ParasolidTopologyAttributeClassUse {
     /// Globally unique relation identity.
     pub id: String,
@@ -2420,6 +2448,33 @@ pub struct ParasolidTopologyAttributeClassUse {
     pub definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ParasolidTopologyAttributeClassUseWire {
+    id: String,
+    topology_attribute_reference: String,
+    entity_51_record: String,
+    attribute_class_use: String,
+    definition_xmt: NonNullXmt,
+    attribute_definition: String,
+}
+
+impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClassUseWire {
+    fn from(value: ParasolidTopologyAttributeClassUse) -> Self {
+        Self {
+            id: value.id,
+            topology_attribute_reference: value.topology_attribute_reference,
+            entity_51_record: value.entity_51_record,
+            attribute_class_use: value.attribute_class_use,
+            definition_xmt: value.definition_xmt,
+            attribute_definition: value.attribute_definition,
+        }
+    }
 }
 
 /// Retain named attribute-class declarations from all Parasolid streams.
@@ -3161,6 +3216,8 @@ pub fn parasolid_topology_attribute_class_uses(
                 )
             };
             uses.push(ParasolidTopologyAttributeClassUse {
+                stream_ordinal: reference.stream_ordinal,
+                inflated_offset: member.inflated_offset,
                 id,
                 topology_attribute_reference: reference.id.clone(),
                 entity_51_record: class_use.entity_51_record.clone(),
@@ -3198,6 +3255,7 @@ pub fn parasolid_attribute_class_uses(
                 return None;
             };
             Some(ParasolidAttributeClassUse {
+                inflated_offset: entity.inflated_offset,
                 id: format!(
                     "nx:s{}:attribute-class-use#{}-{}",
                     entity.stream_ordinal,
@@ -3723,7 +3781,7 @@ mod tests {
             },
         }];
 
-        let census = crate::deltas::walk(&streams[0].inflated);
+        let census = crate::deltas::census::walk(&streams[0].inflated);
         let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
 
         assert_eq!(events.body_revisions.len(), 1);
@@ -4233,6 +4291,7 @@ mod tests {
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4303,6 +4362,7 @@ mod tests {
         assert_eq!(uses[2].value_record, "string");
 
         let duplicate = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "duplicate".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4454,6 +4514,7 @@ mod tests {
             inflated_offset: 40,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
@@ -4534,6 +4595,7 @@ mod tests {
             inflated_offset: 30,
         };
         let class_use = ParasolidAttributeClassUse {
+            inflated_offset: 30,
             id: "class-use".into(),
             stream_ordinal: 0,
             entity_51_record: entity.id.clone(),
@@ -4562,6 +4624,8 @@ mod tests {
             inflated_offset: 28,
         };
         let topology_class_use = ParasolidTopologyAttributeClassUse {
+            stream_ordinal: topology_reference.stream_ordinal,
+            inflated_offset: entity.inflated_offset,
             id: "topology-class-use".into(),
             topology_attribute_reference: topology_reference.id.clone(),
             entity_51_record: entity.id.clone(),

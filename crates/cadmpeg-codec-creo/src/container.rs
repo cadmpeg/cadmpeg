@@ -1960,20 +1960,10 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
             row.offset += section_offset;
         }
         if let Some(table) = &mut relations.skamps {
-            if let Some(header) = table.header_mut() {
-                header.offset += section_offset;
-            }
-            for row in table.rows_mut() {
-                row.offset += section_offset;
-            }
+            table.shift_offsets(section_offset);
         }
         if let Some(table) = &mut relations.triples {
-            if let Some(header) = table.header_mut() {
-                header.offset += section_offset;
-            }
-            for row in table.rows_mut() {
-                row.offset += section_offset;
-            }
+            table.shift_offsets(section_offset);
         }
     }
     if let Some(saved) = &mut definition.saved_section {

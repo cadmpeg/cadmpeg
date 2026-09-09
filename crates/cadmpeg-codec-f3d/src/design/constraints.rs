@@ -43,7 +43,7 @@ pub fn project_sketch_constraints(
     let sketches = placements
         .iter()
         .filter_map(|placement| {
-            let id = neutral_sketch_id(placement)?;
+            let id = neutral_sketch_id(placement);
             if !planar_sketches.contains(&id) {
                 return None;
             }

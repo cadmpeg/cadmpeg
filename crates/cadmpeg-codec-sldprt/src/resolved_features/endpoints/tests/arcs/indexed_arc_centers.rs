@@ -34,8 +34,7 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -51,7 +50,7 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
             )
         })
         .collect::<Vec<_>>();
-    coordinates[4].object_index = Some(7);
+    coordinates[4] = coordinates[4].with_test_identity(Some(7), coordinates[4].local_id());
     coordinates[4].coordinates_m = Some([0.0, -0.02]);
     coordinates[8].coordinates_m = Some([-0.015, 0.02]);
     coordinates[10].coordinates_m = Some([0.015, 0.02]);
@@ -204,8 +203,6 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;

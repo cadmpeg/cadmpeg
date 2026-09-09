@@ -22,8 +22,7 @@ pub struct TextTriangulation {
     pub deflection: f64,
     nodes: Vec<Point3>,
     uv_nodes: Option<PerNode<Point2>>,
-    /// One-based source triangle indices.
-    pub triangles: Vec<[u32; 3]>,
+    triangles: Vec<[u32; 3]>,
     normals: Option<PerNode<Vector3>>,
 }
 
@@ -36,6 +35,17 @@ impl TextTriangulation {
         triangles: Vec<[u32; 3]>,
         normals: Option<Vec<Vector3>>,
     ) -> Result<Self, String> {
+        let triangles = triangles
+            .into_iter()
+            .map(|triangle| {
+                if triangle.iter().any(|&index| {
+                    index == 0 || usize::try_from(index).map_or(true, |index| index > nodes.len())
+                }) {
+                    return Err("triangles node index is out of bounds".to_owned());
+                }
+                Ok(triangle.map(|index| index - 1))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         let uv_nodes = uv_nodes
             .map(|values| PerNode::try_new(values, nodes.len(), "uv_nodes"))
             .transpose()?;
@@ -54,6 +64,11 @@ impl TextTriangulation {
     /// Returns ordered model-space vertices.
     pub fn nodes(&self) -> &[Point3] {
         &self.nodes
+    }
+
+    /// Returns zero-based triangle indices.
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
     }
 
     #[cfg(test)]
@@ -96,7 +111,11 @@ impl From<TextTriangulation> for TextTriangulationWire {
             deflection: value.deflection,
             nodes: value.nodes,
             uv_nodes: value.uv_nodes.map(|values| values.0),
-            triangles: value.triangles,
+            triangles: value
+                .triangles
+                .into_iter()
+                .map(|triangle| triangle.map(|index| index + 1))
+                .collect(),
             normals: value.normals.map(|values| values.0),
         }
     }
@@ -105,6 +124,20 @@ impl From<TextTriangulation> for TextTriangulationWire {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_invalid_wire_triangle_indices() {
+        for triangle in [[0, 1, 1], [1, 2, 1]] {
+            let wire = TextTriangulationWire {
+                deflection: 0.0,
+                nodes: vec![Point3::new(0.0, 0.0, 0.0)],
+                uv_nodes: None,
+                triangles: vec![triangle],
+                normals: None,
+            };
+            assert!(TextTriangulation::try_from(wire).is_err());
+        }
+    }
 
     #[test]
     fn rejects_misaligned_attributes_at_constructor_and_serde() {

@@ -195,8 +195,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
     .ordered
-    .iter()
-    .any(|(surface, _)| *surface == 8304));
+    .contains(&8304));
 
     let mut nonzero_tail = bytes;
     nonzero_tail[131] = 1;
@@ -205,8 +204,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
     .ordered
-    .iter()
-    .any(|(surface, _)| *surface == 8304));
+    .contains(&8304));
 }
 
 #[test]
@@ -234,14 +232,7 @@ fn serializers_preserve_primary_frame_order() {
         &bytes,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
     );
-    assert_eq!(
-        serializers
-            .ordered
-            .iter()
-            .map(|(surface, _)| *surface)
-            .collect::<Vec<_>>(),
-        vec![8304, 8307]
-    );
+    assert_eq!(serializers.ordered, vec![8304, 8307]);
 }
 
 #[test]
@@ -601,4 +592,31 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
+}
+
+#[test]
+fn duplicate_surface_serializers_stay_ambiguous() {
+    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+    let mut chunks = Vec::new();
+    for (ordinal, surface) in [8304u64, 8307, 8304, 8304].into_iter().enumerate() {
+        let record = 8400 + ordinal as u32 * 2;
+        let mut serializer = indexed_frame(b"315", record, 132);
+        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+        for (name_ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+            let at = 25 + name_ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        }
+        serializer[121] = 1;
+        serializer[122..130].copy_from_slice(&surface.to_le_bytes());
+        chunks.push(serializer);
+        chunks.push(indexed_frame(b"457", record + 1, 15));
+    }
+    let bytes = chunks.concat();
+    let serializers = super::form_cage_serializers(
+        &bytes,
+        &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+    );
+    assert_eq!(serializers.ordered, vec![8304, 8307]);
+    assert_eq!(serializers.entry_name(8304), None);
+    assert_eq!(serializers.entry_name(8307), Some(entry_name));
 }

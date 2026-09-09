@@ -1731,3 +1731,22 @@ fn datum_target_writes_and_round_trips() {
         .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
     assert!(String::from_utf8_lossy(&source_less_output).contains("DATUM_TARGET("));
 }
+
+#[test]
+fn nonfinite_pmi_placement_decodes_with_coordinate_warning() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(1E400,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('text placement',#1,#2,#3);
+#5=TEXT_LITERAL_WITH_ASSOCIATED_CURVES('note',#4,'left',.RIGHT.,$,());
+#6=ANNOTATION_TEXT_OCCURRENCE('annotation',(),#5);",
+    );
+    assert_eq!(result.ir().model.pmi.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("CARTESIAN_POINT #1 has invalid coordinates")
+    }));
+}

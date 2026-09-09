@@ -26,9 +26,9 @@ use std::collections::{BTreeMap, HashMap};
 #[test]
 fn doubled_point_distance_constrains_the_owned_profile_line() {
     let mut corner = marker("corner", Some([0.005, 0.005]));
-    corner.object_index = Some(4);
+    corner = corner.with_test_identity(Some(4), corner.local_id());
     let mut center = marker("center", Some([0.0025, 0.0025]));
-    center.object_index = Some(1);
+    center = center.with_test_identity(Some(1), center.local_id());
     let mut distance_handle = marker("distance-handle", None);
     distance_handle.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
     distance_handle.links = crate::records::SketchInputLinks::new(

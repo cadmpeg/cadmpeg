@@ -253,3 +253,5 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
 }
+
+mod carrier_rejection;

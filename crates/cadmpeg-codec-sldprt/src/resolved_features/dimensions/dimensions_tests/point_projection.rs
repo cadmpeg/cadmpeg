@@ -37,7 +37,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             entity_index: 0,
             entity_ref: Some("center".into()),
         }],
@@ -67,7 +67,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             feature_ref: Some("feature".into()),
             ordinal: 0,
             offset: 20,
-            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             class_ref: Some("class".into()),
             object_index: 0,
         }],
@@ -77,8 +77,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = Some(0);
-            constructed_marker.local_id = Some(0);
+            constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;
@@ -163,8 +162,8 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
 
     let mut object_index_lane = lane.clone();
     object_index_lane.references[0].object_index = 1;
-    object_index_lane.sketch_entities[0].object_index = Some(1);
-    object_index_lane.sketch_entities[0].local_id = None;
+    object_index_lane.sketch_entities[0] =
+        object_index_lane.sketch_entities[0].with_test_identity(Some(1), None);
     object_index_lane.relation_instances[0].operands[0].kind =
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C);
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;

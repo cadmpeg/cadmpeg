@@ -3896,7 +3896,7 @@ fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<IndexedRecordHead
 /// spends its first seven bytes on the length-prefixed class tag, so the index
 /// always sits at `at + 7`.
 pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
-    View::u32_le_at(bytes, at.checked_add(7)?)
+    indexed_record_header_at(bytes, at).map(|header| header.record_index)
 }
 
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {

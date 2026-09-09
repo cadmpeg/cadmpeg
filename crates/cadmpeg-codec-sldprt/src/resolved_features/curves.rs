@@ -1621,7 +1621,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 EndpointSpace::Roster => *roster.get(usize::try_from(*vertex).ok()?)?,
                 EndpointSpace::Object => {
                     let mut candidates = markers.iter().copied().filter(|marker| {
-                        marker.object_index == Some(*vertex)
+                        marker.object_index() == Some(*vertex)
                             && marker.coordinates_m.is_some()
                             && matches!(
                                 marker.kind,

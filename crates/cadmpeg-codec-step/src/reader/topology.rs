@@ -894,9 +894,6 @@ fn build_wire_set(
     let set = exchange.records.get(&set_id)?;
     let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
     let used_edges = connected_set_members(set, set_type)?;
-    if used_edges.is_empty() {
-        return None;
-    }
     let suffix = if scoped {
         format!("-set-{set_id}")
     } else {
@@ -956,14 +953,19 @@ fn build_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell::new(
+        vec![match Shell::new(
             shell.clone(),
             region.clone(),
             Vec::new(),
             wire_edges,
             Vec::new(),
-        )
-        .ok()?],
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                warnings.push(format!("CONNECTED_EDGE_SET #{set_id}: {error}"));
+                return None;
+            }
+        }],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1086,9 +1088,6 @@ fn build_shell_wire_set(
     } else {
         return None;
     }
-    if edge_uses.is_empty() && used_vertices.is_empty() {
-        return None;
-    }
     let suffix = if scoped {
         format!("-shell-{shell_id}")
     } else {
@@ -1147,14 +1146,19 @@ fn build_shell_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell::new(
+        vec![match Shell::new(
             shell.clone(),
             region.clone(),
             Vec::new(),
             wire_edges,
             free_vertices,
-        )
-        .ok()?],
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                warnings.push(format!("wire shell #{shell_id}: {error}"));
+                return None;
+            }
+        }],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1220,7 +1224,11 @@ fn build_geometric_set(
 ) -> Option<Built> {
     let set_ids = representation_items(representation)?;
     let mut typed = HashSet::from([id]);
-    let mut surfaces = Vec::new();
+    let body = BodyId::from(ids::data("body", id));
+    let region = RegionId::from(ids::data("region", id));
+    let shell_id = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
+    let mut shell: Option<Shell> = None;
+    let mut faces = Vec::new();
     for set_id in set_ids {
         let Some(set) = exchange.records.get(&set_id) else {
             warnings.push(format!(
@@ -1244,33 +1252,33 @@ fn build_geometric_set(
         for surface_step in items {
             let surface = SurfaceId::from(ids::data("surface", surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
-                surfaces.push((surface_step, surface));
+                let face = Face {
+                    id: FaceId::from(ids::data(
+                        "face",
+                        format!("{surface_step}-geometric-set-{id}"),
+                    )),
+                    shell: shell_id.clone(),
+                    surface,
+                    sense: Sense::Forward,
+                    loops: Vec::new().into(),
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                };
+                match &mut shell {
+                    Some(shell) => shell.add_face(face.id.clone()),
+                    None => {
+                        shell = Some(Shell::with_face(
+                            shell_id.clone(),
+                            region.clone(),
+                            face.id.clone(),
+                        ));
+                    }
+                }
+                faces.push(face);
             }
         }
     }
-    if surfaces.is_empty() {
-        return None;
-    }
-    let body = BodyId::from(ids::data("body", id));
-    let region = RegionId::from(ids::data("region", id));
-    let shell = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
-    let faces = surfaces
-        .into_iter()
-        .map(|(surface_step, surface)| Face {
-            id: FaceId::from(ids::data(
-                "face",
-                format!("{surface_step}-geometric-set-{id}"),
-            )),
-            shell: shell.clone(),
-            surface,
-            sense: Sense::Forward,
-            loops: Vec::new().into(),
-            name: None,
-            color: None,
-            tolerance: None,
-        })
-        .collect::<Vec<_>>();
-    let face_ids = faces.iter().map(|face| face.id.clone()).collect();
     staged_topology(
         typed,
         Vec::new(),
@@ -1279,18 +1287,11 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![Shell::new(
-            shell.clone(),
-            region.clone(),
-            face_ids,
-            Vec::new(),
-            Vec::new(),
-        )
-        .ok()?],
+        vec![shell?],
         Region {
             id: region.clone(),
             body: body.clone(),
-            shells: vec![shell],
+            shells: vec![shell_id],
         },
         Body {
             id: body,
@@ -2680,14 +2681,19 @@ fn build_one(
                 })
                 .collect();
             shells.push(
-                Shell::new(
+                match Shell::new(
                     component_shell.clone(),
                     rid.clone(),
                     component_faces,
                     vec![],
                     vec![],
-                )
-                .ok()?,
+                ) {
+                    Ok(shell) => shell,
+                    Err(error) => {
+                        warnings.push(format!("{shell_type} #{shell_step}: {error}"));
+                        return None;
+                    }
+                },
             );
             region.shells.push(component_shell);
         }
@@ -3542,17 +3548,17 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
             pcurve_declared_parameter_range(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_declared_parameter_range(basis),
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
-        PcurveGeometry::PolarNurbs { .. } => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-        PcurveGeometry::Nurbs { .. } => None,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle(_)
+        | PcurveGeometry::Nurbs { .. } => None,
     }
 }
 
@@ -3763,15 +3769,15 @@ fn pcurve_parameter_break_fractions(
         PcurveGeometry::Transformed { basis, .. } => {
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
-        PcurveGeometry::Line(_) => {}
-        PcurveGeometry::Circle(_) => {}
-        PcurveGeometry::Ellipse(_) => {}
-        PcurveGeometry::Harmonic(_) => {}
-        PcurveGeometry::Parabola(_) => {}
-        PcurveGeometry::Hyperbola(_) => {}
-        PcurveGeometry::Hyperbolic(_) => {}
-        PcurveGeometry::PolarHarmonic(_) => {}
-        PcurveGeometry::SphericalGreatCircle(_) => {}
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => {}
     }
 }
 
@@ -3854,10 +3860,10 @@ fn pcurve_selection_seeds(
 
 fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
     match geometry {
-        PcurveGeometry::Circle(_) => true,
-        PcurveGeometry::Ellipse(_) => true,
-        PcurveGeometry::Harmonic(_) => true,
-        PcurveGeometry::SphericalGreatCircle(_) => true,
+        PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => true,
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
@@ -3867,13 +3873,13 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
             let basis = trimmed_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
         }
-        PcurveGeometry::Line(_) => false,
-        PcurveGeometry::PolarHarmonic(_) => false,
-        PcurveGeometry::PolarNurbs { .. } => false,
-        PcurveGeometry::Nurbs { .. } => false,
-        PcurveGeometry::Parabola(_) => false,
-        PcurveGeometry::Hyperbola(_) => false,
-        PcurveGeometry::Hyperbolic(_) => false,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::Nurbs { .. }
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_) => false,
     }
 }
 
@@ -3901,15 +3907,15 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             pcurve_selection_parameter_domain(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_) => None,
     }
 }
 
@@ -3973,14 +3979,14 @@ fn surface_selection_parameter_domains_from_geometry(
         SurfaceGeometry::Transformed { basis, .. } => {
             surface_selection_parameter_domains_from_geometry(basis)
         }
-        SurfaceGeometry::Plane(_) => [None, None],
-        SurfaceGeometry::Cylinder(_) => [None, None],
-        SurfaceGeometry::Cone(_) => [None, None],
-        SurfaceGeometry::Sphere(_) => [None, None],
-        SurfaceGeometry::Torus(_) => [None, None],
-        SurfaceGeometry::Procedural { .. } => [None, None],
-        SurfaceGeometry::Polygonal(_) => [None, None],
-        SurfaceGeometry::Unknown { .. } => [None, None],
+        SurfaceGeometry::Plane(_)
+        | SurfaceGeometry::Cylinder(_)
+        | SurfaceGeometry::Cone(_)
+        | SurfaceGeometry::Sphere(_)
+        | SurfaceGeometry::Torus(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal(_)
+        | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
@@ -3999,8 +4005,7 @@ fn curve_selection_parameter_domain(
 
 fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Circle(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
         CurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
         CurveGeometry::Polyline(polyline) => {
             let parameters = polyline.parameters()?;
@@ -4011,13 +4016,13 @@ fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> O
         CurveGeometry::Transformed { basis, .. } => {
             curve_selection_parameter_domain_from_geometry(basis)
         }
-        CurveGeometry::Line(_) => None,
-        CurveGeometry::Parabola(_) => None,
-        CurveGeometry::Hyperbola(_) => None,
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Procedural { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Line(_)
+        | CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 

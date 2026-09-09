@@ -120,6 +120,19 @@ pub enum CarrierEquation {
     Torus(TorusEquation),
 }
 
+impl CarrierEquation {
+    /// Stable carrier family name for diagnostics.
+    pub(crate) fn kind_str(&self) -> &'static str {
+        match self {
+            Self::Plane(_) => "plane",
+            Self::Cylinder(_) => "cylinder",
+            Self::Cone(_) => "cone",
+            Self::Sphere(_) => "sphere",
+            Self::Torus(_) => "torus",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct QuadricEquation {
     pub matrix: [[f64; 3]; 3],
@@ -634,14 +647,16 @@ pub fn intersect_plane_with_two_quadrics(
     let Some(normal) = normalize(plane.normal) else {
         return Vec::new();
     };
-    let reference = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        .into_iter()
-        .min_by(|left, right| {
-            dot(normal, *left)
-                .abs()
-                .total_cmp(&dot(normal, *right).abs())
-        })
-        .expect("three reference axes");
+    let reference_axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let magnitudes = reference_axes.map(|axis| dot(normal, axis).abs());
+    let index = if magnitudes[0] <= magnitudes[1] && magnitudes[0] <= magnitudes[2] {
+        0
+    } else if magnitudes[1] <= magnitudes[2] {
+        1
+    } else {
+        2
+    };
+    let reference = reference_axes[index];
     let Some(u_axis) = normalize(cross(normal, reference)) else {
         return Vec::new();
     };

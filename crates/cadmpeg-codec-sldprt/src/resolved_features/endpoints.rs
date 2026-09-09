@@ -526,7 +526,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 .filter_map(|index| {
                     let owned = |marker: &&SketchInputEntity| {
                         marker.feature_ref == curve.feature_ref
-                            && marker.object_index == Some(index)
+                            && marker.object_index() == Some(index)
                             && marker.coordinates_m.is_some()
                     };
                     if point_object_construction {
@@ -699,7 +699,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             let index = View::u16_le_at(payload, offset + relative)?.checked_add(1)?;
             let mut candidates = markers.iter().copied().filter(|marker| {
                 marker.feature_ref == curve.feature_ref
-                    && marker.object_index == Some(u32::from(index))
+                    && marker.object_index() == Some(u32::from(index))
                     && marker.coordinates_m.is_some()
                     && (selected_construction
                         || matches!(
@@ -896,9 +896,9 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
                 && if id == 0 {
-                    marker.object_index.is_none()
+                    marker.object_index().is_none()
                 } else {
-                    marker.object_index == Some(id)
+                    marker.object_index() == Some(id)
                 }
         });
         let candidate = candidates.next()?;
@@ -992,7 +992,7 @@ pub(super) fn legacy_compact_direct_endpoint_markers<'a>(
         .filter_map(|index| {
             let mut candidates = markers.iter().copied().filter(|marker| {
                 marker.feature_ref == curve.feature_ref
-                    && marker.object_index == Some(index)
+                    && marker.object_index() == Some(index)
                     && marker.coordinates_m.is_some()
                     && matches!(
                         marker.kind,
@@ -1032,7 +1032,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
         let endpoints = indices.map(|index| {
             let mut matches = markers.iter().copied().filter(|marker| {
                 marker.feature_ref == curve.feature_ref
-                    && marker.object_index == Some(index)
+                    && marker.object_index() == Some(index)
                     && marker.coordinates_m.is_some()
                     && matches!(
                         marker.kind,
@@ -1090,7 +1090,7 @@ pub(super) fn wide_direct_line_endpoint_markers<'a>(
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == (id != 0).then_some(id)
+                && marker.object_index() == (id != 0).then_some(id)
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -1720,10 +1720,10 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     if direct_radius_relations.len() > 1 {
         return None;
     }
-    let object_index = curve.object_index?;
+    let object_index = curve.object_index()?;
     let mut candidates = markers.iter().copied().filter_map(|relation| {
         if relation.feature_ref != curve.feature_ref
-            || relation.object_index != Some(object_index)
+            || relation.object_index() != Some(object_index)
             || relation.kind
                 != SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
         {
@@ -2186,7 +2186,7 @@ pub(super) fn extended_declared_inline_line_endpoints(
     let index = u32::from(View::u16_le_at(cell, 2)?);
     let mut candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref == curve.feature_ref
-            && marker.object_index == Some(index)
+            && marker.object_index() == Some(index)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
@@ -2218,7 +2218,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
     {
         return None;
     }
-    let curve_index = curve.object_index?;
+    let curve_index = curve.object_index()?;
     let zero_based = record
         .references
         .iter()
@@ -2234,7 +2234,7 @@ pub(super) fn extended_linked_inline_line_endpoints(
     };
     let mut candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref == curve.feature_ref
-            && marker.object_index == Some(external_index)
+            && marker.object_index() == Some(external_index)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
@@ -2261,7 +2261,7 @@ pub(super) fn extended_identity_inline_line_endpoints(
     let mut candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref == curve.feature_ref
             && marker.id != curve.id
-            && marker.object_index == Some(identity)
+            && marker.object_index() == Some(identity)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
@@ -2435,7 +2435,7 @@ pub(super) fn coordinate_roster_arc_center(
         .copied()
         .filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == u32::try_from(center_index).ok()
+                && marker.object_index() == u32::try_from(center_index).ok()
         })
         .filter_map(|marker| marker.coordinates_m)
         .filter(|center| equidistant(*center))
@@ -2678,7 +2678,7 @@ pub(super) fn legacy_coordinate_circle_radius(
     let mut radial_points = markers.iter().copied().filter(|marker| {
         marker.feature_ref == circle.feature_ref
             && marker.offset() == circle.offset() + 162
-            && marker.object_index == Some(radial_index)
+            && marker.object_index() == Some(radial_index)
             && marker.kind == SketchInputKind::Point
             && marker.coordinates_m.is_some()
     });
@@ -3192,7 +3192,7 @@ pub(super) fn compact_profile_full_circle(
     let mut radials = points
         .iter()
         .copied()
-        .filter(|marker| marker.object_index == Some(u32::from(radial_index)))
+        .filter(|marker| marker.object_index() == Some(u32::from(radial_index)))
         .chain(
             usize::from(radial_index)
                 .checked_sub(1)
@@ -3506,7 +3506,7 @@ pub(super) fn wide_coordinate_roster_full_circle(
         .then(|| {
             coordinates
                 .iter()
-                .position(|marker| marker.object_index == Some(raw_index as u32))
+                .position(|marker| marker.object_index() == Some(raw_index as u32))
                 .and_then(|radial| radial.checked_sub(1).map(|center| (center, radial)))
         })
         .flatten();
@@ -6041,7 +6041,7 @@ fn legacy_compact_92_profile_object_endpoint_markers<'a>(
         let object_index = u32::from(View::u16_le_at(payload, offset + relative)?);
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
-                && marker.object_index == Some(object_index)
+                && marker.object_index() == Some(object_index)
                 && marker.coordinates_m.is_some()
                 && matches!(
                     marker.kind,
@@ -6215,7 +6215,7 @@ pub(super) fn relation_reference_curve_record(
                 let candidates = markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.object_index == Some(object_index))
+                    .filter(|marker| marker.object_index() == Some(object_index))
                     .collect::<Vec<_>>();
                 let relations = candidates
                     .iter()

@@ -414,3 +414,19 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
         assert_eq!(crate::container::history_breps(&scan).count(), 0);
     }
 }
+
+#[test]
+fn malformed_text_brep_returns_an_entry_named_error() {
+    let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
+    let archive = f3d_with_text_brep_stream(&[entry], b"invalid SAT stream");
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
+    assert!(error
+        .to_string()
+        .contains(&format!("text BREP entry {entry} failed to parse:")));
+}

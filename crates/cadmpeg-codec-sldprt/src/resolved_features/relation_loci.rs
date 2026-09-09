@@ -2905,7 +2905,7 @@ fn dynamic_relation_marker<'a>(
         .values()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
-        .filter(|marker| marker.object_index == Some(address) && address_kind(marker))
+        .filter(|marker| marker.object_index() == Some(address) && address_kind(marker))
         .collect::<Vec<_>>();
     if !by_object.is_empty() {
         if point_role {
@@ -2932,7 +2932,7 @@ fn dynamic_relation_marker<'a>(
         .values()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
-        .filter(|marker| marker.local_id == Some(address) && address_kind(marker))
+        .filter(|marker| marker.local_id() == Some(address) && address_kind(marker))
         .collect::<Vec<_>>();
     if !by_local.is_empty() {
         if point_role {
@@ -2996,7 +2996,7 @@ fn relation_line_point_marker<'a>(
         .values()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(&relation.feature_ref))
-        .filter(|marker| marker.local_id == Some(u32::from(operand.entity_index)))
+        .filter(|marker| marker.local_id() == Some(u32::from(operand.entity_index)))
         .filter(|marker| marker.coordinates_m.is_some())
         .filter(|marker| {
             matches!(

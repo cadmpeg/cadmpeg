@@ -2,45 +2,23 @@
 //! Compact-index column rows with positions derived from their wire layout.
 
 use super::compact::{CompactIndexAtom, CompactIndexTarget, LocatedCompactIndex, PositionedIndex};
-use super::discriminators::{IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag};
+use super::discriminators::{
+    u8_discriminator, IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag,
+};
 use std::ops::Add;
 
 pub(crate) mod scan;
 
-/// Position in the four-reference column-row lane.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub(crate) enum ColumnRowSlot {
-    Zero = 0,
-    One = 1,
-    Two = 2,
-    Three = 3,
-}
-
-impl ColumnRowSlot {
-    pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
-}
-
-impl From<ColumnRowSlot> for u8 {
-    fn from(value: ColumnRowSlot) -> Self {
-        value as u8
+u8_discriminator! {
+    /// Position in the four-reference column-row lane.
+    #[derive(PartialOrd, Ord)]
+    pub(crate) ColumnRowSlot {
+        Zero = 0,
+        One = 1,
+        Two = 2,
+        Three = 3,
     }
-}
-
-impl TryFrom<u8> for ColumnRowSlot {
-    type Error = &'static str;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Zero),
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            3 => Ok(Self::Three),
-            _ => Err("ColumnRowSlot: expected 0..=3"),
-        }
-    }
+    "ColumnRowSlot: expected 0..=3"; ALL
 }
 
 const INDEX_PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];

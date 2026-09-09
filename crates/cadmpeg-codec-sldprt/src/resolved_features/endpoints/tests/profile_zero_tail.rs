@@ -39,8 +39,6 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -57,8 +55,6 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;

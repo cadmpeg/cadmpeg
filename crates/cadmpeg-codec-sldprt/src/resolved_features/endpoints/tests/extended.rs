@@ -74,8 +74,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(3);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(3), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.0, 0.0075]);
         constructed_marker.links = None;
@@ -92,8 +91,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(6);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(6), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -107,8 +105,8 @@ fn extended_linked_line_uses_inline_self_endpoint() {
     payload[80..82].copy_from_slice(&1u16.to_le_bytes());
     payload[88..90].copy_from_slice(&4u16.to_le_bytes());
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
-    external.object_index = Some(1);
-    curve.object_index = Some(4);
+    external = external.with_test_identity(Some(1), external.local_id());
+    curve = curve.with_test_identity(Some(4), curve.local_id());
     assert_eq!(
         extended_linked_inline_line_endpoints(&payload, &curve, &[&external, &curve]),
         Some([[0.0, 0.0075], [0.007, 0.0075]])
@@ -144,8 +142,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 200, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(5);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(5), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.01, 0.012]);
         constructed_marker.links = None;
@@ -162,8 +159,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(6);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(6), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.007, 0.0075]);
         constructed_marker.links = None;
@@ -267,8 +263,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 7, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(7);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(7), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = Some([0.014, 0.016]);
         constructed_marker.links = None;
@@ -285,8 +280,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = Some(3);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(3), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -454,8 +448,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -647,8 +640,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -748,8 +740,8 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
 
     let mut roster_indexed = entities.clone();
-    roster_indexed[1].object_index = None;
-    roster_indexed[3].object_index = None;
+    roster_indexed[1] = roster_indexed[1].with_test_identity(None, roster_indexed[1].local_id());
+    roster_indexed[3] = roster_indexed[3].with_test_identity(None, roster_indexed[3].local_id());
     payload[56..58].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     let markers = roster_indexed.iter().collect::<Vec<_>>();
@@ -797,8 +789,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -967,7 +958,8 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     );
     hybrid_entities[0].coordinates_m = Some([4.0, 4.0]);
     hybrid_entities[1].coordinates_m = Some([0.0, 0.0]);
-    hybrid_entities[1].object_index = Some(0);
+    hybrid_entities[1] =
+        hybrid_entities[1].with_test_identity(Some(0), hybrid_entities[1].local_id());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
         coordinate_roster_arc_center(
@@ -1104,8 +1096,6 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1122,8 +1112,6 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -1202,8 +1190,6 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1220,8 +1206,6 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -1293,8 +1277,6 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -1311,8 +1293,6 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;

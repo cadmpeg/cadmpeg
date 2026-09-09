@@ -377,8 +377,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 crate::records::SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("sketch-native".into());
-            constructed_marker.object_index = Some(1);
-            constructed_marker.local_id = Some(1);
+            constructed_marker = constructed_marker.with_test_identity(Some(1), Some(1));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = None;
             constructed_marker.links = None;
@@ -397,8 +396,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 ),
             );
             constructed_marker.feature_ref = Some("sketch-native".into());
-            constructed_marker.object_index = Some(2);
-            constructed_marker.local_id = Some(2);
+            constructed_marker = constructed_marker.with_test_identity(Some(2), Some(2));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = None;
             constructed_marker.links = crate::records::SketchInputLinks::new(

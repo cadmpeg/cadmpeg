@@ -277,7 +277,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             op: BooleanOp::NewBody,
             solid: Some(true),
             ..
-        } if (profile == &neutral_sketch_id(&placement).unwrap()) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
+        } if (profile == &neutral_sketch_id(&placement)) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
     ));
     let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -559,7 +559,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let sketches = [cadmpeg_ir::sketches::Sketch {
-        id: neutral_sketch_id(&placement).unwrap(),
+        id: neutral_sketch_id(&placement),
         name: None,
         configuration: None,
         visible: None,
@@ -614,7 +614,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement).unwrap(),
+        id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
         visible: None,
@@ -685,7 +685,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement).unwrap(),
+        id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
         visible: None,
@@ -1070,7 +1070,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(ref profile),
             ..
-        } if profile == &neutral_sketch_id(&placement).unwrap()
+        } if profile == &neutral_sketch_id(&placement)
     ));
     {
         let value = Some(DesignFixedExtrudeParameters {

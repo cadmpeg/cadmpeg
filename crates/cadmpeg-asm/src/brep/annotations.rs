@@ -3,7 +3,7 @@
 
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
-use super::{id, AsmBrep};
+use super::{id, AsmBrep, Carriers};
 use crate::ids::IdFormat;
 use crate::sab::Record;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -57,9 +57,10 @@ pub(crate) fn emit_annotation_records(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
+    carriers: &Carriers,
     stream: &str,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let curve_geometries = out
         .curves
         .iter()
@@ -189,30 +190,22 @@ pub(crate) fn emit_annotation_records(
             }
         }
     }
-    let procedural_surface_prefix = format!("{format}:brep:procedural_surface#");
-    for (entity_id, tag) in out
-        .surfaces
+    for (index, entity_id, tag) in carriers
+        .procedural_support_sources
         .iter()
-        .map(|entity| (entity.id.as_str(), AnnotationTag::ProceduralSupport))
+        .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralSupport))
         .chain(
-            out.curves
+            carriers
+                .procedural_curve_child_sources
                 .iter()
-                .map(|entity| (entity.id.as_str(), AnnotationTag::ProceduralCurveChild)),
+                .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralCurveChild)),
         )
     {
-        if !entity_id.starts_with(&procedural_surface_prefix) {
-            continue;
-        }
-        let Some(index) = entity_id
-            .split_once('#')
-            .and_then(|(_, suffix)| suffix.split(':').next())
-            .and_then(|value| value.parse::<usize>().ok())
-        else {
-            continue;
-        };
-        let Some(record) = records.get(index) else {
-            continue;
-        };
+        let record = by_index.get(index).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "synthetic entity {entity_id} source record {index} is missing"
+            ))
+        })?;
         out.annotation_records.push(AnnotationRecord {
             id: entity_id.to_owned(),
             stream: stream.to_owned(),
@@ -221,4 +214,8 @@ pub(crate) fn emit_annotation_records(
             derived_fields: Vec::new(),
         });
     }
+    Ok(())
 }
+
+#[cfg(test)]
+mod tests;

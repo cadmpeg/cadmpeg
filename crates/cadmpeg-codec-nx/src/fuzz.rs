@@ -18,7 +18,7 @@ fn fuzz_policy() -> DecodePolicy {
 
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
-    let _ = crate::deltas::walk(data);
+    let _ = crate::deltas::census::walk(data);
     let mid = data.len() / 2;
     let _ = crate::deltas::unmatched_terminal_tombstones(&data[..mid], &data[mid..]);
 }

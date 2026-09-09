@@ -1494,7 +1494,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .sketch_entities
         .iter()
         .enumerate()
-        .all(|(ordinal, entity)| entity.local_id == Some(ordinal as u32 + 1)));
+        .all(|(ordinal, entity)| entity.local_id() == Some(ordinal as u32 + 1)));
     assert!(lane
         .sketch_entities
         .iter()

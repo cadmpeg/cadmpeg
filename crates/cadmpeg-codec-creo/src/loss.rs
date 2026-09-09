@@ -68,6 +68,8 @@ pub enum CreoLossCode {
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
     BrepTransferIncomplete,
+    /// A saved section spline cannot form a NURBS curve.
+    SectionSplineUnresolved,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -193,6 +195,7 @@ impl CreoLossCode {
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
+            Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -280,7 +283,8 @@ impl CreoLossCode {
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::ExtrusionBodyRejected => Severity::Blocking,
-            Self::SourceDialectUnverified
+            Self::SectionSplineUnresolved
+            | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
@@ -365,7 +369,8 @@ impl CreoLossCode {
             | Self::VisibGeomCurveUntransferred
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
-            | Self::SectionSegmentGeometryUnresolved => LossTaxonomy::GeometryNotTransferred,
+            | Self::SectionSegmentGeometryUnresolved
+            | Self::SectionSplineUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents | Self::ExtrusionBodyRejected => {
                 LossTaxonomy::TopologyNotTransferred
             }
@@ -447,6 +452,7 @@ mod tests {
                 "legacy.string-encoding-retained",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
+                "geometry.section-spline-unresolved",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",

@@ -473,20 +473,12 @@ pub fn decode_parameter_owners(
             value: parameter.evaluated_value(),
             offset: parameter.evaluated_value_offset(),
         };
-        let owner = if let Some(owner) = parse_parameter_owner(frame) {
-            owner
-                .into_record(&entry.name, header.byte_offset)
-                .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?
-        } else {
-            let owner = parse_legacy_parameter_owner_68(frame, evaluated)
-                .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated))
-                .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
-            let mut wire = crate::records::DesignParameterOwnerWire::from(owner);
-            wire.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
-            wire.byte_offset = header.byte_offset;
-            DesignParameterOwner::try_from(wire)
-                .map_err(|_| malformed("invalid legacy owner location"))?
-        };
+        let owner = parse_parameter_owner(frame)
+            .or_else(|| parse_legacy_parameter_owner_68(frame, evaluated, header.byte_offset))
+            .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated, header.byte_offset))
+            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?
+            .into_record(&entry.name, header.byte_offset)
+            .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
         if owner.record_index() != owner_index
             || owner.parameter_record_index() != parameter.record_index
         {
@@ -500,12 +492,16 @@ pub fn decode_parameter_owners(
 
 /// Byte offset measured from an indexed frame start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FrameRelative(pub(crate) u64);
+pub(crate) struct FrameRelative(pub(crate) i128);
 
 impl FrameRelative {
+    fn between(offset: u64, frame_start: u64) -> Self {
+        Self(i128::from(offset) - i128::from(frame_start))
+    }
+
     /// Convert this offset to a stream-absolute position.
     pub(crate) fn absolute(self, frame_start: u64) -> Option<u64> {
-        frame_start.checked_add(self.0)
+        u64::try_from(i128::from(frame_start).checked_add(self.0)?).ok()
     }
 }
 
@@ -671,7 +667,8 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner
 pub(crate) fn parse_legacy_parameter_owner_68(
     frame: &[u8],
     evaluated: crate::records::Located<f64>,
-) -> Option<DesignParameterOwner> {
+    frame_start: u64,
+) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_68_class(&class_tag)
         || frame.len() != legacy_owner_68::LEN
@@ -700,22 +697,19 @@ pub(crate) fn parse_legacy_parameter_owner_68(
     {
         return None;
     }
-    crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-        id: String::new(),
-        byte_offset: 0,
+    Some(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
         class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
         evaluated_value: evaluated.value,
-        evaluated_value_offset: evaluated.offset,
+        evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
     })
-    .ok()
 }
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
@@ -723,7 +717,8 @@ pub(crate) fn parse_legacy_parameter_owner_68(
 pub(crate) fn parse_legacy_parameter_owner_88(
     frame: &[u8],
     evaluated: crate::records::Located<f64>,
-) -> Option<DesignParameterOwner> {
+    frame_start: u64,
+) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_88_class(&class_tag)
         || frame.len() != legacy_owner_88::LEN
@@ -764,22 +759,19 @@ pub(crate) fn parse_legacy_parameter_owner_88(
     {
         return None;
     }
-    crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-        id: String::new(),
-        byte_offset: 0,
+    Some(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
         class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index,
         local_ordinal: 0,
         evaluated_value: evaluated.value,
-        evaluated_value_offset: evaluated.offset,
+        evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
         variant: None,
         companion_record_index,
     })
-    .ok()
 }
 
 /// Decode the fixed prefix of every indexed record paired with a parameter

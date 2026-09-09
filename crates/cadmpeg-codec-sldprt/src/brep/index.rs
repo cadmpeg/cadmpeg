@@ -5,9 +5,20 @@ use super::{
 };
 use std::collections::{HashMap, HashSet};
 
-enum IndexedCurve {
+/// An exact carrier or a derived intersection carrier.
+pub(crate) enum IndexedCurve {
     Exact(CurveCarrier),
     Derived(intersection::IntersectionCarrier),
+}
+
+impl IndexedCurve {
+    /// Returns the curve carrier for either provenance variant.
+    pub(crate) fn carrier(&self) -> &CurveCarrier {
+        match self {
+            Self::Exact(carrier) => carrier,
+            Self::Derived(intersection) => &intersection.carrier,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -37,11 +48,8 @@ impl CarrierIndex {
         }
     }
 
-    pub(crate) fn curve(&self, attr: u16) -> Option<&CurveCarrier> {
-        self.curves.get(&attr).map(|curve| match curve {
-            IndexedCurve::Exact(carrier) => carrier,
-            IndexedCurve::Derived(intersection) => &intersection.carrier,
-        })
+    pub(crate) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
+        self.curves.get(&attr)
     }
 
     pub(crate) fn curve_attrs(&self) -> HashSet<u16> {
@@ -70,23 +78,6 @@ impl CarrierIndex {
     /// Zero-offset surface pair carried by `attr`.
     pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
-    }
-
-    /// Whether a curve attr holds a derived solved cache rather than an
-    /// exact carrier.
-    pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
-        matches!(self.curves.get(&attr), Some(IndexedCurve::Derived(_)))
-    }
-
-    /// Support metadata carried by one surface-intersection curve.
-    pub(super) fn intersection_support_data(
-        &self,
-        attr: u16,
-    ) -> Option<&intersection::IntersectionSupportData> {
-        match self.curves.get(&attr)? {
-            IndexedCurve::Derived(intersection) => Some(&intersection.support_data),
-            IndexedCurve::Exact(_) => None,
-        }
     }
 
     fn insert_intersection(&mut self, intersection: intersection::IntersectionCarrier) {

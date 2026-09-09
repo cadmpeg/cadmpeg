@@ -317,12 +317,7 @@ pub(super) fn push_brep_transfer_note(
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("|"),
-                sample
-                    .carrier_kinds
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join("|"),
+                sample.carrier_kinds.join("|"),
                 sample.pair_intersections,
                 sample.triple_intersections,
                 sample.valid_candidates,

@@ -11,18 +11,16 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::{
-    features::{FeatureDefinition, ParameterValue, WrapMode},
-    scalar::Length,
-};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
 pub(super) fn normalize_model_lengths(
@@ -52,10 +50,8 @@ pub(super) fn normalize_model_lengths(
     }
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
-            .edit_definition(|definition| {
-                scale_procedural_surface_definition(definition, length_scale_mm)
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?
+            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
+            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -63,10 +59,8 @@ pub(super) fn normalize_model_lengths(
     }
     for procedural in &mut ir.model.procedural_curves {
         procedural
-            .edit_definition(|definition| {
-                scale_procedural_curve_definition(definition, length_scale_mm)
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?
+            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
+            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -1573,65 +1567,78 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
     Ok(())
 }
 
-fn scale_procedural_surface_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
-    scale: f64,
-) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-
-    match definition {
-        ProceduralSurfaceDefinition::Extrusion(payload) => {
-            let mut direction = *payload.direction();
-            let mut native_position = payload.native_position();
-            scale_vector3(&mut direction, scale);
-            if let Some(position) = &mut native_position {
-                scale_point3(position, scale);
-            }
-            *payload =
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    payload.directrix().clone(),
-                    payload.parameter_interval(),
-                    direction,
-                    native_position,
-                    payload.revision_form().clone(),
-                )?;
-        }
-        ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
-            scale_vector3(direction, scale);
-        }
-        ProceduralSurfaceDefinition::Revolution(payload) => {
-            let mut origin = *payload.axis_origin();
-            scale_point3(&mut origin, scale);
-            *payload =
-                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                    payload.directrix().clone(),
-                    (origin, *payload.axis_direction()),
-                    *payload.angular_interval(),
-                    payload.angular_parameter_interval(),
-                    payload.parameter_interval(),
-                    *payload.transposed(),
-                    payload.revision_form().clone(),
-                )?;
-        }
-        ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
-            scale_point3(axis_origin, scale);
-        }
-        ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
-            scale_vector3(basepoint, scale);
-        }
-        _ => {}
-    }
-    Ok(())
+trait ScaleProceduralLengths {
+    fn scale_lengths(
+        &mut self,
+        scale: f64,
+    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError>;
 }
 
-fn scale_procedural_curve_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
-    scale: f64,
-) -> Result<(), &'static str> {
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
-        helix.try_scale_lengths(scale)?;
+impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+    fn scale_lengths(
+        &mut self,
+        scale: f64,
+    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
+        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+        match self {
+            ProceduralSurfaceDefinition::Extrusion(payload) => {
+                let mut direction = *payload.direction();
+                let mut native_position = payload.native_position();
+                scale_vector3(&mut direction, scale);
+                if let Some(position) = &mut native_position {
+                    scale_point3(position, scale);
+                }
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        payload.parameter_interval(),
+                        direction,
+                        native_position,
+                        payload.revision_form().clone(),
+                    )?;
+            }
+            ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
+                scale_vector3(direction, scale);
+            }
+            ProceduralSurfaceDefinition::Revolution(payload) => {
+                let mut origin = *payload.axis_origin();
+                scale_point3(&mut origin, scale);
+                *payload =
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        payload.directrix().clone(),
+                        (origin, *payload.axis_direction()),
+                        *payload.angular_interval(),
+                        payload.angular_parameter_interval(),
+                        payload.parameter_interval(),
+                        *payload.transposed(),
+                        payload.revision_form().clone(),
+                    )?;
+            }
+            ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
+                scale_point3(axis_origin, scale);
+            }
+            ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
+                scale_vector3(basepoint, scale);
+            }
+            _ => {}
+        }
+        Ok(())
     }
-    Ok(())
+}
+
+impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    fn scale_lengths(
+        &mut self,
+        scale: f64,
+    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
+        if let Self::Helix(helix) = self {
+            helix
+                .try_scale_lengths(scale)
+                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
+        }
+        Ok(())
+    }
 }
 
 fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Option<f64> {

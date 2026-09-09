@@ -72,11 +72,9 @@ impl DesignEntityId {
 
     pub fn suffix(&self) -> u64 {
         self.0
-            .rsplit('_')
-            .take(1)
-            .flat_map(str::bytes)
-            .filter(|byte| *byte != b'+')
-            .fold(0, |value, digit| value * 10 + u64::from(digit - b'0'))
+            .rsplit_once('_')
+            .and_then(|(_, suffix)| suffix.parse().ok())
+            .unwrap_or_default()
     }
 }
 
@@ -3900,7 +3898,7 @@ impl DesignEntityHeader {
     }
 
     /// Mutable located sketch reference-list slot.
-    pub fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
+    pub(crate) fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
         match &mut self.registration.0 {
             DesignEntityRegistrationKind::Sketch { references, .. } => references.as_mut(),
             DesignEntityRegistrationKind::Other(_) => None,
@@ -5430,7 +5428,7 @@ impl DesignMeshFeature {
     pub fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
-    pub fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
+    pub(crate) fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
         &mut self.bodies
     }
     fn body_count_offsets(&self) -> [u64; 3] {

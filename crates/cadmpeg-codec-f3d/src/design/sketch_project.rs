@@ -171,7 +171,7 @@ pub fn project_sketch_design(
         })
         .filter_map(|placement| {
             Some(Sketch {
-                id: neutral_sketch_id(placement)?,
+                id: neutral_sketch_id(placement),
                 name: Some(placement.entity_id.as_str().to_owned()),
                 configuration: None,
                 visible: placement
@@ -212,13 +212,13 @@ pub fn project_sketch_design(
                 return None;
             }
             let placement = placements_by_suffix.get(&(scope, owner))?;
-            let sketch = neutral_sketch_id(placement)?;
+            let sketch = neutral_sketch_id(placement);
             Some(
                 SketchEntity::new(
                     point.persistent_id().map_or_else(
                         || neutral_sketch_record_id(&sketch, point.record_index),
                         |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
-                    )?,
+                    ),
                     sketch,
                     SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: point.coordinates(),
@@ -312,10 +312,10 @@ pub fn project_sketch_design(
             }
             _ => return None,
         };
-        let sketch = neutral_sketch_id(placement)?;
+        let sketch = neutral_sketch_id(placement);
         Some(
             SketchEntity::new(
-                neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)?,
+                neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id),
                 sketch,
                 geometry,
             )
@@ -326,13 +326,13 @@ pub fn project_sketch_design(
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
-        let sketch = neutral_sketch_id(placement)?;
+        let sketch = neutral_sketch_id(placement);
         Some(
             SketchEntity::new(
                 text.persistent_id.map_or_else(
                     || neutral_sketch_record_id(&sketch, text.record_index),
                     |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
-                )?,
+                ),
                 sketch,
                 SketchGeometry::try_from(SketchGeometryDefinition::Text {
                     text: cadmpeg_ir::products::NonEmptyString::new(text.text.clone())?,
@@ -599,14 +599,14 @@ pub fn project_spatial_sketch_design(
                     SketchCurveGeometry::Arc { .. } => return None,
                 }
             };
-            let sketch = neutral_spatial_sketch_id(placement)?;
+            let sketch = neutral_spatial_sketch_id(placement);
             Some(
                 SpatialSketchEntity::new(
                     neutral_spatial_sketch_curve_id(
                         &sketch,
                         curve.primary_id.get(),
                         curve.secondary_id,
-                    )?,
+                    ),
                     sketch,
                     geometry,
                 )
@@ -621,7 +621,7 @@ pub fn project_spatial_sketch_design(
             return None;
         }
         let placement = placements_by_suffix.get(&(scope, owner))?;
-        let sketch = neutral_spatial_sketch_id(placement)?;
+        let sketch = neutral_spatial_sketch_id(placement);
         let depth = sketch_point_depth(point)?;
         Some(
             SpatialSketchEntity::new(
@@ -651,9 +651,7 @@ pub fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let Some(sketch) = neutral_spatial_sketch_id(placement) else {
-            continue;
-        };
+        let sketch = neutral_spatial_sketch_id(placement);
         let Some(entity_id) =
             neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get())
         else {
@@ -698,12 +696,10 @@ pub fn project_spatial_sketch_design(
         .collect::<HashSet<_>>();
     let mut sketches = placements
         .iter()
-        .filter(|placement| {
-            neutral_spatial_sketch_id(placement).is_some_and(|id| spatial_ids.contains(&id))
-        })
-        .filter_map(|placement| {
-            let id = neutral_spatial_sketch_id(placement)?;
-            Some(SpatialSketch {
+        .filter(|placement| spatial_ids.contains(&neutral_spatial_sketch_id(placement)))
+        .map(|placement| {
+            let id = neutral_spatial_sketch_id(placement);
+            SpatialSketch {
                 profiles: closed_spatial_sketch_profiles(&id, &entities, linear_tolerance),
                 id,
                 name: Some(placement.entity_id.as_str().to_owned()),
@@ -713,7 +709,7 @@ pub fn project_spatial_sketch_design(
                     .as_ref()
                     .map(|visibility| visibility.visible),
                 native_ref: Some(placement.id.clone()),
-            })
+            }
         })
         .collect::<Vec<_>>();
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
@@ -741,7 +737,7 @@ pub fn project_spatial_sketch_constraints(
     let sketches = placements
         .iter()
         .filter_map(|placement| {
-            let id = neutral_spatial_sketch_id(placement)?;
+            let id = neutral_spatial_sketch_id(placement);
             spatial_sketches.contains(&id).then_some((
                 (
                     native_stream(&placement.id)?,
