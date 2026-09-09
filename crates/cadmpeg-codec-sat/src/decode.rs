@@ -6,7 +6,7 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
-use cadmpeg_asm::kernel_header::KernelHeader;
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
@@ -34,9 +34,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, C
 fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    header: &KernelHeader,
+    header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.entity_count {
+    if let Some(count) = header.metadata.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
     let width = header.width;
@@ -61,28 +61,36 @@ fn decode_asm_binary(
     let brep = decode_with_header(
         &records,
         bytes,
-        Some(header.clone()),
+        Some(header.metadata.clone()),
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(header, Family::Asm, &mut attributes);
+    header_attributes(&header.metadata, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
         framed: true,
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, header, None, matched, &kernel)
+    build_result(
+        ctx,
+        brep,
+        attributes,
+        &header.metadata,
+        None,
+        matched,
+        &kernel,
+    )
 }
 
 fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    header: &KernelHeader,
+    header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    if let Some(count) = header.entity_count {
+    if let Some(count) = header.metadata.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
     let start = acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
@@ -114,13 +122,13 @@ fn decode_acis_binary(
     let brep = decode_with_header(
         &records,
         bytes,
-        Some(header.clone()),
+        Some(header.metadata.clone()),
         "stream",
         IdFormat(FORMAT),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
-    header_attributes(header, Family::Acis, &mut attributes);
+    header_attributes(&header.metadata, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -130,7 +138,15 @@ fn decode_acis_binary(
         framed: true,
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, header, None, matched, &kernel)
+    build_result(
+        ctx,
+        brep,
+        attributes,
+        &header.metadata,
+        None,
+        matched,
+        &kernel,
+    )
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {

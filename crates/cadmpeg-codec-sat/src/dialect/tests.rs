@@ -40,18 +40,20 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 
 /// A kernel header declaring `save_format_version` and nothing else that
 /// classification reads.
-fn header(save_format_version: Option<u32>) -> KernelHeader {
-    KernelHeader {
+fn header(save_format_version: Option<u32>) -> BinaryHeader {
+    BinaryHeader {
         width: cadmpeg_asm::kernel_header::RefWidth::Four,
-        save_format_version,
-        entity_count: None,
-        flags: None,
-        product_family: None,
-        product_version: None,
-        save_date: None,
-        scale: None,
-        linear: None,
-        angular: None,
+        metadata: KernelHeader {
+            save_format_version,
+            entity_count: None,
+            flags: None,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            scale: None,
+            linear: None,
+            angular: None,
+        },
     }
 }
 
@@ -76,7 +78,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             },
             StreamEvidence::Text(Some(TextEvidence {
                 branch: sat::Terminator::Asm,
-                header: &kernel,
+                header: &kernel.metadata,
             })),
         ] {
             let (host, kernel) = layers(&asm);
@@ -110,7 +112,7 @@ fn only_the_acis_kernel_branches_are_banded() {
 
         let (host, matched) = layers(&StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Acis,
-            header: &kernel,
+            header: &kernel.metadata,
         })));
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
@@ -202,11 +204,11 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
         },
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Asm,
-            header: &unverified,
+            header: &unverified.metadata,
         })),
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Acis,
-            header: &unverified,
+            header: &unverified.metadata,
         })),
         StreamEvidence::Text(None),
     ] {
@@ -241,7 +243,7 @@ fn the_declared_keys_are_pinned() {
 
     let text = classify(&StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Acis,
-        header: &kernel,
+        header: &kernel.metadata,
     })))
     .declared()
     .clone();
@@ -252,7 +254,7 @@ fn the_declared_keys_are_pinned() {
 
     let asm_text = classify(&StreamEvidence::Text(Some(TextEvidence {
         branch: sat::Terminator::Asm,
-        header: &kernel,
+        header: &kernel.metadata,
     })))
     .declared()
     .clone();

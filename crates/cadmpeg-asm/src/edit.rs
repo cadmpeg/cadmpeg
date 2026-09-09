@@ -107,7 +107,7 @@ impl AsmEditSet {
         let records = sab::frame(bytes, start, limit, ref_width).map_err(|error| {
             CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
         })?;
-        let header_scale = header.scale.unwrap_or(1.0);
+        let header_scale = header.metadata.scale.unwrap_or(1.0);
         Ok(Self::from_framed(records, ref_width, header_scale))
     }
 

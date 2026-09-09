@@ -21,7 +21,7 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
-use crate::kernel_header::{read_string_region, KernelHeader, RefWidth};
+use crate::kernel_header::{read_string_region, BinaryHeader, KernelHeader, RefWidth};
 use crate::layout::asmheader_binaryfile4 as bf4;
 use crate::layout::asmheader_binaryfile8 as bf8;
 use cadmpeg_core::decode::View;
@@ -65,10 +65,9 @@ pub fn record_count(bytes: &[u8]) -> Option<u32> {
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
-pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
+pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
     let width = declared_width(bytes)?;
     let mut header = KernelHeader {
-        width,
         save_format_version: None,
         entity_count: None,
         flags: None,
@@ -111,7 +110,10 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     header.linear = dit.next();
     header.angular = dit.next();
 
-    Some(header)
+    Some(BinaryHeader {
+        width,
+        metadata: header,
+    })
 }
 
 /// Byte offset at which the SAB record stream begins, i.e. the first byte after
@@ -126,7 +128,7 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 
 /// Byte offset at which the SAB record stream begins, using an already-parsed
 /// ASM header.
-pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
+pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
     let start = match header.width {
         RefWidth::Eight => bf8::LEN,
         RefWidth::Four => bf4::LEN,
@@ -153,8 +155,8 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
 }
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
-pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
-    if !header.has_history_partition() {
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
+    if !header.metadata.has_history_partition() {
         return None;
     }
     let start = record_stream_start_with_header(bytes, header)?;
