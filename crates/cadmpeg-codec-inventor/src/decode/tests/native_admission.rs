@@ -109,7 +109,7 @@ fn rejected_occurrence_does_not_fail_decode() {
 }
 
 #[test]
-fn nonfinite_assembly_placement_does_not_fail_decode() {
+fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
     let bytes = primary_envelope_fixture();
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
