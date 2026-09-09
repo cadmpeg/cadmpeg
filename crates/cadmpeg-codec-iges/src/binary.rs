@@ -984,11 +984,6 @@ fn normalize_directory_and_parameters(
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
     for (directory_index, directory_record) in directory.iter().enumerate() {
         let pointer = directory_record.parameter_pointer();
-        if pointer < 0 {
-            return Err(malformed(
-                "Binary Directory Parameter Data pointer is negative",
-            ));
-        }
         if pointer == 0 {
             continue;
         }
