@@ -238,7 +238,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(copy.frame_length(), copy_paired_at as u64);
 
-    let mut operation_bytes = vec![0; 80];
+    let mut operation_bytes = vec![0; 148];
     operation_bytes[29] = 1;
     operation_bytes[30..34].copy_from_slice(&55u32.to_le_bytes());
     operation_bytes[34..40].fill(0);
@@ -270,7 +270,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     operation_scope
         .try_edit(|draft| {
             draft.byte_offset = 0;
-            draft.paired_byte_offset = 60;
+            draft.paired_byte_offset = 128;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![55, 66]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
