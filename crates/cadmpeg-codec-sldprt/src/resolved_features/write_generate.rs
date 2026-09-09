@@ -14,8 +14,8 @@ use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKin
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
-    SketchLocus,
+    Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -29,34 +29,39 @@ pub(super) enum GeneratedMarkerRelation<'a> {
 }
 
 pub(super) fn generated_marker_relations(
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
 ) -> Vec<GeneratedMarkerRelation<'_>> {
     match definition {
-        SketchConstraintDefinition::Horizontal { entity } => vec![GeneratedMarkerRelation::Unary(
-            SketchRelationKind::Horizontal,
-            entity,
-        )],
-        SketchConstraintDefinition::Vertical { entity } => vec![GeneratedMarkerRelation::Unary(
-            SketchRelationKind::Vertical,
-            entity,
-        )],
-        SketchConstraintDefinition::Fixed { entity } => vec![GeneratedMarkerRelation::Unary(
+        SketchConstraintDefinitionInput::Horizontal { entity } => {
+            vec![GeneratedMarkerRelation::Unary(
+                SketchRelationKind::Horizontal,
+                entity,
+            )]
+        }
+        SketchConstraintDefinitionInput::Vertical { entity } => {
+            vec![GeneratedMarkerRelation::Unary(
+                SketchRelationKind::Vertical,
+                entity,
+            )]
+        }
+        SketchConstraintDefinitionInput::Fixed { entity } => vec![GeneratedMarkerRelation::Unary(
             SketchRelationKind::Fixed,
             entity,
         )],
-        SketchConstraintDefinition::ArcAngle { entity, angle } => arc_angle_relation_kind(angle.0)
-            .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
-            .unwrap_or_default(),
-        SketchConstraintDefinition::EllipseAngle { entity, angle } => {
+        SketchConstraintDefinitionInput::ArcAngle { entity, angle } => {
+            arc_angle_relation_kind(angle.0)
+                .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
+                .unwrap_or_default()
+        }
+        SketchConstraintDefinitionInput::EllipseAngle { entity, angle } => {
             ellipse_angle_relation_kind(angle.0)
                 .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
                 .unwrap_or_default()
         }
-        SketchConstraintDefinition::SameCoordinate {
-            first,
-            second,
-            axis,
-        } => {
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
+            let first = relation.first();
+            let second = relation.second();
+            let axis = relation.axis();
             vec![GeneratedMarkerRelation::Loci(
                 match axis {
                     SketchCoordinateAxis::U => SketchRelationKind::VerticalPoints,
@@ -66,22 +71,22 @@ pub(super) fn generated_marker_relations(
                 second,
             )]
         }
-        SketchConstraintDefinition::Midpoint { point, entity } => {
+        SketchConstraintDefinitionInput::Midpoint { point, entity } => {
             vec![GeneratedMarkerRelation::Midpoint(point, entity)]
         }
-        SketchConstraintDefinition::AtIntersection {
+        SketchConstraintDefinitionInput::AtIntersection {
             point,
             first,
             second,
         } => vec![GeneratedMarkerRelation::AtIntersection(
             point, first, second,
         )],
-        SketchConstraintDefinition::Symmetric {
+        SketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
         } => vec![GeneratedMarkerRelation::Symmetric(first, second, axis)],
-        SketchConstraintDefinition::CoincidentLoci { loci }
+        SketchConstraintDefinitionInput::CoincidentLoci { loci }
             if !loci
                 .iter()
                 .all(|locus| matches!(locus, SketchLocus::Start(_) | SketchLocus::End(_))) =>
@@ -151,14 +156,14 @@ pub(super) fn append_generated_sketch_markers(
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
-        .flat_map(|constraint| generated_marker_relations(&constraint.definition))
+        .flat_map(|constraint| generated_marker_relations(constraint.definition.kind()))
         .collect::<Vec<_>>();
     let dimensions = ir
         .model
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
-        .filter_map(|constraint| generated_dimension(ir, &constraint.definition))
+        .filter_map(|constraint| generated_dimension(ir, constraint.definition.kind()))
         .collect::<Result<Vec<_>, _>>()?;
     if relations.is_empty() && dimensions.is_empty() {
         return Ok(());
@@ -217,7 +222,7 @@ pub(super) fn append_generated_sketch_markers(
                 let ids = marker_ids.get(entity).ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
-                        entity.0
+                        entity.as_str()
                     ))
                 })?;
                 let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
@@ -490,16 +495,16 @@ pub(super) fn append_generated_sketch_markers(
 
 fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
-    definition: &'a SketchConstraintDefinition,
+    definition: &'a SketchConstraintDefinitionInput,
 ) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
     let parameter_id = match definition {
-        SketchConstraintDefinition::DistanceLoci { parameter, .. }
-        | SketchConstraintDefinition::Distance { parameter, .. }
-        | SketchConstraintDefinition::HorizontalDistance { parameter, .. }
-        | SketchConstraintDefinition::VerticalDistance { parameter, .. }
-        | SketchConstraintDefinition::Angle { parameter, .. }
-        | SketchConstraintDefinition::Radius { parameter, .. }
-        | SketchConstraintDefinition::Diameter { parameter, .. } => Some(parameter),
+        SketchConstraintDefinitionInput::DistanceLoci { parameter, .. }
+        | SketchConstraintDefinitionInput::Distance { parameter, .. }
+        | SketchConstraintDefinitionInput::HorizontalDistance { parameter, .. }
+        | SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
+        | SketchConstraintDefinitionInput::Angle { parameter, .. }
+        | SketchConstraintDefinitionInput::Radius { parameter, .. }
+        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => Some(parameter),
         _ => None,
     }?;
     if let Some(parameter) = ir
@@ -521,7 +526,7 @@ fn generated_dimension<'a>(
         )
     };
     match definition {
-        SketchConstraintDefinition::DistanceLoci {
+        SketchConstraintDefinitionInput::DistanceLoci {
             first,
             second,
             parameter,
@@ -540,30 +545,30 @@ fn generated_dimension<'a>(
             }
             (first, second) => Ok(GeneratedDimension::PointPoint(first, second, parameter)),
         }),
-        SketchConstraintDefinition::Distance {
+        SketchConstraintDefinitionInput::Distance {
             entities,
             parameter,
         } => Some(match entities.as_slice() {
             [first, second] => Ok(GeneratedDimension::LineLine(first, second, parameter)),
             _ => Err(unsupported()),
         }),
-        SketchConstraintDefinition::HorizontalDistance {
+        SketchConstraintDefinitionInput::HorizontalDistance {
             first,
             second,
             parameter,
         } => Some(Ok(GeneratedDimension::Horizontal(first, second, parameter))),
-        SketchConstraintDefinition::VerticalDistance {
+        SketchConstraintDefinitionInput::VerticalDistance {
             first,
             second,
             parameter,
         } => Some(Ok(GeneratedDimension::Vertical(first, second, parameter))),
-        SketchConstraintDefinition::Angle {
+        SketchConstraintDefinitionInput::Angle {
             first,
             second,
             parameter,
         } => Some(Ok(GeneratedDimension::Angle(first, second, parameter))),
-        SketchConstraintDefinition::Radius { entity, parameter }
-        | SketchConstraintDefinition::Diameter { entity, parameter } => {
+        SketchConstraintDefinitionInput::Radius { entity, parameter }
+        | SketchConstraintDefinitionInput::Diameter { entity, parameter } => {
             Some(Ok(GeneratedDimension::Circle(entity, parameter)))
         }
         _ => None,
@@ -575,7 +580,12 @@ pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEn
         .sketch_entities
         .iter()
         .find(|candidate| candidate.id() == entity)
-        .is_some_and(|candidate| matches!(candidate.geometry, SketchGeometry::Point { .. }))
+        .is_some_and(|candidate| {
+            matches!(
+                *candidate.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
 }
 
 fn append_generated_scalar(
@@ -653,7 +663,7 @@ fn unique_generated_entity_marker(
     }
     Err(cadmpeg_core::CodecError::NotImplemented(format!(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
-        entity.0
+        entity.as_str()
     )))
 }
 
@@ -735,19 +745,19 @@ fn unique_generated_locus_marker(
 }
 
 fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
-    match geometry {
-        SketchGeometry::Point { .. } => SketchInputKind::Point,
-        SketchGeometry::Arc { .. } => SketchInputKind::Arc,
-        SketchGeometry::Line { .. }
-        | SketchGeometry::ReferenceLine { .. }
-        | SketchGeometry::Circle { .. }
-        | SketchGeometry::Ellipse { .. }
-        | SketchGeometry::Hyperbola { .. }
-        | SketchGeometry::Parabola { .. }
-        | SketchGeometry::Nurbs { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
-        SketchGeometry::Text { .. } => unreachable!("sketch text has no marker loci"),
+    match geometry.definition() {
+        SketchGeometryDefinition::Point { .. } => SketchInputKind::Point,
+        SketchGeometryDefinition::Arc { .. } => SketchInputKind::Arc,
+        SketchGeometryDefinition::Line { .. }
+        | SketchGeometryDefinition::ReferenceLine { .. }
+        | SketchGeometryDefinition::Circle { .. }
+        | SketchGeometryDefinition::Ellipse { .. }
+        | SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::Nurbs { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => SketchInputKind::LineOrCircle,
+        SketchGeometryDefinition::Text { .. } => unreachable!("sketch text has no marker loci"),
     }
 }
 

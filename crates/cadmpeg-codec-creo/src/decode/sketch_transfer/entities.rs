@@ -27,7 +27,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::sketches::{
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -63,9 +64,9 @@ pub(super) fn transfer_section_entities(
                 .cloned()
                 .flatten()
                 .or_else(|| {
-                    Some(SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("line")?,
-                    })
+                    Some(SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("line")?,
+                    ))
                 });
         }
         segment_geometries.get(&segment.offset).cloned().flatten()
@@ -75,37 +76,44 @@ pub(super) fn transfer_section_entities(
         .filter_map(|segment| {
             let geometry = segment_geometry(segment)?;
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = sketch_entity_id(sketch_id, &suffix);
+            let id = sketch_entity_id(sketch_id, &suffix)?;
             annotate(
                 annotations,
-                &id.0,
+                id.as_str(),
                 "FeatDefs",
                 segment.offset as u64,
-                match (&geometry, segment.kind) {
-                    (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                match (geometry.definition(), segment.kind) {
+                    (SketchGeometryDefinition::Native { native_kind }, _)
+                        if native_kind == "line" =>
+                    {
                         "section_degenerate_axis_line"
                     }
-                    (SketchGeometry::ReferenceLine { .. }, _) => {
+                    (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
                         "solved_section_axis_reference_line"
                     }
                     (_, crate::feature::FeatureSegmentKind::Line(_)) => "solved_section_line",
                     (_, crate::feature::FeatureSegmentKind::Arc(_)) => "solved_section_arc",
                     (_, crate::feature::FeatureSegmentKind::Point(_)) => "solved_section_point",
                 },
-                if matches!(&geometry, SketchGeometry::Native { .. }) {
+                if matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Native { .. }
+                ) {
                     Exactness::ByteExact
                 } else {
                     Exactness::Derived
                 },
             );
-            let construction = matches!(geometry, SketchGeometry::ReferenceLine { .. })
-                || !unique_segment_ids.contains(&segment.external_id)
+            let construction = matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::ReferenceLine { .. }
+            ) || !unique_segment_ids.contains(&segment.external_id)
                 || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
-            let endpoint_refs = match (&geometry, segment.kind) {
-                (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+            let endpoint_refs = match (geometry.definition(), segment.kind) {
+                (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
                     vec![segment.point_ids()[0]]
                 }
-                (SketchGeometry::ReferenceLine { .. }, _)
+                (SketchGeometryDefinition::ReferenceLine { .. }, _)
                     if section_degenerate_axis_line(definition, segment) =>
                 {
                     vec![segment.point_ids()[0]]
@@ -135,13 +143,15 @@ pub(super) fn transfer_section_entities(
         .iter()
         .filter(|segment| segment_geometry(segment).is_none())
     {
-        let id = sketch_entity_id(
+        let Some(id) = sketch_entity_id(
             sketch_id,
             section_segment_identity_suffix(unique_segment_ids, segment),
-        );
+        ) else {
+            continue;
+        };
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_segment",
@@ -161,8 +171,8 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new(
                         match segment.kind {
                             crate::feature::FeatureSegmentKind::Line(_) => "line",
                             crate::feature::FeatureSegmentKind::Arc(_) => "arc",
@@ -173,7 +183,7 @@ pub(super) fn transfer_section_entities(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                     })?,
-                },
+                ),
             )
             .with_construction(true)
             .with_native_ref(Some(sketch_native_ref(sketch_id)))
@@ -196,27 +206,30 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("circle:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         let geometry = circle_geometries
             .get(&segment.offset)
             .cloned()
             .map_or_else(
                 || {
-                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            "circle".to_string(),
-                        )
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                        })?,
-                    })
+                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("circle".to_string())
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                            })?,
+                    ))
                 },
                 Ok,
             )?;
-        let solved_geometry = matches!(geometry, SketchGeometry::Circle { .. });
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        );
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -255,22 +268,26 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("point:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         let geometry = point_geometries.get(&segment.offset).cloned().map_or_else(
             || {
-                Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("point".to_string())
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                        })?,
-                })
+                Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("point".to_string()).ok_or_else(
+                        || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
+                    )?,
+                ))
             },
             Ok,
         )?;
-        let solved_geometry = matches!(geometry, SketchGeometry::Point { .. });
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        );
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -308,25 +325,27 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("centered_line:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         let geometry = centered_line_geometries
             .get(&segment.offset)
             .cloned()
             .map_or_else(
                 || {
-                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("line".to_string())
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                            })?,
-                    })
+                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("line".to_string()).ok_or_else(
+                            || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
+                        )?,
+                    ))
                 },
                 Ok,
             )?;
-        let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
+        let solved_geometry =
+            matches!(geometry.definition(), SketchGeometryDefinition::Line { .. });
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -369,27 +388,30 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("reference_line:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         let geometry = reference_line_geometries
             .get(&segment.offset)
             .cloned()
             .map_or_else(
                 || {
-                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                            "reference_line".to_string(),
-                        )
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                        })?,
-                    })
+                    Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new("reference_line".to_string())
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                            })?,
+                    ))
                 },
                 Ok,
             )?;
-        let solved_geometry = matches!(geometry, SketchGeometry::ReferenceLine { .. });
+        let solved_geometry = matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::ReferenceLine { .. }
+        );
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             if solved_geometry {
@@ -434,11 +456,13 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("bounded_curve:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, &suffix);
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_bounded_curve",
@@ -453,14 +477,12 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                        "bounded_curve".to_string(),
-                    )
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                    })?,
-                },
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("bounded_curve".to_string())
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                        })?,
+                ),
             )
             .with_construction(construction)
             .with_native_ref(Some(sketch_native_ref(sketch_id)))
@@ -483,10 +505,12 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("conic:offset:{}", segment.offset)
         };
-        let id = sketch_entity_id(sketch_id, suffix);
+        let Some(id) = sketch_entity_id(sketch_id, suffix) else {
+            continue;
+        };
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "unresolved_section_conic",
@@ -496,12 +520,11 @@ pub(super) fn transfer_section_entities(
             SketchEntity::new(
                 id,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("conic".to_string())
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("native_kind must not be empty")
-                        })?,
-                },
+                SketchGeometry::native(
+                    cadmpeg_ir::products::NonEmptyString::new("conic".to_string()).ok_or_else(
+                        || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
+                    )?,
+                ),
             )
             .with_construction(true)
             .with_native_ref(Some(sketch_native_ref(sketch_id))),
@@ -519,7 +542,9 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
-        let id = sketch_entity_id(sketch_id, suffix);
+        let Some(id) = sketch_entity_id(sketch_id, suffix) else {
+            continue;
+        };
         let geometry = if unique_external_id {
             let native_kind =
                 match unique_section_incidence_curve_family(definition, segment.external_id) {
@@ -530,26 +555,23 @@ pub(super) fn transfer_section_entities(
                     Some(SectionEntityIncidenceFamily::Circular) => "circle".to_string(),
                     _ => format!("segment_type:{}", segment.kind),
                 };
-            SketchGeometry::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(native_kind).ok_or_else(
-                    || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
-                )?,
-            }
-        } else {
-            SketchGeometry::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
-                    "segment_type:{}",
-                    segment.kind
-                ))
-                .ok_or_else(|| {
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new(native_kind).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                 })?,
-            }
+            )
+        } else {
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new(format!("segment_type:{}", segment.kind))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("native_kind must not be empty")
+                    })?,
+            )
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             segment.offset as u64,
             "opaque_section_segment",
@@ -598,7 +620,9 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("saved:offset:{offset}")
         };
-        let entity_id = sketch_entity_id(sketch_id, &suffix);
+        let Some(entity_id) = sketch_entity_id(sketch_id, &suffix) else {
+            continue;
+        };
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
@@ -618,7 +642,7 @@ pub(super) fn transfer_section_entities(
             CurveId::mint(sketch_section_curve_id(sketch_id, &suffix)).expect("identity grammar");
         annotate(
             annotations,
-            &entity_id.0,
+            entity_id.as_str(),
             "FeatDefs",
             offset as u64,
             "saved_section_entity",
@@ -673,15 +697,18 @@ pub(super) fn transfer_section_entities(
                 &scan.surfaces.rows,
             )
         });
-        let entity_id = external_id.map_or_else(
+        let Some(entity_id) = external_id.map_or_else(
             || {
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "creo:featdefs:saved_spline#{}:{suffix}",
                     sketch_identity_scope(sketch_id)
                 ))
+                .ok()
             },
             |external_id| sketch_entity_id(sketch_id, external_id),
-        );
+        ) else {
+            continue;
+        };
         let curve_id = CurveId::mint(format!(
             "creo:featdefs:saved_spline_curve#{}:{suffix}",
             sketch_identity_scope(sketch_id)
@@ -692,7 +719,7 @@ pub(super) fn transfer_section_entities(
         }
         annotate(
             annotations,
-            &entity_id.0,
+            entity_id.as_str(),
             "FeatDefs",
             spline.offset as u64,
             "saved_interpolation_spline",
@@ -712,19 +739,21 @@ pub(super) fn transfer_section_entities(
         }
     }
     for saved in semantic_saved_section_entities(definition) {
-        let (entity, offset) = unresolved_saved_section_entity(
+        let Some((entity, offset)) = unresolved_saved_section_entity(
             definition,
             sketch_id,
             saved,
             unique_saved_ids,
             ambiguous_segment_ids,
-        )?;
+        ) else {
+            continue;
+        };
         if entities.iter().any(|existing| existing.id() == entity.id()) {
             continue;
         }
         annotate(
             annotations,
-            entity.id().0.as_str(),
+            entity.id().as_str(),
             "FeatDefs",
             offset as u64,
             "unresolved_saved_section_entity",
@@ -744,7 +773,12 @@ pub(super) fn transfer_section_entities(
                         .get(&segment.offset)
                         .cloned()
                         .flatten()
-                        .filter(|geometry| matches!(geometry, SketchGeometry::ReferenceLine { .. }))
+                        .filter(|geometry| {
+                            matches!(
+                                geometry.definition(),
+                                SketchGeometryDefinition::ReferenceLine { .. }
+                            )
+                        })
                 })
             else {
                 continue;

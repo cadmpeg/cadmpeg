@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable identity of one neutral drawing entity.
     DrawingId
 );
@@ -123,11 +123,11 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = serde_json::json!({"id": "page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "template", "native_ref": "native"});
+        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native"});
         let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
-            Some("template")
+            Some("synthetic:test:drawing#template")
         );
         assert_eq!(
             serde_json::to_value(drawing).expect("serialize drawing"),
@@ -141,7 +141,7 @@ mod tests {
     }
     #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = serde_json::json!({"id": "view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0});
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [

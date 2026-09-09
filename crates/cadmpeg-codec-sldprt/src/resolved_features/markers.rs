@@ -31,7 +31,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -133,21 +133,29 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+            let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
-            ));
-            let mut projected = points
+            )) else {
+                continue;
+            };
+            let Some(mut projected) = points
                 .iter()
                 .map(|(native_ref, point, offset)| {
-                    (
+                    Some((
                         *offset,
                         Some(native_ref.clone()),
-                        SpatialSketchGeometry::Point { position: *point },
-                    )
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                            position: *point,
+                        })
+                        .ok()?,
+                    ))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
             let lines = feature_object_name(record, lane)
                 .and_then(|name| {
                     let start = usize::try_from(name.offset).ok()?;
@@ -171,18 +179,26 @@ pub(crate) fn spatial_sketches(
                     .then_some((start, offsets, vertices))
                 })
                 .unwrap_or_default();
-            projected.extend(lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)).map(
-                |(offsets, vertices)| {
-                    (
+            let Some(projected_lines) = lines
+                .1
+                .chunks_exact(2)
+                .zip(lines.2.chunks_exact(2))
+                .map(|(offsets, vertices)| {
+                    Some((
                         lines.0 + offsets[0],
                         None,
-                        SpatialSketchGeometry::Line {
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                             start: vertices[0],
                             end: vertices[1],
-                        },
-                    )
-                },
-            ));
+                        })
+                        .ok()?,
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            projected.extend(projected_lines);
             projected.sort_unstable_by_key(|(offset, ..)| *offset);
             sketches.push(SpatialSketch {
                 id: sketch_id.clone(),
@@ -196,14 +212,20 @@ pub(crate) fn spatial_sketches(
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
-            entities.extend(projected.into_iter().enumerate().map(
+            entities.extend(projected.into_iter().enumerate().filter_map(
                 |(index, (_, native_ref, geometry))| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                        sketch_id.clone(),
-                        geometry,
+                    Some(
+                        SpatialSketchEntity::new(
+                            SpatialSketchEntityId::mint(format!(
+                                "{}:entity:{index}",
+                                sketch_id.as_str()
+                            ))
+                            .ok()?,
+                            sketch_id.clone(),
+                            geometry,
+                        )
+                        .with_native_ref(native_ref),
                     )
-                    .with_native_ref(native_ref)
                 },
             ));
             feature.definition = FeatureDefinition::SpatialSketch {
@@ -248,11 +270,33 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+        let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,
-        ));
+        )) else {
+            continue;
+        };
+        let Some(projected) = vertices
+            .chunks_exact(2)
+            .enumerate()
+            .map(|(index, vertices)| {
+                Some(SpatialSketchEntity::new(
+                    SpatialSketchEntityId::mint(format!("{}:entity:{index}", sketch_id.as_str()))
+                        .ok()?,
+                    sketch_id.clone(),
+                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                        start: vertices[0],
+                        end: vertices[1],
+                    })
+                    .ok()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+
         sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: feature.name.clone(),
@@ -261,21 +305,7 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(lane.id.clone()),
         });
-        entities.extend(
-            vertices
-                .chunks_exact(2)
-                .enumerate()
-                .map(|(index, vertices)| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                        sketch_id.clone(),
-                        SpatialSketchGeometry::Line {
-                            start: vertices[0],
-                            end: vertices[1],
-                        },
-                    )
-                }),
-        );
+        entities.extend(projected);
         feature.definition = FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id),
         };

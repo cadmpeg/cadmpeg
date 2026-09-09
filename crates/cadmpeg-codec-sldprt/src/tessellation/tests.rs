@@ -690,17 +690,19 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "persistent", 0.0);
     model.shells[0].faces.push(face.clone());
-    model.tessellations.push(persistent_mesh("mesh"));
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
 
     let face_identities = vec![(face.clone(), persistent_identity(7, 3, &[]))];
     let bindings = vec![PersistentFaceBinding {
-        tessellation: "mesh".into(),
+        tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(7, 3, &[]),
     }];
 
     assert_eq!(
         assign_persistent_owners(&mut model, &face_identities, &bindings),
-        vec!["mesh"]
+        vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
@@ -715,13 +717,15 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let first = add_square_face(&mut model, "first-persistent", 0.0);
     let second = add_square_face(&mut model, "second-persistent", 3.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
-    model.tessellations.push(persistent_mesh("mesh"));
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
         (first.clone(), persistent_identity(7, 3, &[])),
         (second.clone(), persistent_identity(7, 3, &[])),
     ];
     let binding = PersistentFaceBinding {
-        tessellation: "mesh".into(),
+        tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(7, 3, &[]),
     };
     assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
@@ -731,18 +735,20 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
     let first = add_square_face(&mut model, "first-mesh", 0.0);
     let second = add_square_face(&mut model, "second-mesh", 3.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
-    model.tessellations.push(persistent_mesh("mesh"));
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
         (first.clone(), persistent_identity(7, 3, &[])),
         (second.clone(), persistent_identity(8, 4, &[])),
     ];
     let bindings = vec![
         PersistentFaceBinding {
-            tessellation: "mesh".into(),
+            tessellation: "synthetic:test:tessellation#mesh".into(),
             identity: persistent_identity(7, 3, &[]),
         },
         PersistentFaceBinding {
-            tessellation: "mesh".into(),
+            tessellation: "synthetic:test:tessellation#mesh".into(),
             identity: persistent_identity(8, 4, &[]),
         },
     ];
@@ -756,19 +762,21 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     let first = add_square_face(&mut model, "first-tail", 0.0);
     let second = add_square_face(&mut model, "second-tail", 3.0);
     model.shells[0].faces = vec![first.clone(), second.clone()];
-    model.tessellations.push(persistent_mesh("mesh"));
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
         (first.clone(), persistent_identity(266, 2, &[0])),
         (second.clone(), persistent_identity(266, 2, &[1])),
     ];
     let binding = PersistentFaceBinding {
-        tessellation: "mesh".into(),
+        tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(266, 2, &[1]),
     };
 
     assert_eq!(
         assign_persistent_owners(&mut model, &face_identities, &[binding]),
-        vec!["mesh"]
+        vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
 }
@@ -781,7 +789,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     model.shells[0].faces = vec![first.clone(), second.clone()];
     model.tessellations.push(
         Tessellation::from_decoded(
-            "mesh",
+            "synthetic:test:tessellation#mesh",
             vec![
                 Point3::new(2.25, -0.75, 0.0),
                 Point3::new(3.75, -0.75, 0.0),
@@ -798,7 +806,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["mesh"]
+        vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
     assert_eq!(
@@ -827,7 +835,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     model.shells[0].faces = vec![lower.clone(), upper.clone()];
     model.tessellations.push(
         Tessellation::from_decoded(
-            "lower-mesh",
+            "synthetic:test:tessellation#lower-mesh",
             vec![
                 Point3::new(5.0, 0.0, 0.25),
                 Point3::new(0.0, 5.0, 0.25),
@@ -844,7 +852,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["lower-mesh"]
+        vec!["synthetic:test:tessellation#lower-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![lower]);
     assert_eq!(
@@ -861,7 +869,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::from_decoded(
-            "chordal-mesh",
+            "synthetic:test:tessellation#chordal-mesh",
             vec![
                 Point3::new(5.0 - deflection, 0.0, 0.25),
                 Point3::new(0.0, 5.0 - deflection, 0.25),
@@ -882,7 +890,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["chordal-mesh"]
+        vec!["synthetic:test:tessellation#chordal-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
@@ -898,7 +906,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     let deflection = 0.1;
     model.tessellations.push(
         Tessellation::from_decoded(
-            "inconsistent-normals-mesh",
+            "synthetic:test:tessellation#inconsistent-normals-mesh",
             vec![
                 Point3::new(5.0 - deflection, 0.0, 0.25),
                 Point3::new(0.0, 5.0 - deflection, 0.25),
@@ -919,7 +927,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["inconsistent-normals-mesh"]
+        vec!["synthetic:test:tessellation#inconsistent-normals-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
@@ -934,7 +942,7 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     model.shells[0].faces.push(face);
     model.tessellations.push(
         Tessellation::from_decoded(
-            "off-surface-mesh",
+            "synthetic:test:tessellation#off-surface-mesh",
             vec![
                 Point3::new(0.25, -0.75, 0.1),
                 Point3::new(1.75, -0.75, 0.1),
@@ -1030,7 +1038,7 @@ fn cone_support_binds_display_list_face() {
     model.shells[0].faces.push(face.clone());
     model.tessellations.push(
         Tessellation::from_decoded(
-            "cone-mesh",
+            "synthetic:test:tessellation#cone-mesh",
             vec![
                 Point3::new(local_radius, 0.0, v),
                 Point3::new(0.0, local_radius * 0.5, v),
@@ -1047,7 +1055,7 @@ fn cone_support_binds_display_list_face() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["cone-mesh"]
+        vec!["synthetic:test:tessellation#cone-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
@@ -1093,7 +1101,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         .collect();
     model.tessellations.push(
         Tessellation::from_decoded(
-            "cone-cache-mesh",
+            "synthetic:test:tessellation#cone-cache-mesh",
             vertices,
             vec![[0, 1, 2]],
             Vec::new(),
@@ -1106,7 +1114,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["cone-cache-mesh"]
+        vec!["synthetic:test:tessellation#cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
@@ -1154,12 +1162,18 @@ fn conical_trim_uses_scaled_angular_coordinate() {
     };
 
     assert!(trim.contains_mesh(
-        &mesh(point_at(std::f64::consts::FRAC_PI_4), "inside"),
+        &mesh(
+            point_at(std::f64::consts::FRAC_PI_4),
+            "synthetic:test:tessellation#inside"
+        ),
         cadmpeg_ir::transform::Transform::identity(),
         0.0,
     ));
     assert!(!trim.contains_mesh(
-        &mesh(point_at(3.0 * std::f64::consts::FRAC_PI_4), "outside"),
+        &mesh(
+            point_at(3.0 * std::f64::consts::FRAC_PI_4),
+            "synthetic:test:tessellation#outside"
+        ),
         cadmpeg_ir::transform::Transform::identity(),
         0.0,
     ));
@@ -1179,13 +1193,15 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
         .to_vec();
-    model
-        .tessellations
-        .push(mesh_from("nurbs-exact-mesh", vertices, vec![[0, 1, 2]]));
+    model.tessellations.push(mesh_from(
+        "synthetic:test:tessellation#nurbs-exact-mesh",
+        vertices,
+        vec![[0, 1, 2]],
+    ));
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["nurbs-exact-mesh"]
+        vec!["synthetic:test:tessellation#nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(
@@ -1211,7 +1227,7 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
     let deflection = 0.02;
     model.tessellations.push(
         Tessellation::from_decoded(
-            "nurbs-cache-mesh",
+            "synthetic:test:tessellation#nurbs-cache-mesh",
             samples
                 .iter()
                 .map(|(point, normal)| point.translated(*normal, deflection))
@@ -1251,7 +1267,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
     model.shells[0].faces.extend([first, second]);
     model.tessellations.push(
         Tessellation::from_decoded(
-            "nurbs-ambiguous-mesh",
+            "synthetic:test:tessellation#nurbs-ambiguous-mesh",
             [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                 .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
                 .to_vec(),
@@ -1293,7 +1309,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     model.shells[0].faces.extend([nurbs_face, plane_face]);
     model.tessellations.push(
         Tessellation::from_decoded(
-            "nurbs-plane-ambiguous-mesh",
+            "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
             [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                 .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
                 .to_vec(),
@@ -1332,7 +1348,9 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
         })],
         boundary_tolerance: 0.0,
     };
-    let mesh = |vertices, triangle| mesh_from("mesh", vertices, vec![triangle]);
+    let mesh = |vertices, triangle| {
+        mesh_from("synthetic:test:tessellation#mesh", vertices, vec![triangle])
+    };
     let boundary_chord = mesh(
         vec![
             Point3::new(1.0, 0.0, 0.0),
@@ -1389,7 +1407,8 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
         .unwrap()],
         boundary_tolerance: 0.0,
     };
-    let mesh = |vertices, triangles| mesh_from("mesh", vertices, triangles);
+    let mesh =
+        |vertices, triangles| mesh_from("synthetic:test:tessellation#mesh", vertices, triangles);
     let inner_face = mesh(
         vec![
             Point3::new(-2.0, -2.0, 0.0),
@@ -1787,7 +1806,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     model.shells[0].faces = vec![target.clone(), competitor];
     model.tessellations.push(
         Tessellation::from_decoded(
-            "arc-trim-mesh",
+            "synthetic:test:tessellation#arc-trim-mesh",
             vec![
                 Point3::new(0.25, -0.75, 0.0),
                 Point3::new(1.75, -0.75, 0.0),
@@ -1804,7 +1823,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
 
     assert_eq!(
         assign_unique_surface_owners(&mut model).unwrap(),
-        vec!["arc-trim-mesh"]
+        vec!["synthetic:test:tessellation#arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);
     assert_eq!(

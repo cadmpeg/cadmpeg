@@ -2070,7 +2070,9 @@ fn scope_properties(
             native_stream(&placement.id) == Some(native_scope)
                 && placement.entity_id == profile.entity_id
         }) {
-            properties.insert("profile".into(), neutral_sketch_id(placement).0);
+            if let Some(id) = neutral_sketch_id(placement) {
+                properties.insert("profile".into(), id.into_string());
+            }
         }
     }
     properties
@@ -2525,8 +2527,12 @@ pub fn bind_sketch_feature_geometry(
         let [placement] = matching.as_slice() else {
             continue;
         };
-        let planar = neutral_sketch_id(placement);
-        let spatial = neutral_spatial_sketch_id(placement);
+        let Some(planar) = neutral_sketch_id(placement) else {
+            continue;
+        };
+        let Some(spatial) = neutral_spatial_sketch_id(placement) else {
+            continue;
+        };
         let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
         let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
         feature.definition = match (has_planar, has_spatial) {
@@ -2561,9 +2567,9 @@ pub fn bind_sketch_feature_geometry(
         }
         let matching = placements
             .iter()
-            .filter(|placement| neutral_sketch_id(placement) == planar_id)
+            .filter(|placement| neutral_sketch_id(placement).as_ref() == Some(&planar_id))
             .filter_map(|placement| {
-                let spatial_id = neutral_spatial_sketch_id(placement);
+                let spatial_id = neutral_spatial_sketch_id(placement)?;
                 spatial_sketches
                     .iter()
                     .find(|candidate| candidate.id == spatial_id)
@@ -3462,7 +3468,7 @@ fn project_base_flange(
             && placement.entity_id == profile.entity_id
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
-        profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
+        profile: ProfileRef::Sketch(neutral_sketch_id(placement)?),
         thickness: Length(operation.thickness.get() * 10.0),
         side: SheetMetalThicknessSide::Forward,
     })
@@ -7866,7 +7872,7 @@ pub(crate) fn project_extrude(
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id
             })?;
-            ProfileRef::Sketch(neutral_sketch_id(placement))
+            ProfileRef::Sketch(neutral_sketch_id(placement)?)
         }
         None => {
             let [first, rest @ ..] = profile_groups.as_slice() else {
@@ -8348,11 +8354,11 @@ pub(crate) fn project_extrude(
 pub(crate) fn spatial_sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SpatialSketchEntity,
 ) -> Option<[Point3; 2]> {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
-    match &entity.geometry {
-        SpatialSketchGeometry::Line { start, end } => Some([*start, *end]),
-        SpatialSketchGeometry::Arc {
+    match entity.geometry.definition() {
+        SpatialSketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
             reference_direction,
@@ -8369,7 +8375,7 @@ pub(crate) fn spatial_sketch_entity_endpoints(
             };
             Some([at(start_angle.0), at(end_angle.0)])
         }
-        SpatialSketchGeometry::Nurbs { curve } if !curve.periodic() => {
+        SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.control_points().len()];
             Some([
@@ -8399,7 +8405,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
     tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchProfile> {
     use cadmpeg_ir::sketches::{
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometryDefinition, SpatialSketchProfile,
     };
 
     if !tolerance.is_finite() || tolerance <= 0.0 {
@@ -8408,21 +8414,24 @@ pub(crate) fn closed_spatial_sketch_profiles(
     let mut profiles = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match &entity.geometry {
-            SpatialSketchGeometry::Circle {
+        .filter_map(|entity| match entity.geometry.definition() {
+            SpatialSketchGeometryDefinition::Circle {
                 center,
                 normal,
                 reference_direction,
                 ..
-            } => Some(SpatialSketchProfile {
-                origin: *center,
-                normal: *normal,
-                u_axis: *reference_direction,
-                boundary: vec![SpatialSketchEntityUse {
-                    entity: entity.id().clone(),
-                    reversed: false,
-                }],
-            }),
+            } => Some(
+                SpatialSketchProfile::try_new(
+                    *center,
+                    *normal,
+                    *reference_direction,
+                    vec![SpatialSketchEntityUse {
+                        entity: entity.id().clone(),
+                        reversed: false,
+                    }],
+                )
+                .ok()?,
+            ),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -8501,20 +8510,22 @@ pub(crate) fn closed_spatial_sketch_profiles(
         {
             continue;
         }
-        profiles.push(SpatialSketchProfile {
-            origin,
-            normal,
-            u_axis,
-            boundary: uses
-                .into_iter()
-                .map(|(index, reversed)| SpatialSketchEntityUse {
-                    entity: edges[index].0.id().clone(),
-                    reversed,
-                })
-                .collect(),
-        });
+        profiles.extend(
+            SpatialSketchProfile::try_new(
+                origin,
+                normal,
+                u_axis,
+                uses.into_iter()
+                    .map(|(index, reversed)| SpatialSketchEntityUse {
+                        entity: edges[index].0.id().clone(),
+                        reversed,
+                    })
+                    .collect(),
+            )
+            .ok(),
+        );
     }
-    profiles.sort_by(|a, b| a.boundary[0].entity.cmp(&b.boundary[0].entity));
+    profiles.sort_by(|a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity));
     profiles
 }
 

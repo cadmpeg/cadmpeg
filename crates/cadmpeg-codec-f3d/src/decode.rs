@@ -138,8 +138,8 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
     }
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
         ) {
             if let Some(native_ref) = &constraint.native_ref {
                 if let Some(companion) = native
@@ -1076,7 +1076,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
     use cadmpeg_ir::features::{FeatureDefinition, NativeFeatureKind, PathRef, ProfileRef};
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::{HashMap, HashSet};
 
     let source_lost_edge_reference_ids = native
@@ -1179,44 +1179,44 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .sketch_constraints
             .iter()
             .flat_map(|constraint| {
-                crate::design::dimensions::constraint_parameters(&constraint.definition)
+                crate::design::dimensions::constraint_parameters(constraint.definition.kind())
             })
             .chain(
                 ir.model.spatial_sketch_constraints.iter().filter_map(
-                    |constraint| match &constraint.definition {
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native {
+                    |constraint| match constraint.definition.kind() {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
                             parameter,
                             ..
                         } => parameter.as_ref(),
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointDistance {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::LineLength {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::LineLength {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedLineLength {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::RepeatedLineLength {
                             parameter,
                             ..
                         }
-                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineSetDistance {
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelLineSetDistance {
                             parameter,
                             ..
                         } => Some(parameter),
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Offset {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Offset {
                             parameter,
                             ..
                         } => parameter.as_ref().map(|parameter| &parameter.id),
@@ -1236,8 +1236,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     let mut native_dimensions = 0;
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Native { .. }
         ) {
             continue;
         }
@@ -1253,8 +1253,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if !matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native { .. }
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native { .. }
         ) {
             continue;
         }
@@ -3905,7 +3905,7 @@ fn populate_annotations(
         if let Some(native_ref) = entity.native_ref.as_deref() {
             entities_by_native
                 .entry(native_ref)
-                .or_insert(entity.id().0.as_str());
+                .or_insert(entity.id().as_str());
         }
     }
     let planar_sketches = ir
@@ -4002,13 +4002,17 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            let planar = crate::ids::neutral_sketch_id(entity);
-            if planar_sketches.contains(planar.0.as_str()) {
-                note(&planar.0, "sketch");
+            let Some(planar) = crate::ids::neutral_sketch_id(entity) else {
+                continue;
+            };
+            if planar_sketches.contains(planar.as_str()) {
+                note(planar.as_str(), "sketch");
             }
-            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
-            if spatial_sketches.contains(spatial.0.as_str()) {
-                note(&spatial.0, "spatial_sketch");
+            let Some(spatial) = crate::ids::neutral_spatial_sketch_id(entity) else {
+                continue;
+            };
+            if spatial_sketches.contains(spatial.as_str()) {
+                note(spatial.as_str(), "spatial_sketch");
             }
         }
         for entity in &native.design_entity_headers {
@@ -4027,7 +4031,12 @@ fn populate_annotations(
             note(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 note(
-                    &crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
+                    match crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index)
+                    {
+                        Some(id) => id,
+                        None => continue,
+                    }
+                    .as_str(),
                     "sketch_constraint",
                 );
             }

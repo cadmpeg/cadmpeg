@@ -35,7 +35,8 @@ use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchLocus,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -894,16 +895,26 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         resolved_section_coordinates(&definition).get(&2),
         Some(&[None, Some(4.5)])
     );
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::V
+            )
+            .expect("valid test fixture")
         }
     );
 
@@ -929,11 +940,20 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         section_equation_same_coordinate_constraints(&function_two, &sketch);
     assert_eq!(function_two_constraints.len(), 2);
     assert_eq!(
-        function_two_constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+        *(function_two_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                cadmpeg_ir::sketches::SketchCoordinateAxis::U
+            )
+            .expect("valid test fixture")
         }
     );
 
@@ -1027,10 +1047,13 @@ fn section_line_requires_two_solved_points() {
     points.insert(9, [5.0, 8.0]);
     assert_eq!(
         section_line_geometry(&points, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
-            end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
+                end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+            .expect("valid test fixture")
+        )
     );
     points.insert(9, [2.0, 3.0]);
     assert!(section_line_geometry(&points, &segment).is_none());
@@ -1042,18 +1065,20 @@ fn section_line_requires_two_solved_points() {
 
 #[test]
 fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
-    let first = SketchEntityId("first".to_string());
-    let second = SketchEntityId("second".to_string());
+    let first =
+        SketchEntityId::mint("synthetic:test:id#first".to_string()).expect("valid test fixture");
+    let second =
+        SketchEntityId::mint("synthetic:test:id#second".to_string()).expect("valid test fixture");
     let emitted = BTreeSet::from([first.clone()]);
 
-    let mut horizontal = SketchConstraintDefinition::Horizontal {
+    let mut horizontal = SketchConstraintDefinitionInput::Horizontal {
         entity: first.clone(),
     };
     assert!(reconcile_constraint_entity_references(
         &mut horizontal,
         &emitted
     ));
-    let mut parallel = SketchConstraintDefinition::Parallel {
+    let mut parallel = SketchConstraintDefinitionInput::Parallel {
         first: first.clone(),
         second: second.clone(),
     };
@@ -1061,16 +1086,17 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         &mut parallel,
         &emitted
     ));
-    let mut distance = SketchConstraintDefinition::DistanceLoci {
+    let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
-        parameter: ParameterId::mint("distance".to_string()).expect("identity grammar"),
+        parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
+            .expect("identity grammar"),
     };
     assert!(!reconcile_constraint_entity_references(
         &mut distance,
         &emitted
     ));
-    let mut native = SketchConstraintDefinition::Native {
+    let mut native = SketchConstraintDefinitionInput::Native {
         native_kind: "creo:test".to_string(),
         entities: vec![first.clone(), second],
         parameter: None,
@@ -1085,32 +1111,37 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native,
-        SketchConstraintDefinition::Native { entities, .. }
+        SketchConstraintDefinitionInput::Native { entities, .. }
             if entities == vec![first]
     ));
 
-    let parameter = ParameterId::mint("distance".to_string()).expect("identity grammar");
+    let parameter =
+        ParameterId::mint("synthetic:test:id#distance".to_string()).expect("identity grammar");
     let parameters = BTreeSet::from([parameter.clone()]);
-    let mut radius = SketchConstraintDefinition::Radius {
-        entity: SketchEntityId("first".to_string()),
+    let mut radius = SketchConstraintDefinitionInput::Radius {
+        entity: SketchEntityId::mint("synthetic:test:id#first".to_string())
+            .expect("valid test fixture"),
         parameter: parameter.clone(),
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut radius,
         &parameters
     ));
-    let mut missing_distance = SketchConstraintDefinition::Distance {
+    let mut missing_distance = SketchConstraintDefinitionInput::Distance {
         entities: Vec::new(),
-        parameter: ParameterId::mint("missing".to_string()).expect("identity grammar"),
+        parameter: ParameterId::mint("synthetic:test:id#missing".to_string())
+            .expect("identity grammar"),
     };
     assert!(!reconcile_constraint_parameter_reference(
         &mut missing_distance,
         &parameters
     ));
-    let mut native_parameter = SketchConstraintDefinition::Native {
+    let mut native_parameter = SketchConstraintDefinitionInput::Native {
         native_kind: "creo:test".to_string(),
         entities: Vec::new(),
-        parameter: Some(ParameterId::mint("missing".to_string()).expect("identity grammar")),
+        parameter: Some(
+            ParameterId::mint("synthetic:test:id#missing".to_string()).expect("identity grammar"),
+        ),
         operands: Vec::new(),
         native_state: None,
         native_flags: None,
@@ -1122,7 +1153,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     assert!(matches!(
         native_parameter,
-        SketchConstraintDefinition::Native {
+        SketchConstraintDefinitionInput::Native {
             parameter: None,
             ..
         }
@@ -1147,9 +1178,12 @@ fn section_point_uses_its_single_solved_position() {
 
     assert_eq!(
         section_point_geometry(&points, &segment),
-        Some(SketchGeometry::Point {
-            position: cadmpeg_ir::math::Point2::new(2.0, 3.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: cadmpeg_ir::math::Point2::new(2.0, 3.0),
+            })
+            .expect("valid test fixture")
+        )
     );
 }
 
@@ -1207,10 +1241,13 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     };
     assert_eq!(
         section_axis_line_carrier(&definition, &segment),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            })
+            .expect("valid test fixture")
+        )
     );
     assert_eq!(
         section_axis_reference_line_geometry(
@@ -1218,10 +1255,13 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             &resolved_section_coordinates(&definition),
             &segment,
         ),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            })
+            .expect("valid test fixture")
+        )
     );
     assert_eq!(
         section_axis_reference_line_geometry(
@@ -1251,10 +1291,13 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             &BTreeMap::from([(7, [Some(2.0), None]), (9, [Some(2.0), Some(8.0)])]),
             &selector_segment,
         ),
-        Some(SketchGeometry::ReferenceLine {
-            origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
-            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+                origin: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            })
+            .expect("valid test fixture")
+        )
     );
     assert_eq!(
         unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
@@ -1590,68 +1633,79 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
 
 #[test]
 fn intersects_evaluated_section_carriers() {
-    let horizontal = SketchGeometry::Line {
+    let horizontal = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(-2.0, 1.0),
         end: cadmpeg_ir::math::Point2::new(2.0, 1.0),
-    };
-    let vertical = SketchGeometry::Line {
+    })
+    .expect("valid test fixture");
+    let vertical = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(0.5, -3.0),
         end: cadmpeg_ir::math::Point2::new(0.5, 3.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_lines(&horizontal, &vertical),
         Some([0.5, 1.0])
     );
-    let vertical_reference = SketchGeometry::ReferenceLine {
+    let vertical_reference = SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
         origin: cadmpeg_ir::math::Point2::new(0.5, 0.0),
         direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_lines(&horizontal, &vertical_reference),
         Some([0.5, 1.0])
     );
 
-    let circle_half = SketchGeometry::Arc {
+    let circle_half = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
-    let endpoint_line = SketchGeometry::Line {
+    })
+    .expect("valid test fixture");
+    let endpoint_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(2.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 1.0),
-    };
+    })
+    .expect("valid test fixture");
     let intersection = intersect_section_line_arc(&endpoint_line, &circle_half)
         .expect("line has one endpoint on the arc");
     assert!((intersection[0] - 2.0).abs() <= 1.0e-12);
     assert!(intersection[1].abs() <= 1.0e-12);
-    let one_crossing = SketchGeometry::Line {
+    let one_crossing = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_line_arc(&one_crossing, &circle_half),
         Some([2.0, 0.0])
     );
-    let two_crossings = SketchGeometry::Line {
+    let two_crossings = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(-3.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(
         intersect_section_line_arc(&two_crossings, &circle_half),
         None
     );
-    let no_crossing = SketchGeometry::Line {
+    let no_crossing = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(3.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(4.0, 0.0),
-    };
+    })
+    .expect("valid test fixture");
     assert_eq!(intersect_section_line_arc(&no_crossing, &circle_half), None);
 
-    let circle = |center, radius| SketchGeometry::Arc {
-        center: cadmpeg_ir::math::Point2::new(center, 0.0),
-        radius: Length(radius),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::TAU),
+    let circle = |center, radius| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: cadmpeg_ir::math::Point2::new(center, 0.0),
+            radius: Length(radius),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::TAU),
+        })
+        .expect("valid test fixture")
     };
     assert_eq!(
         intersect_tangent_section_arcs(&circle(0.0, 2.0), &circle(3.0, 1.0)),

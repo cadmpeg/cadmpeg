@@ -142,12 +142,12 @@ mod draft_anchor_wire {
     }
 }
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral construction feature.
     FeatureId
 );
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral design configuration.
     ConfigurationId
 );
@@ -520,7 +520,7 @@ impl ConfigurationEvaluation {
     }
 }
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Identifies a neutral design parameter.
     ParameterId
 );

@@ -1034,7 +1034,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     source_less.model.curves.pop();
     source_less.model.tessellations.push(
         Tessellation::from_decoded(
-            "generated:tessellation#0",
+            "generated:test:tessellation#0",
             vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),

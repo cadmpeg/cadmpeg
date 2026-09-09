@@ -39,7 +39,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -1309,11 +1311,13 @@ fn closed_fallback_profile_selects_revolution_segments() {
     let segments = [segment(9), segment(10), segment(11)];
     let profiles = vec![vec![
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:9".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:9".to_string())
+                .expect("valid test fixture"),
             reversed: false,
         },
         SketchEntityUse {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#2:11".to_string()),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#2:11".to_string())
+                .expect("valid test fixture"),
             reversed: true,
         },
     ]];
@@ -1736,9 +1740,12 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         direction: Vector3::new(0.0, 1.0, 0.0),
         reference: None,
     };
-    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
-        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    let line = |start: [f64; 2], end: [f64; 2]| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        })
+        .expect("valid test fixture")
     };
 
     assert!(matches!(
@@ -1781,31 +1788,34 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                 && radius == 4.0
                 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
-    let centered_arc = SketchGeometry::Arc {
+    let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &centered_arc, &axis),
         Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
     ));
-    let offset_arc = SketchGeometry::Arc {
+    let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
         radius: Length(2.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_arc, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
             if major_radius == 5.0 && minor_radius == 2.0
     ));
-    let offset_circle = SketchGeometry::Circle {
+    let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(5.0, 3.0),
         radius: Length(2.0),
-    };
+    })
+    .expect("valid test fixture");
     assert!(matches!(
         revolved_section_surface(&transform, &offset_circle, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })

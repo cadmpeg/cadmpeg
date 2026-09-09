@@ -1853,8 +1853,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Horizontal { .. }
             )
         }));
     assert!(result
@@ -1864,8 +1864,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .any(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
             )
         }));
     let pad = result

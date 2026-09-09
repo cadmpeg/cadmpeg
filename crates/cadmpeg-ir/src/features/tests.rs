@@ -1438,7 +1438,7 @@ fn draft_anchor_round_trips_through_the_flat_wire_shape() {
         "neutral_plane": {"kind": "unresolved"},
         "parting_tool": {"kind": "native", "value": "draft:parting-tool"},
         "pull_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "pull_plane": "draft:pull-plane",
+        "pull_plane": "test:draft:plane#pull",
         "angle": 0.1,
         "outward": false
     });
@@ -1468,7 +1468,7 @@ fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
     for invalid in [
         {
             let mut value = base.clone();
-            value["pull_plane"] = serde_json::json!("draft:pull-plane");
+            value["pull_plane"] = serde_json::json!("test:draft:plane#pull");
             value
         },
         {

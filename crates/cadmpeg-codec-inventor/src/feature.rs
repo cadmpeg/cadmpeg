@@ -2270,16 +2270,18 @@ mod tests {
             50,
         );
         let neutral_sketch = Sketch {
-            id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
+            id: SketchId::mint(format!("inventor:design:sketch#{SEGMENT}-50"))
+                .expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid test fixture"),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(raw_sketch.id()),
         };
         let direction = Located::new(

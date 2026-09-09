@@ -578,7 +578,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     let mut ir = unit_cube();
     ir.model.tessellations.push(
         Tessellation::from_decoded(
-            "mesh-0",
+            "synthetic:test:tessellation#mesh-0",
             vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),

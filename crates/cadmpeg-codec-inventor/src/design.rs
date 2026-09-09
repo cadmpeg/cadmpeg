@@ -1246,7 +1246,7 @@ mod tests {
     #[test]
     fn rejects_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId::mint(name).expect("identity grammar"),
+            id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: name.into(),
@@ -1259,9 +1259,18 @@ mod tests {
             native_ref: None,
         };
         let parameters = vec![
-            make("a", vec![ParameterId::mint("b").expect("identity grammar")]),
-            make("b", vec![ParameterId::mint("a").expect("identity grammar")]),
-            make("c", vec![ParameterId::mint("a").expect("identity grammar")]),
+            make(
+                "a",
+                vec![ParameterId::mint("synthetic:test:id#b").expect("identity grammar")],
+            ),
+            make(
+                "b",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
+            make(
+                "c",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
             make("d", Vec::new()),
         ];
         let (closed, rejected) = close_parameter_graph(parameters);
@@ -1271,7 +1280,7 @@ mod tests {
                 .into_iter()
                 .map(|parameter| parameter.id.into_string())
                 .collect::<Vec<_>>(),
-            ["d"]
+            ["synthetic:test:id#d"]
         );
     }
 }

@@ -1025,7 +1025,7 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -1055,7 +1055,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
@@ -1081,7 +1081,7 @@ mod tests {
             boundary,
             Some(RederivationBoundary::Unsupported {
                 feature: FeatureBoundary {
-                    id: cadmpeg_ir::features::FeatureId::mint("block")
+                    id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#block")
                         .expect("valid block fixture identity"),
                     name: Some("BLOCK".to_string()),
                     family: Some("block".to_string()),
@@ -1096,7 +1096,7 @@ mod tests {
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |family: &str| RederivationBoundary::Unsupported {
             feature: FeatureBoundary {
-                id: cadmpeg_ir::features::FeatureId::mint("feature")
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                     .expect("valid feature fixture identity"),
                 name: None,
                 family: Some(family.to_owned()),
@@ -1135,7 +1135,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,

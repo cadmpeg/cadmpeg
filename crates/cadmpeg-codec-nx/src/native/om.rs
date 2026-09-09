@@ -4205,7 +4205,8 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4243,7 +4244,8 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4282,7 +4284,8 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4326,10 +4329,34 @@ mod tests {
             }
         };
         let mut expressions = vec![
-            expression("a-p2", "table-a", "p2", "5", Some(5.0)),
-            expression("a-p3", "table-a", "p3", "p2 * 2", None),
-            expression("b-p2", "table-b", "p2", "7", Some(7.0)),
-            expression("b-p3", "table-b", "p3", "p2 * 2", None),
+            expression(
+                "a-p2",
+                "nx:test:expression-table#table-a",
+                "p2",
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "a-p3",
+                "nx:test:expression-table#table-a",
+                "p3",
+                "p2 * 2",
+                None,
+            ),
+            expression(
+                "b-p2",
+                "nx:test:expression-table#table-b",
+                "p2",
+                "7",
+                Some(7.0),
+            ),
+            expression(
+                "b-p3",
+                "nx:test:expression-table#table-b",
+                "p3",
+                "p2 * 2",
+                None,
+            ),
         ];
 
         super::evaluate_expression_graphs(&mut expressions);
@@ -4367,11 +4394,41 @@ mod tests {
             }
         };
         let mut expressions = vec![
-            expression("a-p1-first", "table-a", "p1", "3", Some(3.0)),
-            expression("a-p1-second", "table-a", "p1", "5", Some(5.0)),
-            expression("a-p2", "table-a", "p2", "p1 * 2", None),
-            expression("b-p1", "table-b", "p1", "7", Some(7.0)),
-            expression("b-p2", "table-b", "p2", "p1 * 2", None),
+            expression(
+                "a-p1-first",
+                "nx:test:expression-table#table-a",
+                "p1",
+                "3",
+                Some(3.0),
+            ),
+            expression(
+                "a-p1-second",
+                "nx:test:expression-table#table-a",
+                "p1",
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "a-p2",
+                "nx:test:expression-table#table-a",
+                "p2",
+                "p1 * 2",
+                None,
+            ),
+            expression(
+                "b-p1",
+                "nx:test:expression-table#table-b",
+                "p1",
+                "7",
+                Some(7.0),
+            ),
+            expression(
+                "b-p2",
+                "nx:test:expression-table#table-b",
+                "p2",
+                "p1 * 2",
+                None,
+            ),
         ];
 
         super::evaluate_expression_graphs(&mut expressions);
@@ -4426,7 +4483,8 @@ mod tests {
                     crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                 }),
                 source_entry: "part".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+                source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                    .unwrap(),
                 source_offset: 0,
             }
         };
@@ -4502,7 +4560,8 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4539,7 +4598,8 @@ mod tests {
             expression: text.into(),
             value: None,
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4576,7 +4636,8 @@ mod tests {
                         crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                     }),
                     source_entry: "/Root/UG_PART/UG_PART".into(),
-                    source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+                    source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                        .unwrap(),
                     source_offset: u64::from(key),
                 }
             };
@@ -4663,10 +4724,22 @@ mod tests {
                 source_offset,
             };
         let expressions = [
-            expression("a-p3", "table-a", "p3", "p2 * 2", 40),
-            expression("b-p3", "table-b", "p3", "p2 * 2", 10),
-            expression("a-p2", "table-a", "p2", "5", 30),
-            expression("b-p2", "table-b", "p2", "7", 20),
+            expression(
+                "a-p3",
+                "nx:test:expression-table#table-a",
+                "p3",
+                "p2 * 2",
+                40,
+            ),
+            expression(
+                "b-p3",
+                "nx:test:expression-table#table-b",
+                "p3",
+                "p2 * 2",
+                10,
+            ),
+            expression("a-p2", "nx:test:expression-table#table-a", "p2", "5", 30),
+            expression("b-p2", "nx:test:expression-table#table-b", "p2", "7", 20),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -4683,12 +4756,12 @@ mod tests {
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
             ir.model.features[0].id.as_str(),
-            "table-b:feature#equations"
+            "nx:test:feature#equations-table-b"
         );
         assert_eq!(ir.model.features[0].ordinal, 0);
         assert_eq!(
             ir.model.features[1].id.as_str(),
-            "table-a:feature#equations"
+            "nx:test:feature#equations-table-a"
         );
         assert_eq!(ir.model.features[1].ordinal, 1);
         assert_eq!(
@@ -4766,7 +4839,8 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4816,7 +4890,8 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4912,7 +4987,8 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 20,
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -4946,7 +5022,8 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 10,
         };
         let parameter_use = |id: &str, operation: &str, source_offset| {
@@ -4996,7 +5073,8 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 20,
         };
         let parameter_use = crate::native::features::FeatureParameterUse {
@@ -5082,7 +5160,8 @@ mod tests {
             expression: "12".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(12.0).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 900,
         };
         let bindings = crate::native::features::feature_parameter_bindings(

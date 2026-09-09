@@ -292,7 +292,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
     };
     use crate::sketches::SketchId;
 
-    let sketch = SketchId("synthetic:test:sketch#missing".into());
+    let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
     let definitions = [
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),

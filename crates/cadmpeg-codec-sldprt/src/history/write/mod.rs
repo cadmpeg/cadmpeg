@@ -16,7 +16,7 @@ use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
 mod configurations;
-mod features;
+pub(crate) mod features;
 mod parameters;
 mod xml;
 

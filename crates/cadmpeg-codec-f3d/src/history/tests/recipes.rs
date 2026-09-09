@@ -1699,22 +1699,22 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     ];
     let mut features = [
         sweep(
-            "sheet-sweep",
+            "synthetic:test:id#sheet-sweep",
             vec![BodyId::mint("test:model:body#sheet").expect("identity grammar")],
         ),
         sweep(
-            "solid-sweep",
+            "synthetic:test:id#solid-sweep",
             vec![BodyId::mint("test:model:body#solid").expect("identity grammar")],
         ),
         sweep(
-            "mixed-sweep",
+            "synthetic:test:id#mixed-sweep",
             vec![
                 BodyId::mint("test:model:body#sheet").expect("identity grammar"),
                 BodyId::mint("test:model:body#solid").expect("identity grammar"),
             ],
         ),
         sweep(
-            "missing-sweep",
+            "synthetic:test:id#missing-sweep",
             vec![BodyId::mint("test:model:body#missing").expect("identity grammar")],
         ),
     ];

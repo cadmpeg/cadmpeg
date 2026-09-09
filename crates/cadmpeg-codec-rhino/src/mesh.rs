@@ -1691,7 +1691,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "legacy-minor-five".to_string(),
+                    id: "synthetic:test:tessellation#legacy-minor-five".to_string(),
                     scale: 1.0,
                     userdata: &[],
                 },
@@ -1721,7 +1721,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v5-double".to_string(),
+                    id: "synthetic:test:tessellation#v5-double".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1750,7 +1750,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v5-double-mismatch".to_string(),
+                    id: "synthetic:test:tessellation#v5-double-mismatch".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1787,7 +1787,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1821,7 +1821,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-later".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-later".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1854,7 +1854,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-old".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-old".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1887,7 +1887,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-invalid".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-invalid".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1924,7 +1924,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-bad-index".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-bad-index".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -1963,7 +1963,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "v4v5-ngon-crc".to_string(),
+                    id: "synthetic:test:tessellation#v4v5-ngon-crc".to_string(),
                     scale: 1.0,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2236,7 +2236,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "first".to_string(),
+                    id: "synthetic:test:tessellation#first".to_string(),
                     scale: 1.0,
                     userdata: &[],
                 },
@@ -2251,7 +2251,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "second".to_string(),
+                    id: "synthetic:test:tessellation#second".to_string(),
                     scale: 1.0,
                     userdata: &[],
                 },

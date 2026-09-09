@@ -75,7 +75,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         ) else {
             continue;
         };
-        let sketch_id = model_sketch_id(scan, definition);
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let Some(mut profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;
         };
@@ -95,7 +97,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let geometry = entity.geometry();
                 let reversed = entity.reversed();
 
-                revolved_brep_surface(transform, &geometry.to_sketch(), reversed, &axis)
+                revolved_brep_surface(transform, &geometry.to_sketch()?, reversed, &axis)
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {

@@ -76,7 +76,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
 
     let feature = Feature {
-        id: FeatureId::mint("pattern").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -105,10 +105,10 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
 
 #[test]
 fn explicit_keywords_dimension_precedes_pmi_value() {
-    let owner = FeatureId::mint("feature").expect("identity grammar");
-    let feature = named_feature("feature", "Pattern1");
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        id: ParameterId::mint("keywords-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),
@@ -141,7 +141,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
 
 #[test]
 fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
-    let feature = named_feature("feature", "Pattern1");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let first = dimension("Linear", 0.034);
     let mut second = dimension("Linear", 0.035);
     second.id = "dimension-2".into();
@@ -155,7 +155,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
 
 #[test]
 fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
-    let feature = named_feature("feature", "Pattern1");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let canonical = dimension("Linear", 0.034);
     let mut alias = canonical.clone();
     alias.id = "dimension-2".into();

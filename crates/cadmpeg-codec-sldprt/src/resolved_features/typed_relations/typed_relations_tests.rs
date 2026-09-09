@@ -459,7 +459,7 @@ fn native_owner_operand_requires_a_source_index() {
             (relation.id.as_str(), &relation),
             (owner.id.as_str(), &owner),
         ]);
-        let Some(SketchConstraintDefinition::Native { operands, .. }) =
+        let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
             typed_marker_relation_definition(&relation, &markers, &HashMap::new())
         else {
             panic!("native relation");

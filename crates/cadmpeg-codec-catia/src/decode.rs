@@ -1782,8 +1782,8 @@ fn finish_decode(
         .iter()
         .filter(|entity| {
             matches!(
-                &entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();

@@ -33,8 +33,8 @@ use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchNativeOperand,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -48,10 +48,10 @@ pub(super) fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     typed_marker_relation_definition_in_sketch(
         marker,
-        &SketchId(String::new()),
+        &SketchId::mint("synthetic:test:sketch#unbound").unwrap(),
         &[],
         markers_by_id,
         loci_by_marker,
@@ -73,7 +73,7 @@ fn unique_entity_from_link_intersection(
     let first = links.first()?;
     let mut candidates = marker_entities(&first.entity_ref, markers_by_id, loci_by_marker);
     candidates.retain(|entity| {
-        !entity.0.contains("sketch-entity#relation-point:")
+        !entity.as_str().contains("sketch-entity#relation-point:")
             && sketch_entities
                 .iter()
                 .any(|candidate| candidate.id() == entity && candidate.sketch == *sketch)
@@ -95,7 +95,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
         Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
@@ -117,7 +117,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .filter(|link| !relation_link_identifies_owner(marker, link))
             .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
             .collect::<Vec<_>>();
-        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         entities.dedup();
         let owners = relation_owner_markers(marker, markers_by_id);
         entities.extend(
@@ -125,7 +125,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .iter()
                 .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker)),
         );
-        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         entities.dedup();
         let mut operands = marker
             .links()
@@ -145,7 +145,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 native_ref: Some(owner.id.clone()),
             })
         }));
-        SketchConstraintDefinition::Native {
+        SketchConstraintDefinitionInput::Native {
             native_kind: match marker.kind {
                 SketchInputKind::Relation(kind) => {
                     format!("sldprt:marker-relation:{}", kind.native_code())
@@ -174,7 +174,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             markers_by_id,
             loci_by_marker,
         ) {
-            return Some(SketchConstraintDefinition::Fixed { entity });
+            return Some(SketchConstraintDefinitionInput::Fixed { entity });
         }
     }
     if matches!(kind, Horizontal | Vertical) {
@@ -207,7 +207,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let mut candidates = sketch_entities.iter().filter(|entity| {
                     entity.sketch == *sketch
                         && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                        && matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Point { .. }
+                        )
                 });
                 match (candidates.next(), candidates.next()) {
                     (Some(entity), None) => Some(SketchLocus::Entity(entity.id().clone())),
@@ -227,14 +230,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let (Some(first), Some(second)) = (point_locus(first_link), point_locus(second_link))
             {
                 if first != second {
-                    return Some(SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis: if kind == Horizontal {
-                            SketchCoordinateAxis::V
-                        } else {
-                            SketchCoordinateAxis::U
-                        },
+                    return Some(SketchConstraintDefinitionInput::SameCoordinate {
+                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            first,
+                            second,
+                            if kind == Horizontal {
+                                SketchCoordinateAxis::V
+                            } else {
+                                SketchCoordinateAxis::U
+                            },
+                        )
+                        .ok()?,
                     });
                 }
             }
@@ -250,14 +256,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     markers_by_id,
                     loci_by_marker,
                 ) {
-                    return Some(SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis: if kind == Horizontal {
-                            SketchCoordinateAxis::V
-                        } else {
-                            SketchCoordinateAxis::U
-                        },
+                    return Some(SketchConstraintDefinitionInput::SameCoordinate {
+                        relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            first,
+                            second,
+                            if kind == Horizontal {
+                                SketchCoordinateAxis::V
+                            } else {
+                                SketchCoordinateAxis::U
+                            },
+                        )
+                        .ok()?,
                     });
                 }
             }
@@ -281,14 +290,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             relation_operand_loci(marker, markers_by_id, loci_by_marker)
                         {
                             if let [first, second] = loci.as_slice() {
-                                return Some(SketchConstraintDefinition::SameCoordinate {
-                                    first: first.clone(),
-                                    second: second.clone(),
-                                    axis: if kind == Horizontal {
-                                        SketchCoordinateAxis::V
-                                    } else {
-                                        SketchCoordinateAxis::U
-                                    },
+                                return Some(SketchConstraintDefinitionInput::SameCoordinate {
+                                    relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                        first.clone(),
+                                        second.clone(),
+                                        if kind == Horizontal {
+                                            SketchCoordinateAxis::V
+                                        } else {
+                                            SketchCoordinateAxis::U
+                                        },
+                                    )
+                                    .ok()?,
                                 });
                             }
                         }
@@ -353,7 +365,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 match owner_entities.as_slice() {
                     [owner]
                         if direct_entities.iter().all(|entity| {
-                            entity == owner || entity.0.contains("sketch-entity#relation-point:")
+                            entity == owner
+                                || entity.as_str().contains("sketch-entity#relation-point:")
                         }) =>
                     {
                         owner_entities
@@ -364,18 +377,18 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let [entity] = entities.as_slice() {
                 if matches!(kind, Horizontal | Vertical)
                     && sketch_entities.is_empty()
-                    && entity.0.contains("sketch-entity#relation-point:")
+                    && entity.as_str().contains("sketch-entity#relation-point:")
                 {
                     return Some(native());
                 }
                 match kind {
-                    Horizontal => SketchConstraintDefinition::Horizontal {
+                    Horizontal => SketchConstraintDefinitionInput::Horizontal {
                         entity: entity.clone(),
                     },
-                    Vertical => SketchConstraintDefinition::Vertical {
+                    Vertical => SketchConstraintDefinitionInput::Vertical {
                         entity: entity.clone(),
                     },
-                    Fixed => SketchConstraintDefinition::Fixed {
+                    Fixed => SketchConstraintDefinitionInput::Fixed {
                         entity: entity.clone(),
                     },
                     _ => unreachable!("relation kind was filtered above"),
@@ -402,15 +415,19 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
-                SketchConstraintDefinition::SameCoordinate {
-                    first: first.clone(),
-                    second: second.clone(),
-                    axis: if kind == Horizontal {
+                cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    first.clone(),
+                    second.clone(),
+                    if kind == Horizontal {
                         SketchCoordinateAxis::V
                     } else {
                         SketchCoordinateAxis::U
                     },
-                }
+                )
+                .map_or_else(
+                    |_| native(),
+                    |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
+                )
             } else {
                 return Some(native());
             }
@@ -427,17 +444,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 _ => unreachable!("relation kind was filtered above"),
             };
             if !sketch_entities.is_empty() {
-                let Some(SketchEntity {
-                    geometry:
-                        SketchGeometry::Arc {
-                            start_angle,
-                            end_angle,
-                            ..
-                        },
+                let Some(SketchGeometryDefinition::Arc {
+                    start_angle,
+                    end_angle,
                     ..
-                }) = sketch_entities
+                }) = (sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id() == &entity)
+                    .find(|candidate| candidate.id() == &entity))
+                .map(|entity| entity.geometry.definition())
                 else {
                     return Some(native());
                 };
@@ -453,7 +467,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 }
             }
-            SketchConstraintDefinition::ArcAngle {
+            SketchConstraintDefinitionInput::ArcAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
             }
@@ -473,16 +487,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 EllipseAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
                 _ => unreachable!("relation kind was filtered above"),
             };
-            let Some(SketchEntity {
-                geometry:
-                    SketchGeometry::Ellipse {
-                        bounds: Some([start, end]),
-                        ..
-                    },
+            let Some(SketchGeometryDefinition::Ellipse {
+                bounds: Some([start, end]),
                 ..
-            }) = sketch_entities
+            }) = (sketch_entities
                 .iter()
-                .find(|candidate| candidate.id() == &entity)
+                .find(|candidate| candidate.id() == &entity))
+            .map(|entity| entity.geometry.definition())
             else {
                 return Some(native());
             };
@@ -496,7 +507,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if !same_dimension_angle(sweep, angle) {
                 return Some(native());
             }
-            SketchConstraintDefinition::EllipseAngle {
+            SketchConstraintDefinitionInput::EllipseAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
             }
@@ -509,7 +520,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .iter()
                 .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
-                .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
+                .filter(|entity| !entity.as_str().contains("sketch-entity#relation-point:"))
                 .collect::<Vec<_>>();
             let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
                 let links = marker
@@ -599,31 +610,31 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 };
             }
             match kind {
-                Parallel => SketchConstraintDefinition::Parallel {
+                Parallel => SketchConstraintDefinitionInput::Parallel {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Perpendicular => SketchConstraintDefinition::Perpendicular {
+                Perpendicular => SketchConstraintDefinitionInput::Perpendicular {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Tangent => SketchConstraintDefinition::Tangent {
+                Tangent => SketchConstraintDefinitionInput::Tangent {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Equal => SketchConstraintDefinition::Equal {
+                Equal => SketchConstraintDefinitionInput::Equal {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Collinear => SketchConstraintDefinition::Collinear {
+                Collinear => SketchConstraintDefinitionInput::Collinear {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Concentric => SketchConstraintDefinition::Concentric {
+                Concentric => SketchConstraintDefinitionInput::Concentric {
                     first: first.clone(),
                     second: second.clone(),
                 },
-                Coradial => SketchConstraintDefinition::Coradial {
+                Coradial => SketchConstraintDefinitionInput::Coradial {
                     first: first.clone(),
                     second: second.clone(),
                 },
@@ -644,7 +655,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             {
                 return Some(native());
             }
-            SketchConstraintDefinition::CoincidentLoci { loci }
+            SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
@@ -653,15 +664,19 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let [first, second] = loci.as_slice() else {
                 return Some(native());
             };
-            SketchConstraintDefinition::SameCoordinate {
-                first: first.clone(),
-                second: second.clone(),
-                axis: if kind == HorizontalPoints {
+            cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                first.clone(),
+                second.clone(),
+                if kind == HorizontalPoints {
                     SketchCoordinateAxis::V
                 } else {
                     SketchCoordinateAxis::U
                 },
-            }
+            )
+            .map_or_else(
+                |_| native(),
+                |relation| SketchConstraintDefinitionInput::SameCoordinate { relation },
+            )
         }
         AtIntersection => {
             if sketch_entities.is_empty() {
@@ -682,8 +697,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let entity_locus = matches!(locus, SketchLocus::Entity(_));
                 if entity_locus
                     && !matches!(
-                        entity.geometry,
-                        SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                            | SketchGeometryDefinition::Native { .. }
                     )
                 {
                     entities.push(entity.id().clone());
@@ -708,7 +724,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }) {
                 return Some(native());
             }
-            SketchConstraintDefinition::AtIntersection {
+            SketchConstraintDefinitionInput::AtIntersection {
                 point,
                 first: first.clone(),
                 second: second.clone(),
@@ -729,7 +745,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     .find(|candidate| candidate.id() == &locus_entity(&locus));
                 if matches!(locus, SketchLocus::Entity(_))
                     && entity.is_some_and(|entity| {
-                        matches!(entity.geometry, SketchGeometry::Line { .. })
+                        matches!(
+                            *entity.geometry.definition(),
+                            SketchGeometryDefinition::Line { .. }
+                        )
                     })
                 {
                     if axis.replace(locus_entity(&locus)).is_some() {
@@ -758,7 +777,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Some(native());
             }
-            SketchConstraintDefinition::Symmetric {
+            SketchConstraintDefinitionInput::Symmetric {
                 first: first.clone(),
                 second: second.clone(),
                 axis,
@@ -787,7 +806,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 }
             }
-            SketchConstraintDefinition::Midpoint { point, entity }
+            SketchConstraintDefinitionInput::Midpoint { point, entity }
         }
         crate::records::SketchRelationKind::Distance
         | crate::records::SketchRelationKind::Angle
@@ -798,12 +817,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
 }
 
 fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
-    match &entity.geometry {
-        SketchGeometry::Line { start, end } => Some(Point2::new(
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some(Point2::new(
             (start.u + end.u) * 0.5,
             (start.v + end.v) * 0.5,
         )),
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -827,8 +846,8 @@ fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
 }
 
 pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
-    match &entity.geometry {
-        SketchGeometry::Line { start, end } => {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let du = end.u - start.u;
             let dv = end.v - start.v;
             let length_squared = du * du + dv * dv;
@@ -841,16 +860,16 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             distance <= SKETCH_POINT_TOLERANCE
                 && (-SKETCH_POINT_TOLERANCE..=1.0 + SKETCH_POINT_TOLERANCE).contains(&parameter)
         }
-        SketchGeometry::ReferenceLine { origin, direction } => {
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let length = direction.u.hypot(direction.v);
             length > SKETCH_POINT_TOLERANCE
                 && ((point.u - origin.u) * direction.v - (point.v - origin.v) * direction.u).abs()
                     <= SKETCH_POINT_TOLERANCE * length
         }
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Circle { center, radius } => {
             same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0)
         }
-        SketchGeometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -870,7 +889,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                 .rem_euclid(std::f64::consts::TAU);
             parameter <= sweep + EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
@@ -903,7 +922,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                 None => true,
             }
         }
-        SketchGeometry::Hyperbola {
+        SketchGeometryDefinition::Hyperbola {
             center,
             major_angle,
             major_radius,
@@ -926,7 +945,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                         .contains(&parameter)
                 })
         }
-        SketchGeometry::Parabola {
+        SketchGeometryDefinition::Parabola {
             vertex,
             axis_angle,
             focal_length,
@@ -947,11 +966,11 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                         .contains(&parameter)
                 })
         }
-        SketchGeometry::Point { .. }
-        | SketchGeometry::Text { .. }
-        | SketchGeometry::Nurbs { .. }
-        | SketchGeometry::ExternalReference { .. }
-        | SketchGeometry::Native { .. } => false,
+        SketchGeometryDefinition::Point { .. }
+        | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::Nurbs { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => false,
     }
 }
 
@@ -960,7 +979,7 @@ pub(super) fn symmetric_loci_match_axis(
     second: Point2,
     axis: &SketchEntity,
 ) -> Option<bool> {
-    let SketchGeometry::Line { start, end } = axis.geometry else {
+    let SketchGeometryDefinition::Line { start, end } = *axis.geometry.definition() else {
         return None;
     };
     let du = end.u - start.u;
@@ -1040,7 +1059,7 @@ fn line_relation_value(
 }
 
 fn line_direction(entity: &SketchEntity) -> Option<(f64, f64, f64)> {
-    let SketchGeometry::Line { start, end } = &entity.geometry else {
+    let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
         return None;
     };
     let u = end.u - start.u;
@@ -1050,31 +1069,30 @@ fn line_direction(entity: &SketchEntity) -> Option<(f64, f64, f64)> {
 }
 
 fn centered_geometry(entity: &SketchEntity) -> Option<Point2> {
-    match &entity.geometry {
-        SketchGeometry::Circle { center, .. }
-        | SketchGeometry::Arc { center, .. }
-        | SketchGeometry::Ellipse { center, .. } => Some(*center),
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Circle { center, .. }
+        | SketchGeometryDefinition::Arc { center, .. }
+        | SketchGeometryDefinition::Ellipse { center, .. } => Some(*center),
         _ => None,
     }
 }
 
 fn circular_radius(entity: &SketchEntity) -> Option<f64> {
-    match &entity.geometry {
-        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
-            Some(radius.0)
-        }
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Circle { radius, .. }
+        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.0),
         _ => None,
     }
 }
 
 fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
-    match (&first.geometry, &second.geometry) {
+    match (first.geometry.definition(), second.geometry.definition()) {
         (
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: first_start,
                 end: first_end,
             },
-            SketchGeometry::Line {
+            SketchGeometryDefinition::Line {
                 start: second_start,
                 end: second_end,
             },
@@ -1083,30 +1101,30 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
             (second_end.u - second_start.u).hypot(second_end.v - second_start.v),
         ),
         (
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 radius: first_radius,
                 ..
             }
-            | SketchGeometry::Arc {
+            | SketchGeometryDefinition::Arc {
                 radius: first_radius,
                 ..
             },
-            SketchGeometry::Circle {
+            SketchGeometryDefinition::Circle {
                 radius: second_radius,
                 ..
             }
-            | SketchGeometry::Arc {
+            | SketchGeometryDefinition::Arc {
                 radius: second_radius,
                 ..
             },
         ) => same_dimension_length(first_radius.0, second_radius.0),
         (
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 major_radius: first_major,
                 minor_radius: first_minor,
                 ..
             },
-            SketchGeometry::Ellipse {
+            SketchGeometryDefinition::Ellipse {
                 major_radius: second_major,
                 minor_radius: second_minor,
                 ..
@@ -1121,13 +1139,13 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
 
 fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
     let line_circle = |line: &SketchEntity, circle: &SketchEntity| {
-        if let SketchGeometry::Ellipse {
+        if let SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             major_radius,
             minor_radius,
             ..
-        } = &circle.geometry
+        } = circle.geometry.definition()
         {
             let Some((du, dv, length)) = line_direction(line) else {
                 return false;
@@ -1149,10 +1167,16 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
             })
             .is_some_and(|(distance, radius)| same_dimension_length(distance, radius))
     };
-    if matches!(first.geometry, SketchGeometry::Line { .. }) {
+    if matches!(
+        *first.geometry.definition(),
+        SketchGeometryDefinition::Line { .. }
+    ) {
         return line_circle(first, second);
     }
-    if matches!(second.geometry, SketchGeometry::Line { .. }) {
+    if matches!(
+        *second.geometry.definition(),
+        SketchGeometryDefinition::Line { .. }
+    ) {
         return line_circle(second, first);
     }
     centered_geometry(first)
@@ -1363,7 +1387,12 @@ fn append_axis_relation_point_locus(
         .iter()
         .filter(|entity| entity.sketch == *sketch)
         .filter(|entity| entity.native_ref.as_deref() == Some(marker_id))
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
         .map(|entity| SketchLocus::Entity(entity.id().clone()))
         .collect::<Vec<_>>();
     if let [locus] = candidates.as_slice() {
@@ -1466,29 +1495,32 @@ pub(super) fn relation_link_is_geometric_operand(
 }
 
 fn typed_axis_relation_is_inactive(
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Option<bool> {
     let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
     match definition {
-        SketchConstraintDefinition::Horizontal { entity: id }
-        | SketchConstraintDefinition::Vertical { entity: id } => {
-            let SketchGeometry::Line { start, end } = &entity(id)?.geometry else {
+        SketchConstraintDefinitionInput::Horizontal { entity: id }
+        | SketchConstraintDefinitionInput::Vertical { entity: id } => {
+            let SketchGeometryDefinition::Line { start, end } = entity(id)?.geometry.definition()
+            else {
                 return Some(true);
             };
             Some(
-                if matches!(definition, SketchConstraintDefinition::Horizontal { .. }) {
+                if matches!(
+                    definition,
+                    SketchConstraintDefinitionInput::Horizontal { .. }
+                ) {
                     !same_dimension_length(start.v, end.v)
                 } else {
                     !same_dimension_length(start.u, end.u)
                 },
             )
         }
-        SketchConstraintDefinition::SameCoordinate {
-            first,
-            second,
-            axis,
-        } => {
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
+            let first = relation.first();
+            let second = relation.second();
+            let axis = relation.axis();
             let first = profile_locus_point(first, sketch_entities)?;
             let second = profile_locus_point(second, sketch_entities)?;
             Some(match axis {
@@ -1502,19 +1534,19 @@ fn typed_axis_relation_is_inactive(
 
 fn typed_binary_relation_is_inactive(
     kind: crate::records::SketchRelationKind,
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Option<bool> {
     use crate::records::SketchRelationKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
-    let ((Parallel, SketchConstraintDefinition::Parallel { first, second })
-    | (Perpendicular, SketchConstraintDefinition::Perpendicular { first, second })
-    | (Tangent, SketchConstraintDefinition::Tangent { first, second })
-    | (Equal, SketchConstraintDefinition::Equal { first, second })
-    | (Collinear, SketchConstraintDefinition::Collinear { first, second })
-    | (Concentric, SketchConstraintDefinition::Concentric { first, second })
-    | (Coradial, SketchConstraintDefinition::Coradial { first, second })) = (kind, definition)
+    let ((Parallel, SketchConstraintDefinitionInput::Parallel { first, second })
+    | (Perpendicular, SketchConstraintDefinitionInput::Perpendicular { first, second })
+    | (Tangent, SketchConstraintDefinitionInput::Tangent { first, second })
+    | (Equal, SketchConstraintDefinitionInput::Equal { first, second })
+    | (Collinear, SketchConstraintDefinitionInput::Collinear { first, second })
+    | (Concentric, SketchConstraintDefinitionInput::Concentric { first, second })
+    | (Coradial, SketchConstraintDefinitionInput::Coradial { first, second })) = (kind, definition)
     else {
         return None;
     };
@@ -1529,7 +1561,7 @@ fn typed_binary_relation_is_inactive(
 
 pub(super) fn marker_relation_is_inactive(
     marker: &SketchInputEntity,
-    definition: &SketchConstraintDefinition,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> bool {
     use crate::records::SketchRelationKind::{
@@ -1547,7 +1579,7 @@ pub(super) fn marker_relation_is_inactive(
     if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
         return inactive;
     }
-    if let SketchConstraintDefinition::CoincidentLoci { loci } = definition {
+    if let SketchConstraintDefinitionInput::CoincidentLoci { loci } = definition {
         let Some(points) = loci
             .iter()
             .map(|locus| profile_locus_point(locus, sketch_entities))
@@ -1560,7 +1592,7 @@ pub(super) fn marker_relation_is_inactive(
                 || !same_dimension_length(point.v, points[0].v)
         });
     }
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     } = definition
     else {
@@ -1593,58 +1625,40 @@ pub(super) fn marker_relation_is_inactive(
     let resolved = entities
         .iter()
         .filter_map(|id| sketch_entities.iter().find(|entity| entity.id() == id))
+        .map(|entity| entity.geometry.definition())
         .collect::<Vec<_>>();
     if resolved.len() != entities.len() {
         return false;
     }
     match kind {
-        ArcAngle90 | ArcAngle180 | ArcAngle270 => !matches!(
-            resolved.as_slice(),
-            [SketchEntity {
-                geometry: SketchGeometry::Arc { .. },
-                ..
-            }]
-        ),
+        ArcAngle90 | ArcAngle180 | ArcAngle270 => {
+            !matches!(resolved.as_slice(), [SketchGeometryDefinition::Arc { .. }])
+        }
         EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => !matches!(
             resolved.as_slice(),
-            [SketchEntity {
-                geometry: SketchGeometry::Ellipse { .. },
-                ..
-            }]
+            [SketchGeometryDefinition::Ellipse { .. }]
         ),
         Horizontal | Vertical => !matches!(
             resolved.as_slice(),
-            [SketchEntity {
-                geometry: SketchGeometry::Line { .. },
-                ..
-            }] | [
-                SketchEntity {
-                    geometry: SketchGeometry::Point { .. },
-                    ..
-                },
-                SketchEntity {
-                    geometry: SketchGeometry::Point { .. },
-                    ..
-                }
-            ]
+            [SketchGeometryDefinition::Line { .. }]
+                | [
+                    SketchGeometryDefinition::Point { .. },
+                    SketchGeometryDefinition::Point { .. }
+                ]
         ),
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
             resolved.len() != 2
                 || resolved.iter().any(|entity| {
                     matches!(
-                        entity.geometry,
-                        SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
+                        **entity,
+                        SketchGeometryDefinition::Point { .. }
+                            | SketchGeometryDefinition::Native { .. }
                     )
                 })
         }
         crate::records::SketchRelationKind::Coincident | MergePoints => {
-            let [SketchEntity {
-                geometry: SketchGeometry::Point { position: first },
-                ..
-            }, SketchEntity {
-                geometry: SketchGeometry::Point { position: second },
-                ..
-            }] = resolved.as_slice()
+            let [SketchGeometryDefinition::Point { position: first }, SketchGeometryDefinition::Point { position: second }] =
+                resolved.as_slice()
             else {
                 return false;
             };
@@ -1669,7 +1683,7 @@ fn relation_owner_curve_entities(
         })
         .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker))
         .collect::<Vec<_>>();
-    entities.sort_by(|left, right| left.0.cmp(&right.0));
+    entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     entities.dedup();
     entities
 }
