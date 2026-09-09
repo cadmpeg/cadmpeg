@@ -1140,7 +1140,7 @@ fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
         .placements
         .get(&id)
         .copied()
-        .map(super::geometry::placement_transform)
+        .and_then(super::geometry::placement_transform)
         .or_else(|| geometry.transformation_operators.get(&id).copied())
 }
 

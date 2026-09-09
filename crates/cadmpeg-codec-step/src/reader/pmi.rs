@@ -1252,10 +1252,11 @@ fn collect_typed_placement_candidates(
         }
         for reference in partial.parameters.iter().flat_map(references) {
             if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&reference) {
-                candidates.insert(
-                    reference,
-                    super::geometry::placement_transform((origin, z_axis, x_axis)),
-                );
+                if let Some(transform) =
+                    super::geometry::placement_transform((origin, z_axis, x_axis))
+                {
+                    candidates.insert(reference, transform);
+                }
             }
         }
     }

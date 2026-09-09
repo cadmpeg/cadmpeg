@@ -42,7 +42,7 @@ pub(super) struct GeometryData {
 
 pub(super) fn placement_transform(
     (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
-) -> Transform {
+) -> Option<Transform> {
     let y_axis = Vector3::new(
         z_axis.y * x_axis.z - z_axis.z * x_axis.y,
         z_axis.z * x_axis.x - z_axis.x * x_axis.z,
@@ -62,7 +62,7 @@ pub(super) fn placement_transform(
     rows[0][3] = origin.x;
     rows[1][3] = origin.y;
     rows[2][3] = origin.z;
-    Transform::from_rows(rows).expect("placement is affine")
+    Transform::from_rows(rows)
 }
 
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
@@ -4136,11 +4136,15 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
     if values.len() != 3 {
         return None;
     }
-    Some(Point3::new(
+    let point = Point3::new(
         values[0].number()? * scale,
         values[1].number()? * scale,
         values[2].number()? * scale,
-    ))
+    );
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(point)
 }
 
 fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
