@@ -4,10 +4,11 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
     curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
-    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
+    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, Affine,
+    ProjectionOutcome,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
-use crate::global::{GlobalTable, ProjectedGlobal};
+use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
     TrailingPointerAnalysis,
@@ -1979,6 +1980,82 @@ fn flow_associativity(
         })
 }
 
+/// The structure admission failure for one product instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlacementRejection {
+    MissingRecord,
+    InvalidDefinition,
+    InvalidPlacement,
+    InvalidMetadata,
+}
+
+/// The local affine placement of a subfigure or network instance.
+pub(crate) fn placement_affine(
+    instance: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    length_factor: f64,
+    precision: RealPrecision,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(u32, Affine), ()> {
+    let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
+    let translation_component = |index| {
+        record
+            .number_or(index, 0.0)
+            .filter(|value| value.is_finite())
+            .ok_or(())
+    };
+    let scale_component = |index, default| {
+        record
+            .number_or(index, default)
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .ok_or(())
+    };
+    let x_scale = scale_component(5, 1.0)?;
+    let scales = if instance.entity_type == 420 {
+        [
+            x_scale,
+            scale_component(6, x_scale)?,
+            scale_component(7, x_scale)?,
+        ]
+    } else {
+        [x_scale; 3]
+    };
+    let translation = Affine::new([
+        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
+        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
+        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
+    ])
+    .ok_or(())?;
+    let scale = Affine::new([
+        [scales[0], 0.0, 0.0, 0.0],
+        [0.0, scales[1], 0.0, 0.0],
+        [0.0, 0.0, scales[2], 0.0],
+    ])
+    .ok_or(())?;
+    let directory = if instance.transform == 0 {
+        Affine::identity()
+    } else {
+        resolve_transform(
+            instance.transform,
+            entries,
+            records,
+            length_factor,
+            precision,
+            &mut std::collections::BTreeSet::new(),
+            ctx,
+        )
+        .map_err(|_| ())?
+    };
+    Ok((
+        definition,
+        directory
+            .compose(translation.compose(scale).ok_or(())?)
+            .ok_or(())?,
+    ))
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -1986,7 +2063,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> (ProjectionOutcome, BTreeMap<u32, PlacementRejection>) {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1997,6 +2074,7 @@ pub(super) fn project(
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
@@ -3030,6 +3108,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
+            placement_rejections.insert(entry.sequence, PlacementRejection::MissingRecord);
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
@@ -3037,22 +3116,23 @@ pub(super) fn project(
             let sequence = u32::try_from(value).ok()?;
             (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
         });
-        let translation_valid =
-            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
-        let scale_valid = record
-            .number_or(5, 1.0)
-            .is_some_and(|value| value.is_finite() && value > 0.0);
-        let transform_valid = resolve_transform(
-            entry.transform,
+        let placement_valid = placement_affine(
+            entry,
+            record,
             &entries,
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            &mut BTreeSet::new(),
             ctx,
         )
         .is_ok();
+        if !placement_valid {
+            placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
+        }
         let Some(definition) = definition else {
+            placement_rejections
+                .entry(entry.sequence)
+                .or_insert(PlacementRejection::InvalidDefinition);
             losses.push(entity_loss(
                 entry,
                 "subfigure-instance definition pointer is invalid",
@@ -3060,7 +3140,7 @@ pub(super) fn project(
             continue;
         };
         instances.insert(entry.sequence, definition);
-        if translation_valid && scale_valid && transform_valid {
+        if placement_valid {
             instance_fields_valid.insert(entry.sequence);
         }
     }
@@ -3153,6 +3233,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
+            placement_rejections.insert(entry.sequence, PlacementRejection::MissingRecord);
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
@@ -3161,19 +3242,6 @@ pub(super) fn project(
             network_definitions
                 .contains_key(&sequence)
                 .then_some(sequence)
-        });
-        let translation_valid =
-            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
-        let x_scale = record.number_or(5, 1.0);
-        let scales_valid = x_scale.is_some_and(|x_scale| {
-            x_scale.is_finite()
-                && x_scale > 0.0
-                && record
-                    .number_or(6, x_scale)
-                    .is_some_and(|value| value.is_finite() && value > 0.0)
-                && record
-                    .number_or(7, x_scale)
-                    .is_some_and(|value| value.is_finite() && value > 0.0)
         });
         let type_flag_valid = record
             .integer_or(8, 0)
@@ -3189,17 +3257,27 @@ pub(super) fn project(
         });
         let connect_points =
             network_connect_points(record, 11, 12, &entries, global.global_table());
-        let transform_valid = resolve_transform(
-            entry.transform,
+        let placement_valid = placement_affine(
+            entry,
+            record,
             &entries,
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            &mut BTreeSet::new(),
             ctx,
         )
         .is_ok();
+        if !placement_valid {
+            placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
+        }
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
+            placement_rejections
+                .entry(entry.sequence)
+                .or_insert(if definition.is_none() {
+                    PlacementRejection::InvalidDefinition
+                } else {
+                    PlacementRejection::InvalidMetadata
+                });
             losses.push(entity_loss(
                 entry,
                 "network instance definition or count is invalid",
@@ -3213,13 +3291,7 @@ pub(super) fn project(
                 connect_points,
             },
         );
-        if translation_valid
-            && scales_valid
-            && type_flag_valid
-            && designator_valid
-            && display_valid
-            && transform_valid
-        {
+        if placement_valid && type_flag_valid && designator_valid && display_valid {
             network_instance_fields_valid.insert(entry.sequence);
         }
     }
@@ -3268,6 +3340,9 @@ pub(super) fn project(
         {
             decoded.insert(*sequence);
         } else {
+            placement_rejections
+                .entry(*sequence)
+                .or_insert(PlacementRejection::InvalidDefinition);
             losses.push(entity_loss(
                 entry,
                 "subfigure-instance placement or decoded definition is invalid",
@@ -3325,6 +3400,13 @@ pub(super) fn project(
         {
             decoded.insert(*sequence);
         } else {
+            placement_rejections.entry(*sequence).or_insert(
+                if !decoded.contains(&instance.definition) {
+                    PlacementRejection::InvalidDefinition
+                } else {
+                    PlacementRejection::InvalidMetadata
+                },
+            );
             losses.push(entity_loss(
                 entry,
                 "network instance placement or connection list is invalid",
@@ -3332,7 +3414,7 @@ pub(super) fn project(
         }
     }
 
-    ProjectionOutcome { decoded, losses }
+    (ProjectionOutcome { decoded, losses }, placement_rejections)
 }
 
 #[cfg(test)]

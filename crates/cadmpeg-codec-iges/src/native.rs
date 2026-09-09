@@ -8,7 +8,8 @@ use crate::entities::geometry::{
     resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
 };
 use crate::entities::structure::{
-    array_base_type, flow_join_target_valid, signal_string_geometry_target,
+    array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
+    PlacementRejection,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
@@ -1661,72 +1662,6 @@ fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
         .flatten()
 }
 
-fn placement_affine(
-    instance: &DirectoryEntry,
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: f64,
-    precision: RealPrecision,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(u32, Affine), ()> {
-    let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
-    let translation_component = |index| {
-        record
-            .number_or(index, 0.0)
-            .filter(|value| value.is_finite())
-            .ok_or(())
-    };
-    let scale_component = |index, default| {
-        record
-            .number_or(index, default)
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .ok_or(())
-    };
-    let x_scale = scale_component(5, 1.0)?;
-    let scales = if instance.entity_type == 420 {
-        [
-            x_scale,
-            scale_component(6, x_scale)?,
-            scale_component(7, x_scale)?,
-        ]
-    } else {
-        [x_scale; 3]
-    };
-    let translation = Affine::new([
-        [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
-        [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
-        [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
-    ])
-    .ok_or(())?;
-    let scale = Affine::new([
-        [scales[0], 0.0, 0.0, 0.0],
-        [0.0, scales[1], 0.0, 0.0],
-        [0.0, 0.0, scales[2], 0.0],
-    ])
-    .ok_or(())?;
-    let directory = if instance.transform == 0 {
-        Affine::identity()
-    } else {
-        resolve_transform(
-            instance.transform,
-            entries,
-            records,
-            length_factor,
-            precision,
-            &mut std::collections::BTreeSet::new(),
-            ctx,
-        )
-        .map_err(|_| ())?
-    };
-    Ok((
-        definition,
-        directory
-            .compose(translation.compose(scale).ok_or(())?)
-            .ok_or(())?,
-    ))
-}
-
 fn member_affine(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -1919,7 +1854,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     quarantine: QuarantinedRecords<'_>,
-    structure_admitted: Option<&BTreeSet<u32>>,
+    structure_admitted: Option<&crate::entities::geometry::Projection>,
     boundary_vertex_derivations: &[BoundaryVertexDerivation],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
@@ -5173,7 +5108,7 @@ pub(crate) fn store(
     let occurrence_definitions = all_occurrence_definitions
         .into_iter()
         .filter(|(sequence, _)| {
-            structure_admitted.is_none_or(|admitted| admitted.contains(sequence))
+            structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
         })
         .collect::<BTreeMap<_, _>>();
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
@@ -5227,31 +5162,15 @@ pub(crate) fn store(
     let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = occurrence_length_factor {
-        // Structure admission excludes malformed placement records. Inspect
-        // those records here so the existing placement loss remains visible.
-        for entry in directory.iter().filter(|entry| {
-            matches!(entry.entity_type, 408 | 420)
-                && entry.form == 0
-                && structure_admitted.is_some_and(|admitted| !admitted.contains(&entry.sequence))
-        }) {
-            let Some(record) = by_directory.get(&entry.sequence).copied() else {
-                malformed_placement_sequences.insert(entry.sequence);
-                continue;
-            };
-            if placement_affine(
-                entry,
-                record,
-                &entries,
-                &by_directory,
-                length_factor,
-                global.real_precision(),
-                ctx,
-            )
-            .map_or(true, |(definition, _)| {
-                !occurrence_definitions.contains_key(&definition)
-            }) {
-                malformed_placement_sequences.insert(entry.sequence);
-            }
+        if let Some(admission) = structure_admitted {
+            malformed_placement_sequences.extend(admission.placement_rejections.iter().filter_map(
+                |(sequence, reason)| match reason {
+                    PlacementRejection::MissingRecord
+                    | PlacementRejection::InvalidDefinition
+                    | PlacementRejection::InvalidPlacement => Some(*sequence),
+                    PlacementRejection::InvalidMetadata => None,
+                },
+            ));
         }
         let expansion = OccurrenceExpansion {
             entries: &entries,
@@ -5268,7 +5187,8 @@ pub(crate) fn store(
             for root in directory.iter().filter(|entry| {
                 matches!(entry.entity_type, 408 | 420)
                     && entry.form == 0
-                    && structure_admitted.is_none_or(|admitted| admitted.contains(&entry.sequence))
+                    && structure_admitted
+                        .is_none_or(|admitted| admitted.decoded.contains(&entry.sequence))
                     && !contained_instances.contains(&entry.sequence)
             }) {
                 if let Some(source_sequence) = expansion.expand(
