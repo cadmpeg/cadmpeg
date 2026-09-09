@@ -783,40 +783,13 @@ enum NamedProperty<'a> {
 }
 
 fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> NamedProperty<'a> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return NamedProperty::Absent;
-    };
-    if matches.next().is_some() {
-        return NamedProperty::Duplicate;
+    match crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == name
+    }) {
+        Ok(Some(property)) => NamedProperty::Present(property),
+        Ok(None) => NamedProperty::Absent,
+        Err(_) => NamedProperty::Duplicate,
     }
-    NamedProperty::Present(property)
-}
-
-fn unique_matching_property<'a, F>(
-    properties: &[&'a PropertyRecord],
-    predicate: F,
-    label: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError>
-where
-    F: Fn(&PropertyRecord) -> bool,
-{
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| predicate(property));
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(malformed(format!(
-            "spreadsheet has multiple {label} properties"
-        )));
-    }
-    Ok(Some(property))
 }
 
 fn direct_spreadsheet_value<'a, 'input: 'a>(
@@ -847,11 +820,10 @@ fn append_spreadsheet(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<Spreadsheet, CodecError> {
-    let property = unique_matching_property(
-        properties,
-        |property| property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet",
-        "cells",
-    )?
+    let property = crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet"
+    })
+    .map_err(|_| malformed("spreadsheet has multiple cells properties"))?
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
             "spreadsheet {} has no cells property",
@@ -984,11 +956,14 @@ fn spreadsheet_dimensions(
     element: &str,
     value_name: &str,
 ) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let Some(property) = unique_matching_property(
-        properties,
-        |property| property.name == property_name && property.type_name == type_name,
-        property_name,
-    )?
+    let Some(property) = crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == property_name && property.type_name == type_name
+    })
+    .map_err(|_| {
+        malformed(format!(
+            "spreadsheet has multiple {property_name} properties"
+        ))
+    })?
     else {
         return Ok(Vec::new());
     };

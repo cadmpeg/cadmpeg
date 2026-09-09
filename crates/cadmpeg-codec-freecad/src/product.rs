@@ -758,19 +758,8 @@ fn unique_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "{name} has duplicate carriers"
-        )));
-    }
-    Ok(Some(property))
+    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
+        .map_err(|_| CodecError::malformed(format_args!("{name} has duplicate carriers")))
 }
 
 fn selected_placement<'a>(
