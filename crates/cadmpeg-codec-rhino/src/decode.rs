@@ -3672,6 +3672,12 @@ fn stage_extrusion_caps(
             ) else {
                 return false;
             };
+            let Ok(carrier) =
+                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
+            else {
+                // The caller discards the complete extrusion candidate on failure.
+                return false;
+            };
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
@@ -3684,13 +3690,7 @@ fn stage_extrusion_caps(
             });
             ir.model.edges.push(Edge {
                 id: edge_id.clone(),
-                carrier: match cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some(parameter_range),
-                ) {
-                    Ok(carrier) => carrier,
-                    Err(_) => return false,
-                },
+                carrier,
                 start: vertex_id.clone(),
                 end: vertex_id.clone(),
                 tolerance: None,
