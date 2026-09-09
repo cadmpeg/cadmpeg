@@ -3614,7 +3614,7 @@ fn definition_profiles(
             profiles.extend(construction.profile().map(|profile| &**profile));
         }
         crate::features::FeatureDefinition::Rib { construction, .. } => {
-            profiles.extend(construction.profile.as_ref().map(|profile| &**profile));
+            profiles.extend(construction.profile.as_deref());
         }
         crate::features::FeatureDefinition::Sweep { shape, .. } => {
             profiles.extend(shape.section().referenced_profile());
@@ -3984,7 +3984,7 @@ fn check_feature_sketch_references(
                 profiles.push(profile);
             }
             FeatureDefinition::Rib { construction, .. } => {
-                profiles.extend(construction.profile.as_ref().map(|profile| &**profile));
+                profiles.extend(construction.profile.as_deref());
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(construction.profile().map(|profile| &**profile));
