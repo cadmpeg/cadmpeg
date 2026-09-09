@@ -7078,10 +7078,10 @@ impl SketchRelation {
                     .map(|row| ("return_member_offsets", row.offset)),
             )
         {
-            if !usize::try_from(offset)
+            if usize::try_from(offset)
                 .ok()
                 .and_then(|offset| offset.checked_add(4))
-                .is_some_and(|end| end <= draft.raw_bytes.len())
+                .is_none_or(|end| end > draft.raw_bytes.len())
             {
                 return Err(SketchRelationPayloadError(format!(
                     "sketch relation {field} exceeds raw_bytes"

@@ -2675,7 +2675,7 @@ pub(crate) fn validate_sketch_relation_edits(
         if relation.definition.state() != before.definition.state() {
             let encoded = encode_sketch_relation_state(
                 &relation.id,
-                &before.raw_bytes(),
+                before.raw_bytes(),
                 relation.definition.state(),
             )?;
             values.push(Edit {

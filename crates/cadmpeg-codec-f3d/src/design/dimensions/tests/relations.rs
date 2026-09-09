@@ -464,7 +464,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     ]);
     repeated_pair
         .try_edit(|draft| {
-            draft.return_members = returned.try_into().expect("uniform member resolution")
+            draft.return_members = returned.try_into().expect("uniform member resolution");
         })
         .unwrap();
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
