@@ -22,7 +22,7 @@ pub use budget::{
     WorkBudgetRecursionGuard,
 };
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
-pub use error::{ErrorContext, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
+pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use space::{

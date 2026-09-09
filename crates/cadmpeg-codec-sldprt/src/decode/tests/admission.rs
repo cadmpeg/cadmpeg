@@ -24,7 +24,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit SLDPRT container entities"
+                    && limit.operation == "admit SLDPRT container entities"
         ),
         "{error:?}"
     );
@@ -76,7 +76,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit SLDPRT entities"
+                    && limit.operation == "admit SLDPRT entities"
         ),
         "{error:?}"
     );

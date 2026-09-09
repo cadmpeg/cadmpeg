@@ -279,7 +279,7 @@ fn local_limit_refusal_uses_codec_dimension() {
         refuse_local_limit("records", 4, 5),
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::Codec("records")
-                && limit.context.operation == "records"
+                && limit.operation == "records"
     ));
 }
 
@@ -351,6 +351,7 @@ fn nested_member_address_is_inspect_replayable() {
             derivation: SpaceDerivation::Expanded {
                 parent: SpaceId::ROOT,
                 source_range: ByteRange { start: 30, end: 90 },
+                member: Some("GuiDocument.xml".into()),
             },
         },
     ];
@@ -362,12 +363,15 @@ fn nested_member_address_is_inspect_replayable() {
         },
     );
     assert_eq!(address.path(), "root/GuiDocument.xml@120");
-    assert_eq!(address.steps[1].kind, AddressStepKind::Member);
+    assert_eq!(
+        address.steps[1].kind,
+        AddressStepKind::Member("GuiDocument.xml".into())
+    );
     let commands = address.inspect_commands("part.FCStd");
     assert_eq!(
         commands,
         [
-            "cadmpeg inspect extract --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
+            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
             "cadmpeg inspect hex --offset 120 --len 64 -- 'part.FCStd.member'".to_string(),
         ]
     );
@@ -382,4 +386,25 @@ fn forced_child_exhaustion_charges_its_full_slice() {
     assert!(parent.consume_child(&child));
     assert_eq!(parent.remaining(), 6);
     assert!(!child.charge_by(0));
+}
+
+#[test]
+fn unnamed_and_concatenated_spaces_have_no_extraction_route() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(b"abcd", &arena, &policy).unwrap();
+    let stored = ctx
+        .register_slice(root, ByteRange { start: 0, end: 4 })
+        .unwrap();
+    let expanded = ctx
+        .begin_expand(root, ExpandSpec::Exact(0))
+        .unwrap()
+        .finalize()
+        .unwrap();
+    let concat = ctx.concat_views(&[root, stored]).unwrap();
+    for view in [stored, expanded, concat] {
+        let address = ctx.resolve_location(view.location());
+        assert!(address.inspect_commands("input.zip").is_empty());
+        assert_eq!(address.steps.last().unwrap().kind, AddressStepKind::Derived);
+    }
 }

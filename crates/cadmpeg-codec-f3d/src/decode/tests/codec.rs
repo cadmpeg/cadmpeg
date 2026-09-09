@@ -523,7 +523,7 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.context.operation == "admit F3D archive entries"
+                    && limit.operation == "admit F3D archive entries"
         ),
         "{error:?}"
     );
