@@ -1914,13 +1914,13 @@ fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     View::u32_le_at(bytes, offset)
 }
 fn le_u16_array(bytes: [u8; 2]) -> u16 {
-    View::u16_le_at(&bytes, 0).expect("two-byte array contains a u16")
+    cadmpeg_core::bytes::assemble_u16_le(bytes)
 }
 fn le_u32_array(bytes: [u8; 4]) -> u32 {
-    View::u32_le_at(&bytes, 0).expect("four-byte array contains a u32")
+    cadmpeg_core::bytes::assemble_u32_le(bytes)
 }
 fn le_u64_array(bytes: [u8; 8]) -> u64 {
-    View::u64_le_at(&bytes, 0).expect("eight-byte array contains a u64")
+    cadmpeg_core::bytes::assemble_u64_le(bytes)
 }
 fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
     Err(CodecError::Malformed(message.into()))
