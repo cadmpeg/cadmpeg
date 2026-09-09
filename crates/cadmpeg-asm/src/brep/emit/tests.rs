@@ -313,8 +313,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &HashSet::new(),
             &HashSet::new(),
             IdFormat("f3d"),
-        )
-        .unwrap();
+        );
         let ProceduralCurveDefinition::Spring {
             layout: SpringLayout::CacheFirst { context, .. },
             ..
@@ -486,8 +485,7 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             &HashSet::new(),
             &HashSet::new(),
             IdFormat("f3d"),
-        )
-        .unwrap();
+        );
         assert_eq!(out.curves.len(), 1);
         assert_eq!(out.curves[0].id.as_str(), "f3d:brep:entity#4");
         assert!(out.procedural_curves.is_empty());
@@ -579,8 +577,7 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             &HashSet::from([4]),
             &HashSet::from([4]),
             IdFormat("f3d"),
-        )
-        .unwrap();
+        );
         assert_eq!(
             out.surfaces
                 .iter()
