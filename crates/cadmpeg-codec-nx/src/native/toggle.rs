@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::View;
 use std::collections::BTreeMap;
 
+use super::hex::ToggleId;
 use crate::container::{Container, EntryContent};
 
 const ENTRY_NAME: &str = "/Root/UG_PART/LastSavedToggleInfoStream";
@@ -27,7 +28,7 @@ pub struct SavedToggleEntry {
     /// Zero-based serialized member order.
     pub ordinal: u32,
     /// Lowercase 32-hex-digit toggle identity.
-    toggle_id: String,
+    toggle_id: ToggleId,
     /// Record-order-independent identity when the toggle ID is unique in the stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
@@ -41,7 +42,7 @@ pub struct SavedToggleEntry {
 struct SavedToggleEntryWire {
     id: String,
     ordinal: u32,
-    toggle_id: String,
+    toggle_id: ToggleId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
     state: SavedToggleState,
@@ -52,14 +53,6 @@ struct SavedToggleEntryWire {
 impl TryFrom<SavedToggleEntryWire> for SavedToggleEntry {
     type Error = &'static str;
     fn try_from(wire: SavedToggleEntryWire) -> Result<Self, Self::Error> {
-        if wire.toggle_id.len() != 32
-            || !wire
-                .toggle_id
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err("SavedToggleEntry.toggle_id must be 32 lowercase hexadecimal digits");
-        }
         if wire.id != format!("nx:saved-toggle:entry#{}", wire.ordinal) {
             return Err("SavedToggleEntry.id disagrees with ordinal");
         }
@@ -265,7 +258,7 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
             SavedToggleEntry::try_from(SavedToggleEntryWire {
                 id: format!("nx:saved-toggle:entry#{ordinal}"),
                 ordinal: u32::try_from(ordinal).ok()?,
-                toggle_id: toggle_id.to_string(),
+                toggle_id: ToggleId::try_from(toggle_id.to_string()).ok()?,
                 stable_identity: None,
                 state,
                 raw_byte_len,
@@ -293,7 +286,7 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
 }
 
 fn assign_stable_toggle_identities(entries: &mut [SavedToggleEntry]) {
-    let mut counts = BTreeMap::<String, usize>::new();
+    let mut counts = BTreeMap::<ToggleId, usize>::new();
     for entry in entries.iter() {
         *counts.entry(entry.toggle_id.clone()).or_default() += 1;
     }
