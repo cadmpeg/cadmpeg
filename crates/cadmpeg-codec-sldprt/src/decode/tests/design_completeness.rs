@@ -316,7 +316,7 @@ fn design_completeness_audits_typed_construction_families() {
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
-            == "7 typed feature(s) retain native or unresolved required operation operands."
+            == "6 typed feature(s) retain native or unresolved required operation operands."
     }));
 }
 
