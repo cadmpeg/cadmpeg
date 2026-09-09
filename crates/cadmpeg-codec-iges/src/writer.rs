@@ -1235,13 +1235,11 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         mark_curve_descendants(ir, &curve.id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
-    let used_pcurve_ids = used_brep_pcurve_ids(ir);
     let mut pcurve_indices = BTreeMap::new();
-    for pcurve_id in used_pcurve_ids {
-        let pcurve = topology.pcurves[pcurve_id.as_str()];
+    for (pcurve_id, pcurve) in topology.pcurves {
         let index = entities.len();
         entities.push(pcurve_entity(ir, pcurve)?);
-        pcurve_indices.insert(pcurve_id, index);
+        pcurve_indices.insert(pcurve_id.to_owned(), index);
     }
 
     let mut body_ids = bodies
@@ -1953,27 +1951,11 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
     }
 
-    let mut pcurve_ids = std::collections::BTreeSet::new();
-    for face in &ir.model.faces {
-        for loop_id in &face.loops {
-            let loop_ = topology.loops[loop_id.as_str()];
-            for coedge_id in loop_.coedges() {
-                let coedge = topology.coedges[coedge_id.as_str()];
-                pcurve_ids.extend(
-                    coedge
-                        .pcurves
-                        .iter()
-                        .map(|use_| use_.pcurve.as_str().to_owned()),
-                );
-            }
-        }
-    }
     let mut pcurve_indices = BTreeMap::new();
-    for pcurve_id in pcurve_ids {
-        let pcurve = topology.pcurves[pcurve_id.as_str()];
+    for (pcurve_id, pcurve) in topology.pcurves {
         let index = entities.len();
         entities.push(pcurve_entity(ir, pcurve)?);
-        pcurve_indices.insert(pcurve_id, index);
+        pcurve_indices.insert(pcurve_id.to_owned(), index);
     }
 
     let mut boundary_indices = BTreeMap::new();
