@@ -379,11 +379,11 @@ impl DesignAssemblyAlignmentForm {
         let [first_frame, second_frame] = frames;
         let [first_qualifier, second_qualifier] = qualifiers;
         Self::Qualified([
-            DesignQualifiedAssemblyOperand {
+            super::DesignQualifiedAssemblyOperand {
                 frame: first_frame,
                 qualifier: first_qualifier,
             },
-            DesignQualifiedAssemblyOperand {
+            super::DesignQualifiedAssemblyOperand {
                 frame: second_frame,
                 qualifier: second_qualifier,
             },
