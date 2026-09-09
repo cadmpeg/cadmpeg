@@ -39,8 +39,32 @@ fn per_corner_mesh_exposes_its_normals() {
         Vec::new(),
     )
     .unwrap();
+    assert_eq!(
+        value.per_corner_normals().len(),
+        3 * value.triangles().len()
+    );
     assert_eq!(value.per_corner_normals(), normals);
+    assert!(!matches!(value.shading(), TessellationNormals::None));
     assert!(value.vertex_normals().is_empty());
+}
+
+#[test]
+fn per_vertex_mesh_exposes_its_normals() {
+    let base = mesh();
+    let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertices().len()];
+    let value = Tessellation::new(
+        "test:mesh:tessellation#vertices",
+        base.vertices().to_vec(),
+        base.triangles().to_vec(),
+        TessellationTopology::List,
+        TessellationNormals::PerVertex(normals.clone()),
+        Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(value.vertex_normals().len(), value.vertices().len());
+    assert_eq!(value.vertex_normals(), normals);
+    assert!(value.per_corner_normals().is_empty());
+    assert!(!matches!(value.shading(), TessellationNormals::None));
 }
 
 fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
