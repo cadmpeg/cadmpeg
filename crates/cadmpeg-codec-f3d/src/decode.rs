@@ -1984,9 +1984,11 @@ fn try_decode_text_model(
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
     for name in &names {
         let bytes = scan.entry_bytes(name)?;
-        let Ok(stream) = cadmpeg_asm::sat::parse(bytes) else {
-            continue;
-        };
+        let stream = cadmpeg_asm::sat::parse(bytes).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "text BREP entry {name} failed to parse: {error}"
+            ))
+        })?;
         let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
