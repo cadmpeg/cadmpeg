@@ -2118,9 +2118,9 @@ impl<'a> DecodeContext<'a> {
                 }
             })
             .map_err(|error| error.to_string())?;
-            if !mesh.normals().is_empty() {
+            if !mesh.vertex_normals().is_empty() {
                 let normals = mesh
-                    .normals()
+                    .vertex_normals()
                     .iter()
                     .map(|value| {
                         transform
