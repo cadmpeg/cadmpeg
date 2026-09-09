@@ -35,8 +35,6 @@ fn marker(
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, ordinal, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -68,7 +66,7 @@ fn dynamic_relation(
             .map(|(index, entity_index)| FeatureInputOperand {
                 offset: index as u64,
                 reference_ref: format!("reference-{index}"),
-                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 entity_index,
                 entity_ref: None,
             })
@@ -203,8 +201,6 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -386,8 +382,10 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
         Point2::new(-13.0, 7.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [8, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_812E);
+    relation.operands[0].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8124).unwrap());
+    relation.operands[1].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812e).unwrap());
     let parameter = length_parameter(14.0);
 
     assert_eq!(
@@ -474,8 +472,10 @@ fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
         Point2::new(-28.0, 10.0),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 0]);
-    relation.operands[0].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8124);
-    relation.operands[1].kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_812E);
+    relation.operands[0].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8124).unwrap());
+    relation.operands[1].kind =
+        FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812e).unwrap());
 
     assert_eq!(
         typed_relation_definition(
@@ -750,9 +750,9 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
 fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
-    first_marker.object_index = Some(2);
+    first_marker = first_marker.with_test_identity(Some(2), first_marker.local_id());
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
-    second_marker.object_index = Some(3);
+    second_marker = second_marker.with_test_identity(Some(3), second_marker.local_id());
     second_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -1038,9 +1038,9 @@ fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
 fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
-    first_marker.object_index = Some(0);
+    first_marker = first_marker.with_test_identity(Some(0), first_marker.local_id());
     let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
-    second_marker.object_index = Some(1);
+    second_marker = second_marker.with_test_identity(Some(1), second_marker.local_id());
     let first = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#first-point").unwrap(),
         sketch.clone(),
@@ -1092,9 +1092,9 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
 fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
-    point_marker.object_index = Some(0);
+    point_marker = point_marker.with_test_identity(Some(0), point_marker.local_id());
     let mut arc_marker = marker("arc-marker", 1, 20, SketchInputKind::Arc, None);
-    arc_marker.object_index = Some(4);
+    arc_marker = arc_marker.with_test_identity(Some(4), arc_marker.local_id());
     let mut wrapper_marker = marker(
         "arc-wrapper",
         2,
@@ -1102,7 +1102,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
         SketchInputKind::Relation(SketchRelationKind::Distance),
         None,
     );
-    wrapper_marker.object_index = Some(4);
+    wrapper_marker = wrapper_marker.with_test_identity(Some(4), wrapper_marker.local_id());
     wrapper_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -1163,7 +1163,7 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
 fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
-    point_marker.object_index = Some(0);
+    point_marker = point_marker.with_test_identity(Some(0), point_marker.local_id());
     let first_marker = marker("first-arc", 1, 20, SketchInputKind::Arc, None);
     let second_marker = marker("second-arc", 2, 30, SketchInputKind::Arc, None);
     let mut wrapper_marker = marker(
@@ -1173,7 +1173,7 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
         SketchInputKind::Relation(SketchRelationKind::Distance),
         None,
     );
-    wrapper_marker.object_index = Some(4);
+    wrapper_marker = wrapper_marker.with_test_identity(Some(4), wrapper_marker.local_id());
     wrapper_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -1253,7 +1253,7 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
     let mut line_marker = marker("line-marker", 1, 20, SketchInputKind::LineOrCircle, None);
-    line_marker.object_index = Some(1);
+    line_marker = line_marker.with_test_identity(Some(1), line_marker.local_id());
     line_marker.links = crate::records::SketchInputLinks::new(
         0,
         vec![

@@ -130,7 +130,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<CurveCarrier> {
         let Some(source) = carriers.curve(source_attr) else {
             continue;
         };
-        let geometry = &source.geometry;
+        let geometry = &source.carrier().geometry;
         let values = (0..8)
             .map(|index| View::f64_be_at(bytes, marker_at + 3 + index * 8))
             .collect::<Option<Vec<_>>>();

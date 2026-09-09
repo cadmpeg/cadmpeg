@@ -1303,7 +1303,7 @@ fn profile_generated_surface_axis(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index.is_some())
+        .filter(|endpoint| endpoint.object_index().is_some())
         .collect::<Vec<_>>();
     let mut endpoint_ids = HashSet::new();
     let v_axis = normal.cross(u_axis);
@@ -1438,7 +1438,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index.is_some())
+        .filter(|endpoint| endpoint.object_index().is_some())
         .map(|endpoint| endpoint.id.as_str())
         .collect::<HashSet<_>>();
     let unreferenced_points = markers
@@ -1467,7 +1467,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         .iter()
         .copied()
         .filter(|marker| {
-            marker.object_index.is_some() && curve_endpoints.contains(marker.id.as_str())
+            marker.object_index().is_some() && curve_endpoints.contains(marker.id.as_str())
         })
         .filter_map(|marker| {
             let end = marker.coordinates_m?;
@@ -1500,7 +1500,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         markers
             .iter()
             .filter(|marker| {
-                marker.object_index.is_some() && curve_endpoints.contains(marker.id.as_str())
+                marker.object_index().is_some() && curve_endpoints.contains(marker.id.as_str())
             })
             .filter_map(|marker| marker.coordinates_m)
             .filter(|[u, v]| {
@@ -1534,7 +1534,7 @@ pub(super) fn profile_roster_principal_axis_endpoints(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index.is_some())
+        .filter(|endpoint| endpoint.object_index().is_some())
         .map(|endpoint| endpoint.id.as_str())
         .collect::<HashSet<_>>();
     let incidence = |axis: &[[f64; 2]; 2]| {
@@ -1741,7 +1741,7 @@ fn bounded_profile_axis_coordinates(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
-            && marker.object_index.is_some()
+            && marker.object_index().is_some()
             && curve_endpoints.contains(marker.id.as_str()))
         .then_some(marker.coordinates_m)
         .flatten()

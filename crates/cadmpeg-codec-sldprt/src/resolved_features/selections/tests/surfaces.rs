@@ -1690,7 +1690,7 @@ fn generated_surface_identities_are_producer_outputs() {
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {
         identity.type_prefix == prefix
-            && identity.feature_source_id == 89
+            && identity.feature_source_id.value() == 89
             && identity.local_identity == 2
     }));
     assert_eq!(identities[0].components[0].instance, None);

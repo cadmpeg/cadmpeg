@@ -80,7 +80,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
     assert_eq!(
         lane.sketch_entities
             .iter()
-            .map(|entity| entity.local_id)
+            .map(crate::records::SketchInputEntity::local_id)
             .collect::<Vec<_>>(),
         [Some(1), Some(2), Some(3)]
     );
@@ -115,7 +115,11 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
+        native.feature_input_lanes[0].sketch_entities[0] =
+            native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
+                native.feature_input_lanes[0].sketch_entities[0].object_index(),
+                Some(7),
+            );
     });
     assert!(
         crate::resolved_features::validate::validate_native(decoded.ir())
@@ -140,7 +144,11 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
+        native.feature_input_lanes[0].sketch_entities[0] =
+            native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
+                Some(77),
+                native.feature_input_lanes[0].sketch_entities[0].local_id(),
+            );
     });
     assert!(
         crate::resolved_features::validate::validate_native(decoded.ir())

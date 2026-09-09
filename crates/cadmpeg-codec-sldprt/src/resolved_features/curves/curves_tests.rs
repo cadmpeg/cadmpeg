@@ -152,8 +152,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -262,7 +261,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     }
     let mut current_corners = three_corners.clone();
     for (index, marker) in current_corners.iter_mut().take(4).enumerate() {
-        marker.object_index = Some(index as u32 + 1);
+        *marker = marker.with_test_identity(Some(index as u32 + 1), marker.local_id());
     }
     for marker in current_corners.iter_mut().skip(4) {
         marker.kind = SketchInputKind::Arc;
@@ -437,8 +436,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = Some(object_index);
-            constructed_marker.local_id = None;
+            constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
@@ -597,8 +595,7 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
             },
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -662,8 +659,6 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -696,8 +691,6 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([u, v]);
         constructed_marker.links = None;
@@ -753,8 +746,6 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = None;
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -844,8 +835,6 @@ fn linked_semicircle_records_close_a_two_center_profile() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = crate::records::SketchInputLinks::new(

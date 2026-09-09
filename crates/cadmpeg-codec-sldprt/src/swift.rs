@@ -251,7 +251,9 @@ pub(crate) fn annotations(
         .iter()
         .zip(&root.annotations.entities)
     {
-        let prefix = pmi_id(&reference.id).into_string();
+        let Some(prefix) = pmi_id(&reference.id).map(PmiId::into_string) else {
+            continue;
+        };
         for annotation in projected.iter().filter(|annotation| {
             annotation.id.as_str() == prefix
                 || annotation.id.as_str().starts_with(&format!("{prefix}:"))
@@ -378,9 +380,17 @@ pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeM
         );
         return classes;
     }
-    for entity in &root.annotations.entities {
+    for (reference, entity) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
         let class = short_class(&entity.class);
-        if class != "GdtDatum" && tolerance_kind(class).is_none() && dimension_kind(class).is_none()
+        if pmi_id(&reference.id).is_none()
+            || (class != "GdtDatum"
+                && tolerance_kind(class).is_none()
+                && dimension_kind(class).is_none())
         {
             classes
                 .entry(class.to_string())
@@ -665,7 +675,7 @@ fn project_with_topology(
                     .get("DatumIdentifier")
                     .is_some_and(|value| !value.is_empty())
         })
-        .map(|(reference, _)| (reference.id.as_str(), pmi_id(&reference.id)))
+        .filter_map(|(reference, _)| Some((reference.id.as_str(), pmi_id(&reference.id)?)))
         .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::new();
     let mut datum_systems = Vec::<(cadmpeg_ir::pmi::DatumReferences, PmiId)>::new();
@@ -678,6 +688,9 @@ fn project_with_topology(
         }
     }
     for (reference, entity) in rows {
+        let Some(id) = pmi_id(&reference.id) else {
+            continue;
+        };
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
             continue;
         }
@@ -693,11 +706,8 @@ fn project_with_topology(
             {
                 Some(id.clone())
             } else {
-                let id = PmiId::mint(format!(
-                    "{}:datum-system",
-                    pmi_id(&reference.id).into_string()
-                ))
-                .expect("identity grammar");
+                let id =
+                    PmiId::mint(format!("{}:datum-system", id.as_str())).expect("identity grammar");
                 datum_systems.push((tolerance.references.clone(), id.clone()));
                 projected.push(PmiAnnotation {
                     id: id.clone(),
@@ -712,7 +722,7 @@ fn project_with_topology(
             };
             let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
             projected.push(PmiAnnotation {
-                id: pmi_id(&reference.id),
+                id,
                 name: object_name(entity),
                 visible: None,
                 targets,
@@ -760,8 +770,9 @@ fn project_datum(
         .filter(|value| !value.is_empty())?
         .clone();
     let targets = targets(entity, feature_index, topology)?;
+    let id = pmi_id(&reference.id)?;
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
-        id: pmi_id(&reference.id),
+        id,
         name: object_name(entity),
         visible: None,
         targets,
@@ -798,7 +809,7 @@ fn project_lower_profile_tier(
     Some(PmiAnnotation {
         id: PmiId::mint(format!(
             "{}:lower-tier",
-            pmi_id(&reference.id).into_string()
+            pmi_id(&reference.id)?.into_string()
         ))
         .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
@@ -849,7 +860,7 @@ fn project_dimension(
         _ => None,
     };
     Some(PmiAnnotation {
-        id: pmi_id(&reference.id),
+        id: pmi_id(&reference.id)?,
         name: object_name(entity),
         visible: None,
         targets: targets(entity, feature_index, topology)?,
@@ -2265,8 +2276,8 @@ fn object_name(entity: &Entity) -> Option<String> {
         .cloned()
 }
 
-fn pmi_id(source_id: &str) -> PmiId {
-    PmiId::mint(format!("sldprt:model:pmi#{source_id}")).expect("identity grammar")
+fn pmi_id(source_id: &str) -> Option<PmiId> {
+    PmiId::mint(format!("sldprt:model:pmi#{source_id}")).ok()
 }
 
 fn suppressed(entity: &Entity) -> bool {

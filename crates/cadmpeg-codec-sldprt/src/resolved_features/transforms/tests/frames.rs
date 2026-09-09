@@ -892,10 +892,10 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
 
     let mut implicit_lane = lane;
     let mut implicit_center = marker("implicit-center", Some([0.010, 0.020]));
-    implicit_center.local_id = Some(1);
+    implicit_center = implicit_center.with_test_identity(implicit_center.object_index(), Some(1));
     implicit_center = implicit_center.with_test_position(implicit_center.ordinal(), 100);
     let mut implicit_radial = marker("implicit-radial", Some([0.013, 0.024]));
-    implicit_radial.local_id = Some(2);
+    implicit_radial = implicit_radial.with_test_identity(implicit_radial.object_index(), Some(2));
     implicit_radial = implicit_radial.with_test_position(implicit_radial.ordinal(), 200);
     implicit_lane.sketch_entities = vec![implicit_center, implicit_radial];
     let (resolved, radius) = implicit_circle_marker(
@@ -922,18 +922,16 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
 fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
     unrelated = unrelated.with_test_position(unrelated.ordinal(), 10);
-    unrelated.object_index = Some(7);
+    unrelated = unrelated.with_test_identity(Some(7), unrelated.local_id());
     let mut center = marker("center", Some([0.010, 0.020]));
     center = center.with_test_position(center.ordinal(), 20);
-    center.object_index = Some(9);
-    center.local_id = Some(11);
+    center = center.with_test_identity(Some(9), Some(11));
     let mut radial = marker("radial", Some([0.013, 0.024]));
     radial = radial.with_test_position(radial.ordinal(), 30);
-    radial.object_index = Some(8);
-    radial.local_id = Some(12);
+    radial = radial.with_test_identity(Some(8), Some(12));
     let mut relation = marker("circle-owner", None);
     relation = relation.with_test_position(relation.ordinal(), 40);
-    relation.object_index = Some(1);
+    relation = relation.with_test_identity(Some(1), relation.local_id());
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
     relation.links = crate::records::SketchInputLinks::new(
         0,
@@ -983,16 +981,16 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
 fn implicit_circle_uses_unique_terminal_radial_point() {
     let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
     unrelated = unrelated.with_test_position(unrelated.ordinal(), 10);
-    unrelated.local_id = Some(1);
+    unrelated = unrelated.with_test_identity(unrelated.object_index(), Some(1));
     let mut center = marker("center", Some([0.010, 0.010]));
     center = center.with_test_position(center.ordinal(), 20);
-    center.local_id = Some(2);
+    center = center.with_test_identity(center.object_index(), Some(2));
     let mut another = marker("another", Some([0.020, 0.020]));
     another = another.with_test_position(another.ordinal(), 30);
-    another.local_id = Some(3);
+    another = another.with_test_identity(another.object_index(), Some(3));
     let mut radial = marker("radial", Some([0.013, 0.014]));
     radial = radial.with_test_position(radial.ordinal(), 40);
-    radial.local_id = None;
+    radial = radial.with_test_identity(radial.object_index(), None);
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -1026,7 +1024,7 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 
 #[test]
 fn declared_entity_handle_uses_one_linked_center_radial_pair() {
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -1053,12 +1051,10 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     };
     let mut center = marker("center", Some([0.010, 0.020]));
     center = center.with_test_position(center.ordinal(), 10);
-    center.object_index = Some(50);
-    center.local_id = Some(49);
+    center = center.with_test_identity(Some(50), Some(49));
     let mut radial = marker("radial", Some([0.013, 0.024]));
     radial = radial.with_test_position(radial.ordinal(), 20);
-    radial.object_index = Some(49);
-    radial.local_id = Some(0);
+    radial = radial.with_test_identity(Some(49), Some(0));
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -1111,12 +1107,10 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     let mut ambiguous = lane;
     let mut second_center = marker("second-center", Some([0.020, 0.030]));
     second_center = second_center.with_test_position(second_center.ordinal(), 30);
-    second_center.object_index = Some(52);
-    second_center.local_id = Some(51);
+    second_center = second_center.with_test_identity(Some(52), Some(51));
     let mut second_radial = marker("second-radial", Some([0.023, 0.034]));
     second_radial = second_radial.with_test_position(second_radial.ordinal(), 40);
-    second_radial.object_index = Some(51);
-    second_radial.local_id = Some(0);
+    second_radial = second_radial.with_test_identity(Some(51), Some(0));
     ambiguous
         .sketch_entities
         .extend([second_center, second_radial]);
@@ -1240,7 +1234,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         pmi: None,
         native_ref: Some("parameter-scalar".into()),
     };
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let operand = FeatureInputOperand {
         offset: 300,
         reference_ref: "reference".into(),
@@ -1257,12 +1251,10 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     };
     let mut center = marker("center", Some([0.010, 0.020]));
     center = center.with_test_position(center.ordinal(), 400);
-    center.object_index = Some(50);
-    center.local_id = Some(49);
+    center = center.with_test_identity(Some(50), Some(49));
     let mut radial = marker("radial", Some([0.013, 0.024]));
     radial = radial.with_test_position(radial.ordinal(), 410);
-    radial.object_index = Some(49);
-    radial.local_id = Some(0);
+    radial = radial.with_test_identity(Some(49), Some(0));
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,

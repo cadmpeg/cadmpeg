@@ -45,7 +45,7 @@ fn current_compact_spatial_point_marker(
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     let parent = "sldprt:feature-input:resolved-features#synthetic";
-    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
         offset,
         reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
@@ -263,7 +263,7 @@ fn current_compact_spatial_points_decode_without_object_indices() {
             panic!("expected one compact spatial point marker");
         };
         assert_eq!(entity.kind, SketchInputKind::Point);
-        assert_eq!(entity.object_index, None);
+        assert_eq!(entity.object_index(), None);
     }
 
     let mut planar =
@@ -302,10 +302,10 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     ));
     let mut sketch_entities = sketch_input_entities(&payload, lane_id);
     assert_eq!(sketch_entities.len(), 4);
-    assert_eq!(sketch_entities[0].object_index, Some(1));
-    assert_eq!(sketch_entities[1].object_index, None);
-    assert_eq!(sketch_entities[2].object_index, Some(3));
-    assert_eq!(sketch_entities[3].object_index, None);
+    assert_eq!(sketch_entities[0].object_index(), Some(1));
+    assert_eq!(sketch_entities[1].object_index(), None);
+    assert_eq!(sketch_entities[2].object_index(), Some(3));
+    assert_eq!(sketch_entities[3].object_index(), None);
     for entity in &mut sketch_entities {
         entity.feature_ref = Some(native_ref.into());
         assert_eq!(entity.kind, SketchInputKind::Point);
@@ -406,7 +406,7 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     assert_eq!(
         sketch_entities
             .iter()
-            .map(|entity| entity.object_index)
+            .map(crate::records::SketchInputEntity::object_index)
             .collect::<Vec<_>>(),
         vec![Some(2), Some(3)]
     );
@@ -809,7 +809,7 @@ fn legacy_sketch_prefix_uses_the_shared_entity_body() {
 
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
-    assert_eq!(entities[0].local_id, Some(41));
+    assert_eq!(entities[0].local_id(), Some(41));
 }
 
 #[test]
