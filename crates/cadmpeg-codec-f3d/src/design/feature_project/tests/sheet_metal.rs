@@ -46,7 +46,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                 crate::records::feature::DesignEdgeFlangeShape::TwoSides {
                     edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                         wrapper_record_index: 383,
-                        group_record_index: 385,
+                        group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
                     owners: [393, 396],
@@ -299,7 +299,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     {
         edges.push(crate::records::feature::DesignEdgeFlangeEdge {
             wrapper_record_index: edges[0].wrapper_record_index,
-            group_record_index: 415,
+            group_record_index: 415_u32.try_into().unwrap(),
             aggregate_operand_record_index: 420,
         });
     }
@@ -578,7 +578,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
                 crate::records::feature::DesignEdgeFlangeShape::FullEdge {
                     edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                         wrapper_record_index: 383,
-                        group_record_index: 385,
+                        group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
                     height: DesignEdgeFlangeHeightExtent::ToObject {
@@ -809,7 +809,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
                 crate::records::feature::DesignEdgeFlangeShape::Symmetric {
                     edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                         wrapper_record_index: 318,
-                        group_record_index: 320,
+                        group_record_index: 320_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 339,
                     }],
                     owner: 328,
@@ -1160,8 +1160,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     };
     let operation = |parameter_owners| DesignHemOperation {
         edge_wrapper_record_index: 708,
-        edge_group_record_index: 710,
-        aggregate_group_record_index: 717,
+        edge_group_record_index: 710_u32.try_into().unwrap(),
+        aggregate_group_record_index: 717_u32.try_into().unwrap(),
         parameter_owners,
         settings_record_index: 724,
         bend_radius: crate::records::feature::DesignPositiveScalar::new(0.25)

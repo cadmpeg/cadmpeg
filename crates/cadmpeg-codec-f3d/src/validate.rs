@@ -1713,7 +1713,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .flat_map(|edge| {
                         [
                             edge.wrapper_record_index,
-                            edge.group_record_index,
+                            edge.group_record_index.get(),
                             edge.operand_record_index(),
                             edge.aggregate_operand_record_index,
                         ]
@@ -1756,9 +1756,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(operation) => {
                 let mut claimed = vec![
                     operation.edge_wrapper_record_index,
-                    operation.edge_group_record_index,
+                    operation.edge_group_record_index.get(),
                     operation.edge_operand_record_index(),
-                    operation.aggregate_group_record_index,
+                    operation.aggregate_group_record_index.get(),
                     operation.aggregate_operand_record_index(),
                     operation.settings_record_index,
                 ];
