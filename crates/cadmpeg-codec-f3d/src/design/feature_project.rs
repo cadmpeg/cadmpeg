@@ -1807,7 +1807,7 @@ fn work_point_edge_operand<'a>(
     edge_operands: &'a [DesignEdgeOperand],
 ) -> Option<&'a DesignEdgeOperand> {
     let crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
-        input.carrier().as_deref()?
+        input.carrier()?
     else {
         return None;
     };
@@ -1827,7 +1827,7 @@ pub(crate) fn work_point_input_history_state_id(
     input: &crate::records::feature::DesignWorkPointInput,
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<i64> {
-    match input.carrier().as_deref()? {
+    match input.carrier()? {
         crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
             work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
         }
@@ -1895,8 +1895,7 @@ fn project_work_point_construction(
         })
     };
     let plane = |input: &DesignWorkPointInput| {
-        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier().as_deref()?
-        else {
+        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier()? else {
             return None;
         };
         scope_ids
@@ -1920,9 +1919,7 @@ fn project_work_point_construction(
             }
         }
         DesignWorkPointRuleForm::Vertex { input } => {
-            let DesignWorkPointInputCarrier::VertexRecipe { recipe } =
-                input.carrier().as_deref()?
-            else {
+            let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier()? else {
                 return None;
             };
             let vertex = recipe.resolution.map_or_else(
@@ -2751,7 +2748,7 @@ pub fn bind_work_point_sketch_point_constructions(
         };
         let record_index = input.record_index();
         let crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { selection } =
-            carrier.as_ref()
+            carrier
         else {
             continue;
         };

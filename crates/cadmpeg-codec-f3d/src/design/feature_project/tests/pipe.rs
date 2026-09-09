@@ -47,7 +47,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -165,7 +166,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -213,7 +215,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -242,7 +245,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -303,7 +307,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }

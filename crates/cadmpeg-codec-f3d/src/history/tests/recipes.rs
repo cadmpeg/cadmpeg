@@ -269,8 +269,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier().as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(
@@ -310,8 +309,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test construction is vertex-based")
     };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier().as_deref()
-    else {
+    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
         unreachable!("test input carries a vertex recipe")
     };
     assert_eq!(recipe.resolution, None);

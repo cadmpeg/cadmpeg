@@ -104,12 +104,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
             } else {
                 Vec::new()
             };
-            DesignConfiguration::try_new(
-                entry.name.clone(),
-                kind,
-                variant_order,
-                payload,
-            )
+            DesignConfiguration::try_new(entry.name.clone(), kind, variant_order, payload)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();

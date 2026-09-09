@@ -1414,6 +1414,6 @@ fn work_point_rule_rejects_an_incompatible_input_carrier() {
 fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
-        .map(|input| input.record_index())
+        .map(crate::records::feature::DesignWorkPointInput::record_index)
         .collect()
 }

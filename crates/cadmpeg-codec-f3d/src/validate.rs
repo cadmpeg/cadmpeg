@@ -3538,7 +3538,7 @@ fn valid_work_point_construction(
             .any(|value| value == &input.record_index())
             && input.reference_offset > construction.reference_type_offset
             && header.is_some()
-            && match input.carrier().as_deref() {
+            && match input.carrier() {
                 None => true,
                 Some(records::feature::DesignWorkPointInputCarrier::EdgeRecipe { operand_id }) => {
                     native.design_edge_operands.iter().any(|operand| {
@@ -5218,7 +5218,7 @@ fn validate_construction_operand_identities<'a>(
                 })
         });
         let transform = group.and_then(|group| group.frame.trailing_transforms().first());
-        let tracking_shape = identity.tracking_path().as_ref().is_none_or(|path| {
+        let tracking_shape = identity.tracking_path().is_none_or(|path| {
             records_by_index
                 .get(&(native_stream, path.wrapper_record_index()))
                 .is_some_and(|header| {
@@ -5238,7 +5238,7 @@ fn validate_construction_operand_identities<'a>(
                             && header.class_tag == path.following_class_tag
                     })
         });
-        let chain_entry_shape = if let Some(path) = &identity.tracking_path() {
+        let chain_entry_shape = if let Some(path) = identity.tracking_path() {
             !identity.wrappers().is_empty()
                 || (identity.wrappers().is_empty()
                     && transform.is_some_and(|transform| {
@@ -5274,26 +5274,23 @@ fn validate_construction_operand_identities<'a>(
                     header.byte_offset == identity.following_byte_offset()
                         && header.class_tag == *identity.following_class_tag()
                 });
-        let persistent_shape = identity
-            .persistent_identity()
-            .as_ref()
-            .is_none_or(|persistent| {
-                selected_profile.is_none_or(|profile| profile.asset_id == persistent.asset_id)
-                    && (persistent.next_record_index != 0
-                        || (persistent.next_byte_offset()
-                            == identity.following_byte_offset().saturating_add(190)
-                            && !records_by_index.values().any(|header| {
-                                design_stream(&header.id) == native_stream
-                                    && header.byte_offset == persistent.next_byte_offset()
-                            })))
-                    && records_by_index
-                        .get(&(native_stream, persistent.next_record_index))
-                        // The header arena indexes records named by Design entity
-                        // reference lists. A nested identity can terminate at a
-                        // structurally parsed record that no entity names, so the
-                        // arena is not an exhaustive index of terminal records.
-                        .is_none_or(|header| header.byte_offset == persistent.next_byte_offset())
-            });
+        let persistent_shape = identity.persistent_identity().is_none_or(|persistent| {
+            selected_profile.is_none_or(|profile| profile.asset_id == persistent.asset_id)
+                && (persistent.next_record_index != 0
+                    || (persistent.next_byte_offset()
+                        == identity.following_byte_offset().saturating_add(190)
+                        && !records_by_index.values().any(|header| {
+                            design_stream(&header.id) == native_stream
+                                && header.byte_offset == persistent.next_byte_offset()
+                        })))
+                && records_by_index
+                    .get(&(native_stream, persistent.next_record_index))
+                    // The header arena indexes records named by Design entity
+                    // reference lists. A nested identity can terminate at a
+                    // structurally parsed record that no entity names, so the
+                    // arena is not an exhaustive index of terminal records.
+                    .is_none_or(|header| header.byte_offset == persistent.next_byte_offset())
+        });
         let valid = group.is_some_and(|group| {
             let trailing = group
                 .frame
@@ -5309,13 +5306,12 @@ fn validate_construction_operand_identities<'a>(
                         .frame
                         .trailing_transforms()
                         .first()
-                        .map(|transform| transform.record_index())
+                        .map(super::records::topology::DesignConstructionOperandTransform::record_index)
                 })
                 .or_else(|| {
                     identity
                         .tracking_path()
-                        .as_ref()
-                        .map(|path| path.wrapper_record_index())
+                        .map(super::records::topology::DesignConstructionTrackingPath::wrapper_record_index)
                 })
                 == trailing
         }) && wrapper_shape
@@ -5769,14 +5765,11 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 design_stream(&identity.id) == native_stream
                     && identity.following_record_index() == member.record_index()
                     && identity.following_byte_offset() == member.byte_offset()
-                    && identity
-                        .persistent_identity()
-                        .as_ref()
-                        .is_some_and(|persistent| {
-                            persistent.local_id == member.local_id
-                                && persistent.asset_id == member.asset_id
-                                && persistent.context_id == member.context_id
-                        })
+                    && identity.persistent_identity().is_some_and(|persistent| {
+                        persistent.local_id == member.local_id
+                            && persistent.asset_id == member.asset_id
+                            && persistent.context_id == member.context_id
+                    })
             })
             .collect::<Vec<_>>();
         expected_identities.sort_by_key(|identity| {

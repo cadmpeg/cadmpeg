@@ -284,14 +284,15 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
         .iter()
         .enumerate()
         .map(|(ordinal, reference)| {
-            let transform = reference
-                .transform
-                .map_or([
+            let transform = reference.transform.map_or(
+                [
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, 0.0, 0.0, 1.0],
-                ], crate::records::DesignAffineTransform::rows);
+                ],
+                crate::records::DesignAffineTransform::rows,
+            );
             Ok(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,

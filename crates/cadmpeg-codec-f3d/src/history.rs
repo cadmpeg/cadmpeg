@@ -3445,7 +3445,7 @@ pub(crate) fn bind_scope_histories(
                 crate::ids::same_native_occurrence(&operand.id, &scope.id)
                     && operand.scope_record_index == scope.record_index
             })
-            .flat_map(|operand| operand.references())
+            .flat_map(super::records::topology::DesignBodyRecipeOperand::references)
             .flat_map(|reference| &reference.candidate_faces)
             .collect::<Vec<_>>();
         if !candidate_faces.is_empty() {
@@ -7534,7 +7534,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 continue;
             }
             let persistent_candidates = identity
-                .and_then(|identity| identity.persistent_identity().as_ref())
+                .and_then(crate::records::topology::DesignConstructionOperandIdentity::persistent_identity)
                 .map_or_else(Vec::new, |identity| {
                     entity_selection_face_candidates(identity.local_id, histories)
                 });
@@ -8055,7 +8055,6 @@ pub(crate) fn bind_edge_identity_history(
         .chain(identities.iter().filter_map(|identity| {
             identity
                 .persistent_identity()
-                .as_ref()
                 .map(|persistent| persistent.local_id)
         }))
         .collect::<Vec<_>>();
@@ -8225,7 +8224,7 @@ pub(crate) fn bind_edge_identity_history(
             (crate::ids::native_stream(&identity.id) == Some(stream)
                 && identity.group_record_index == operand.group_record_index)
                 .then_some(identity)?;
-            let persistent = identity.persistent_identity().as_ref()?;
+            let persistent = identity.persistent_identity()?;
             let (kind, entity_ref, states) =
                 scoped_identities.selection_identity_kind(persistent.local_id)?;
             states.contains(&previous_state_id).then_some(())?;
