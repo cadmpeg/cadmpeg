@@ -465,13 +465,13 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             (
                 [vertex.x, vertex.y, vertex.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                *focal_distance,
-                2.0 * *focal_distance,
+                focal_distance,
+                2.0 * focal_distance,
                 NonperiodicConicFamily::Parabola,
             )
         }
@@ -479,14 +479,14 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                *major_radius,
-                *minor_radius,
+                major_radius,
+                minor_radius,
                 NonperiodicConicFamily::Hyperbola,
             )
         }
@@ -519,25 +519,25 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
-                [*radius, *radius],
+                [radius, radius],
             )
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],
                 [major_direction.x, major_direction.y, major_direction.z],
-                [*major_radius, *minor_radius],
+                [major_radius, minor_radius],
             )
         }
         _ => return None,

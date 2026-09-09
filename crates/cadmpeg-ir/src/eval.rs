@@ -105,8 +105,8 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
-            if *radius == 0.0 {
+            let radius = cylinder_surface.radius();
+            if radius == 0.0 {
                 return None;
             }
             let (x, y, v) = components(*origin, *axis, *ref_direction);
@@ -116,12 +116,12 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             let (x, y, v) = components(*origin, *axis, *ref_direction);
             let local_radius = radius + v * half_angle.tan();
-            if local_radius == 0.0 || *ratio == 0.0 {
+            if local_radius == 0.0 || ratio == 0.0 {
                 return None;
             }
             Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
@@ -130,8 +130,8 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
-            if *radius == 0.0 {
+            let radius = sphere_surface.radius();
+            if radius == 0.0 {
                 return None;
             }
             let (x, y, z) = components(*center, *axis, *ref_direction);
@@ -141,9 +141,9 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
-            if *minor_radius == 0.0 {
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
+            if minor_radius == 0.0 {
                 return None;
             }
             let (x, y, z) = components(*center, *axis, *ref_direction);
@@ -2863,7 +2863,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         CurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             Some(vector_sum(&[
                 (-radius * t.sin(), *ref_direction),
                 (radius * t.cos(), axis.cross(*ref_direction)),
@@ -2872,8 +2872,8 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         CurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             Some(vector_sum(&[
                 (-major_radius * t.sin(), *major_direction),
                 (minor_radius * t.cos(), axis.cross(*major_direction)),
@@ -2882,7 +2882,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         CurveGeometry::Parabola(parabola_curve) => {
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             Some(vector_sum(&[
                 (2.0 * focal_distance * t, *major_direction),
                 (2.0 * focal_distance, axis.cross(*major_direction)),
@@ -2891,8 +2891,8 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         CurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             Some(vector_sum(&[
                 (major_radius * t.sinh(), *major_direction),
                 (minor_radius * t.cosh(), axis.cross(*major_direction)),
@@ -2938,7 +2938,7 @@ fn curve_second_derivative_inner(
         CurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             Some(vector_sum(&[
                 (-radius * t.cos(), *ref_direction),
                 (-radius * t.sin(), axis.cross(*ref_direction)),
@@ -2947,8 +2947,8 @@ fn curve_second_derivative_inner(
         CurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             Some(vector_sum(&[
                 (-major_radius * t.cos(), *major_direction),
                 (-minor_radius * t.sin(), axis.cross(*major_direction)),
@@ -2956,14 +2956,14 @@ fn curve_second_derivative_inner(
         }
         CurveGeometry::Parabola(parabola_curve) => {
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             Some(vector_sum(&[(2.0 * focal_distance, *major_direction)]))
         }
         CurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             Some(vector_sum(&[
                 (major_radius * t.cosh(), *major_direction),
                 (minor_radius * t.sinh(), axis.cross(*major_direction)),
@@ -3144,7 +3144,7 @@ fn helix_differential(
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     let angle_range = *angle_range;
@@ -3152,7 +3152,7 @@ fn helix_differential(
     let major = *major;
     let minor = *minor;
     let pitch = *pitch;
-    let apex_factor = *apex_factor;
+    let apex_factor = apex_factor;
     let axis = *axis;
     let [start, end] = angle_range;
     if ![start, end, apex_factor, parameter]
@@ -3717,7 +3717,7 @@ fn model_curve_point_by_id_inner(
             ..
         } => {
             let supports = intersection.supports();
-            let tolerance = &intersection.tolerance();
+            let tolerance = intersection.tolerance();
 
             let parameter_range = parameterization.parameter_range();
             if !parameter.is_finite()
@@ -3748,7 +3748,7 @@ fn model_curve_point_by_id_inner(
                 + (first.y - second.y).powi(2)
                 + (first.z - second.z).powi(2))
             .sqrt();
-            (separation.is_finite() && separation <= *tolerance).then_some(first)
+            (separation.is_finite() && separation <= tolerance).then_some(first)
         }
         _ => {
             if let Some(cache) = curve.geometry.solved_cache() {
@@ -3921,7 +3921,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         return None;
     };
     let supports = intersection.supports();
-    let tolerance = &intersection.tolerance();
+    let tolerance = intersection.tolerance();
 
     let range = parameterization.parameter_range();
     if !seed.is_finite() || seed < range[0] || seed > range[1] {
@@ -4055,7 +4055,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                     continue;
                 };
                 let isocurve_seed = varying_origin + varying_scale * seed;
-                nurbs_curve_parameter_near_point(&isocurve, point, *tolerance, isocurve_seed)
+                nurbs_curve_parameter_near_point(&isocurve, point, tolerance, isocurve_seed)
                     .map(|parameter| (parameter - varying_origin) / varying_scale)
             }
             _ => continue,
@@ -4079,7 +4079,7 @@ fn model_curve_parameter_near_point_with_tolerance(
             + (evaluated.y - point.y).powi(2)
             + (evaluated.z - point.z).powi(2))
         .sqrt();
-        if distance.is_finite() && distance <= *tolerance {
+        if distance.is_finite() && distance <= tolerance {
             candidates.push(parameter);
         }
     }
@@ -4192,8 +4192,8 @@ fn direct_curve_parameter_near_point(
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
-            if *radius == 0.0 {
+            let radius = circle_curve.radius();
+            if radius == 0.0 {
                 return None;
             }
             let (x, y, _) = components(*center, *axis, *ref_direction);
@@ -4204,9 +4204,9 @@ fn direct_curve_parameter_near_point(
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
-            if *major_radius == 0.0 || *minor_radius == 0.0 {
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
+            if major_radius == 0.0 || minor_radius == 0.0 {
                 return None;
             }
             let (x, y, _) = components(*center, *axis, *major_direction);
@@ -4217,8 +4217,8 @@ fn direct_curve_parameter_near_point(
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
-            if *focal_distance == 0.0 {
+            let focal_distance = parabola_curve.focal_distance();
+            if focal_distance == 0.0 {
                 return None;
             }
             let (_, transverse, _) = components(*vertex, *axis, *major_direction);
@@ -4228,8 +4228,8 @@ fn direct_curve_parameter_near_point(
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let minor_radius = &hyperbola_curve.minor_radius();
-            if *minor_radius == 0.0 {
+            let minor_radius = hyperbola_curve.minor_radius();
+            if minor_radius == 0.0 {
                 return None;
             }
             let (_, transverse, _) = components(*center, *axis, *major_direction);
@@ -4416,7 +4416,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             Some(offset(
                 *center,
                 &[
@@ -4429,8 +4429,8 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             Some(offset(
                 *center,
                 &[
@@ -4443,7 +4443,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             Some(offset(
                 *vertex,
                 &[
@@ -4456,8 +4456,8 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             Some(offset(
                 *center,
                 &[
@@ -4537,7 +4537,7 @@ fn surface_point_with_budget_inner(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4554,9 +4554,9 @@ fn surface_point_with_budget_inner(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4575,7 +4575,7 @@ fn surface_point_with_budget_inner(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4594,8 +4594,8 @@ fn surface_point_with_budget_inner(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4859,7 +4859,7 @@ fn surface_second_partials_inner(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4889,9 +4889,9 @@ fn surface_second_partials_inner(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4930,7 +4930,7 @@ fn surface_second_partials_inner(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4973,8 +4973,8 @@ fn surface_second_partials_inner(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -7539,7 +7539,7 @@ fn pcurve_uv_differential_inner(
         return None;
     }
     if let PcurveGeometry::Offset(offset_pcurve) = geometry {
-        let distance = &offset_pcurve.distance();
+        let distance = offset_pcurve.distance();
         let basis = offset_pcurve.basis();
         let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
         let tangent = basis.tangent?;
@@ -7583,7 +7583,7 @@ fn pcurve_uv_differential_inner(
             let center = circle_pcurve.center();
             let x_axis = circle_pcurve.x_axis();
             let y_axis = circle_pcurve.y_axis();
-            let radius = &circle_pcurve.radius();
+            let radius = circle_pcurve.radius();
             let cosine = t.cos();
             let sine = t.sin();
             (
@@ -7605,8 +7605,8 @@ fn pcurve_uv_differential_inner(
             let center = ellipse_pcurve.center();
             let x_axis = ellipse_pcurve.x_axis();
             let y_axis = ellipse_pcurve.y_axis();
-            let major_radius = &ellipse_pcurve.major_radius();
-            let minor_radius = &ellipse_pcurve.minor_radius();
+            let major_radius = ellipse_pcurve.major_radius();
+            let minor_radius = ellipse_pcurve.minor_radius();
             let cosine = t.cos();
             let sine = t.sin();
             (
@@ -7652,7 +7652,7 @@ fn pcurve_uv_differential_inner(
             let vertex = parabola_pcurve.vertex();
             let x_axis = parabola_pcurve.x_axis();
             let y_axis = parabola_pcurve.y_axis();
-            let focal_distance = &parabola_pcurve.focal_distance();
+            let focal_distance = parabola_pcurve.focal_distance();
             (
                 offset2(
                     *vertex,
@@ -7673,8 +7673,8 @@ fn pcurve_uv_differential_inner(
             let center = hyperbola_pcurve.center();
             let x_axis = hyperbola_pcurve.x_axis();
             let y_axis = hyperbola_pcurve.y_axis();
-            let major_radius = &hyperbola_pcurve.major_radius();
-            let minor_radius = &hyperbola_pcurve.minor_radius();
+            let major_radius = hyperbola_pcurve.major_radius();
+            let minor_radius = hyperbola_pcurve.minor_radius();
             let cosine = t.cosh();
             let sine = t.sinh();
             (
@@ -7720,9 +7720,9 @@ fn pcurve_uv_differential_inner(
             let radial_center = polar_harmonic_pcurve.radial_center();
             let radial_cos = polar_harmonic_pcurve.radial_cos();
             let radial_sin = polar_harmonic_pcurve.radial_sin();
-            let axial_origin = &polar_harmonic_pcurve.axial_origin();
-            let axial_cos = &polar_harmonic_pcurve.axial_cos();
-            let axial_sin = &polar_harmonic_pcurve.axial_sin();
+            let axial_origin = polar_harmonic_pcurve.axial_origin();
+            let axial_cos = polar_harmonic_pcurve.axial_cos();
+            let axial_sin = polar_harmonic_pcurve.axial_sin();
             let cosine = t.cos();
             let sine = t.sin();
             let x = radial_center.u + radial_cos.u * cosine + radial_sin.u * sine;
@@ -7822,10 +7822,10 @@ fn pcurve_uv_differential_inner(
             });
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
-            let azimuth_origin = &spherical_great_circle_pcurve.azimuth_origin();
-            let azimuth_rate = &spherical_great_circle_pcurve.azimuth_rate();
-            let plane_phase = &spherical_great_circle_pcurve.plane_phase();
-            let plane_slope = &spherical_great_circle_pcurve.plane_slope();
+            let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin();
+            let azimuth_rate = spherical_great_circle_pcurve.azimuth_rate();
+            let plane_phase = spherical_great_circle_pcurve.plane_phase();
+            let plane_slope = spherical_great_circle_pcurve.plane_slope();
             let azimuth = azimuth_origin + azimuth_rate * t;
             let phase = azimuth - plane_phase;
             let cosine = phase.cos();
@@ -7837,7 +7837,7 @@ fn pcurve_uv_differential_inner(
                 -2.0 * plane_slope * plane_slope * azimuth_rate * cosine * sine;
             let numerator_derivative = -plane_slope * azimuth_rate * azimuth_rate * cosine;
             let point = Point2::new(azimuth, latitude);
-            let tangent = Point2::new(*azimuth_rate, numerator / denominator);
+            let tangent = Point2::new(azimuth_rate, numerator / denominator);
             let acceleration = Point2::new(
                 0.0,
                 (numerator_derivative * denominator - numerator * denominator_derivative)

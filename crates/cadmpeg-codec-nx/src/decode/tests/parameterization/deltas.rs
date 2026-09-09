@@ -353,11 +353,11 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
+                        && radius == 25.0
                 })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -377,13 +377,13 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
                     let center = ellipse_curve.center();
         let axis = ellipse_curve.axis();
         let major_direction = ellipse_curve.major_direction();
-        let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
+        let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *major_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 30.0
-                        && *minor_radius == 12.0
+                        && major_radius == 30.0
+                        && minor_radius == 12.0
                 })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -403,11 +403,11 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
-        let radius = &cylinder_surface.radius();
+        let radius = cylinder_surface.radius();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
+                        && radius == 25.0
                 })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -427,14 +427,14 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
-        let radius = &cone_surface.radius();
-        let ratio = &cone_surface.ratio();
-        let half_angle = &cone_surface.half_angle();
+        let radius = cone_surface.radius();
+        let ratio = cone_surface.ratio();
+        let half_angle = cone_surface.half_angle();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
-                        && *ratio == 1.0
+                        && radius == 25.0
+                        && ratio == 1.0
                         && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
                 })
     ));
@@ -455,11 +455,11 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-        let radius = &sphere_surface.radius();
+        let radius = sphere_surface.radius();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 25.0
+                        && radius == 25.0
                 })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -479,13 +479,13 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-        let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *major_radius == 40.0
-                        && *minor_radius == 15.0
+                        && major_radius == 40.0
+                        && minor_radius == 15.0
                 })
     ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());

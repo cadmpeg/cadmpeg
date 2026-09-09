@@ -158,8 +158,8 @@ pub(in super::super) fn revolution_boundary_pcurve(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let carrier_axis = vector(*axis);
             let reference = vector(*ref_direction);
             let relative = point_from(*center);

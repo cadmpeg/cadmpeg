@@ -963,7 +963,7 @@ fn patch_helix_definition(
     let major = definition.major();
     let minor = definition.minor();
     let pitch = definition.pitch();
-    let apex_factor = &definition.apex_factor();
+    let apex_factor = definition.apex_factor();
     let axis = definition.axis();
 
     let record_bytes = record_slice(bytes, record, "helix")?;
@@ -1004,7 +1004,7 @@ fn patch_helix_definition(
         AsmEditSet::patch_vector_payload(bytes, record.offset + offset, value)?;
     }
     let apex_at = record.offset + layout.apex_factor;
-    AsmEditSet::patch_f64_payload(bytes, apex_at, *apex_factor)?;
+    AsmEditSet::patch_f64_payload(bytes, apex_at, apex_factor)?;
     AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
     Ok(())
 }

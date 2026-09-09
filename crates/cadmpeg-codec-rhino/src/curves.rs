@@ -592,7 +592,7 @@ fn scale_decoded_curve(
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = &circle_curve.radius();
+                let radius = circle_curve.radius();
                 *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
                     scale_ir_point(*center, scale).ok_or_else(|| {
                         GeometryError::malformed(
@@ -602,7 +602,7 @@ fn scale_decoded_curve(
                     })?,
                     *axis,
                     *ref_direction,
-                    *radius * scale,
+                    radius * scale,
                 )
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
@@ -666,14 +666,14 @@ pub(crate) fn exact_nurbs(
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = &circle_curve.radius();
+                let radius = circle_curve.radius();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center: *center,
                     axis: *axis,
                     xaxis: *ref_direction,
                     yaxis,
-                    radius: *radius,
+                    radius: radius,
                 };
                 arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }

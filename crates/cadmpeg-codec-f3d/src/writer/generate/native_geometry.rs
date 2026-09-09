@@ -4319,24 +4319,24 @@ let direction = line_curve.direction();
         CurveGeometry::Circle(circle_curve) => { let center = circle_curve.center();
 let axis = circle_curve.axis();
 let ref_direction = circle_curve.ref_direction();
-let radius = &circle_curve.radius(); native_conic_interval_curve(
+let radius = circle_curve.radius(); native_conic_interval_curve(
             *center,
             *axis,
             *ref_direction,
-            *radius,
-            *radius,
+            radius,
+            radius,
             parameter_range,
         ) },
         CurveGeometry::Ellipse(ellipse_curve) => { let center = ellipse_curve.center();
 let axis = ellipse_curve.axis();
 let major_direction = ellipse_curve.major_direction();
-let major_radius = &ellipse_curve.major_radius();
-let minor_radius = &ellipse_curve.minor_radius(); native_conic_interval_curve(
+let major_radius = ellipse_curve.major_radius();
+let minor_radius = ellipse_curve.minor_radius(); native_conic_interval_curve(
             *center,
             *axis,
             *major_direction,
-            *major_radius,
-            *minor_radius,
+            major_radius,
+            minor_radius,
             parameter_range,
         ) },
         _ => Err(CodecError::NotImplemented(
@@ -5375,7 +5375,7 @@ pub(crate) fn native_cacheless_procedural_curve(
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     native_curve_base(bytes, "intcurve")?;
@@ -5403,7 +5403,7 @@ pub(crate) fn native_cacheless_procedural_curve(
             ],
         );
     }
-    native_f64(bytes, *apex_factor);
+    native_f64(bytes, apex_factor);
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     bytes.push(0x10);
     Ok(true)
@@ -5436,31 +5436,31 @@ fn native_embedded_surface(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
-            native_embedded_cone(bytes, *origin, *axis, *ref_direction, *radius, 1.0, 0.0)?;
+            let radius = cylinder_surface.radius();
+            native_embedded_cone(bytes, *origin, *axis, *ref_direction, radius, 1.0, 0.0)?;
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             native_embedded_cone(
                 bytes,
                 *origin,
                 *axis,
                 *ref_direction,
-                *radius,
-                *ratio,
-                *half_angle,
+                radius,
+                ratio,
+                half_angle,
             )?;
         }
         SurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,
@@ -5470,7 +5470,7 @@ fn native_embedded_surface(
                     center.z / LEN_TO_MM,
                 ],
             );
-            native_f64(bytes, *radius / LEN_TO_MM);
+            native_f64(bytes, radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             native_vector(bytes, [axis.x, axis.y, axis.z]);
             bytes.extend_from_slice(&[0x0b; 5]);
@@ -5479,8 +5479,8 @@ fn native_embedded_surface(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,
@@ -5491,8 +5491,8 @@ fn native_embedded_surface(
                 ],
             );
             native_vector(bytes, [axis.x, axis.y, axis.z]);
-            native_f64(bytes, *major_radius / LEN_TO_MM);
-            native_f64(bytes, *minor_radius / LEN_TO_MM);
+            native_f64(bytes, major_radius / LEN_TO_MM);
+            native_f64(bytes, minor_radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             bytes.extend_from_slice(&[0x0b; 5]);
         }
@@ -5547,7 +5547,7 @@ fn native_support_pcurve_for_range(
             }
         }
         SurfaceGeometry::Cylinder(cylinder_surface) => {
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             if !radius.is_finite() || radius.abs() <= f64::EPSILON {
                 return Err(CodecError::Malformed(
                     "intcurve support has an invalid cone parameter scale".into(),
@@ -5560,8 +5560,8 @@ fn native_support_pcurve_for_range(
             }
         }
         SurfaceGeometry::Cone(cone_surface) => {
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             let sine = half_angle.sin();
             let cosine = half_angle.cos();
             let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
@@ -5887,7 +5887,7 @@ fn native_embedded_surface_with_bounds(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,
@@ -5897,7 +5897,7 @@ fn native_embedded_surface_with_bounds(
                     center.z / LEN_TO_MM,
                 ],
             );
-            native_f64(bytes, *radius / LEN_TO_MM);
+            native_f64(bytes, radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             native_vector(bytes, [axis.x, axis.y, axis.z]);
             bytes.push(0x0b);
@@ -5909,8 +5909,8 @@ fn native_embedded_surface_with_bounds(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,
@@ -5921,8 +5921,8 @@ fn native_embedded_surface_with_bounds(
                 ],
             );
             native_vector(bytes, [axis.x, axis.y, axis.z]);
-            native_f64(bytes, *major_radius / LEN_TO_MM);
-            native_f64(bytes, *minor_radius / LEN_TO_MM);
+            native_f64(bytes, major_radius / LEN_TO_MM);
+            native_f64(bytes, minor_radius / LEN_TO_MM);
             native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
             bytes.push(0x0b);
             for bound in bounds {
@@ -5963,17 +5963,17 @@ fn native_embedded_cone_with_bounds(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
-            (*origin, *axis, *ref_direction, *radius, 1.0, 0.0)
+            let radius = cylinder_surface.radius();
+            (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
         }
         SurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
-            (*origin, *axis, *ref_direction, *radius, *ratio, *half_angle)
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
+            (*origin, *axis, *ref_direction, radius, ratio, half_angle)
         }
         _ => {
             return Err(CodecError::Malformed(

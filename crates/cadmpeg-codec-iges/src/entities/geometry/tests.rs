@@ -20,6 +20,8 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+const EPS_RADIUS_COMPARISON: f64 = 1.0e-12;
+
 #[test]
 fn point_display_symbol_targets_follow_the_declared_dialect() {
     assert!(super::point_display_symbol_type_allowed(
@@ -953,14 +955,14 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     let center = circle_curve.center();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         *ref_direction,
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     );
-    assert_eq!(*radius, 1.0);
+    assert_eq!(radius, 1.0);
     assert_eq!(
         result.ir().model.edges[0].param_range(),
         Some([0.0, std::f64::consts::FRAC_PI_2])
@@ -993,8 +995,8 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
     else {
         panic!("expected a circle carrier");
     };
-    let radius = &circle_curve.radius();
-    assert!((*radius - 1.0).abs() < 1.0e-12);
+    let radius = circle_curve.radius();
+    assert!((radius - 1.0).abs() < EPS_RADIUS_COMPARISON);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1061,9 +1063,9 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
         panic!("expected a circle carrier");
     };
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
-    assert_eq!(*radius, 1.0);
+    assert_eq!(radius, 1.0);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1086,8 +1088,8 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
     else {
         panic!("expected a circle carrier");
     };
-    let radius = &circle_curve.radius();
-    assert!((*radius - 16.0).abs() < 1.0e-12);
+    let radius = circle_curve.radius();
+    assert!((radius - 16.0).abs() < EPS_RADIUS_COMPARISON);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

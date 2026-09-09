@@ -820,13 +820,13 @@ fn native_circle_loop_geometry(
     };
     let first_center = circle_curve.center();
     let first_axis = circle_curve.axis();
-    let first_radius = &circle_curve.radius();
+    let first_radius = circle_curve.radius();
     let second_center = circle_curve_2.center();
     let second_axis = circle_curve_2.axis();
-    let second_radius = &circle_curve_2.radius();
+    let second_radius = circle_curve_2.radius();
     if !first_radius.is_finite()
-        || *first_radius <= 0.0
-        || !scalar_values_agree(*first_radius, *second_radius)
+        || first_radius <= 0.0
+        || !scalar_values_agree(first_radius, second_radius)
         || !points_are_geometrically_coincident(*first_center, *second_center)
         || !vectors_are_parallel(*first_axis, *second_axis)
     {
@@ -835,7 +835,7 @@ fn native_circle_loop_geometry(
     Some(NativeCircleLoop {
         center: *first_center,
         axis: *first_axis,
-        radius: *first_radius,
+        radius: first_radius,
     })
 }
 

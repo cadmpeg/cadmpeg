@@ -33,11 +33,11 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
         panic!("torus geometry");
     };
     let axis = torus_surface.axis();
-    let major_radius = &torus_surface.major_radius();
-    let minor_radius = &torus_surface.minor_radius();
+    let major_radius = torus_surface.major_radius();
+    let minor_radius = torus_surface.minor_radius();
     assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
-    assert_eq!(*major_radius, 20.0);
-    assert_eq!(*minor_radius, 5.0);
+    assert_eq!(major_radius, 20.0);
+    assert_eq!(minor_radius, 5.0);
 }
 
 #[test]
@@ -66,12 +66,12 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         .expect("large analytic carrier");
         let (radius,) = match surface {
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let radius = &sphere_surface.radius();
-                (*radius,)
+                let radius = sphere_surface.radius();
+                (radius,)
             }
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let radius = &cylinder_surface.radius();
-                (*radius,)
+                let radius = cylinder_surface.radius();
+                (radius,)
             }
             _ => {
                 panic!("expected sphere or cylinder");

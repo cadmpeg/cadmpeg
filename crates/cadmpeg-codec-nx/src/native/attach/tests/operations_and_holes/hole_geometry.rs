@@ -366,11 +366,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.y = 91.0;
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
             .unwrap();
     assert_eq!(
         super::super::hole_axis_placements_for_operations(
@@ -395,11 +395,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
 
     let axis = Vector3::new(0.0, -1.0, 0.0);
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, radius)
             .unwrap();
     for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
         curve
@@ -412,11 +412,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         };
         let center = circle_curve.center();
         let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
 
         let axis = Vector3::new(0.0, -1.0, 0.0);
         *circle_curve =
-            cadmpeg_ir::geometry::CircleCurve::try_new(*center, axis, *ref_direction, *radius)
+            cadmpeg_ir::geometry::CircleCurve::try_new(*center, axis, *ref_direction, radius)
                 .unwrap();
     }
     assert_eq!(
@@ -513,8 +513,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let center = circle_curve.center();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = &circle_curve.radius();
-    let mut radius = *radius;
+    let radius = circle_curve.radius();
+    let mut radius = radius;
     radius += 0.1;
     *circle_curve =
         cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();
@@ -527,11 +527,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let center = circle_curve.center();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     let mut center = *center;
     center.y = 0.0;
     *circle_curve =
-        cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, *radius).unwrap();
+        cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius).unwrap();
     assert!(
         hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,).is_empty()
     );
@@ -542,11 +542,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
 
     let axis = Vector3::new(0.0, 0.0, 1.0);
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, radius)
             .unwrap();
     assert!(super::super::hole_axis_placements_for_operations(
         &nonparallel,
@@ -863,8 +863,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let center = circle_curve.center();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = &circle_curve.radius();
-    let mut radius = *radius;
+    let radius = circle_curve.radius();
+    let mut radius = radius;
     radius += 0.1;
     *circle_curve =
         cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();

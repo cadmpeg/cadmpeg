@@ -1302,7 +1302,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
     assert!((origin.x - 2.0).abs() < 1.0e-12);
     assert!((origin.y - 3.0).abs() < 1.0e-12);
     assert!((origin.z - 4.0).abs() < 1.0e-12);

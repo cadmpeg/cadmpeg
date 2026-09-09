@@ -396,8 +396,8 @@ fn decode_places_complete_positional_torus() {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-        let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
                     (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
                         && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
                         && center.z.abs() < EPS_ANALYTIC_FRAME
@@ -507,13 +507,13 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
                             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
                             center.x == 0.0
                                 && center.y == 0.0
                                 && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME
                                 && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
                                 && *ref_direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                                && *radius == 2.65
+                                && radius == 2.65
                         })
         );
     }

@@ -725,11 +725,11 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.y = 1.0;
     *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, *radius)
+        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
             .unwrap();
     assert!(constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 

@@ -330,8 +330,8 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
     assert!(
         matches!(lifted_curve_geometry(&cone_pcurve, &cone), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == scale * 0.5
+            let radius = circle_curve.radius();
+            radius == scale * 0.5
         })
     );
 
@@ -356,8 +356,8 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
     assert!(
         matches!(lifted_curve_geometry(&torus_pcurve, &torus), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == 2.0 * scale
+            let radius = circle_curve.radius();
+            radius == 2.0 * scale
         })
     );
 }
@@ -716,8 +716,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         matches!(signed.geometry, CurveGeometry::Circle(circle_curve)
                 if {
                     let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
-                    *radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+        let radius = circle_curve.radius();
+                    radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
                 })
     );
 }
@@ -829,7 +829,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
     assert!((radius - 2.0).abs() < 1.0e-12);
@@ -862,7 +862,7 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
     let center = circle_curve.center();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*center, Point3::new(1.0, 2.0, 3.0));
     assert!((radius - 5.0).abs() < 1.0e-12);
     assert!((axis.x * axis.x + axis.y * axis.y + axis.z * axis.z - 1.0).abs() < 1.0e-12);
@@ -1270,10 +1270,10 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*center, Point3::new(5.0, 0.0, 0.0));
     assert_eq!(*axis, Vector3::new(0.0, -1.0, 0.0));
-    assert_eq!(*radius, 2.0);
+    assert_eq!(radius, 2.0);
 
     let latitude = B5Pcurve {
         control_points: vec![[0.0, 0.0], [10.0 * std::f64::consts::PI, 0.0]],
@@ -1284,10 +1284,10 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     assert_eq!(*center, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(*radius, 7.0);
+    assert_eq!(radius, 7.0);
 }
 
 #[test]
@@ -1353,12 +1353,12 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let angle_range = helix_payload.angle_range();
     let center = helix_payload.center();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
 
     assert_eq!(*angle_range, [0.0, 2.0]);
     assert_eq!(*center, Point3::new(0.0, 0.0, 3.0));
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
-    assert_eq!(*apex_factor, 0.0);
+    assert_eq!(apex_factor, 0.0);
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance <= 1e-4);
     assert_eq!(

@@ -128,16 +128,16 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
     match geometry {
         CurveGeometry::Line(_) => true,
         CurveGeometry::Circle(circle_curve) => {
-            let radius = &circle_curve.radius();
-            radius.is_finite() && *radius > 0.0
+            let radius = circle_curve.radius();
+            radius.is_finite() && radius > 0.0
         }
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             major_radius.is_finite()
                 && minor_radius.is_finite()
-                && *major_radius > 0.0
-                && *minor_radius > 0.0
+                && major_radius > 0.0
+                && minor_radius > 0.0
                 && major_radius == minor_radius
         }
         CurveGeometry::Nurbs(curve) => {
@@ -1009,7 +1009,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             Some(SurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::CylinderSurface::try_new(
                     *origin,
@@ -1024,7 +1024,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             Some(SurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::SphereSurface::try_new(
                     *center,
@@ -1039,14 +1039,14 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             Some(SurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::TorusSurface::try_new(
                     *center,
                     *axis,
                     *ref_direction,
-                    *major_radius,
+                    major_radius,
                     minor_radius + distance,
                 )
                 .ok()?,
@@ -1054,24 +1054,24 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
         }
         SurfaceGeometry::Cone(cone_surface)
             if {
-                let ratio = &cone_surface.ratio();
-                *ratio == 1.0
+                let ratio = cone_surface.ratio();
+                ratio == 1.0
             } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             Some(SurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::ConeSurface::try_new(
                     origin.translated(*axis, -distance * half_angle.sin()),
                     *axis,
                     *ref_direction,
                     radius + distance * half_angle.cos(),
-                    *ratio,
-                    *half_angle,
+                    ratio,
+                    half_angle,
                 )
                 .ok()?,
             ))
@@ -2495,21 +2495,21 @@ pub(super) fn project(
         };
         let regular = match &geometry {
             SurfaceGeometry::Cylinder(cylinder_surface) => {
-                let radius = &cylinder_surface.radius();
-                *radius > 0.0
+                let radius = cylinder_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Sphere(sphere_surface) => {
-                let radius = &sphere_surface.radius();
-                *radius > 0.0
+                let radius = sphere_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Torus(torus_surface) => {
-                let major_radius = &torus_surface.major_radius();
-                let minor_radius = &torus_surface.minor_radius();
-                *major_radius > 0.0 && *minor_radius > 0.0
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
+                major_radius > 0.0 && minor_radius > 0.0
             }
             SurfaceGeometry::Cone(cone_surface) => {
-                let radius = &cone_surface.radius();
-                *radius > 0.0
+                let radius = cone_surface.radius();
+                radius > 0.0
             }
             SurfaceGeometry::Plane(_) => true,
             SurfaceGeometry::Nurbs(_)

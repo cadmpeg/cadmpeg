@@ -1417,10 +1417,10 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             if {
                 let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
                 *origin == Point3::new(2.0, 2.0, -4.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && *radius == 2.0
+                    && radius == 2.0
             }));
 }
 

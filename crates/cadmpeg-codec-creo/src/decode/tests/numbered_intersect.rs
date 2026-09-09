@@ -1786,11 +1786,11 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                     let center = circle_curve.center();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
                     *center == Point3::new(0.0, 3.0, 0.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && *radius == 2.0
+                        && radius == 2.0
                 })
     );
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
@@ -1806,8 +1806,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Cylinder(cylinder_surface))
         if {
-            let radius = &cylinder_surface.radius();
-            *radius == 2.0
+            let radius = cylinder_surface.radius();
+            radius == 2.0
         })
     );
     assert!(
@@ -1820,19 +1820,19 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Cone(cone_surface))
                 if {
-                    let radius = &cone_surface.radius();
-        let half_angle = &cone_surface.half_angle();
-                    *radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+                    let radius = cone_surface.radius();
+        let half_angle = cone_surface.half_angle();
+                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
                 })
     );
     assert!(
         matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Cone(cone_surface))
                 if {
                     let axis = cone_surface.axis();
-        let radius = &cone_surface.radius();
-        let half_angle = &cone_surface.half_angle();
+        let radius = cone_surface.radius();
+        let half_angle = cone_surface.half_angle();
                     axis.y == -1.0
-                        && *radius == 4.0
+                        && radius == 4.0
                         && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
                 })
     );
@@ -1846,8 +1846,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Sphere(sphere_surface))
         if {
-            let radius = &sphere_surface.radius();
-            *radius == 2.0
+            let radius = sphere_surface.radius();
+            radius == 2.0
         })
     );
     let offset_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -1860,9 +1860,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Torus(torus_surface))
                 if {
-                    let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
-                    *major_radius == 5.0 && *minor_radius == 2.0
+                    let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
+                    major_radius == 5.0 && minor_radius == 2.0
                 })
     );
     let offset_circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -1873,9 +1873,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Torus(torus_surface))
                 if {
-                    let major_radius = &torus_surface.major_radius();
-        let minor_radius = &torus_surface.minor_radius();
-                    *major_radius == 5.0 && *minor_radius == 2.0
+                    let major_radius = torus_surface.major_radius();
+        let minor_radius = torus_surface.minor_radius();
+                    major_radius == 5.0 && minor_radius == 2.0
                 })
     );
 }

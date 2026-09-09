@@ -235,7 +235,7 @@ fn cylinder_frame_agrees_with_model(
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = &cylinder_surface.radius();
+    let radius = cylinder_surface.radius();
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
         normalize(frame.axis()),
         normalize([axis.x, axis.y, axis.z]),
@@ -244,7 +244,7 @@ fn cylinder_frame_agrees_with_model(
     ) else {
         return false;
     };
-    if !radius.is_finite() || *radius <= 0.0 {
+    if !radius.is_finite() || radius <= 0.0 {
         return false;
     }
     let close = |left: f64, right: f64| {
@@ -258,7 +258,7 @@ fn cylinder_frame_agrees_with_model(
             .into_iter()
             .zip(model_ref)
             .all(|(left, right)| close(left, right))
-        || !close(frame.radius(), *radius)
+        || !close(frame.radius(), radius)
     {
         return false;
     }

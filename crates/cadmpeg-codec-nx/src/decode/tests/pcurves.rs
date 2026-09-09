@@ -1381,11 +1381,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 unreachable!();
             };
             let supports = intersection.supports();
-            let tolerance = &intersection.tolerance();
+            let tolerance = intersection.tolerance();
             *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
                 endpoints,
-                *tolerance,
+                tolerance,
             )
             .unwrap();
             *parameterization = None;

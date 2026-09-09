@@ -3748,8 +3748,8 @@ fn curve_parameter_at_point(
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let radial = offset(*center);
             let minor_direction = axis.cross(*major_direction);
             Some(

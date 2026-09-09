@@ -1123,7 +1123,7 @@ fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     let center = [center.x, center.y, center.z];
     let axis = [axis.x, axis.y, axis.z];
     points.iter().all(|point| {

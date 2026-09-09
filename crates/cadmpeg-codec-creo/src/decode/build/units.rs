@@ -1359,12 +1359,12 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = &cylinder_surface.radius();
+            let radius = cylinder_surface.radius();
             *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1372,16 +1372,16 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = &cone_surface.radius();
-            let ratio = &cone_surface.ratio();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let ratio = cone_surface.ratio();
+            let half_angle = cone_surface.half_angle();
             *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
-                *ratio,
-                *half_angle,
+                radius * scale,
+                ratio,
+                half_angle,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1389,12 +1389,12 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
+            let radius = sphere_surface.radius();
             *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1402,14 +1402,14 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1466,12 +1466,12 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
-                *radius * scale,
+                radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1479,14 +1479,14 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1494,12 +1494,12 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = &parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance();
             *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
                 Point3::new(vertex.x * scale, vertex.y * scale, vertex.z * scale),
                 *axis,
                 *major_direction,
-                *focal_distance * scale,
+                focal_distance * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -1507,14 +1507,14 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) -> Result<(), 
             let center = hyperbola_curve.center();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = &hyperbola_curve.major_radius();
-            let minor_radius = &hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius();
+            let minor_radius = hyperbola_curve.minor_radius();
             *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
-                *major_radius * scale,
-                *minor_radius * scale,
+                major_radius * scale,
+                minor_radius * scale,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -2227,7 +2227,7 @@ mod tests {
         let major = helix_payload.major();
         let minor = helix_payload.minor();
         let pitch = helix_payload.pitch();
-        let apex_factor = &helix_payload.apex_factor();
+        let apex_factor = helix_payload.apex_factor();
         let axis = helix_payload.axis();
 
         assert_point3(*center, [25.4, 50.8, 76.2]);
@@ -2235,7 +2235,7 @@ mod tests {
         assert_vector3(*minor, [-127.0, 101.6, 152.4]);
         assert_vector3(*pitch, [254.0, 279.4, 304.8]);
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*apex_factor, 0.25);
+        assert_close(apex_factor, 0.25);
         assert_close(
             curve.cache_fit_tolerance().expect("test curve tolerance"),
             330.2,
@@ -2288,19 +2288,19 @@ mod tests {
         };
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = &cylinder_surface.radius();
+        let radius = cylinder_surface.radius();
         assert_point3(*origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*radius, 101.6);
+        assert_close(radius, 101.6);
         let CurveGeometry::Circle(circle_curve) = curve else {
             panic!("test curve changed family");
         };
         let center = circle_curve.center();
         let axis = circle_curve.axis();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
         assert_point3(*center, [50.8, 76.2, 101.6]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-        assert_close(*radius, 127.0);
+        assert_close(radius, 127.0);
     }
 
     fn assert_close(actual: f64, expected: f64) {

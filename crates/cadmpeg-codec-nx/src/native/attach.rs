@@ -5964,13 +5964,13 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         return None;
     };
     let center = sphere_surface.center();
-    let radius = &sphere_surface.radius();
-    ((*radius).is_finite()
-        && *radius > 0.0
+    let radius = sphere_surface.radius();
+    ((radius).is_finite()
+        && radius > 0.0
         && [center.x, center.y, center.z]
             .into_iter()
             .all(f64::is_finite))
-    .then_some((body, *center, Length::new(*radius)?))
+    .then_some((body, *center, Length::new(radius)?))
 }
 
 struct NewBodyEvidence<'a> {
@@ -7290,12 +7290,12 @@ fn circular_loop_geometry(
         };
         let center = circle_curve.center();
         let axis = circle_curve.axis();
-        let radius = &circle_curve.radius();
+        let radius = circle_curve.radius();
         let axis = canonical_axis(*axis, angular_tolerance)?;
-        if ![center.x, center.y, center.z, *radius]
+        if ![center.x, center.y, center.z, radius]
             .into_iter()
             .all(f64::is_finite)
-            || *radius <= 0.0
+            || radius <= 0.0
         {
             return None;
         }
@@ -7313,7 +7313,7 @@ fn circular_loop_geometry(
                 return None;
             }
         }
-        witness = Some((*center, axis, *radius));
+        witness = Some((*center, axis, radius));
     }
     witness
 }
@@ -7373,11 +7373,11 @@ fn cylindrical_face_witnesses(
         };
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = &cylinder_surface.radius();
-        if ![origin.x, origin.y, origin.z, *radius]
+        let radius = cylinder_surface.radius();
+        if ![origin.x, origin.y, origin.z, radius]
             .into_iter()
             .all(f64::is_finite)
-            || *radius <= 0.0
+            || radius <= 0.0
         {
             return None;
         }
@@ -7401,7 +7401,7 @@ fn cylindrical_face_witnesses(
                 linear_tolerance,
                 angular_tolerance,
             )?;
-            if (circle_radius - *radius).abs() > linear_tolerance
+            if (circle_radius - radius).abs() > linear_tolerance
                 || (1.0 - dot_vector(axis, circle_axis).abs()) > angular_tolerance
                 || cross_vector(
                     Vector3::new(
@@ -7431,7 +7431,7 @@ fn cylindrical_face_witnesses(
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
-            radius: *radius,
+            radius: radius,
             stations: [*first, *second],
             loop_ids: [first_loop.clone(), second_loop.clone()],
         });
@@ -7943,10 +7943,10 @@ fn simple_hole_chamfers(
             };
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             if !half_angle.is_finite()
-                || *half_angle <= 0.0
-                || *half_angle >= std::f64::consts::FRAC_PI_2
+                || half_angle <= 0.0
+                || half_angle >= std::f64::consts::FRAC_PI_2
             {
                 return BTreeMap::new();
             }
@@ -7980,12 +7980,12 @@ fn simple_hole_chamfers(
                 .filter_map(|curve_id| match curves.get(curve_id)? {
                     CurveGeometry::Circle(circle_curve)
                         if {
-                            let radius = &circle_curve.radius();
-                            radius.is_finite() && *radius > 0.0
+                            let radius = circle_curve.radius();
+                            radius.is_finite() && radius > 0.0
                         } =>
                     {
-                        let radius = &circle_curve.radius();
-                        Some(*radius)
+                        let radius = circle_curve.radius();
+                        Some(radius)
                     }
                     _ => None,
                 })

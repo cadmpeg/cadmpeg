@@ -973,7 +973,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         SurfaceGeometry::Cone(cone_surface) => {
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(
@@ -1003,8 +1003,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     match geo {
         SurfaceGeometry::Cone(cone_surface) => {
             let axis = cone_surface.axis();
-            let radius = &cone_surface.radius();
-            let half_angle = &cone_surface.half_angle();
+            let radius = cone_surface.radius();
+            let half_angle = cone_surface.half_angle();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1.0e-12);
@@ -1026,8 +1026,8 @@ fn analytic_carrier_decode_covers_each_shape() {
         SurfaceGeometry::Sphere(sphere_surface) => {
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = &sphere_surface.radius();
-            assert_eq!(*radius, -10.0);
+            let radius = sphere_surface.radius();
+            assert_eq!(radius, -10.0);
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
                 *ref_direction,
@@ -1051,10 +1051,10 @@ fn analytic_carrier_decode_covers_each_shape() {
     match geo {
         SurfaceGeometry::Torus(torus_surface) => {
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = &torus_surface.major_radius();
-            let minor_radius = &torus_surface.minor_radius();
-            assert_eq!(*major_radius, 10.0);
-            assert_eq!(*minor_radius, -20.0);
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
+            assert_eq!(major_radius, 10.0);
+            assert_eq!(minor_radius, -20.0);
             assert_eq!(
                 *ref_direction,
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -1073,8 +1073,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", circ)).unwrap() {
         CurveGeometry::Circle(circle_curve) => {
-            let radius = &circle_curve.radius();
-            assert_eq!(*radius, 30.0)
+            let radius = circle_curve.radius();
+            assert_eq!(radius, 30.0)
         }
         other => panic!("expected circle, got {other:?}"),
     }
@@ -1089,10 +1089,10 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", ell)).unwrap() {
         CurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
-            assert_eq!(*major_radius, 40.0);
-            assert_eq!(*minor_radius, 20.0);
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
+            assert_eq!(major_radius, 40.0);
+            assert_eq!(minor_radius, 20.0);
         }
         other => panic!("expected ellipse, got {other:?}"),
     }

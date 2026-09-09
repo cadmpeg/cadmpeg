@@ -793,11 +793,11 @@ pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3]
     };
     let center = circle_curve.center();
     let axis = circle_curve.axis();
-    let radius = &circle_curve.radius();
+    let radius = circle_curve.radius();
     Some((
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],
-        *radius,
+        radius,
     ))
 }
 

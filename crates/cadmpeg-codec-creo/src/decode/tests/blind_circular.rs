@@ -296,10 +296,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = &cylinder_surface.radius();
+        let radius = cylinder_surface.radius();
                     *origin == Point3::new(-12.5, -4.0, 0.0)
                         && *axis == Vector3::new(0.0, -1.0, 0.0)
-                        && *radius == 0.75
+                        && radius == 0.75
                 })
     );
 

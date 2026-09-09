@@ -76,7 +76,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x
@@ -91,8 +91,8 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             let center = ellipse_curve.center();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = &ellipse_curve.major_radius();
-            let minor_radius = &ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let minor_direction = axis.cross(*major_direction);
             Some(Point3::new(
                 center.x

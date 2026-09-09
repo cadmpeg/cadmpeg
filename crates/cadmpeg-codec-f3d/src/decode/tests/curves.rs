@@ -122,7 +122,7 @@ fn decode_retains_generated_helix_construction() {
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
-    let apex_factor = &helix_payload.apex_factor();
+    let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
     assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
@@ -130,7 +130,7 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(20.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, 20.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 40.0));
-    assert_eq!(*apex_factor, 0.25);
+    assert_eq!(apex_factor, 0.25);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
 
@@ -1430,7 +1430,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     assert!(matches!(supports[0], SurfaceGeometry::Cone(cone_surface)
         if {
             let axis = cone_surface.axis();
-    let half_angle = &cone_surface.half_angle();
+    let half_angle = cone_surface.half_angle();
             (cone_surface.radius() == 10.0)
                 && (cone_surface.ratio() == 0.4)
                 && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
@@ -1506,7 +1506,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     assert!(
         matches!(expected_geometries[0], SurfaceGeometry::Cone(cone_surface)
         if {
-            let half_angle = &cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle();
             (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
         })
     );

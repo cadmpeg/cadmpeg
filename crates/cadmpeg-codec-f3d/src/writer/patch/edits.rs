@@ -3024,11 +3024,11 @@ pub(crate) fn validate_curve_edits(
                 let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = &circle_curve.radius();
+                let radius = circle_curve.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius > 0.0
+                    && radius > 0.0
             }
             CurveGeometry::Ellipse(ellipse_curve)
                 if { matches!(before, CurveGeometry::Ellipse(_)) } =>
@@ -3036,15 +3036,15 @@ pub(crate) fn validate_curve_edits(
                 let center = ellipse_curve.center();
                 let axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
-                let major_radius = &ellipse_curve.major_radius();
-                let minor_radius = &ellipse_curve.minor_radius();
+                let major_radius = ellipse_curve.major_radius();
+                let minor_radius = ellipse_curve.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *major_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius > 0.0
-                    && *minor_radius > 0.0
-                    && *minor_radius <= *major_radius
+                    && major_radius > 0.0
+                    && minor_radius > 0.0
+                    && minor_radius <= major_radius
             }
             CurveGeometry::Degenerate(degenerate_curve)
                 if { matches!(before, CurveGeometry::Degenerate(_)) } =>
@@ -3246,11 +3246,11 @@ pub(crate) fn validate_surface_edits(
                 let center = sphere_surface.center();
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
-                let radius = &sphere_surface.radius();
+                let radius = sphere_surface.radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
             }
             SurfaceGeometry::Torus(torus_surface)
                 if { matches!(before, SurfaceGeometry::Torus(_)) } =>
@@ -3258,14 +3258,14 @@ pub(crate) fn validate_surface_edits(
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
-                let major_radius = &torus_surface.major_radius();
-                let minor_radius = &torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius();
+                let minor_radius = torus_surface.minor_radius();
                 finite_point(*center)
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
-                    && *major_radius != 0.0
-                    && *minor_radius != 0.0
+                    && major_radius != 0.0
+                    && minor_radius != 0.0
             }
             SurfaceGeometry::Cylinder(cylinder_surface)
                 if { matches!(before, SurfaceGeometry::Cylinder(_)) } =>
@@ -3273,11 +3273,11 @@ pub(crate) fn validate_surface_edits(
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
-                let radius = &cylinder_surface.radius();
+                let radius = cylinder_surface.radius();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
             }
             SurfaceGeometry::Cone(cone_surface)
                 if { matches!(before, SurfaceGeometry::Cone(_)) } =>
@@ -3285,18 +3285,18 @@ pub(crate) fn validate_surface_edits(
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
-                let radius = &cone_surface.radius();
-                let ratio = &cone_surface.ratio();
-                let half_angle = &cone_surface.half_angle();
+                let radius = cone_surface.radius();
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
                 finite_point(*origin)
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
-                    && *radius != 0.0
+                    && radius != 0.0
                     && ratio.is_finite()
-                    && *ratio > 0.0
+                    && ratio > 0.0
                     && half_angle.is_finite()
-                    && *half_angle >= 0.0
-                    && *half_angle < std::f64::consts::FRAC_PI_2
+                    && half_angle >= 0.0
+                    && half_angle < std::f64::consts::FRAC_PI_2
             }
             SurfaceGeometry::Nurbs(after) => {
                 let SurfaceGeometry::Nurbs(before) = before else {

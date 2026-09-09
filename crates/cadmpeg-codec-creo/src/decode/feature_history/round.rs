@@ -1004,16 +1004,16 @@ fn chamfer_cone_equation(
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = &cone_surface.radius();
-    let ratio = &cone_surface.ratio();
-    let half_angle = &cone_surface.half_angle();
+    let radius = cone_surface.radius();
+    let ratio = cone_surface.ratio();
+    let half_angle = cone_surface.half_angle();
     ConeEquation::new(
         [origin.x, origin.y, origin.z],
         [axis.x, axis.y, axis.z],
         [ref_direction.x, ref_direction.y, ref_direction.z],
-        *radius,
-        *ratio,
-        *half_angle,
+        radius,
+        ratio,
+        half_angle,
     )
 }
 

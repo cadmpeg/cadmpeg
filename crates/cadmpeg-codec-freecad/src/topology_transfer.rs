@@ -2100,8 +2100,8 @@ pub(crate) fn normalize_occt_curve_range(
             Some([canonical_start, canonical_start + sweep])
         }
         CurveGeometry::Parabola(parabola_curve) => {
-            let focal_distance = &parabola_curve.focal_distance();
-            if !focal_distance.is_finite() || *focal_distance <= 0.0 {
+            let focal_distance = parabola_curve.focal_distance();
+            if !focal_distance.is_finite() || focal_distance <= 0.0 {
                 return range;
             }
             range.map(|[start, end]| {

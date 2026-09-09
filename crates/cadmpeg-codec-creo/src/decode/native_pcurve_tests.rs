@@ -102,8 +102,8 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(
         matches!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == 2.0
+            let radius = circle_curve.radius();
+            radius == 2.0
         })
     );
     assert!(matches!(
@@ -113,8 +113,8 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(
         matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Ellipse(ellipse_curve))
                 if {
-                    let major_radius = &ellipse_curve.major_radius();
-        let minor_radius = &ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius();
+        let minor_radius = ellipse_curve.minor_radius();
                     major_radius > minor_radius
                 })
     );
@@ -122,14 +122,14 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(
         matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == 2.0
+            let radius = circle_curve.radius();
+            radius == 2.0
         })
     );
     assert!(
         matches!(linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
+            let radius = circle_curve.radius();
             (radius - 2.0 * 0.25_f64.cos()).abs() <= EPS_LATITUDE_RADIUS
         })
     );
@@ -147,15 +147,15 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(
         matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == 1.0
+            let radius = circle_curve.radius();
+            radius == 1.0
         })
     );
     assert!(
         matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]), Some(CurveGeometry::Circle(circle_curve))
         if {
-            let radius = &circle_curve.radius();
-            *radius == 4.0
+            let radius = circle_curve.radius();
+            radius == 4.0
         })
     );
 }
@@ -430,11 +430,11 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
                     let center = circle_pcurve.center();
         let x_axis = circle_pcurve.x_axis();
         let y_axis = circle_pcurve.y_axis();
-        let radius = &circle_pcurve.radius();
+        let radius = circle_pcurve.radius();
                     *center == Point2::new(2.0, 4.0)
                         && *x_axis == Point2::new(0.0, 1.0)
                         && *y_axis == Point2::new(-1.0, 0.0)
-                        && *radius == 2.0
+                        && radius == 2.0
                 })
     );
 
