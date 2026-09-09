@@ -2774,7 +2774,8 @@ impl<'a> DecodeContext<'a> {
                         vertices,
                     ) {
                         Ok(shell) => shell,
-                        Err(_) => {
+                        Err(error) => {
+                            self.scan_warning(source_order, &error.to_string());
                             return false;
                         }
                     },
@@ -3038,8 +3039,8 @@ impl<'a> DecodeContext<'a> {
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
                 links.push(surface_id.to_string());
             }
-            if (extrusion.caps[0] || extrusion.caps[1])
-                && !stage_extrusion_caps(
+            if extrusion.caps[0] || extrusion.caps[1] {
+                stage_extrusion_caps(
                     candidate,
                     candidate_annotations,
                     &key,
@@ -3047,9 +3048,7 @@ impl<'a> DecodeContext<'a> {
                     &extrusion,
                     &boundaries,
                     &mut links,
-                )
-            {
-                return Err("extrusion cap staging failed".to_string());
+                )?;
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
                 mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(format!(
@@ -3562,7 +3561,7 @@ fn stage_extrusion_caps(
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
     links: &mut Vec<String>,
-) -> bool {
+) -> Result<(), String> {
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps")
         .try_into()
         .expect("valid identity");
@@ -3593,7 +3592,7 @@ fn stage_extrusion_caps(
                     extrusion.cap_u_axes[cap],
                 ) {
                     Ok(plane) => plane,
-                    Err(_) => return false,
+                    Err(error) => return Err(error.to_string()),
                 },
             ),
             source_object: Some(association.clone()),
@@ -3622,7 +3621,7 @@ fn stage_extrusion_caps(
                 boundary.end_nurbs.control_points().first().copied()
             };
             let Some(endpoint) = endpoint else {
-                return false;
+                return Err("extrusion cap staging failed".to_string());
             };
             let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{key}.{suffix}")
                 .try_into()
@@ -3651,10 +3650,10 @@ fn stage_extrusion_caps(
                 &boundary.end_pcurve
             };
             let Ok(degree) = usize::try_from(pcurve.degree) else {
-                return false;
+                return Err("extrusion cap staging failed".to_string());
             };
             let Some(end_index) = pcurve.knots.len().checked_sub(degree + 1) else {
-                return false;
+                return Err("extrusion cap staging failed".to_string());
             };
             let Some(parameter_range) = pcurve
                 .knots
@@ -3663,7 +3662,7 @@ fn stage_extrusion_caps(
                 .zip(pcurve.knots.get(end_index).copied())
                 .map(|(start, end)| [start, end])
             else {
-                return false;
+                return Err("extrusion cap staging failed".to_string());
             };
             let Ok(nurbs) = PcurveNurbs::new(
                 pcurve.degree,
@@ -3672,7 +3671,7 @@ fn stage_extrusion_caps(
                 pcurve.weights.clone(),
                 pcurve.periodic,
             ) else {
-                return false;
+                return Err("extrusion cap staging failed".to_string());
             };
             ir.model.points.push(Point {
                 id: point_id.clone(),
@@ -3701,7 +3700,7 @@ fn stage_extrusion_caps(
                     None,
                 ) {
                     Ok(metadata) => metadata,
-                    Err(_) => return false,
+                    Err(error) => return Err(error.to_string()),
                 },
             });
             ir.model.coedges.push(Coedge {
@@ -3768,7 +3767,7 @@ fn stage_extrusion_caps(
         region_ids.push(region_id);
     }
     if region_ids.is_empty() {
-        return false;
+        return Err("extrusion cap staging failed".to_string());
     }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -3781,7 +3780,7 @@ fn stage_extrusion_caps(
     });
     annotate_derived(annotations, &body_id.to_string());
     links.push(body_id.to_string());
-    true
+    Ok(())
 }
 
 #[derive(Debug, Default)]
