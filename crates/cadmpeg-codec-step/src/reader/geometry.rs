@@ -1069,7 +1069,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             .collect::<Vec<_>>(),
                     ) {
                         Ok(segments) => segments,
-                        Err(_) => continue,
+                        Err(error) => {
+                            warnings.push(format!("COMPOSITE_CURVE #{id}: {error}"));
+                            continue;
+                        }
                     },
                     self_intersect,
                 },
