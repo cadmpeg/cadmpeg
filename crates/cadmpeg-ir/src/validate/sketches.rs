@@ -666,6 +666,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         match constraint.definition.kind() {
+            SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
                     spatial_geometry
@@ -1088,7 +1089,11 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            _ => {}
+            SpatialConstraint::Coincident { .. }
+            | SpatialConstraint::Midpoint { .. }
+            | SpatialConstraint::PointOnSurface { .. }
+            | SpatialConstraint::Tangent { .. }
+            | SpatialConstraint::SplineGroup { .. } => {}
         }
     }
 
