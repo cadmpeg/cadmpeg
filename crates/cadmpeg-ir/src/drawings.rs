@@ -93,29 +93,29 @@ pub struct Drawing {
     pub native_ref: String,
 }
 
-fn deserialize_position<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::FiniteVector<2>>, D::Error> {
-    crate::units::deserialize_named(deserializer, "position")
-}
+crate::units::named_field!(
+    deserialize_position,
+    Option<crate::units::FiniteVector<2>>,
+    "position"
+);
 
-fn deserialize_scale<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::PositiveScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "scale")
-}
+crate::units::named_field!(
+    deserialize_scale,
+    Option<crate::units::PositiveScalar>,
+    "scale"
+);
 
-fn deserialize_direction<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::NonzeroVector<3>>, D::Error> {
-    crate::units::deserialize_named(deserializer, "direction")
-}
+crate::units::named_field!(
+    deserialize_direction,
+    Option<crate::units::NonzeroVector<3>>,
+    "direction"
+);
 
-fn deserialize_rotation_degrees<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::FiniteScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "rotation_degrees")
-}
+crate::units::named_field!(
+    deserialize_rotation_degrees,
+    Option<crate::units::FiniteScalar>,
+    "rotation_degrees"
+);
 
 #[cfg(test)]
 mod tests {

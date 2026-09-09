@@ -75,14 +75,14 @@ pub struct SemanticAnnotation {
     pub native_ref: String,
 }
 
-fn deserialize_value<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::FiniteScalar>, D::Error> {
-    crate::units::deserialize_named(deserializer, "value")
-}
+crate::units::named_field!(
+    deserialize_value,
+    Option<crate::units::FiniteScalar>,
+    "value"
+);
 
-fn deserialize_position<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<crate::units::FiniteVector<3>>, D::Error> {
-    crate::units::deserialize_named(deserializer, "position")
-}
+crate::units::named_field!(
+    deserialize_position,
+    Option<crate::units::FiniteVector<3>>,
+    "position"
+);

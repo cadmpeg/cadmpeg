@@ -3181,18 +3181,16 @@ pub enum SketchConstraintDefinitionInput {
     },
 }
 
-fn deserialize_object<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("object: {error}")))
-}
-fn deserialize_native_kind<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<crate::products::NonEmptyString, D::Error> {
-    crate::products::NonEmptyString::deserialize(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("native_kind: {error}")))
-}
+crate::units::named_field!(
+    deserialize_object,
+    crate::products::NonEmptyString,
+    "object"
+);
+crate::units::named_field!(
+    deserialize_native_kind,
+    crate::products::NonEmptyString,
+    "native_kind"
+);
 
 #[cfg(test)]
 mod tests;
