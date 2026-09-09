@@ -61,7 +61,7 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
     }
     for names in [
         vec![],
-        vec!["".into()],
+        vec![String::new()],
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
@@ -126,7 +126,7 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
     }
     for names in [
         vec![],
-        vec!["".into()],
+        vec![String::new()],
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
@@ -139,7 +139,7 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
         "group".into()
     )
     .is_err());
-    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], "".into()).is_err());
+    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], String::new()).is_err());
     assert!(PathRef::historical_edges(state, vec![edge], " ".into()).is_ok());
 }
 
