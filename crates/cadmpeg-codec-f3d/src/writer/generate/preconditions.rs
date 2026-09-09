@@ -992,12 +992,6 @@ pub(crate) fn validate_source_less_design_links(
         .iter()
         .map(|shell| (shell.id.as_str(), shell))
         .collect::<std::collections::HashMap<_, _>>();
-    let face_by_id = target
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<std::collections::HashMap<_, _>>();
     macro_rules! validate_unique_targets {
         ($items:expr, $field:ident, $valid:expr, $label:literal) => {
             validate_unique_targets!($items, $field, $valid, $label, id());
@@ -1138,19 +1132,6 @@ pub(crate) fn validate_source_less_design_links(
             return Err(CodecError::InvalidInput(format!(
                 "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
                 wire.id()
-            )));
-        }
-    }
-    for sidedness in &native.face_sidedness {
-        let face = face_by_id
-            .get(sidedness.face.as_str())
-            .copied()
-            .expect("validated face-sidedness target");
-        if sidedness.normalized_sense != face.sense {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D face sidedness {} normalized sense conflicts with face {}",
-                sidedness.id(),
-                sidedness.face
             )));
         }
     }
