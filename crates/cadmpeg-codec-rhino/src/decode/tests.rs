@@ -149,9 +149,8 @@ fn region_raw(
     }
 }
 
-fn region(index: i32, region_type: i32) -> crate::brep::RawBrepRegion {
+fn region(region_type: i32) -> crate::brep::RawBrepRegion {
     crate::brep::RawBrepRegion {
-        index,
         region_type,
         sides: Vec::new(),
         bounds: crate::settings::BoundingBox {
@@ -766,7 +765,7 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
                 source_range: 0..0,
             },
         ],
-        vec![region(0, 0), region(1, 1)],
+        vec![region(0), region(1)],
     );
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
@@ -790,40 +789,6 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
 }
 
 #[test]
-fn contradictory_region_index_uses_array_position_for_shell_grouping() {
-    let (_, mut raw) = source_shaped_plane_brep();
-    raw.minor = 3;
-    raw.face_sides = vec![
-        crate::brep::RawBrepFaceSide {
-            index: 0,
-            region: 1,
-            face: 0,
-            direction: 1,
-            source_range: 0..0,
-        },
-        crate::brep::RawBrepFaceSide {
-            index: 1,
-            region: 0,
-            face: 0,
-            direction: -1,
-            source_range: 0..0,
-        },
-    ];
-    raw.regions = vec![region(0, 0), region(9, 1)];
-    raw.regions[0].sides = vec![1];
-    raw.regions[1].sides = vec![0];
-    let admitted = crate::brep::ValidatedRawBrep::try_new(raw).expect("repair redundant index");
-    let grouping = region_shell_groups(admitted.raw(), &[0]).expect("shell grouping");
-    assert!(!grouping.fallback);
-    assert_eq!(grouping.shells[0].region, 1);
-    assert_eq!(grouping.shells[0].faces, vec![0]);
-    assert!(admitted
-        .warnings()
-        .iter()
-        .any(|warning| redundant_field_diagnostic(warning)));
-}
-
-#[test]
 fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
     let raw = region_raw(
         vec![
@@ -842,7 +807,7 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
                 source_range: 0..0,
             },
         ],
-        vec![region(0, 0), region(1, 1), region(2, 1)],
+        vec![region(0), region(1), region(1)],
     );
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);

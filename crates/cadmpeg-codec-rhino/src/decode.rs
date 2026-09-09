@@ -5066,18 +5066,21 @@ fn region_shell_groups(
         });
     }
     let mut grouped: BTreeMap<(i32, usize), Vec<usize>> = BTreeMap::new();
-    let solid_regions: BTreeSet<i32> = raw
+    let solid_regions: BTreeSet<usize> = raw
         .regions
         .iter()
-        .filter(|region| region.region_type == 1)
-        .map(|region| region.index)
+        .enumerate()
+        .filter(|(_, region)| region.region_type == 1)
+        .map(|(index, _)| index)
         .collect();
     for face in 0..raw.faces.len() {
         let bounded_sides: Vec<_> = raw
             .face_sides
             .iter()
             .filter(|side| side.face == face as i32)
-            .filter(|side| solid_regions.contains(&side.region))
+            .filter(|side| {
+                usize::try_from(side.region).is_ok_and(|region| solid_regions.contains(&region))
+            })
             .collect();
         if bounded_sides.len() != 1 {
             return region_shell_groups_without_records(components);
