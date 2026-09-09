@@ -2336,14 +2336,14 @@ fn emit_carrier_curve(
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat<'_>,
-) -> Result<(), &'static str> {
+) {
     let Carriers {
         curve_geo,
         procedural_curve_defs,
         ..
     } = &mut *carriers;
     let Some(mut geometry) = curve_geo.remove(&i) else {
-        return Ok(());
+        return;
     };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
@@ -2717,7 +2717,7 @@ fn emit_carrier_curve(
             *definition,
         )
         .map_err(admission_cause),
-        None => return Ok(()),
+        None => return,
     };
     match procedural {
         Ok(procedural) => out.procedural_curves.push((
@@ -2728,10 +2728,8 @@ fn emit_carrier_curve(
             out.surfaces.truncate(surface_start);
             out.curves.truncate(curve_start);
             count_kind(&mut out.stats.procedural_curve_kinds, cause);
-            return Ok(());
         }
     }
-    Ok(())
 }
 
 fn emit_surface_curve_layout<F>(
@@ -3201,10 +3199,7 @@ pub(crate) fn emit_carrier_records(
                     reversed_curve_refs,
                     forward_curve_refs,
                     format,
-                )
-                .map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format!("{} record {i}: {error}", r.head()))
-                })?;
+                );
             }
             _ => {}
         }
