@@ -881,19 +881,9 @@ impl AsmEditSet {
         bytes: &mut [u8],
         record: &Record,
         edit: NurbsCurveEdit<'_>,
-        final_cache: bool,
+        target: CacheTarget,
     ) -> Result<(), CodecError> {
-        patch_nurbs_curve_record(
-            bytes,
-            self.ref_width,
-            record,
-            &edit,
-            if final_cache {
-                CacheTarget::Final
-            } else {
-                CacheTarget::First
-            },
-        )
+        patch_nurbs_curve_record(bytes, self.ref_width, record, &edit, target)
     }
 
     /// Apply the fields selected by an inline cache or reference wrapper edit.

@@ -18,7 +18,7 @@ use crate::writer::primitives::{finite_vector, unique_knot_count};
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
 use cadmpeg_asm::brep::records::EndpointSlot;
 use cadmpeg_asm::edit::{
-    AsmEditSet, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
+    AsmEditSet, CacheTarget, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
     NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -391,7 +391,12 @@ fn patch_asm_geometry(
             asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::First,
+            )?;
         }
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
@@ -410,10 +415,15 @@ fn patch_asm_geometry(
                         curve: &native_curve,
                         periodic: edit.periodic,
                     },
-                    false,
+                    CacheTarget::First,
                 )?;
             } else {
-                asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+                asm_edits.patch_nurbs_curve(
+                    bytes,
+                    record,
+                    asm_nurbs_curve_edit(edit),
+                    CacheTarget::First,
+                )?;
             }
         }
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
@@ -427,11 +437,21 @@ fn patch_asm_geometry(
         }
         let directrix_id = format!("f3d:brep:procedural_surface#{}:directrix", record.index);
         if let Some(edit) = nurbs_curves.get(&directrix_id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::First,
+            )?;
         }
         let spine_id = format!("f3d:brep:procedural_surface#{}:spine", record.index);
         if let Some(edit) = nurbs_curves.get(&spine_id) {
-            asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), true)?;
+            asm_edits.patch_nurbs_curve(
+                bytes,
+                record,
+                asm_nurbs_curve_edit(edit),
+                CacheTarget::Final,
+            )?;
         }
         if let Some(edit) = nurbs_surfaces.get(&id) {
             asm_edits.patch_nurbs_surface(bytes, record, asm_nurbs_surface_edit(edit), None)?;
