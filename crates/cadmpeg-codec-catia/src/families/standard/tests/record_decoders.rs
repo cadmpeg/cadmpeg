@@ -828,7 +828,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let layout = |face_count: usize, edge_count: usize, vertex_count: usize, start: usize| {
         FbbPopulationLayout {
             face_run: crate::families::standard::fbb::FbbFaceRun::try_new(start, face_count)
-                .unwrap(),
+                .expect("bounded fixture face run"),
             edge_count,
             vertex_count,
             edge_table_form: crate::families::standard::fbb::EdgeTableForm::FbbOnly,
