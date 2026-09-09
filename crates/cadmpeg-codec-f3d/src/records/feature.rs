@@ -4753,12 +4753,12 @@ impl DesignWorkPointInput {
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
-    pub(crate) fn carrier(&self) -> &Option<Box<DesignWorkPointInputCarrier>> {
-        &self.carrier
+    pub(crate) fn carrier(&self) -> Option<&DesignWorkPointInputCarrier> {
+        self.carrier.as_deref()
     }
 }
 
-/// Unadmitted DesignWorkPointInput fields.
+/// Unadmitted `DesignWorkPointInput` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointInputDraft {
     /// Referenced Design record index.
@@ -4940,9 +4940,6 @@ impl DesignVertexRecipe {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.paired_byte_offset
-    }
     pub(crate) fn recipe_record_index(&self) -> u32 {
         self.frame.index(3)
     }
@@ -4960,7 +4957,7 @@ impl DesignVertexRecipe {
     }
 }
 
-/// Unadmitted DesignVertexRecipe fields.
+/// Unadmitted `DesignVertexRecipe` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignVertexRecipeDraft {
     /// Indexed record that owns the vertex-recipe envelope.
@@ -5330,7 +5327,7 @@ impl DesignWorkPointPlaneSelection {
     }
 }
 
-/// Unadmitted DesignWorkPointPlaneSelection fields.
+/// Unadmitted `DesignWorkPointPlaneSelection` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     /// Source per-file dynamic primary class tag.
@@ -5496,7 +5493,7 @@ impl DesignWorkPointSketchPointSelection {
     }
 }
 
-/// Unadmitted DesignWorkPointSketchPointSelection fields.
+/// Unadmitted `DesignWorkPointSketchPointSelection` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     /// Source per-file dynamic primary class tag.

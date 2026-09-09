@@ -123,10 +123,21 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(operand.references()[1].design_reference, 2266);
     assert_eq!(operand.references()[1].form, 32);
     assert_eq!(
-        operand.selector_tail().map(|tail| tail.value),
+        operand
+            .clone()
+            .into_draft()
+            .selector_tail
+            .map(|tail| tail.value),
         Some([7, 0, 0, 0])
     );
-    assert_eq!(operand.selector_tail().map(|tail| tail.offset), Some(220));
+    assert_eq!(
+        operand
+            .clone()
+            .into_draft()
+            .selector_tail
+            .map(|tail| tail.offset),
+        Some(220)
+    );
     assert_eq!(
         operand.owner,
         crate::records::topology::DesignOperandOwner::Group {
@@ -375,10 +386,21 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     assert_eq!(operand.references()[0].design_reference, 301);
     assert_eq!(operand.references()[0].form, 33);
     assert_eq!(
-        operand.selector_tail().map(|tail| tail.value),
+        operand
+            .clone()
+            .into_draft()
+            .selector_tail
+            .map(|tail| tail.value),
         Some([1, 0, 0, 0])
     );
-    assert_eq!(operand.selector_tail().map(|tail| tail.offset), Some(208));
+    assert_eq!(
+        operand
+            .clone()
+            .into_draft()
+            .selector_tail
+            .map(|tail| tail.offset),
+        Some(208)
+    );
     assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.next_byte_offset(), next_at as u64);
 }
@@ -464,7 +486,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("edge recipe operand");
     assert_eq!(edge_operand.record_index(), 100);
-    assert_eq!(edge_operand.paired_byte_offset(), paired_at);
+    assert_eq!(
+        edge_operand.clone().into_draft().paired_byte_offset,
+        paired_at
+    );
     assert_eq!(edge_operand.recipe_record_index(), 103);
     assert_eq!(edge_operand.recipe_record_byte_offset(), recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
@@ -583,7 +608,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&vertex_recipe),
     )
     .expect("WorkPoint vertex recipe operand");
-    assert_eq!(parsed_vertex.paired_byte_offset(), vertex_paired_at);
+    assert_eq!(
+        parsed_vertex.clone().into_draft().paired_byte_offset,
+        vertex_paired_at
+    );
     assert_eq!(parsed_vertex.recipe_record_index(), 203);
     assert_eq!(parsed_vertex.next_record_index(), 205);
     assert_eq!(parsed_vertex.next_byte_offset(), vertex_next_at);
@@ -1470,7 +1498,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("face recipe operand");
     assert_eq!(operand.record_index(), 100);
-    assert_eq!(operand.paired_byte_offset(), face_paired_at);
+    assert_eq!(
+        operand.clone().into_draft().paired_byte_offset,
+        face_paired_at
+    );
     assert_eq!(operand.recipe_record_index(), 103);
     assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
     assert_eq!(operand.recipe_id, face_recipe.id);

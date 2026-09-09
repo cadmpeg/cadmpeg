@@ -93,7 +93,7 @@ impl DesignSketchProfileOperand {
     }
 }
 
-/// Unadmitted DesignSketchProfileOperand fields.
+/// Unadmitted `DesignSketchProfileOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignSketchProfileOperandDraft {
     /// Zero-based position in the scope's ordered reference table.
@@ -1014,14 +1014,14 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             draft
                 .auxiliary_paths
                 .iter()
-                .map(|record| record.record_index()),
+                .map(DesignConstructionOperandPath::record_index),
         )?;
         distinct_construction_records(
             "trailing_transforms",
             draft
                 .trailing_transforms
                 .iter()
-                .map(|record| record.record_index()),
+                .map(DesignConstructionOperandTransform::record_index),
         )?;
         distinct_construction_records(
             "trailing_dual_transforms",
@@ -1098,7 +1098,9 @@ impl DesignConstructionOperandGroupFrame {
     ) -> Result<(), String> {
         distinct_construction_records(
             "auxiliary_paths",
-            records.iter().map(|record| record.record_index()),
+            records
+                .iter()
+                .map(DesignConstructionOperandPath::record_index),
         )?;
         self.auxiliary_paths = records;
         Ok(())
@@ -1114,7 +1116,9 @@ impl DesignConstructionOperandGroupFrame {
     ) -> Result<(), String> {
         distinct_construction_records(
             "trailing_transforms",
-            records.iter().map(|record| record.record_index()),
+            records
+                .iter()
+                .map(DesignConstructionOperandTransform::record_index),
         )?;
         self.trailing_transforms = records;
         Ok(())
@@ -1346,7 +1350,7 @@ impl DesignConstructionOperandTransform {
     }
 }
 
-/// Unadmitted DesignConstructionOperandTransform fields.
+/// Unadmitted `DesignConstructionOperandTransform` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignConstructionOperandTransformDraft {
     /// Indexed transform-record identity.
@@ -1505,9 +1509,6 @@ impl DesignConstructionOperandPath {
     pub(crate) fn entity_ref_offset(&self) -> u64 {
         self.frame.offset(22)
     }
-    pub(crate) fn placement(&self) -> DesignConstructionPathPlacement {
-        self.placement
-    }
     pub(crate) fn scope_record_index_offset(&self) -> u64 {
         self.frame.offset(
             if matches!(
@@ -1534,7 +1535,7 @@ impl DesignConstructionOperandPath {
     }
 }
 
-/// Unadmitted DesignConstructionOperandPath fields.
+/// Unadmitted `DesignConstructionOperandPath` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionOperandPathDraft {
     /// Indexed path-record identity.
@@ -1765,15 +1766,15 @@ impl DesignConstructionOperandIdentity {
     pub(crate) fn following_class_tag(&self) -> &DesignClassTag {
         &self.following_class_tag
     }
-    pub(crate) fn tracking_path(&self) -> &Option<DesignConstructionTrackingPath> {
-        &self.tracking_path
+    pub(crate) fn tracking_path(&self) -> Option<&DesignConstructionTrackingPath> {
+        self.tracking_path.as_ref()
     }
-    pub(crate) fn persistent_identity(&self) -> &Option<DesignConstructionPersistentIdentity> {
-        &self.persistent_identity
+    pub(crate) fn persistent_identity(&self) -> Option<&DesignConstructionPersistentIdentity> {
+        self.persistent_identity.as_ref()
     }
 }
 
-/// Unadmitted DesignConstructionOperandIdentity fields.
+/// Unadmitted `DesignConstructionOperandIdentity` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionOperandIdentityDraft {
     /// Globally unique deterministic identifier.
@@ -2050,7 +2051,7 @@ impl DesignConstructionTrackingPath {
     }
 }
 
-/// Unadmitted DesignConstructionTrackingPath fields.
+/// Unadmitted `DesignConstructionTrackingPath` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionTrackingPathDraft {
     /// Outer tracking-wrapper record identity.
@@ -2284,7 +2285,7 @@ impl DesignConstructionPersistentIdentity {
     }
 }
 
-/// Unadmitted DesignConstructionPersistentIdentity fields.
+/// Unadmitted `DesignConstructionPersistentIdentity` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignConstructionPersistentIdentityDraft {
     /// Local persistent identity preceding the two UUID fields.
@@ -2692,7 +2693,7 @@ impl DesignExtrudeSelectionMember {
     }
 }
 
-/// Unadmitted DesignExtrudeSelectionMember fields.
+/// Unadmitted `DesignExtrudeSelectionMember` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignExtrudeSelectionMemberDraft {
     /// Globally unique deterministic identifier for this native member.
@@ -2950,9 +2951,6 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn identity_record_index(&self) -> u32 {
         self.frame.index(3)
     }
-    pub(crate) fn identity_record_offset(&self) -> u64 {
-        self.identity_record_offset
-    }
     pub(crate) fn primary_identity_offset(&self) -> u64 {
         self.identity_record_offset + self.selection.primary_delta()
     }
@@ -2970,7 +2968,7 @@ impl DesignEntitySelectionOperand {
     }
 }
 
-/// Unadmitted DesignEntitySelectionOperand fields.
+/// Unadmitted `DesignEntitySelectionOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignEntitySelectionOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
@@ -3538,9 +3536,6 @@ impl DesignBodyRecipeOperand {
     pub(crate) fn context_id_offset(&self) -> u64 {
         self.context_id_offset
     }
-    pub(crate) fn selector_tail(&self) -> Option<Located<[u8; 4]>> {
-        self.selector_tail
-    }
     pub(crate) fn references(&self) -> &Vec<DesignBodyRecipeReference> {
         &self.references
     }
@@ -3558,7 +3553,7 @@ impl DesignBodyRecipeOperand {
     }
 }
 
-/// Unadmitted DesignBodyRecipeOperand fields.
+/// Unadmitted `DesignBodyRecipeOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignBodyRecipeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
@@ -3985,7 +3980,7 @@ impl DesignEdgeIdentityOperand {
     }
 }
 
-/// Unadmitted DesignEdgeIdentityOperand fields.
+/// Unadmitted `DesignEdgeIdentityOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignEdgeIdentityOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
@@ -4383,9 +4378,6 @@ impl DesignEdgeOperand {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.paired_byte_offset
-    }
     pub(crate) fn recipe_record_index(&self) -> u32 {
         self.frame.index(3)
     }
@@ -4400,7 +4392,7 @@ impl DesignEdgeOperand {
     }
 }
 
-/// Unadmitted DesignEdgeOperand fields.
+/// Unadmitted `DesignEdgeOperand` fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignEdgeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
@@ -5516,9 +5508,6 @@ impl DesignFaceOperand {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.paired_byte_offset
-    }
     pub(crate) fn recipe_record_index(&self) -> u32 {
         self.frame.index(3)
     }
@@ -5533,7 +5522,7 @@ impl DesignFaceOperand {
     }
 }
 
-/// Unadmitted DesignFaceOperand fields.
+/// Unadmitted `DesignFaceOperand` fields.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignFaceOperandDraft {
     /// Globally unique deterministic identifier for this native operand.

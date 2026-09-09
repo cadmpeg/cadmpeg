@@ -3422,13 +3422,8 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
         let serde_json::Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        Self::try_new(
-            wire.entry_name,
-            wire.kind,
-            wire.variant_order,
-            payload,
-        )
-        .map_err(|error| error.to_string())
+        Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
+            .map_err(|error| error.to_string())
     }
 }
 impl From<DesignConfiguration> for DesignConfigurationWire {

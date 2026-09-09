@@ -68,12 +68,7 @@ fn configuration_kind_requires_its_exact_entry_extension() {
         ),
     ] {
         let admit = |name: &str| {
-            DesignConfiguration::try_new(
-                name.into(),
-                kind,
-                Vec::new(),
-                serde_json::Map::new(),
-            )
+            DesignConfiguration::try_new(name.into(), kind, Vec::new(), serde_json::Map::new())
         };
         let record = admit(valid).unwrap();
         let wire = serde_json::to_value(&record).unwrap();

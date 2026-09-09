@@ -337,7 +337,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
-        .map(|input| input.record_index())
+        .map(crate::records::feature::DesignWorkPointInput::record_index)
         .collect()
 }
 

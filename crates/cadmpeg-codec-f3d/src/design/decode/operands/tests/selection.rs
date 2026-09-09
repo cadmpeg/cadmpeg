@@ -267,7 +267,6 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     assert_eq!(identity.following_byte_offset(), 48);
     let persistent = identity
         .persistent_identity()
-        .as_ref()
         .expect("fixed persistent identity leaf");
     assert_eq!(persistent.local_id, 586);
     assert_eq!(persistent.next_record_index, 900);
@@ -283,7 +282,6 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         .expect("identity chain with expanded tail reference");
     let persistent = expanded
         .persistent_identity()
-        .as_ref()
         .expect("expanded persistent identity leaf");
     assert_eq!(persistent.tail_slot_offset(), 233);
     assert_eq!(persistent.next_record_index, 900);
@@ -419,7 +417,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             .map(|secondary| secondary.identity.value),
         Some(183)
     );
-    assert_eq!(operand.identity_record_offset(), identity_at as u64);
+    assert_eq!(
+        operand.clone().into_draft().identity_record_offset,
+        identity_at as u64
+    );
     assert_eq!(operand.next_byte_offset(), next_at as u64);
 
     let mut compact = bytes[..identity_at].to_vec();
@@ -437,7 +438,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             .map(|secondary| secondary.identity.value),
         None
     );
-    assert_eq!(compact_operand.identity_record_offset(), identity_at as u64);
+    assert_eq!(
+        compact_operand.clone().into_draft().identity_record_offset,
+        identity_at as u64
+    );
     assert_eq!(compact_operand.next_record_index(), 109);
     assert_eq!(compact_operand.next_byte_offset(), compact_next_at as u64);
 

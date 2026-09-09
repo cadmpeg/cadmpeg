@@ -1688,7 +1688,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
-        expanded.placement(),
+        expanded.clone().into_draft().placement,
         crate::records::topology::DesignConstructionPathPlacement::Transform(
             transform.try_into().unwrap()
         )
@@ -1717,7 +1717,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
-        compact.placement(),
+        compact.clone().into_draft().placement,
         crate::records::topology::DesignConstructionPathPlacement::Compact(true)
     );
     assert_eq!(compact.scope_record_index_offset(), 35);
@@ -1876,7 +1876,8 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         );
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
+                draft.payload =
+                    value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
