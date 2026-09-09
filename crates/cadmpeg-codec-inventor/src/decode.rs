@@ -36,13 +36,13 @@ use crate::native::ufrx::{
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
     AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
-    UnpairedSegmentRecord, VersionTupleRecord,
+    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
+    PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -72,7 +72,7 @@ fn decode_container<'a>(
         .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         .cloned();
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
-    let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
@@ -948,9 +948,9 @@ fn decode_container<'a>(
     let pm_app_rendering_styles = presentation_inventory
         .rendering_styles
         .iter()
-        .map(|style| {
+        .filter_map(|style| {
             let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            PmAppRenderingStyleRecord {
+            let wire = PmAppRenderingStyleRecordWire {
                 id: format!(
                     "inventor:presentation:rendering-style#{}-{}",
                     style.identity.segment_token, style.identity.record_ordinal
@@ -969,10 +969,47 @@ fn decode_container<'a>(
                 name: style.name.clone(),
                 comment: style.comment.clone(),
                 long_name: style.long_name.clone(),
-                extension: style.extension.clone(),
+                style_state: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_state),
+                style_label: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_label.clone()),
+                asset_guid: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.asset_guid.clone()),
+                material_id: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.material_id.clone()),
+                asset_library_id: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.asset_library_id.clone()),
+                style_values: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.style_values),
+                guid: style
+                    .extension
+                    .as_ref()
+                    .map(|extension| extension.guid.clone()),
                 suffix_len,
-                suffix_sha256,
-            }
+                suffix_sha256: suffix_sha256.into(),
+            };
+            PmAppRenderingStyleRecord::try_from(wire)
+                .inspect_err(|detail| {
+                    presentation_inventory.issues.push(RecordIssue {
+                        family: RecordIssueFamily::Presentation,
+                        segment_token: style.identity.segment_token.clone(),
+                        record_ordinal: style.identity.record_ordinal,
+                        detail: detail.clone(),
+                    })
+                })
+                .ok()
         })
         .collect::<Vec<_>>();
     let pm_graphics_faces = presentation_inventory
