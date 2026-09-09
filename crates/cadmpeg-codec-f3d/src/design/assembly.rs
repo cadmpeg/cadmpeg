@@ -634,7 +634,8 @@ mod tests {
         );
         assert!(matches!(
             result,
-            Err(cadmpeg_core::CodecError::NotImplemented(_))
+            Err(cadmpeg_core::CodecError::NotImplemented(m))
+                if m.contains("finite affine transform")
         ));
     }
 
