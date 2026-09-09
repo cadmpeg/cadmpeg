@@ -3553,17 +3553,17 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
             pcurve_declared_parameter_range(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_declared_parameter_range(basis),
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
-        PcurveGeometry::PolarNurbs { .. } => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-        PcurveGeometry::Nurbs { .. } => None,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle(_)
+        | PcurveGeometry::Nurbs { .. } => None,
     }
 }
 
@@ -3773,15 +3773,15 @@ fn pcurve_parameter_break_fractions(
         PcurveGeometry::Transformed { basis, .. } => {
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
-        PcurveGeometry::Line(_) => {}
-        PcurveGeometry::Circle(_) => {}
-        PcurveGeometry::Ellipse(_) => {}
-        PcurveGeometry::Harmonic(_) => {}
-        PcurveGeometry::Parabola(_) => {}
-        PcurveGeometry::Hyperbola(_) => {}
-        PcurveGeometry::Hyperbolic(_) => {}
-        PcurveGeometry::PolarHarmonic(_) => {}
-        PcurveGeometry::SphericalGreatCircle(_) => {}
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => {}
     }
 }
 
@@ -3864,10 +3864,10 @@ fn pcurve_selection_seeds(
 
 fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
     match geometry {
-        PcurveGeometry::Circle(_) => true,
-        PcurveGeometry::Ellipse(_) => true,
-        PcurveGeometry::Harmonic(_) => true,
-        PcurveGeometry::SphericalGreatCircle(_) => true,
+        PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => true,
         PcurveGeometry::Offset(offset_pcurve) => {
             let (_, basis) = offset_pcurve.parts();
             pcurve_has_angular_parameterization(basis)
@@ -3877,13 +3877,13 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
             let (_, _, basis) = trimmed_pcurve.parts();
             pcurve_has_angular_parameterization(basis)
         }
-        PcurveGeometry::Line(_) => false,
-        PcurveGeometry::PolarHarmonic(_) => false,
-        PcurveGeometry::PolarNurbs { .. } => false,
-        PcurveGeometry::Nurbs { .. } => false,
-        PcurveGeometry::Parabola(_) => false,
-        PcurveGeometry::Hyperbola(_) => false,
-        PcurveGeometry::Hyperbolic(_) => false,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::Nurbs { .. }
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_) => false,
     }
 }
 
@@ -3910,15 +3910,15 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             pcurve_selection_parameter_domain(basis)
         }
         PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_) => None,
     }
 }
 
@@ -3978,14 +3978,14 @@ fn surface_selection_parameter_domains_from_geometry(
         SurfaceGeometry::Transformed { basis, .. } => {
             surface_selection_parameter_domains_from_geometry(basis)
         }
-        SurfaceGeometry::Plane(_) => [None, None],
-        SurfaceGeometry::Cylinder(_) => [None, None],
-        SurfaceGeometry::Cone(_) => [None, None],
-        SurfaceGeometry::Sphere(_) => [None, None],
-        SurfaceGeometry::Torus(_) => [None, None],
-        SurfaceGeometry::Procedural { .. } => [None, None],
-        SurfaceGeometry::Polygonal(_) => [None, None],
-        SurfaceGeometry::Unknown { .. } => [None, None],
+        SurfaceGeometry::Plane(_)
+        | SurfaceGeometry::Cylinder(_)
+        | SurfaceGeometry::Cone(_)
+        | SurfaceGeometry::Sphere(_)
+        | SurfaceGeometry::Torus(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal(_)
+        | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
@@ -4004,8 +4004,7 @@ fn curve_selection_parameter_domain(
 
 fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        CurveGeometry::Circle(_) => Some([0.0, std::f64::consts::TAU]),
-        CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
+        CurveGeometry::Circle(_) | CurveGeometry::Ellipse(_) => Some([0.0, std::f64::consts::TAU]),
         CurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
         CurveGeometry::Polyline(polyline) => {
             let parameters = polyline.parameters()?;
@@ -4016,13 +4015,13 @@ fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> O
         CurveGeometry::Transformed { basis, .. } => {
             curve_selection_parameter_domain_from_geometry(basis)
         }
-        CurveGeometry::Line(_) => None,
-        CurveGeometry::Parabola(_) => None,
-        CurveGeometry::Hyperbola(_) => None,
-        CurveGeometry::Degenerate(_) => None,
-        CurveGeometry::Composite { .. } => None,
-        CurveGeometry::Procedural { .. } => None,
-        CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Line(_)
+        | CurveGeometry::Parabola(_)
+        | CurveGeometry::Hyperbola(_)
+        | CurveGeometry::Degenerate(_)
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 
