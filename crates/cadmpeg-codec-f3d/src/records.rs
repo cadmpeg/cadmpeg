@@ -1714,6 +1714,48 @@ pub struct DesignDimensionAnnotationFrame {
     /// Companion record of the dimension parameter governed by this frame.
     pub governing_companion_record_index: u32,
     /// Byte offset of the primary indexed record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Byte length from the primary through the paired header boundary.
+    frame_length: u64,
+    /// Ordered nullable locus operands.
+    operands: Vec<DesignDimensionAnnotationLocus>,
+    /// `EntityGenesis` origin bitfield.
+    pub entity_genesis: u64,
+    /// Opaque annotation bytes between the genesis block and governing owner.
+    annotation_bytes: Vec<u8>,
+    /// Indexed parameter-owner record selecting the governed dimension.
+    pub governing_owner_record_index: u32,
+    /// Ordered non-null return geometry records.
+    return_members: Vec<NonZeroU32>,
+    /// Dynamic class tag of the paired indexed record.
+    pub paired_class_tag: DesignClassTag,
+    /// Numeric design-entity suffix of the owning sketch.
+    pub owner_reference: u32,
+}
+
+/// Nullable annotation geometry and its dimension role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionAnnotationLocus {
+    /// Indexed sketch geometry record, absent for the null locus.
+    pub geometry_record_index: Option<NonZeroU32>,
+    /// Source dimension-role code.
+    pub role: u32,
+}
+
+/// Unchecked annotation frame payload and offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignDimensionAnnotationFrameDraft {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame, absent before the first companion in a scope.
+    pub companion_record_index: Option<u32>,
+    /// Companion record of the dimension parameter governed by this frame.
+    pub governing_companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
@@ -1743,6 +1785,192 @@ pub struct DesignDimensionAnnotationFrame {
     pub owner_reference: u32,
     /// Byte offset of `owner_reference`.
     pub owner_reference_offset: u64,
+}
+
+impl DesignDimensionAnnotationFrame {
+    /// Admit an annotation frame with representable offsets and matching operand runs.
+    pub fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+        if draft.operands.is_empty() {
+            return Err("operands must not be empty".into());
+        }
+        let operand_bytes = u64::try_from(draft.operands.len())
+            .ok()
+            .and_then(|count| count.checked_mul(15))
+            .ok_or("operands length overflows frame offsets")?;
+        let annotation_byte_offset = draft
+            .byte_offset
+            .checked_add(24)
+            .and_then(|offset| offset.checked_add(operand_bytes))
+            .and_then(|offset| offset.checked_add(57))
+            .ok_or("annotation_byte_offset overflows")?;
+        let governing_owner_reference_offset = u64::try_from(draft.annotation_bytes.len())
+            .ok()
+            .and_then(|len| annotation_byte_offset.checked_add(len))
+            .and_then(|offset| offset.checked_add(1))
+            .ok_or("governing_owner_reference_offset overflows")?;
+        let paired_byte_offset = draft
+            .byte_offset
+            .checked_add(draft.frame_length)
+            .ok_or("paired_byte_offset overflows")?;
+        let owner_reference_offset = paired_byte_offset
+            .checked_add(20)
+            .ok_or("owner_reference_offset overflows")?;
+        if draft.annotation_byte_offset != annotation_byte_offset {
+            return Err("annotation_byte_offset disagrees with frame layout".into());
+        }
+        if draft.governing_owner_reference_offset != governing_owner_reference_offset {
+            return Err("governing_owner_reference_offset disagrees with frame layout".into());
+        }
+        if draft.paired_byte_offset != paired_byte_offset {
+            return Err("paired_byte_offset disagrees with frame layout".into());
+        }
+        if draft.owner_reference_offset != owner_reference_offset {
+            return Err("owner_reference_offset disagrees with frame layout".into());
+        }
+        for (ordinal, operand) in draft.operands.iter().enumerate() {
+            let start = draft.byte_offset + 24 + ordinal as u64 * 15;
+            if operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11 {
+                return Err(
+                    "operands geometry_reference_offset or role_offset disagrees with frame layout"
+                        .into(),
+                );
+            }
+        }
+        for (ordinal, member) in draft.return_members.iter().enumerate() {
+            let expected = u64::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| ordinal.checked_mul(11))
+                .and_then(|delta| governing_owner_reference_offset.checked_add(delta))
+                .and_then(|offset| offset.checked_add(15))
+                .ok_or("return_member_offsets overflow")?;
+            if member.offset != expected {
+                return Err("return_member_offsets disagree with frame layout".into());
+            }
+        }
+        let mut operand_members = draft
+            .operands
+            .iter()
+            .filter_map(|operand| operand.geometry_record_index)
+            .collect::<Vec<_>>();
+        let mut return_members = draft
+            .return_members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>();
+        operand_members.sort_unstable();
+        return_members.sort_unstable();
+        if operand_members != return_members {
+            return Err("return_members disagree with operands geometry indices".into());
+        }
+        Ok(Self {
+            id: draft.id,
+            companion_record_index: draft.companion_record_index,
+            governing_companion_record_index: draft.governing_companion_record_index,
+            byte_offset: draft.byte_offset,
+            class_tag: draft.class_tag,
+            record_index: draft.record_index,
+            frame_length: draft.frame_length,
+            operands: draft
+                .operands
+                .into_iter()
+                .map(|operand| DesignDimensionAnnotationLocus {
+                    geometry_record_index: operand.geometry_record_index,
+                    role: operand.role,
+                })
+                .collect(),
+            entity_genesis: draft.entity_genesis,
+            annotation_bytes: draft.annotation_bytes,
+            governing_owner_record_index: draft.governing_owner_record_index,
+            return_members: draft
+                .return_members
+                .into_iter()
+                .map(|member| member.value)
+                .collect(),
+            paired_class_tag: draft.paired_class_tag,
+            owner_reference: draft.owner_reference,
+        })
+    }
+
+    /// Retained byte offset.
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    /// Retained operands.
+    pub fn operands(&self) -> &[DesignDimensionAnnotationLocus] {
+        &self.operands
+    }
+
+    /// Retained annotation bytes.
+    pub fn annotation_bytes(&self) -> &[u8] {
+        &self.annotation_bytes
+    }
+
+    /// Derived annotation byte offset.
+    pub fn annotation_byte_offset(&self) -> u64 {
+        self.byte_offset + 24 + self.operands.len() as u64 * 15 + 57
+    }
+
+    /// Derived governing owner reference offset.
+    pub fn governing_owner_reference_offset(&self) -> u64 {
+        self.annotation_byte_offset() + self.annotation_bytes.len() as u64 + 1
+    }
+
+    /// Derived paired byte offset.
+    pub fn paired_byte_offset(&self) -> u64 {
+        self.byte_offset + self.frame_length
+    }
+
+    /// Derived owner reference offset.
+    pub fn owner_reference_offset(&self) -> u64 {
+        self.paired_byte_offset() + 20
+    }
+
+    /// Recover the payload with its derived offsets.
+    pub fn into_draft(self) -> DesignDimensionAnnotationFrameDraft {
+        let annotation_byte_offset = self.annotation_byte_offset();
+        let governing_owner_reference_offset = self.governing_owner_reference_offset();
+        let paired_byte_offset = self.paired_byte_offset();
+        let owner_reference_offset = self.owner_reference_offset();
+        DesignDimensionAnnotationFrameDraft {
+            id: self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag,
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: self
+                .operands
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
+                    geometry_record_index: operand.geometry_record_index,
+                    role: operand.role,
+                    geometry_reference_offset: self.byte_offset + 25 + ordinal as u64 * 15,
+                    role_offset: self.byte_offset + 35 + ordinal as u64 * 15,
+                })
+                .collect(),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: self.annotation_bytes,
+            annotation_byte_offset,
+            governing_owner_record_index: self.governing_owner_record_index,
+            governing_owner_reference_offset,
+            return_members: self
+                .return_members
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, value)| Located {
+                    value,
+                    offset: governing_owner_reference_offset + 15 + ordinal as u64 * 11,
+                })
+                .collect(),
+            paired_class_tag: self.paired_class_tag,
+            paired_byte_offset,
+            owner_reference: self.owner_reference,
+            owner_reference_offset,
+        }
+    }
 }
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
@@ -1795,7 +2023,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        Ok(Self {
+        Self::try_new(DesignDimensionAnnotationFrameDraft {
             return_members: wire
                 .return_members
                 .into_iter()
@@ -1828,6 +2056,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
 }
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
+        let value = value.into_draft();
         let (return_members, return_member_offsets) = value
             .return_members
             .into_iter()

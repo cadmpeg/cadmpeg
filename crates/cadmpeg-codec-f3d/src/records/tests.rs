@@ -237,16 +237,16 @@ fn timeline_items_preserve_wire_and_reject_unequal_offsets() {
 
 #[test]
 fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
-    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[],"entity_genesis":0,"annotation_bytes":[],"annotation_byte_offset":150,"governing_owner_record_index":4,"governing_owner_reference_offset":170,"return_members":[10,11],"return_member_offsets":[185,196],"paired_class_tag":"259","paired_byte_offset":210,"owner_reference":5,"owner_reference_offset":230}"#;
+    let wire = r#"{"id":"annotation","governing_companion_record_index":2,"byte_offset":100,"class_tag":"256","record_index":3,"frame_length":120,"operands":[{"geometry_record_index":10,"geometry_reference_offset":125,"role":1,"role_offset":135},{"geometry_record_index":11,"geometry_reference_offset":140,"role":2,"role_offset":150}],"entity_genesis":0,"annotation_bytes":[],"annotation_byte_offset":211,"governing_owner_record_index":4,"governing_owner_reference_offset":212,"return_members":[10,11],"return_member_offsets":[227,238],"paired_class_tag":"259","paired_byte_offset":220,"owner_reference":5,"owner_reference_offset":240}"#;
     let frame: crate::records::DesignDimensionAnnotationFrame =
         serde_json::from_str(wire).expect("annotation return members");
     assert_eq!(
         serde_json::to_string(&frame).expect("annotation wire"),
         wire
     );
-    for offsets in ["[]", "[185]", "[185,196,207]"] {
+    for offsets in ["[]", "[227]", "[227,238,249]"] {
         let invalid = wire.replace(
-            "\"return_member_offsets\":[185,196]",
+            "\"return_member_offsets\":[227,238]",
             &format!("\"return_member_offsets\":{offsets}"),
         );
         let error =
@@ -1981,3 +1981,5 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
 mod act_entities;
 
 mod native_ids;
+
+mod annotation_frames;
