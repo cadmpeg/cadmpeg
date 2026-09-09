@@ -248,7 +248,11 @@ pub(crate) fn transfer_neutral(
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(owned)? {
             if let Some(placement) = placement_matrix(property)? {
-                placements_by_object.insert(owner, placement);
+                placements_by_object.insert(
+                    owner,
+                    Transform::from_rows(placement)
+                        .ok_or_else(|| malformed("placement must be finite and affine"))?,
+                );
             }
         }
     }
@@ -300,10 +304,16 @@ pub(crate) fn transfer_neutral(
         for index in 0..count {
             let element = count > 1;
             let element_transform = record.element_transforms().get(index).copied();
-            let local_transform = multiply(
-                record.local_transform().unwrap_or_else(identity),
-                element_transform.unwrap_or_else(identity),
-            );
+            let local_transform = record
+                .local_transform()
+                .map(crate::native::frame::FiniteFrame::transform)
+                .unwrap_or_default()
+                .compose(
+                    element_transform
+                        .map(crate::native::frame::FiniteFrame::transform)
+                        .unwrap_or_default(),
+                )
+                .map_err(|error| malformed(error.to_string()))?;
             let prototype_transform = linked_prototype_transform(
                 ctx,
                 record,
@@ -315,6 +325,7 @@ pub(crate) fn transfer_neutral(
                 .element_scales()
                 .get(index)
                 .copied()
+                .map(crate::native::frame::FiniteVec3::values)
                 .unwrap_or([1.0; 3]);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale: [f64; 3] =
@@ -366,10 +377,9 @@ pub(crate) fn transfer_neutral(
                     OccurrenceParent::Occurrence { occurrence }
                 }),
                 ordinal: u32::try_from(index).unwrap_or(u32::MAX),
-                transform: Transform::from_rows(local_transform).expect("affine transform"),
-                linked_prototype: (record.link_transform() == Some(true)).then_some(
-                    Transform::from_rows(prototype_transform).expect("affine transform"),
-                ),
+                transform: local_transform,
+                linked_prototype: (record.link_transform() == Some(true))
+                    .then_some(prototype_transform),
                 scale,
                 name: Some(record.object.clone()),
                 visible: None,
@@ -459,8 +469,9 @@ pub(crate) fn transfer_neutral(
         let record = record_by_object.get(object.as_str()).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
+            .map(crate::native::frame::FiniteFrame::transform)
             .or_else(|| placements_by_object.get(object.as_str()).copied())
-            .unwrap_or_else(identity);
+            .unwrap_or_default();
         let parent = parent_by_object.get(object.as_str()).copied();
         occurrences.push(Occurrence {
             id: container_occurrence_id(object),
@@ -473,7 +484,7 @@ pub(crate) fn transfer_neutral(
                 }
             }),
             ordinal: 0,
-            transform: Transform::from_rows(local_transform).expect("affine transform"),
+            transform: local_transform,
             linked_prototype: None,
             scale: [cadmpeg_ir::features::FiniteReal::ONE; 3],
             name: Some(object.clone()),
@@ -499,15 +510,15 @@ fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
     records: &HashMap<&str, &ProductNodeRecord>,
-    placements: &HashMap<&str, [[f64; 4]; 4]>,
+    placements: &HashMap<&str, Transform>,
     stack: &mut Vec<String>,
-) -> Result<[[f64; 4]; 4], CodecError> {
+) -> Result<Transform, CodecError> {
     let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
-        return Ok(identity());
+        return Ok(Transform::identity());
     }
     let Some(prototype) = record.prototype() else {
-        return Ok(identity());
+        return Ok(Transform::identity());
     };
     if stack.iter().any(|object| object == &record.object) {
         return Err(CodecError::malformed(format_args!(
@@ -519,13 +530,16 @@ fn linked_prototype_transform(
     let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(ProductNodeRecord::local_transform)
+        .map(crate::native::frame::FiniteFrame::transform)
         .or_else(|| placements.get(prototype).copied())
-        .unwrap_or_else(identity);
-    let nested = target_record.map_or(Ok(identity()), |target| {
+        .unwrap_or_default();
+    let nested = target_record.map_or(Ok(Transform::identity()), |target| {
         linked_prototype_transform(ctx, target, records, placements, stack)
     });
     stack.pop();
-    nested.map(|nested| multiply(placement, nested))
+    placement
+        .compose(nested?)
+        .map_err(|error| malformed(error.to_string()))
 }
 
 fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {

@@ -1135,8 +1135,8 @@ pub struct LinkOccurrence {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkArray {
     count: Option<u64>,
-    transforms: Vec<[[f64; 4]; 4]>,
-    scales: Vec<[f64; 3]>,
+    transforms: Vec<FiniteFrame>,
+    scales: Vec<FiniteVec3>,
     objects: Vec<String>,
 }
 
@@ -1147,13 +1147,16 @@ impl LinkArray {
         scales: Vec<[f64; 3]>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
-        for transform in &transforms {
-            FiniteFrame::try_from(*transform)
-                .map_err(|error| format!("element_transforms: {error}"))?;
-        }
-        for scale in &scales {
-            FiniteVec3::try_from(*scale).map_err(|error| format!("element_scales: {error}"))?;
-        }
+        let transforms = transforms
+            .into_iter()
+            .map(FiniteFrame::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("element_transforms: {error}"))?;
+        let scales = scales
+            .into_iter()
+            .map(FiniteVec3::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("element_scales: {error}"))?;
         let lengths = [
             transforms.len() as u64,
             scales.len() as u64,
@@ -1232,14 +1235,14 @@ impl ProductNodeRecord {
     }
 
     /// Local placement matrix when stored on the node.
-    pub fn local_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub fn local_transform(&self) -> Option<FiniteFrame> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
             | ProductNode::LinkGroup {
                 container: node, ..
-            } => node.local_transform.map(FiniteFrame::rows),
-            ProductNode::Occurrence(node) => node.local_transform.map(FiniteFrame::rows),
+            } => node.local_transform,
+            ProductNode::Occurrence(node) => node.local_transform,
         }
     }
 
@@ -1285,13 +1288,13 @@ impl ProductNodeRecord {
     }
 
     /// Ordered per-element placements for a link array.
-    pub fn element_transforms(&self) -> &[[[f64; 4]; 4]] {
+    pub fn element_transforms(&self) -> &[FiniteFrame] {
         self.occurrence()
             .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub fn element_scales(&self) -> &[[f64; 3]] {
+    pub fn element_scales(&self) -> &[FiniteVec3] {
         self.occurrence()
             .map_or(&[], |node| node.array.scales.as_slice())
     }
@@ -1394,12 +1397,22 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
                 .external_document()
                 .and_then(ExternalDocument::attribute)
                 .map(str::to_owned),
-            local_transform: value.local_transform(),
+            local_transform: value.local_transform().map(FiniteFrame::rows),
             placement_property: value.placement_property().map(str::to_owned),
             element_count: value.element_count(),
             link_transform: value.link_transform(),
-            element_transforms: value.element_transforms().to_vec(),
-            element_scales: value.element_scales().to_vec(),
+            element_transforms: value
+                .element_transforms()
+                .iter()
+                .copied()
+                .map(FiniteFrame::rows)
+                .collect(),
+            element_scales: value
+                .element_scales()
+                .iter()
+                .copied()
+                .map(FiniteVec3::values)
+                .collect(),
             linked_subelements: value.linked_subelements().to_vec(),
             claim_child: value.claim_child(),
             copy_on_change: value.copy_on_change().map(str::to_owned),
