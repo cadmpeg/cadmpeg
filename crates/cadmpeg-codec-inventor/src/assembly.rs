@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed assembly occurrence and placement records.
 
-use std::collections::{HashMap, HashSet};
+use crate::pmdc::unique_by;
+
+use std::collections::HashSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -150,24 +152,6 @@ pub(crate) fn project_occurrences(
         occurrences,
         unresolved_placements,
     }
-}
-
-fn unique_by<T, K>(records: &[T], key: impl Fn(&T) -> K) -> HashMap<K, &T>
-where
-    K: Eq + std::hash::Hash + Copy,
-{
-    let mut unique = HashMap::new();
-    let mut duplicates = HashSet::new();
-    for record in records {
-        let key = key(record);
-        if unique.insert(key, record).is_some() {
-            duplicates.insert(key);
-        }
-    }
-    for duplicate in duplicates {
-        unique.remove(&duplicate);
-    }
-    unique
 }
 
 fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {

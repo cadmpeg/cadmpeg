@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` parameters, expression nodes, and unit records.
 
+use crate::pmdc::unique_by;
+
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -369,21 +371,21 @@ pub(crate) fn inventory(
 }
 
 pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignParameter>, usize) {
-    let expressions = unique_by_ordinal(&inventory.expressions, |record| {
+    let expressions = unique_by(&inventory.expressions, |record| {
         (
-            &record.identity.segment_token,
+            record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
     });
-    let units = unique_by_ordinal(&inventory.units, |record| {
+    let units = unique_by(&inventory.units, |record| {
         (
-            &record.identity.segment_token,
+            record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
     });
-    let parameters = unique_by_ordinal(&inventory.parameters, |record| {
+    let parameters = unique_by(&inventory.parameters, |record| {
         (
-            &record.identity.segment_token,
+            record.identity.segment_token.as_str(),
             record.identity.record_ordinal,
         )
     });
@@ -391,7 +393,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {
         if !parameters.contains_key(&(
-            parameter.identity.segment_token.clone(),
+            parameter.identity.segment_token.as_str(),
             parameter.identity.record_ordinal,
         )) {
             unresolved += 1;
@@ -507,10 +509,10 @@ struct ResolvedUnit {
 fn resolve_unit(
     token: &str,
     reference: u32,
-    units: &HashMap<(String, u32), &PmDcUnit>,
+    units: &HashMap<(&str, u32), &PmDcUnit>,
 ) -> Option<ResolvedUnit> {
     let ordinal = reference.checked_sub(1)?;
-    let definition = units.get(&(token.to_string(), ordinal))?;
+    let definition = units.get(&(token, ordinal))?;
     let PmDcUnitKind::Definition {
         numerators,
         denominators,
@@ -527,7 +529,7 @@ fn resolve_unit(
         return None;
     }
     let base_ordinal = numerators.references()[0].index.checked_sub(1)?;
-    let base = units.get(&(token.to_string(), base_ordinal))?;
+    let base = units.get(&(token, base_ordinal))?;
     let PmDcUnitKind::Base {
         dimension,
         symbol,
@@ -551,9 +553,9 @@ fn resolve_unit(
 fn render_expression<'a>(
     token: &str,
     reference: u32,
-    expressions: &HashMap<(String, u32), &'a PmDcExpression>,
-    units: &HashMap<(String, u32), &'a PmDcUnit>,
-    parameters: &HashMap<(String, u32), &'a PmDcParameter>,
+    expressions: &HashMap<(&str, u32), &'a PmDcExpression>,
+    units: &HashMap<(&str, u32), &'a PmDcUnit>,
+    parameters: &HashMap<(&str, u32), &'a PmDcParameter>,
     dependencies: &mut Vec<ParameterId>,
     visiting: &mut HashSet<u32>,
 ) -> Option<String> {
@@ -561,7 +563,7 @@ fn render_expression<'a>(
     if !visiting.insert(ordinal) {
         return None;
     }
-    let expression = expressions.get(&(token.to_string(), ordinal))?;
+    let expression = expressions.get(&(token, ordinal))?;
     let result = match &expression.kind {
         PmDcExpressionKind::Value { value, .. } => {
             let unit = resolve_unit(token, expression.unit.index, units)?;
@@ -579,7 +581,7 @@ fn render_expression<'a>(
             }
         }
         PmDcExpressionKind::ParameterReference { operand } => {
-            let target = parameters.get(&(token.to_string(), operand.index.checked_sub(1)?))?;
+            let target = parameters.get(&(token, operand.index.checked_sub(1)?))?;
             let id = parameter_id(target);
             if !dependencies.contains(&id) {
                 dependencies.push(id);
@@ -864,24 +866,6 @@ fn binary_operation(type_id: [u8; 16]) -> Option<PmDcBinaryOperation> {
         EXPRESSION_POWER_TYPE => Some(PmDcBinaryOperation::Power),
         _ => None,
     }
-}
-
-fn unique_by_ordinal<'a, T>(
-    values: &'a [T],
-    key: impl Fn(&'a T) -> (&'a String, u32),
-) -> HashMap<(String, u32), &'a T> {
-    let mut counts = HashMap::new();
-    for value in values {
-        let (token, ordinal) = key(value);
-        let entry = counts
-            .entry((token.clone(), ordinal))
-            .or_insert((value, 0usize));
-        entry.1 += 1;
-    }
-    counts
-        .into_iter()
-        .filter_map(|(key, (value, count))| (count == 1).then_some((key, value)))
-        .collect()
 }
 
 impl Cursor<'_> {
