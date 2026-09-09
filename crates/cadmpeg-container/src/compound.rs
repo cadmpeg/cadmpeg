@@ -131,6 +131,7 @@ enum StreamData {
     Empty(EmptyStreamStart),
     Allocated {
         logical_size: NonZeroU64,
+        allocation: CompoundAllocation,
         chain: SectorChain,
     },
 }
@@ -163,12 +164,11 @@ impl CompoundStreamEntry {
         }
     }
 
-    /// Returns the stream allocation mechanism.
-    pub const fn allocation(&self) -> CompoundAllocation {
-        if self.logical_size() < MINI_STREAM_CUTOFF {
-            CompoundAllocation::Mini
-        } else {
-            CompoundAllocation::Regular
+    /// Returns the allocation mechanism for a nonempty stream.
+    pub const fn allocation(&self) -> Option<CompoundAllocation> {
+        match &self.data {
+            StreamData::Empty(_) => None,
+            StreamData::Allocated { allocation, .. } => Some(*allocation),
         }
     }
 
@@ -402,6 +402,7 @@ impl<'a> CompoundSnapshot<'a> {
         }
         let StreamData::Allocated {
             logical_size,
+            allocation,
             chain,
         } = &entry.data
         else {
@@ -409,7 +410,7 @@ impl<'a> CompoundSnapshot<'a> {
         };
         let logical_size = usize::try_from(logical_size.get())
             .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
-        let sector_view = |sector| match entry.allocation() {
+        let sector_view = |sector| match allocation {
             CompoundAllocation::Regular => self.regular_sector_view(sector),
             CompoundAllocation::Mini => self.mini_sector_view(sector),
         };
@@ -462,7 +463,14 @@ impl<'a> CompoundSnapshot<'a> {
                         attributes,
                     },
                     CompoundEntry::Stream(stream) => {
-                        attributes.insert("allocation".into(), stream.allocation().label().into());
+                        attributes.insert(
+                            "allocation".into(),
+                            stream
+                                .allocation()
+                                .unwrap_or(CompoundAllocation::Mini)
+                                .label()
+                                .into(),
+                        );
                         attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),
@@ -509,7 +517,10 @@ impl<'a> CompoundSnapshot<'a> {
             let CompoundEntry::Stream(stream) = entry else {
                 continue;
             };
-            let width = match stream.allocation() {
+            let Some(allocation) = stream.allocation() else {
+                continue;
+            };
+            let width = match allocation {
                 CompoundAllocation::Regular => self.parsed.version.sector_size(),
                 CompoundAllocation::Mini => MINI_SECTOR_SIZE,
             };
@@ -517,7 +528,7 @@ impl<'a> CompoundSnapshot<'a> {
             for &sector in stream.sectors() {
                 let payload = remaining.min(width as u64) as usize;
                 remaining = remaining.saturating_sub(payload as u64);
-                match stream.allocation() {
+                match allocation {
                     CompoundAllocation::Regular => {
                         regular.insert(sector, (stream.path.clone(), payload));
                     }
@@ -1106,6 +1117,7 @@ impl CompoundState {
                     )?;
                     let data = match sectors {
                         Some(chain) => StreamData::Allocated {
+                            allocation,
                             logical_size: NonZeroU64::new(entry.size).ok_or_else(|| {
                                 CodecError::Malformed("CFB allocated stream has zero size".into())
                             })?,
@@ -1160,7 +1172,10 @@ impl CompoundState {
             .div_ceil(MINI_SECTOR_SIZE);
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
-                let target = if stream.allocation() == CompoundAllocation::Regular {
+                let Some(allocation) = stream.allocation() else {
+                    continue;
+                };
+                let target = if allocation == CompoundAllocation::Regular {
                     &mut used
                 } else {
                     &mut mini_used
@@ -1169,7 +1184,7 @@ impl CompoundState {
                 for &sector in stream.sectors() {
                     let payload = remaining.min(MINI_SECTOR_SIZE as u64);
                     remaining = remaining.saturating_sub(payload);
-                    if stream.allocation() == CompoundAllocation::Mini
+                    if allocation == CompoundAllocation::Mini
                         && (sector as usize >= mini_capacity
                             || u64::from(sector)
                                 .saturating_mul(MINI_SECTOR_SIZE as u64)
