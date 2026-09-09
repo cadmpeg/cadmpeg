@@ -346,6 +346,14 @@ mod tests {
 
     #[test]
     fn compiled_descriptors_have_unique_ids_and_consistent_capabilities() {
+        for format in Format::all() {
+            assert!(
+                FORMAT_DESCRIPTORS
+                    .iter()
+                    .any(|descriptor| std::ptr::eq(*descriptor, format.descriptor().0)),
+                "{format:?} is absent from FORMAT_DESCRIPTORS"
+            );
+        }
         let mut ids = BTreeSet::new();
         for descriptor in FORMAT_DESCRIPTORS {
             assert!(
