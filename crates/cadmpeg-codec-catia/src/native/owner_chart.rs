@@ -594,7 +594,8 @@ mod tests {
             if let Some(tag) = canonical_tag {
                 wire["canonical_surface_tag"] = json!(tag);
             }
-            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).unwrap_err();
+            let error = serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire)
+                .expect_err("empty alias row");
             assert!(error.to_string().contains("alias_row must not be empty"));
         }
     }
