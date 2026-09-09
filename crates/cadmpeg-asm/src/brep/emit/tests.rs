@@ -630,3 +630,5 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
         assert_eq!(out.stats.procedural_curve_kinds.get(cause), Some(&1));
     }
 }
+
+mod tspline;

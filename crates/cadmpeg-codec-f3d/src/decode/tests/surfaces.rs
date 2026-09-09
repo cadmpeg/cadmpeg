@@ -1019,12 +1019,12 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     assert!(inline.program.as_str().contains("v 1 0 0 0"));
     assert_eq!(inline.separator, Some(false));
     assert_eq!(inline.values.as_str(), "100verts 1 2\n");
-    let graph = native.program_graph().expect("parsed T-spline graph");
+    let graph = native.program_graph();
     assert_eq!(graph.headers.len(), 2);
     assert_eq!(graph.records.len(), 3);
     assert_eq!(graph.records[0].kind, "v");
     assert!(graph.unparsed_lines.is_empty());
-    assert_eq!(native.values_graph().unwrap().records[0].kind, "100verts");
+    assert_eq!(native.values_graph().records[0].kind, "100verts");
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;

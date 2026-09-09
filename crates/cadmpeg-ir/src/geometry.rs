@@ -6311,12 +6311,12 @@ impl InlineTSplineSubtransform {
 pub enum TSplineSubtransform {
     /// Inline line-oriented T-spline program and companion values.
     Inline(InlineTSplineSubtransform),
-    /// Reference to an earlier subtype-table entry.
-    Reference {
+    /// Resolved reference to an earlier subtype-table entry.
+    Resolved {
         /// Native subtype-table index.
         index: SubtypeTableIndex,
-        /// Resolved shared program when the table target is available.
-        resolved: Option<Box<InlineTSplineSubtransform>>,
+        /// Resolved shared program.
+        transform: Box<InlineTSplineSubtransform>,
     },
 }
 
@@ -6345,9 +6345,10 @@ impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
                 separator,
                 values,
             } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
-            TSplineSubtransformWire::Reference { index, resolved } => {
-                Ok(Self::Reference { index, resolved })
-            }
+            TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
+                index,
+                transform: resolved.ok_or("T-spline subtransform is unresolved")?,
+            }),
         }
     }
 }
@@ -6359,15 +6360,14 @@ impl Serialize for TSplineSubtransform {
         enum Wire<'a> {
             Reference {
                 index: SubtypeTableIndex,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                resolved: Option<&'a InlineTSplineSubtransform>,
+                resolved: &'a InlineTSplineSubtransform,
             },
         }
         match self {
             Self::Inline(inline) => inline.serialize(serializer),
-            Self::Reference { index, resolved } => Wire::Reference {
+            Self::Resolved { index, transform } => Wire::Reference {
                 index: *index,
-                resolved: resolved.as_deref(),
+                resolved: transform,
             }
             .serialize(serializer),
         }
@@ -6375,12 +6375,12 @@ impl Serialize for TSplineSubtransform {
 }
 
 impl TSplineSubtransform {
-    /// Effective inline program when present or resolved.
+    /// Effective inline program, including resolved references.
     #[must_use]
-    pub fn inline(&self) -> Option<&InlineTSplineSubtransform> {
+    pub fn inline(&self) -> &InlineTSplineSubtransform {
         match self {
-            Self::Inline(inline) => Some(inline),
-            Self::Reference { resolved, .. } => resolved.as_deref(),
+            Self::Inline(inline) => inline,
+            Self::Resolved { transform, .. } => transform,
         }
     }
 }
@@ -6424,11 +6424,6 @@ impl TSplineSurfaceConstruction {
             crate::topology::ParameterInterval::new(parameter_ranges[1])
                 .map_err(ProceduralGeometryError::Payload)?,
         ];
-        if subtransform.inline().is_none() {
-            return Err(ProceduralGeometryError::Payload(
-                "T-spline subtransform is unresolved",
-            ));
-        }
         if !discontinuities
             .iter()
             .flatten()
@@ -6487,18 +6482,14 @@ impl TSplineSurfaceConstruction {
 
     /// Parse the semantic index of the effective topology program.
     #[must_use]
-    pub fn program_graph(&self) -> Option<TSplineProgram> {
-        self.subtransform
-            .inline()
-            .map(|inline| TSplineProgram::parse(inline.program.as_str()))
+    pub fn program_graph(&self) -> TSplineProgram {
+        TSplineProgram::parse(self.subtransform.inline().program.as_str())
     }
 
     /// Parse the semantic index of the effective values program.
     #[must_use]
-    pub fn values_graph(&self) -> Option<TSplineProgram> {
-        self.subtransform
-            .inline()
-            .map(|inline| TSplineProgram::parse(inline.values.as_str()))
+    pub fn values_graph(&self) -> TSplineProgram {
+        TSplineProgram::parse(self.subtransform.inline().values.as_str())
     }
 }
 
@@ -6507,10 +6498,8 @@ struct TSplineSurfaceConstructionWriteWire<'a> {
     parameter_ranges: &'a [[f64; 2]; 2],
     type_code: i64,
     subtransform: &'a TSplineSubtransform,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    program_graph: Option<&'a TSplineProgram>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    values_graph: Option<&'a TSplineProgram>,
+    program_graph: &'a TSplineProgram,
+    values_graph: &'a TSplineProgram,
     trailing_value: i64,
     discontinuities: &'a [Vec<f64>; 6],
     discontinuity_flag: bool,
@@ -6546,8 +6535,8 @@ impl Serialize for TSplineSurfaceConstruction {
             parameter_ranges: &self.parameter_ranges(),
             type_code: self.type_code,
             subtransform: &self.subtransform,
-            program_graph: program_graph.as_ref(),
-            values_graph: values_graph.as_ref(),
+            program_graph: &program_graph,
+            values_graph: &values_graph,
             trailing_value: self.trailing_value,
             discontinuities: &self.discontinuities,
             discontinuity_flag: self.discontinuity_flag,
@@ -6576,7 +6565,7 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         if wire
             .program_graph
             .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.program_graph().as_ref())
+            .is_some_and(|graph| *graph != construction.program_graph())
         {
             return Err(serde::de::Error::custom(
                 "program_graph does not match the T-spline program",
@@ -6585,7 +6574,7 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
         if wire
             .values_graph
             .as_ref()
-            .is_some_and(|graph| Some(graph) != construction.values_graph().as_ref())
+            .is_some_and(|graph| *graph != construction.values_graph())
         {
             return Err(serde::de::Error::custom(
                 "values_graph does not match the T-spline values program",

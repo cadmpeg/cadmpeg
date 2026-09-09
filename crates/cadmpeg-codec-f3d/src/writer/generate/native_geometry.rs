@@ -443,11 +443,7 @@ fn native_procedural_surface_definition(
                 native_i64(bytes, construction.type_code());
             }
             bytes.push(0x0f);
-            let inline = construction.subtransform().inline().ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "source-less referenced t_spl_subtrans_object has no resolved target".into(),
-                )
-            })?;
+            let inline = construction.subtransform().inline();
             native_ident(bytes, "t_spl_subtrans_object")?;
             native_u16_string(bytes, inline.program.as_str())?;
             if let Some(separator) = inline.separator {
