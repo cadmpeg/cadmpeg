@@ -501,8 +501,8 @@ struct StandardMeshAnalysis {
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let face_run = selected_standard_run(bytes)?;
-    let face_start = face_run.face_start;
-    let face_count = face_run.face_count;
+    let face_start = face_run.face_start();
+    let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let (edge_rows, handle_width, fixed_complete_row_spans) =
         parse_standard_edge_tables_with_width(bytes, after_faces)
@@ -628,8 +628,8 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     serialized: &[[usize; 2]],
 ) -> Option<Vec<Vec<usize>>> {
     let face_run = selected_standard_run(bytes)?;
-    let face_start = face_run.face_start;
-    let face_count = face_run.face_count;
+    let face_start = face_run.face_start();
+    let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
         .map(|(rows, _, width)| (rows, width))
@@ -1137,7 +1137,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
-    let face_count = selected_standard_run(bytes)?.face_count;
+    let face_count = selected_standard_run(bytes)?.face_count();
     let context = StandardMeshBoundaryContext::parse(bytes, serialized);
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
         context.as_ref().map_or_else(
@@ -2553,7 +2553,7 @@ pub fn parse_standard_mesh_selection(
     edge_directions: &[Vec<Vec<bool>>],
 ) -> Option<StandardTopology> {
     let face_run = selected_standard_run(bytes)?;
-    let face_count = face_run.face_count;
+    let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;

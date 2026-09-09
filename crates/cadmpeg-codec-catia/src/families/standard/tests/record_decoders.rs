@@ -827,10 +827,8 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     };
     let layout = |face_count: usize, edge_count: usize, vertex_count: usize, start: usize| {
         FbbPopulationLayout {
-            face_run: crate::families::standard::fbb::FbbFaceRun {
-                face_start: start,
-                face_count,
-            },
+            face_run: crate::families::standard::fbb::FbbFaceRun::try_new(start, face_count)
+                .unwrap(),
             edge_count,
             vertex_count,
             edge_table_form: crate::families::standard::fbb::EdgeTableForm::FbbOnly,
@@ -843,12 +841,12 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(&layouts, &populations)
             .expect("source-ordered population relation");
     assert_eq!(pairs.len(), 2);
-    assert_eq!(pairs[0].0.face_run.face_start, 10);
+    assert_eq!(pairs[0].0.face_run.face_start(), 10);
     assert!(matches!(
         &pairs[0].1.records[0],
         StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 100
     ));
-    assert_eq!(pairs[1].0.face_run.face_start, 20);
+    assert_eq!(pairs[1].0.face_run.face_start(), 20);
     assert!(matches!(
         &pairs[1].1.records[0],
         StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 200
