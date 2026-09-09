@@ -75,19 +75,15 @@ impl GradientKind {
             Self::RadialDisabled => "radial_disabled",
         }
     }
-}
 
-impl TryFrom<i32> for GradientKind {
-    type Error = GeometryError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    fn from_value(value: i32) -> Option<Self> {
         match value {
-            0 => Ok(Self::None),
-            1 => Ok(Self::Linear),
-            2 => Ok(Self::Radial),
-            3 => Ok(Self::LinearDisabled),
-            4 => Ok(Self::RadialDisabled),
-            _ => Err(GeometryError::malformed(0, "invalid gradient type")),
+            0 => Some(Self::None),
+            1 => Some(Self::Linear),
+            2 => Some(Self::Radial),
+            3 => Some(Self::LinearDisabled),
+            4 => Some(Self::RadialDisabled),
+            _ => None,
         }
     }
 }
@@ -390,8 +386,8 @@ fn parse_gradient_userdata(
         });
     }
     let gradient_type_offset = reader.position();
-    let gradient_type = GradientKind::try_from(reader.i32()?)
-        .map_err(|_| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
+    let gradient_type = GradientKind::from_value(reader.i32()?)
+        .ok_or_else(|| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
     let start = gradient_point(&mut reader, scale, "gradient start point")?;
     let end = gradient_point(&mut reader, scale, "gradient end point")?;
     let repeat_offset = reader.position();

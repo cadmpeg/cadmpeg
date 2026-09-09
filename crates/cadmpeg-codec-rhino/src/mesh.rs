@@ -629,17 +629,13 @@ impl FaceIndexWidth {
             Self::Four => 4,
         }
     }
-}
 
-impl TryFrom<i32> for FaceIndexWidth {
-    type Error = GeometryError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    fn from_value(value: i32) -> Option<Self> {
         match value {
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            4 => Ok(Self::Four),
-            _ => Err(error(0, "invalid mesh face index width")),
+            1 => Some(Self::One),
+            2 => Some(Self::Two),
+            4 => Some(Self::Four),
+            _ => None,
         }
     }
 }
@@ -649,8 +645,8 @@ fn read_faces(
     vertices: usize,
     faces: usize,
 ) -> Result<Vec<[u32; 4]>, GeometryError> {
-    let width = FaceIndexWidth::try_from(reader.i32()?)
-        .map_err(|_| error(reader.position() - 4, "invalid mesh face index width"))?;
+    let width = FaceIndexWidth::from_value(reader.i32()?)
+        .ok_or_else(|| error(reader.position() - 4, "invalid mesh face index width"))?;
     let bytes = faces
         .checked_mul(4)
         .and_then(|value| value.checked_mul(width.bytes()))
