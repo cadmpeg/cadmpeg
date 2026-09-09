@@ -24,8 +24,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchGeometry,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use std::collections::{HashMap, HashSet};
@@ -720,16 +720,16 @@ fn profiled_hole_construction_with_evidence(
     let lines = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Line { start, end } => Some((start, end)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => Some((start, end)),
             _ => None,
         })
         .collect::<Vec<_>>();
     let points = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some(position),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => Some(position),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -1507,7 +1507,10 @@ pub(crate) fn project_hole_position_sketches(
             let mut entities = sketch_entities.iter().filter(|entity| {
                 entity.sketch == *sketch_id
                     && entity.native_ref.as_deref() == Some(marker.id.as_str())
-                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    )
             });
             let entity = entities.next();
             if entities.next().is_some() {
@@ -1516,7 +1519,9 @@ pub(crate) fn project_hole_position_sketches(
             }
             let position = match entity {
                 Some(entity) => {
-                    let SketchGeometry::Point { position } = entity.geometry else {
+                    let SketchGeometryDefinition::Point { position } =
+                        *entity.geometry.definition()
+                    else {
                         unreachable!("point geometry was filtered above");
                     };
                     position
@@ -1722,8 +1727,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 (entity.sketch == *sketch_id
                     && entity.native_ref.as_deref() == Some(marker.id.as_str()))
                 .then_some(&entity.geometry)
-                .and_then(|geometry| match geometry {
-                    SpatialSketchGeometry::Point { position } => Some(*position),
+                .and_then(|geometry| match geometry.definition() {
+                    SpatialSketchGeometryDefinition::Point { position } => Some(*position),
                     _ => None,
                 })
             });
@@ -1777,8 +1782,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
             let points = spatial_entities
                 .iter()
                 .filter(|entity| entity.sketch == *sketch_id)
-                .filter_map(|entity| match entity.geometry {
-                    SpatialSketchGeometry::Point { position } => Some(position),
+                .filter_map(|entity| match *entity.geometry.definition() {
+                    SpatialSketchGeometryDefinition::Point { position } => Some(position),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -3423,26 +3428,33 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let sketch_id = SketchId(format!(
+        let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#bore:{lane_key}:{}",
             position.ordinal
-        ));
+        )) else {
+            continue;
+        };
         let v_axis = normal.cross(*u_axis);
-        let projected_entities = axes
+        let Some(projected_entities) = axes
             .iter()
             .enumerate()
             .map(|(ordinal, (point, _))| {
                 let delta =
                     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-                SketchEntity::new(
-                    SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
+                Some(SketchEntity::new(
+                    SketchEntityId::mint(format!("{}:entity:{ordinal}", sketch_id.as_str()))
+                        .ok()?,
                     sketch_id.clone(),
-                    SketchGeometry::Point {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
-                    },
-                )
+                    })
+                    .ok()?,
+                ))
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
         projections.push(Projection {
             feature: position_feature.clone(),
             sketch: Sketch {
@@ -3450,12 +3462,13 @@ pub(crate) fn project_bore_backed_position_sketches(
                 name: model_position.name.clone(),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
+                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    *origin, *normal, *u_axis,
+                ) {
+                    Ok(placement) => placement,
+                    Err(_) => continue,
                 },
-                profiles: Vec::new(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             },
             entities: projected_entities,

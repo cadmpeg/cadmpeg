@@ -84,13 +84,36 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
 }
 
 #[test]
-fn string_backed_reference_ids_enforce_the_local_identity_rule() {
+fn arena_identity_types_enforce_the_entity_identity_grammar() {
     macro_rules! check {
         ($type:ty, $valid:literal) => {{
-            for invalid in ["", " ", "a b", "a\tb", "a\nb"] {
+            for invalid in [
+                "",
+                " ",
+                "a b",
+                "a\tb",
+                "a\nb",
+                "x",
+                "test:entity#0",
+                "test::entity#0",
+                "test:model:entity#",
+                "test:model:entity#a#b",
+                "test:model:extra:entity#0",
+            ] {
                 assert!(<$type>::mint(invalid).is_err(), "{invalid:?}");
+                assert!(<$type>::try_from(invalid).is_err(), "{invalid:?}");
+                assert!(
+                    <$type>::try_from(invalid.to_owned()).is_err(),
+                    "{invalid:?}"
+                );
+                let wire = serde_json::to_string(invalid).unwrap();
+                assert!(serde_json::from_str::<$type>(&wire).is_err(), "{invalid:?}");
             }
             let id = <$type>::mint($valid).expect("identity grammar");
+            assert_eq!(
+                serde_json::from_str::<$type>(&serde_json::to_string($valid).unwrap()).unwrap(),
+                id
+            );
             assert_eq!(id.as_str(), $valid);
             assert_eq!(
                 serde_json::to_string(&id).unwrap(),

@@ -42,8 +42,8 @@ use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchEntityUse,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
@@ -54,12 +54,14 @@ const EPS_FULL_TURN: f64 = 1e-12;
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
-    let sketch_id = SketchId("creo:model:sketch#spline".to_string());
-    let spline_id = SketchEntityId("creo:model:sketch_entity#spline".to_string());
-    let first_line_id = SketchEntityId("creo:model:sketch_entity#first-line".to_string());
-    let second_line_id = SketchEntityId("creo:model:sketch_entity#second-line".to_string());
-    let spline = SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
+    let spline_id = SketchEntityId::mint("creo:model:sketch_entity#spline".to_string()).unwrap();
+    let first_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#first-line".to_string()).unwrap();
+    let second_line_id =
+        SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
+    let spline = SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -72,15 +74,17 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             false,
         )
         .unwrap(),
-    };
-    let first_line = SketchGeometry::Line {
+    );
+    let first_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 1.0),
         end: Point2::new(0.0, 0.0),
-    };
-    let second_line = SketchGeometry::Line {
+    })
+    .unwrap();
+    let second_line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
-    };
+    })
+    .unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -88,7 +92,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: spline_id.clone(),
                 reversed: false,
@@ -101,7 +105,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 entity: second_line_id.clone(),
                 reversed: false,
             },
-        ]],
+        ]])
+        .unwrap(),
         native_ref: None,
     });
     for (id, geometry) in [
@@ -130,8 +135,8 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
     let diagonal = ProfileEntity::new(
-        SketchGeometry::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+        SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::PcurveNurbs::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -139,15 +144,16 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 false,
             )
             .unwrap(),
-        },
+        ),
         false,
     )
     .expect("valid profile entity");
     let crossing_line = ProfileEntity::new(
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
         false,
     )
     .expect("valid profile entity");
@@ -245,10 +251,11 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                 let start = points[index];
                 let end = points[(index + 1) % 4];
                 ProfileEntity::new(
-                    SketchGeometry::Line {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
-                    },
+                    })
+                    .expect("valid test fixture"),
                     false,
                 )
                 .expect("valid profile entity")
@@ -287,12 +294,13 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     .into_iter()
     .map(|(end_angle, start_angle, _, _)| {
         ProfileEntity::new(
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(0.5),
                 start_angle: Angle(start_angle),
                 end_angle: Angle(end_angle),
-            },
+            })
+            .expect("valid test fixture"),
             true,
         )
         .expect("valid profile entity")
@@ -1009,14 +1017,14 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
                 }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
-    let sketch = SketchId("creo:model:sketch#822".to_string());
+    let sketch = SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
     assert!(matches!(
@@ -1651,13 +1659,17 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
     assert_eq!(
         circular_sweep_feature_definition(
-            ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
+            ProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
+            ),
             &sweep,
             BooleanOp::Join,
             Some(true),
         ),
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
+            profile: ProfileRef::Sketch(
+                SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
+            ),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: Vector3::new(0.0, 0.0, -1.0),
                 source: None,
@@ -1713,34 +1725,32 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
 
 #[test]
 fn typed_center_locus_requires_a_circular_geometry_family() {
-    let entity = SketchEntityId("creo:test:entity#1".into());
-    let definition = SketchConstraintDefinition::CoincidentLoci {
+    let entity = SketchEntityId::mint("creo:test:entity#1").expect("valid test fixture");
+    let definition = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Center(entity.clone())],
     };
     let unresolved = BTreeMap::from([(
         entity.clone(),
-        SketchGeometry::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity")
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity")
                 .expect("nonempty source identity"),
-        },
+        ),
     )]);
     assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
 
     let native_arc = BTreeMap::from([(
         entity.clone(),
-        SketchGeometry::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("arc")
-                .expect("nonempty source identity"),
-        },
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("arc").expect("nonempty source identity"),
+        ),
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
 
     let native_line = BTreeMap::from([(
         entity.clone(),
-        SketchGeometry::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("line")
-                .expect("nonempty source identity"),
-        },
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("line").expect("nonempty source identity"),
+        ),
     )]);
     assert!(!sketch_constraint_loci_compatible(
         &definition,
@@ -1749,10 +1759,11 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
     let resolved = BTreeMap::from([(
         entity,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(1.0),
-        },
+        })
+        .expect("valid test fixture"),
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &resolved));
 }
@@ -1761,16 +1772,17 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 fn section_profile_prefers_a_resolved_sketch_chain() {
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
-        id: SketchId("creo:model:sketch#offset:40".to_string()),
+        id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid test fixture"),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
@@ -1778,13 +1790,16 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
     );
 
-    ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
-        entity: SketchEntityId("creo:featdefs:sketch_entity#offset:40:4".to_string()),
+    ir.model.sketches[0].profiles.push_single(SketchEntityUse {
+        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
+            .expect("valid test fixture"),
         reversed: false,
-    }]);
+    });
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Sketch(SketchId("creo:model:sketch#offset:40".to_string()))
+        ProfileRef::Sketch(
+            SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
+        )
     );
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
@@ -1794,9 +1809,12 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 
 #[test]
 fn connected_profile_vertices_include_open_chain_terminals() {
-    let sketch_id = SketchId("creo:model:sketch#917".to_string());
-    let entity_id =
-        |external_id| SketchEntityId(format!("creo:featdefs:sketch_entity#917:{external_id}"));
+    let sketch_id =
+        SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
+    let entity_id = |external_id| {
+        SketchEntityId::mint(format!("creo:featdefs:sketch_entity#917:{external_id}"))
+            .expect("valid test fixture")
+    };
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -1804,7 +1822,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-        profiles: vec![vec![
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: entity_id(1),
                 reversed: false,
@@ -1813,25 +1831,28 @@ fn connected_profile_vertices_include_open_chain_terminals() {
                 entity: entity_id(2),
                 reversed: true,
             },
-        ]],
+        ]])
+        .expect("valid test fixture"),
         native_ref: None,
     });
     ir.model.sketch_entities.extend([
         SketchEntity::new(
             entity_id(1),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .expect("valid test fixture"),
         ),
         SketchEntity::new(
             entity_id(2),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, 1.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .expect("valid test fixture"),
         ),
     ]);
 
@@ -1840,21 +1861,31 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
-    if let SketchGeometry::Line { start, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *start = Point2::new(0.0, 0.0);
-    } else {
-        unreachable!();
-    }
+    ir.model.sketch_entities[1]
+        .geometry
+        .edit(|definition| {
+            if let SketchGeometryDefinition::Line { start, .. } = definition {
+                *start = Point2::new(0.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        })
+        .expect("valid test fixture");
     assert_eq!(
         connected_sketch_profile_vertices(&ir, &sketch_id),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
-    if let SketchGeometry::Line { end, .. } = &mut ir.model.sketch_entities[1].geometry {
-        *end = Point2::new(2.0, 0.0);
-    } else {
-        unreachable!();
-    }
+    ir.model.sketch_entities[1]
+        .geometry
+        .edit(|definition| {
+            if let SketchGeometryDefinition::Line { end, .. } = definition {
+                *end = Point2::new(2.0, 0.0);
+            } else {
+                unreachable!();
+            }
+        })
+        .expect("valid test fixture");
     assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
 }
 

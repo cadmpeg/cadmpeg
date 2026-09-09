@@ -9,6 +9,7 @@
 use super::prelude::*;
 use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
@@ -765,21 +766,23 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .map(|member| member.value)
         .collect::<Vec<_>>();
     group.try_set_members(all_members[..1].to_vec()).unwrap();
-    let sketch_id = SketchId("f3d:model:sketch#172".into());
+    let sketch_id = SketchId::mint("f3d:model:sketch#172").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![SketchEntityUse {
-            entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
+            entity: neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
             reversed: false,
-        }]],
+        }]])
+        .unwrap(),
         native_ref: None,
     };
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
@@ -819,33 +822,36 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     });
     group.try_set_members(all_members).unwrap();
     let mut sketch = sketch;
-    let second_profile_id = SketchEntityId("second-profile".into());
-    sketch.profiles.push(vec![SketchEntityUse {
+    let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
+    sketch.profiles.push_single(SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
-    }]);
+    });
     let point_entity = SketchEntity::new(
-        neutral_sketch_point_id(&sketch_id, 587),
+        neutral_sketch_point_id(&sketch_id, 587).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.5, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let line_entity = SketchEntity::new(
-        neutral_sketch_curve_id(&sketch_id, 586, 0),
+        neutral_sketch_curve_id(&sketch_id, 586, 0).unwrap(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second_profile_entity = SketchEntity::new(
         second_profile_id,
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let profile_entities = [line_entity, second_profile_entity, point_entity];
     assert!(matches!(
@@ -900,7 +906,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         } if actual_sketch == &sketch_id && actual_selections == &[group.id.clone()]
     ));
     let mut single_profile_sketch = sketch.clone();
-    single_profile_sketch.profiles.truncate(1);
+    single_profile_sketch
+        .profiles
+        .edit(|profiles| profiles.truncate(1))
+        .unwrap();
     assert!(matches!(
         resolved_extrude_profile_selection(
             &sketch_id,

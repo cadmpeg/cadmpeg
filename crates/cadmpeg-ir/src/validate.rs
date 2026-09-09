@@ -202,7 +202,7 @@ mod tests {
     fn configuration_feature_sketch_resolves_against_model_sketches() {
         let mut ir = CadIr::empty();
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
-        let sketch_id = SketchId("test:model:sketch#sketch".into());
+        let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: 0,
@@ -224,12 +224,13 @@ mod tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: crate::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: crate::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: crate::sketches::SketchProfiles::default(),
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {

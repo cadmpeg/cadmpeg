@@ -129,8 +129,8 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     use cadmpeg_ir::assets::AssetId;
     use cadmpeg_ir::tessellation::TessellationTextureAssignment;
 
-    let first = AssetId::mint("asset:first").expect("identity grammar");
-    let second = AssetId::mint("asset:second").expect("identity grammar");
+    let first = AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar");
+    let second = AssetId::mint("synthetic:test:id#asset:second").expect("identity grammar");
     let textures = [
         ("resource:first".into(), first.clone()),
         ("resource:second".into(), second.clone()),
@@ -152,7 +152,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             },
             TessellationTextureAssignment {
                 source_id: Some("resource:third".into()),
-                texture: AssetId::mint("asset:first").expect("identity grammar"),
+                texture: AssetId::mint("synthetic:test:id#asset:first").expect("identity grammar"),
                 triangles: vec![3],
             },
         ]
@@ -162,7 +162,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             Some(&[2]),
             &[(
                 "resource:only".into(),
-                AssetId::mint("asset:only").expect("identity grammar")
+                AssetId::mint("synthetic:test:id#asset:only").expect("identity grammar")
             )],
             1,
         ),
@@ -270,7 +270,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
         };
     let sketch_profile = serde_json::json!({
         "kind": "sketch_profiles",
-        "value": {"sketch": "sketch:1", "profiles": [0]}
+        "value": {"sketch": "test:model:sketch#1", "profiles": [0]}
     });
     let profile_start = serde_json::json!({"kind": "profile_plane"});
     let blind = serde_json::json!({"kind": "blind", "length": 10.0});
@@ -449,7 +449,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     };
 
     assert!(!feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "sketch", "value": "sketch:1"}),
+        serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
     )));
     assert!(feature_definition_is_incomplete(&base_flange(
         serde_json::json!({"kind": "native", "value": "native:profile"}),
@@ -590,7 +590,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         "definition": "sweep",
         "section": {
             "kind": "profile",
-            "value": {"kind": "sketch", "value": "sketch:section"}
+            "value": {"kind": "sketch", "value": "test:model:sketch#section"}
         },
         "path": {"kind": "edges", "value": ["test:model:edge#path"]},
         "mode": {"mode": "solid", "op": "join"}
@@ -645,7 +645,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let revolve = definition(serde_json::json!({
         "definition": "revolve",
         "construction": {
-            "profile": {"kind": "sketch", "value": "sketch:profile"},
+            "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
@@ -756,7 +756,7 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_offset_plane",
-            "reference": "feature:plane",
+            "reference": "test:model:feature#plane",
             "distance": 5.0
         }),
     )));
@@ -885,16 +885,16 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         "sections": [
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [2, 3]}
             },
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{
             "kind": "spatial_sketch_curves",
-            "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
+            "value": {"sketch": "test:model:spatial-sketch#1", "curves": ["test:model:spatial-entity#curve"]}
         }]},
         "op": "join"
     }))
@@ -907,7 +907,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
             {"kind": "native", "value": "native:profile"},
             {
                 "kind": "spatial_sketch_profiles",
-                "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [1, 4]}
             }
         ],
         "guidance": {"kind": "guides", "path": [{"kind": "native", "value": "native:guide"}]},
@@ -960,16 +960,24 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         },
         native_ref: None,
     };
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:1",
+        Some("EdgeFlange"),
+        "native-a",
+    ));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:2",
+        Some("EdgeFlange"),
+        "native-b",
+    ));
     ir.model
         .features
-        .push(feature("feature:1", Some("EdgeFlange"), "native-a"));
-    ir.model
-        .features
-        .push(feature("feature:2", Some("EdgeFlange"), "native-b"));
-    ir.model.features.push(feature("feature:3", None, "Hem"));
-    ir.model
-        .features
-        .push(feature("feature:4", Some("Canvas"), "Canvas"));
+        .push(feature("synthetic:test:id#feature:3", None, "Hem"));
+    ir.model.features.push(feature(
+        "synthetic:test:id#feature:4",
+        Some("Canvas"),
+        "Canvas",
+    ));
 
     assert_eq!(
         incomplete_feature_families(&ir),
@@ -1106,23 +1114,26 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
 fn design_projection_gaps_count_each_retained_selection_family() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("constraint".into()),
-        sketch: SketchId("sketch".into()),
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "dimension".into(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: None,
-            operands: Vec::new(),
-        },
+        id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(),
+        sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "dimension".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: vec![SketchEntityId::mint("synthetic:test:id#entity").unwrap()],
+                parameter: None,
+                operands: Vec::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -1135,18 +1146,18 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         native_ref: Some("native:sketch-relation".into()),
     });
     let mut native_dimension = ir.model.sketch_constraints[0].clone();
-    native_dimension.id = SketchConstraintId("dimension".into());
+    native_dimension.id = SketchConstraintId::mint("synthetic:test:id#dimension").unwrap();
     native_dimension.native_ref = Some("native:dimension-companion".into());
     ir.model.sketch_constraints.push(native_dimension);
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "extrude",
+            "id": "synthetic:test:id#extrude",
             "ordinal": 0,
             "definition": {
                 "definition": "extrude",
                 "profile": {
                     "kind": "sketch_selection",
-                    "value": {"sketch": "sketch", "selections": ["native:profile"]}
+                    "value": {"sketch": "synthetic:test:id#sketch", "selections": ["native:profile"]}
                 },
                 "start": {"kind": "profile_plane"},
                 "extent": {
@@ -1165,7 +1176,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "sweep",
+            "id": "synthetic:test:id#sweep",
             "ordinal": 1,
             "definition": {
                 "definition": "sweep",
@@ -1181,7 +1192,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "fillet",
+            "id": "synthetic:test:id#fillet",
             "ordinal": 2,
             "definition": {
                 "definition": "fillet",
@@ -1216,7 +1227,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "suppressed-fillet",
+            "id": "synthetic:test:id#suppressed-fillet",
             "ordinal": 2,
             "suppressed": true,
             "definition": {
@@ -1231,7 +1242,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "native-feature",
+            "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
             "definition": {
                 "definition": "native",
@@ -1244,7 +1255,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
-            "id": "unresolved-pattern",
+            "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
             "definition": {
                 "definition": "pattern",
@@ -1490,29 +1501,31 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.sketch_curve_identities[0].owner_reference = Some(1);
 
     ir.model.sketches.push(Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some("native:sketch-placement".into()),
     });
     for (id, native_ref) in [
-        ("point", "native:sketch-point"),
-        ("curve", "native:sketch-curve"),
+        ("synthetic:test:id#point", "native:sketch-point"),
+        ("synthetic:test:id#curve", "native:sketch-curve"),
     ] {
         ir.model.sketch_entities.push(
             SketchEntity::new(
-                SketchEntityId(id.into()),
-                SketchId("sketch".into()),
-                SketchGeometry::Point {
+                SketchEntityId::mint(id).unwrap(),
+                SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
-                },
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(native_ref.into())),
         );
@@ -1524,7 +1537,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     ir.model.parameters.push(
         serde_json::from_value(serde_json::json!({
-            "id": "parameter-2",
+            "id": "synthetic:test:id#parameter-2",
             "ordinal": 2,
             "name": "d2",
             "expression": "1 mm",
@@ -1580,7 +1593,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .iter()
         .map(|scope| {
             serde_json::from_value(serde_json::json!({
-                "id": format!("feature-{}", scope.record_index),
+                "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
                 "definition": {
                     "definition": "native",
@@ -1762,7 +1775,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             "sketch": "f3d:model:sketch#1",
             "definition": {
                 "kind": "distance",
-                "entities": [],
+                "entities": ["f3d:model:sketch-entity#first", "f3d:model:sketch-entity#second"],
                 "parameter": "f3d:model:parameter#1"
             },
             "native_ref": format!("{stream}:design-parameter-companion#30")

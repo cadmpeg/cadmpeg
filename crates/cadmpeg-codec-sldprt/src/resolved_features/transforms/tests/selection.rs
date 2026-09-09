@@ -15,7 +15,8 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -39,9 +40,9 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 
 #[test]
 fn relation_point_materializes_under_one_proven_marker_transform() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -61,11 +62,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .enumerate()
         .map(|(index, (u, v))| {
             SketchEntity::new(
-                SketchEntityId(format!("point-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#point-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u, v),
-                },
+                })
+                .unwrap(),
             )
         })
         .collect::<Vec<_>>();
@@ -378,31 +380,29 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("relation-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("self-linked-curve")
             && entity.endpoint_refs == ["endpoint-b", "self-linked-curve"]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(4.0, 7.0) && end == Point2::new(5.0, 6.0))
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("forward-linked-curve")
             && entity.endpoint_refs == ["endpoint-a", "endpoint-b"]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
     }));
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("coincident-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(1.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(1.0, 2.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
@@ -410,9 +410,8 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             && entity.native_ref.is_none()
             && entity.geometry_ref.as_deref()
                 == Some("sldprt:feature-input:sketch-entity#qualified-curve")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(2.5, 4.5)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(2.5, 4.5)
             )
     }));
     assert!(entities.iter().any(|entity| {
@@ -423,7 +422,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                     "endpoint-a",
                     "sldprt:feature-input:sketch-entity#qualified-curve",
                 ]
-            && matches!(entity.geometry, SketchGeometry::Line { start, end }
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(2.5, 4.5))
     }));
     let loci = profile_loci_by_marker(
@@ -434,9 +433,9 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     );
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
-        vec![SketchLocus::End(SketchEntityId(
-            "sldprt:model:sketch-entity#relation-line:lane:84".into(),
-        ))]
+        vec![SketchLocus::End(
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+        )]
     );
     let markers = lane
         .sketch_entities
@@ -449,17 +448,17 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             &markers,
             &loci,
         ),
-        Some(SketchLocus::End(SketchEntityId(
-            "sldprt:model:sketch-entity#relation-line:lane:84".into(),
-        )))
+        Some(SketchLocus::End(
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+        ))
     );
 }
 
 #[test]
 fn relation_point_coexists_with_nonpoint_native_carrier() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -479,11 +478,12 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .enumerate()
         .map(|(index, (u, v))| {
             SketchEntity::new(
-                SketchEntityId(format!("anchor-{index}")),
+                SketchEntityId::mint(format!("synthetic:test:id#anchor-{index}")).unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(u, v),
-                },
+                })
+                .unwrap(),
             )
         })
         .collect::<Vec<_>>();
@@ -501,12 +501,13 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     markers.push(point_marker.clone());
     entities.push(
         SketchEntity::new(
-            SketchEntityId("dimension-carrier".into()),
+            SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(5.0, 6.0),
                 radius: Length(10.0),
-            },
+            })
+            .unwrap(),
         )
         .with_construction(true)
         .with_native_ref(Some(point_marker.id.clone())),
@@ -558,13 +559,15 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-            && matches!(entity.geometry, SketchGeometry::Circle { .. })
+            && matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            )
     }));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
     let loci = profile_loci_by_marker(
@@ -578,14 +581,17 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .find(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some(point_marker.id.as_str())
-                && matches!(entity.geometry, SketchGeometry::Point { .. })
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
         .expect("relation point");
     assert_eq!(
         loci[point_marker.id.as_str()],
-        vec![SketchLocus::Center(SketchEntityId(
-            "dimension-carrier".into()
-        ))]
+        vec![SketchLocus::Center(
+            SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()
+        )]
     );
     assert_eq!(
         loci[&super::qualified_point_marker_key(&point_marker.id)],
@@ -598,7 +604,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities(&point_marker.id, &markers, &loci),
-        vec![SketchEntityId("dimension-carrier".into())]
+        vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
         marker_point_locus(&point_marker.id, &markers, &loci),
@@ -608,9 +614,9 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 
 #[test]
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -630,12 +636,13 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let mut first_marker = marker("first-point", Some([-0.005, 0.002]));
@@ -701,16 +708,14 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
     assert_eq!(entities.len(), 2);
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("first-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(-5.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(-5.0, 2.0)
             )
     }));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("second-point")
-            && matches!(
-                entity.geometry,
-                SketchGeometry::Point { position } if position == Point2::new(5.0, 2.0)
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Point { position } if position == Point2::new(5.0, 2.0)
             )
     }));
 }
@@ -782,16 +787,17 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
 #[test]
 fn cylinder_centers_resolve_dimensioned_circle_frame() {
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(20.0, 20.0, 0.0),
-            normal: Vector3::new(-1.0, 0.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, 1.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(20.0, 20.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let circles = [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)];
@@ -825,8 +831,8 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
 
 #[test]
 fn circular_profile_binds_by_unique_diameter_signature() {
-    let sketch_id = SketchId("circle-profile".into());
-    let entity_id = SketchEntityId("circle".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#circle-profile").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let feature = |id: &str, name: &str, sketch| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
@@ -844,8 +850,12 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         native_ref: Some(format!("native-{id}")),
     };
     let mut features = vec![
-        feature("first", "Sketch1", None),
-        feature("second", "Sketch2", Some(sketch_id.clone())),
+        feature("synthetic:test:id#first", "Sketch1", None),
+        feature(
+            "synthetic:test:id#second",
+            "Sketch2",
+            Some(sketch_id.clone()),
+        ),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
         id: ParameterId::mint(id).expect("identity grammar"),
@@ -861,32 +871,45 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         native_ref: None,
     };
     let parameters = [
-        parameter("first-diameter", "first", 4.0),
-        parameter("second-diameter", "second", 5.0),
+        parameter(
+            "synthetic:test:id#first-diameter",
+            "synthetic:test:id#first",
+            4.0,
+        ),
+        parameter(
+            "synthetic:test:id#second-diameter",
+            "synthetic:test:id#second",
+            5.0,
+        ),
     ];
     let mut sketches = [Sketch {
         id: sketch_id.clone(),
         name: Some("Sketch2".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
-            entity: entity_id.clone(),
-            reversed: false,
-        }]],
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            cadmpeg_ir::sketches::SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            },
+        ]])
+        .unwrap(),
         native_ref: None,
     }];
     let entities = [SketchEntity::new(
         entity_id,
         sketch_id.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
-        },
+        })
+        .unwrap(),
     )];
 
     bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);

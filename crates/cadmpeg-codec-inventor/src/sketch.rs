@@ -8,9 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchNativeOperand, SketchPlacement,
+    NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
+    SketchConstraintId, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1097,8 +1097,12 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
+        let (Some(entity_id), Some(sketch_id)) = (entity_id(entity), sketch_id(sketch)) else {
+            unresolved_entities += 1;
+            continue;
+        };
         projected_entities.push(
-            SketchEntity::new(entity_id(entity), sketch_id(sketch), geometry)
+            SketchEntity::new(entity_id, sketch_id, geometry)
                 .with_construction(entity.entity_flags & 0x0408_0040 != 0)
                 .with_native_ref(Some(entity.id()))
                 .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
@@ -1143,13 +1147,23 @@ pub(crate) fn project(
             unresolved_sketches += 1;
             continue;
         };
+        let Some(id) = sketch_id(sketch) else {
+            unresolved_sketches += 1;
+            continue;
+        };
+        let Ok(profiles) =
+            cadmpeg_ir::sketches::SketchProfiles::try_from(build_profiles(&referenced_entities))
+        else {
+            unresolved_sketches += 1;
+            continue;
+        };
         sketches.push(Sketch {
-            id: sketch_id(sketch),
+            id,
             name: None,
             configuration: None,
             visible: None,
             placement,
-            profiles: build_profiles(&referenced_entities),
+            profiles,
             native_ref: Some(sketch.id()),
         });
     }
@@ -1255,7 +1269,7 @@ pub(crate) fn project(
     let raw_sketch_by_id = inventory
         .sketches
         .iter()
-        .map(|sketch| (sketch_id(sketch), sketch))
+        .filter_map(|sketch| Some((sketch_id(sketch)?, sketch)))
         .collect::<HashMap<_, _>>();
     let previous_constraint_count = constraints.len();
     constraints.retain(|constraint| {
@@ -1313,7 +1327,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Coincident { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Coincident {
+                SketchConstraintDefinitionInput::Coincident {
                     entities: members.iter().map(|entity| entity.id().clone()).collect(),
                 },
                 None,
@@ -1327,7 +1341,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Parallel {
+                SketchConstraintDefinitionInput::Parallel {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1342,7 +1356,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Perpendicular {
+                SketchConstraintDefinitionInput::Perpendicular {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1357,7 +1371,7 @@ fn project_constraint(
         } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Tangent {
+                SketchConstraintDefinitionInput::Tangent {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1368,7 +1382,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Horizontal { entity, state } => {
             let member = resolve(entity)?;
             (
-                SketchConstraintDefinition::Horizontal {
+                SketchConstraintDefinitionInput::Horizontal {
                     entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
@@ -1378,7 +1392,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::Vertical { entity, state } => {
             let member = resolve(entity)?;
             (
-                SketchConstraintDefinition::Vertical {
+                SketchConstraintDefinitionInput::Vertical {
                     entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
@@ -1394,7 +1408,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
-                SketchConstraintDefinition::HorizontalDistance {
+                SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
@@ -1412,7 +1426,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
-                SketchConstraintDefinition::VerticalDistance {
+                SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
@@ -1425,7 +1439,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
-                SketchConstraintDefinition::Radius {
+                SketchConstraintDefinitionInput::Radius {
                     entity: member.id().clone(),
                     parameter,
                 },
@@ -1437,7 +1451,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
-                SketchConstraintDefinition::Diameter {
+                SketchConstraintDefinitionInput::Diameter {
                     entity: member.id().clone(),
                     parameter,
                 },
@@ -1448,7 +1462,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::CircleCenter { entity, center } => {
             let members = [resolve(entity)?, resolve(center)?];
             (
-                SketchConstraintDefinition::Native {
+                SketchConstraintDefinitionInput::Native {
                     native_kind: "circle_center_alignment".into(),
                     native_state: Some(constraint.header.state as u32 as u64),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
@@ -1467,7 +1481,7 @@ fn project_constraint(
         PmDcSketchConstraintKind::EqualRadius { first, second } => {
             let members = [resolve(first)?, resolve(second)?];
             (
-                SketchConstraintDefinition::Equal {
+                SketchConstraintDefinitionInput::Equal {
                     first: members[0].id().clone(),
                     second: members[1].id().clone(),
                 },
@@ -1480,12 +1494,13 @@ fn project_constraint(
         return None;
     }
     Some(SketchConstraint {
-        id: SketchConstraintId(format!(
+        id: SketchConstraintId::mint(format!(
             "inventor:design:sketch-constraint#{}-{}",
             constraint.identity.segment_token, constraint.identity.record_ordinal
-        )),
+        ))
+        .ok()?,
         sketch: members[0].sketch.clone(),
-        definition,
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?,
         name: None,
         driving: None,
         active: None,
@@ -1540,9 +1555,12 @@ fn project_geometry(
     entities: &HashMap<(String, u32), &PmDcSketchEntity>,
 ) -> Option<SketchGeometry> {
     match &entity.kind {
-        PmDcSketchEntityKind::Point { position, .. } => Some(SketchGeometry::Point {
-            position: neutral_point(*position),
-        }),
+        PmDcSketchEntityKind::Point { position, .. } => Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: neutral_point(*position),
+            })
+            .ok()?,
+        ),
         PmDcSketchEntityKind::Line {
             points,
             origin,
@@ -1557,17 +1575,23 @@ fn project_geometry(
             if !line_carrier_matches(*origin, *direction, start, end) {
                 return None;
             }
-            Some(SketchGeometry::Line {
-                start: neutral_point(start),
-                end: neutral_point(end),
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: neutral_point(start),
+                    end: neutral_point(end),
+                })
+                .ok()?,
+            )
         }
         PmDcSketchEntityKind::Circle { center, radius, .. } => {
             let center = resolve_point(&entity.identity.segment_token, center.index, entities)?;
-            Some(SketchGeometry::Circle {
-                center: neutral_point(center),
-                radius: Length(radius * 10.0),
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: neutral_point(center),
+                    radius: Length(radius * 10.0),
+                })
+                .ok()?,
+            )
         }
         PmDcSketchEntityKind::Ellipse {
             center,
@@ -1581,13 +1605,16 @@ fn project_geometry(
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
             }
-            Some(SketchGeometry::Ellipse {
-                center: neutral_point(center),
-                major_angle: Angle(major_direction[1].atan2(major_direction[0])),
-                major_radius: Length(major_radius * 10.0),
-                minor_radius: Length(minor_radius * 10.0),
-                bounds: None,
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+                    center: neutral_point(center),
+                    major_angle: Angle(major_direction[1].atan2(major_direction[0])),
+                    major_radius: Length(major_radius * 10.0),
+                    minor_radius: Length(minor_radius * 10.0),
+                    bounds: None,
+                })
+                .ok()?,
+            )
         }
     }
 }
@@ -1689,30 +1716,31 @@ fn project_placement(
     {
         return None;
     }
-    Some(SketchPlacement::Resolved {
-        origin: Point3::new(
+    SketchPlacement::try_resolved(
+        Point3::new(
             matrix[0][3] * 10.0,
             matrix[1][3] * 10.0,
             matrix[2][3] * 10.0,
         ),
         normal,
         u_axis,
-    })
+    )
+    .ok()
 }
 
 fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     let source_positions = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id().0.as_str(), index))
+        .map(|(index, entity)| (entity.id().as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut profiles = entities
         .iter()
         .filter(|entity| !entity.construction)
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                SketchGeometry::Circle { .. } | SketchGeometry::Ellipse { .. }
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. }
             )
         })
         .map(|entity| {
@@ -1726,7 +1754,12 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         .iter()
         .copied()
         .filter(|entity| !entity.construction)
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .filter(|entity| entity.endpoint_refs.len() == 2)
         .collect::<Vec<_>>();
     let mut adjacency = HashMap::<&str, Vec<usize>>::new();
@@ -1798,7 +1831,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     profiles.sort_by_key(|profile| {
         profile
             .iter()
-            .filter_map(|entity| source_positions.get(entity.entity.0.as_str()))
+            .filter_map(|entity| source_positions.get(entity.entity.as_str()))
             .copied()
             .min()
             .unwrap_or(usize::MAX)
@@ -1826,18 +1859,20 @@ fn line_component(
     component
 }
 
-fn sketch_id(sketch: &PmDcSketch) -> SketchId {
-    SketchId(format!(
+fn sketch_id(sketch: &PmDcSketch) -> Option<SketchId> {
+    SketchId::mint(format!(
         "inventor:design:sketch#{}-{}",
         sketch.identity.segment_token, sketch.identity.record_ordinal
     ))
+    .ok()
 }
 
-fn entity_id(entity: &PmDcSketchEntity) -> SketchEntityId {
-    SketchEntityId(format!(
+fn entity_id(entity: &PmDcSketchEntity) -> Option<SketchEntityId> {
+    SketchEntityId::mint(format!(
         "inventor:design:sketch-entity#{}-{}",
         entity.identity.segment_token, entity.identity.record_ordinal
     ))
+    .ok()
 }
 
 fn unique<'a, T>(

@@ -9,10 +9,10 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         ("GSMPlaneAngle", "plane-angle-entry"),
         ("GSMPlaneOffset", "plane-offset-entry"),
     ] {
-        let parent = design_object("parent-object", None);
+        let parent = design_object("synthetic:test:object#parent-object", None);
         let plane = native_operation_object(
-            "plane-object",
-            Some("parent-object"),
+            "synthetic:test:object#plane-object",
+            Some("synthetic:test:object#parent-object"),
             21,
             "plane-record",
             class_name,
@@ -32,7 +32,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
                     object_record("parent-record", None, Some(15), None, None, None),
                     object_record(
                         "plane-record",
-                        Some("parent-object"),
+                        Some("synthetic:test:object#parent-object"),
                         Some(21),
                         Some(15),
                         Some(class_name),
@@ -56,7 +56,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         ));
         assert_eq!(
             ir.model.features[0].native_ref.as_deref(),
-            Some("plane-object")
+            Some("synthetic:test:object#plane-object")
         );
         assert!(transfer.native_operation_records.is_empty());
         assert_eq!(

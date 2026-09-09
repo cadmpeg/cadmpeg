@@ -202,7 +202,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                         && placement.entity_id.suffix() == profile_operand.entity_id.suffix()
                 });
                 if let (Some(placement), None) = (candidates.next(), candidates.next()) {
-                    let sketch = neutral_sketch_id(placement);
+                    let Some(sketch) = neutral_sketch_id(placement) else {
+                        continue;
+                    };
                     if sketches.iter().any(|candidate| candidate.id == sketch) {
                         *section =
                             cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(sketch));
@@ -243,7 +245,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 if matching_placements.next().is_some() {
                     return None;
                 }
-                let sketch = neutral_sketch_id(placement);
+                let sketch = neutral_sketch_id(placement)?;
                 if !sketches.iter().any(|candidate| candidate.id == sketch) {
                     return None;
                 }
@@ -258,7 +260,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     return None;
                 }
                 let selected =
-                    neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
+                    neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)?;
                 sketch_entities
                     .iter()
                     .any(|entity| entity.sketch == sketch && entity.id() == &selected)
@@ -428,15 +430,14 @@ pub(crate) fn bind_extrude_profile_selections(
             if matching_groups.is_empty() {
                 continue;
             }
-            let spatial_id = cadmpeg_ir::sketches::SpatialSketchId(sketch_id.0.replacen(
-                "f3d:model:sketch#",
-                "f3d:model:spatial-sketch#",
-                1,
-            ));
+            let spatial_id =
+                sketch_id
+                    .as_str()
+                    .replacen("f3d:model:sketch#", "f3d:model:spatial-sketch#", 1);
             if let Some(spatial_sketch) = resolution
                 .spatial_sketches
                 .iter()
-                .find(|candidate| candidate.id == spatial_id)
+                .find(|candidate| candidate.id.as_str() == spatial_id)
             {
                 let selections = matching_groups
                     .iter()
@@ -464,12 +465,12 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                 }) {
                     *profile = ProfileRef::SpatialSketchProfiles {
-                        sketch: spatial_id,
+                        sketch: spatial_sketch.id.clone(),
                         profiles: indices,
                     };
                 } else {
                     *profile = ProfileRef::SpatialSketchSelection {
-                        sketch: spatial_id,
+                        sketch: spatial_sketch.id.clone(),
                         selections: matching_groups
                             .iter()
                             .map(|group| group.id.clone())
@@ -586,7 +587,7 @@ fn resolve_entity_selection_profile(
                 curves.iter(),
                 source.profiles.iter().map(|profile| {
                     profile
-                        .boundary
+                        .boundary()
                         .iter()
                         .map(|use_| &use_.entity)
                         .collect::<HashSet<_>>()
@@ -897,7 +898,7 @@ pub(crate) fn resolved_extrude_profile_selection(
             else {
                 return None;
             };
-            let entity = neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id);
+            let entity = neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id)?;
             let matches = sketch
                 .profiles
                 .iter()
@@ -1033,7 +1034,7 @@ pub(crate) fn inserted_cylindrical_profile_selection(
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut carriers = topology
         .face_surfaces
@@ -1086,10 +1087,10 @@ pub(crate) fn inserted_cylindrical_profile_selection(
             let entity = entities
                 .iter()
                 .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
-            let SketchGeometry::Circle {
+            let SketchGeometryDefinition::Circle {
                 center: candidate_center,
                 radius: candidate_radius,
-            } = entity.geometry
+            } = *entity.geometry.definition()
             else {
                 return None;
             };
@@ -1150,13 +1151,16 @@ fn resolved_spatial_extrude_profile_selection(
             else {
                 return ExactSelection::Unavailable;
             };
-            let entity =
-                crate::ids::neutral_spatial_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
+            let Some(entity) =
+                crate::ids::neutral_spatial_sketch_curve_id(&sketch.id, *primary_id, *secondary_id)
+            else {
+                return ExactSelection::Unavailable;
+            };
             let matches = sketch
                 .profiles
                 .iter()
                 .enumerate()
-                .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == entity))
+                .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == entity))
                 .map(|(index, _)| u32::try_from(index).ok())
                 .collect::<Option<Vec<_>>>();
             let Some(matches) = matches else {
@@ -1260,7 +1264,7 @@ fn spatial_polyline_profile_containing_points(
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let offsets = points
             .iter()
-            .map(|point| point.vector_from(profile.origin).dot(profile.normal))
+            .map(|point| point.vector_from(profile.origin()).dot(profile.normal()))
             .collect::<Vec<_>>();
         if !offsets.first().is_some_and(|first| {
             offsets
@@ -1269,20 +1273,20 @@ fn spatial_polyline_profile_containing_points(
         }) {
             continue;
         }
-        let v_axis = profile.normal.cross(profile.u_axis);
+        let v_axis = profile.normal().cross(profile.u_axis());
         let project = |point: Point3| {
-            let offset = point.vector_from(profile.origin);
-            Point2::new(offset.dot(profile.u_axis), offset.dot(v_axis))
+            let offset = point.vector_from(profile.origin());
+            Point2::new(offset.dot(profile.u_axis()), offset.dot(v_axis))
         };
         let polygon = profile
-            .boundary
+            .boundary()
             .iter()
             .map(|use_| {
                 let entity = entities
                     .iter()
                     .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
-                let cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } =
-                    &entity.geometry
+                let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
+                    entity.geometry.definition()
                 else {
                     return None;
                 };
@@ -1676,7 +1680,7 @@ fn resolved_selection_member_profiles(
     else {
         return None;
     };
-    let entity = neutral_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
+    let entity = neutral_sketch_curve_id(&sketch.id, *primary_id, *secondary_id)?;
     sketch
         .profiles
         .iter()
@@ -1691,7 +1695,7 @@ fn resolved_selection_member_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<Point3>> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let SketchRelationOperand::Point {
         record_index,
@@ -1703,11 +1707,12 @@ fn resolved_selection_member_points(
     let entity_id = persistent_id.map_or_else(
         || neutral_sketch_record_id(&sketch.id, *record_index),
         |persistent_id| neutral_sketch_point_id(&sketch.id, persistent_id),
-    );
-    let SketchGeometry::Point { position } = &entities
+    )?;
+    let SketchGeometryDefinition::Point { position } = entities
         .iter()
         .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
         .geometry
+        .definition()
     else {
         return None;
     };
@@ -1836,7 +1841,7 @@ fn resolve_entity_selection_path(
     resolution: &EntitySelectionPathResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
     use cadmpeg_ir::features::PathRef;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if group.members().is_empty() {
         return None;
@@ -1924,7 +1929,7 @@ fn resolve_entity_selection_path(
         curve_ids.push((curve.primary_id.get(), curve.secondary_id));
     }
 
-    let spatial_sketch = neutral_spatial_sketch_id(placement);
+    let spatial_sketch = neutral_spatial_sketch_id(placement)?;
     if resolution
         .spatial_sketches
         .iter()
@@ -1935,7 +1940,7 @@ fn resolve_entity_selection_path(
             .map(|(primary, secondary)| {
                 neutral_spatial_sketch_curve_id(&spatial_sketch, *primary, *secondary)
             })
-            .collect::<HashSet<_>>();
+            .collect::<Option<HashSet<_>>>()?;
         if selections.len() != curve_ids.len()
             || selections.iter().any(|curve| {
                 !resolution
@@ -1953,11 +1958,11 @@ fn resolve_entity_selection_path(
                 .map(|(primary, secondary)| {
                     neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
                 })
-                .collect(),
+                .collect::<Option<Vec<_>>>()?,
         });
     }
 
-    let sketch = neutral_sketch_id(placement);
+    let sketch = neutral_sketch_id(placement)?;
     if !resolution
         .sketches
         .iter()
@@ -1968,12 +1973,15 @@ fn resolve_entity_selection_path(
     let curves = curve_ids
         .into_iter()
         .map(|(primary, secondary)| neutral_sketch_curve_id(&sketch, primary, secondary))
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     if curves.iter().any(|curve| {
         !resolution.sketch_entities.iter().any(|entity| {
             entity.sketch == sketch
                 && entity.id() == curve
-                && !matches!(entity.geometry, SketchGeometry::Point { .. })
+                && !matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
         })
     }) {
         return None;
@@ -2018,7 +2026,7 @@ fn spatial_profile_member_entity<'a>(
         &spatial_sketch.id,
         curve.primary_id.get(),
         curve.secondary_id,
-    );
+    )?;
     let mut entities = spatial_entities
         .iter()
         .filter(|entity| entity.sketch == spatial_sketch.id && entity.id() == &entity_id);
@@ -2043,7 +2051,8 @@ fn sketch_profile_member_entity(
     if curves.next().is_some() {
         return None;
     }
-    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id.get(), curve.secondary_id);
+    let entity_id =
+        neutral_sketch_curve_id(&sketch.id, curve.primary_id.get(), curve.secondary_id)?;
     let mut entities = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && entity.id() == &entity_id);
@@ -2110,22 +2119,22 @@ fn coincident_spatial_profile_geometry(
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let (
-        SpatialSketchGeometry::Circle {
+        SpatialSketchGeometryDefinition::Circle {
             center: first_center,
             normal: first_normal,
             radius: first_radius,
             ..
         },
-        SpatialSketchGeometry::Circle {
+        SpatialSketchGeometryDefinition::Circle {
             center: second_center,
             normal: second_normal,
             radius: second_radius,
             ..
         },
-    ) = (first, second)
+    ) = (first.definition(), second.definition())
     else {
         return false;
     };
@@ -2186,7 +2195,7 @@ fn resolved_spatial_sketch_profile_regions(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate
-                        .boundary
+                        .boundary()
                         .iter()
                         .any(|use_| &use_.entity == first.id())
                 });
@@ -2204,13 +2213,13 @@ fn resolved_spatial_sketch_profile_regions(
                 resolution.spatial_sketch_entities,
             )?;
             if selected_profile
-                .boundary
+                .boundary()
                 .iter()
                 .any(|use_| &use_.entity == entity.id())
             {
                 continue;
             }
-            let coincident = selected_profile.boundary.iter().any(|use_| {
+            let coincident = selected_profile.boundary().iter().any(|use_| {
                 resolution
                     .spatial_sketch_entities
                     .iter()
@@ -2247,7 +2256,7 @@ fn spatial_profile_containing_entity(
         .profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == *entity));
+        .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == *entity));
     let (index, _) = profiles.next()?;
     if profiles.next().is_some() {
         return None;
@@ -2306,7 +2315,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let [placement] = matches.as_slice() else {
             continue;
         };
-        let spatial_sketch_id = neutral_spatial_sketch_id(placement);
+        let Some(spatial_sketch_id) = neutral_spatial_sketch_id(placement) else {
+            continue;
+        };
         let resolved = if let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
@@ -2324,7 +2335,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     },
                 )
         } else {
-            let sketch = neutral_sketch_id(placement);
+            let Some(sketch) = neutral_sketch_id(placement) else {
+                continue;
+            };
             if !resolution
                 .sketches
                 .iter()
@@ -2380,7 +2393,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if matching_placements.next().is_some() {
             continue;
         }
-        let spatial_sketch_id = neutral_spatial_sketch_id(placement);
+        let Some(spatial_sketch_id) = neutral_spatial_sketch_id(placement) else {
+            continue;
+        };
         let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
@@ -2402,11 +2417,13 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         if geometry_matches.next().is_some() {
             continue;
         }
-        let entity = neutral_spatial_sketch_curve_id(
+        let Some(entity) = neutral_spatial_sketch_curve_id(
             &spatial_sketch_id,
             curve.primary_id.get(),
             curve.secondary_id,
-        );
+        ) else {
+            continue;
+        };
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
         resolved_profiles.insert(
             group.id.clone(),

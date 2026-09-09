@@ -218,7 +218,7 @@ fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
         "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 200, "frame_length": 39},
         "filename_record_reference_offset": 113,
         "filename": "é😀.png", "filename_offset": 225,
-        "archive_entry_name": "Textures/é😀.png", "asset": "asset:texture"
+        "archive_entry_name": "Textures/é😀.png", "asset": "test:model:asset#texture"
     });
     // The basename has seven UTF-16 code units, including the surrogate pair.
     let table = parse(wire.clone()).unwrap();
@@ -523,7 +523,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
             "filename_record": {"class_tag": "256", "record_index": 8, "byte_offset": 300, "frame_length": 35},
             "filename_record_reference_offset": filename_guid + 36,
             "filename": "a.png", "filename_offset": 325,
-            "archive_entry_name": "Textures/a.png", "asset": "asset:texture"
+            "archive_entry_name": "Textures/a.png", "asset": "test:model:asset#texture"
         })
     };
     let rows = serde_json::json!([row(1, 0, GUID_B, 73, 121), row(0, 1, GUID_A, 29, 172)]);

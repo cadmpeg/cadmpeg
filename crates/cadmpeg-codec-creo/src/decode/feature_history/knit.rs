@@ -33,7 +33,7 @@ pub(in super::super) fn filled_surface_feature_definition(
         &scan.features.section_transforms,
         feature_id,
     )
-    .map(|definition| model_sketch_id(scan, definition))
+    .and_then(|definition| model_sketch_id(scan, definition))
     .filter(|sketch| {
         ir.model
             .sketches

@@ -402,12 +402,10 @@ pub(crate) fn sync_neutral_configurations(
     let desired_ids = configurations
         .iter()
         .map(|configuration| {
-            configuration.native_ref.clone().unwrap_or_else(|| {
-                format!(
-                    "sldprt:generated:configuration#{}",
-                    configuration.id.as_str()
-                )
-            })
+            configuration
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| generated_configuration_record_id(&configuration.id))
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
@@ -470,12 +468,10 @@ pub(crate) fn sync_neutral_configurations(
             native.feature_histories[0]
                 .configurations
                 .push(Configuration {
-                    id: configuration.native_ref.clone().unwrap_or_else(|| {
-                        format!(
-                            "sldprt:generated:configuration#{}",
-                            configuration.id.as_str()
-                        )
-                    }),
+                    id: configuration
+                        .native_ref
+                        .clone()
+                        .unwrap_or_else(|| generated_configuration_record_id(&configuration.id)),
                     parent,
                     ordinal: configuration.ordinal,
                     source_index: configuration.source_index,
@@ -546,4 +542,27 @@ pub(crate) fn native_configuration_slot_owners(
             .or_insert_with(|| Some(configuration.id.clone()));
     }
     owners
+}
+
+fn generated_configuration_record_id(id: &cadmpeg_ir::features::ConfigurationId) -> String {
+    format!(
+        "sldprt:generated:configuration#{}",
+        id.as_str().replace('%', "%25").replace('#', "%23")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn generated_configuration_identity_escapes_embedded_separators() {
+        let id =
+            cadmpeg_ir::features::ConfigurationId::mint("test:model:configuration#original%23key")
+                .expect("fixture identity");
+        let record = super::generated_configuration_record_id(&id);
+        assert_eq!(
+            record,
+            "sldprt:generated:configuration#test:model:configuration%23original%2523key"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(&record));
+    }
 }

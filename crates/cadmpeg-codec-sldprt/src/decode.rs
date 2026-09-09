@@ -223,9 +223,9 @@ fn incomplete_binder_target(
 }
 
 fn sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -289,9 +289,9 @@ fn sketch_constraint_has_complete_neutral_semantics(
 }
 
 fn spatial_sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
 ) -> bool {
-    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Constraint;
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Constraint;
 
     match definition {
         Constraint::Native { .. } => false,
@@ -319,7 +319,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
         PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
     };
-    use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = ir
         .native
@@ -886,7 +886,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .sketch_constraints
         .iter()
         .filter(|constraint| {
-            !sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
                 && constraint.active != Some(false)
         })
         .count();
@@ -895,7 +895,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .spatial_sketch_constraints
         .iter()
         .filter(|constraint| {
-            !spatial_sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+            !spatial_sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
         })
         .count();
     let native_constraints = native_planar_constraints + native_spatial_constraints;
@@ -909,12 +909,22 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .sketch_entities
         .iter()
-        .filter(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
+        .filter(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        })
         .count()
         + ir.model
             .spatial_sketch_entities
             .iter()
-            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Native { .. }))
+            .filter(|entity| {
+                matches!(
+                    *entity.geometry.definition(),
+                    SpatialSketchGeometryDefinition::Native { .. }
+                )
+            })
             .count();
     if native_sketch_geometry > 0 {
         report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(

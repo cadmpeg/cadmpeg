@@ -1218,7 +1218,7 @@ fn semantic_losses(
         })
         .collect::<Vec<_>>());
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
-        let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
             return None;
         };
         Some(
@@ -1237,8 +1237,8 @@ fn semantic_losses(
         )
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
-        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
-            &constraint.definition
+        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
+            constraint.definition.kind()
         else {
             return None;
         };

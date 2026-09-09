@@ -12,7 +12,8 @@ use crate::records::{
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometryDefinition,
 };
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
@@ -236,9 +237,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             .as_deref()
             .is_some_and(|id| id.contains(":curve#")))
         .all(|entity| entity.construction));
-    assert!(entities.iter().any(
-        |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
-    ));
+    assert!(entities.iter().any(|entity| matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Text { .. }
+    ) && !entity.construction));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("f3d:BulkStream.dat:point#14") && !entity.construction
     }));
@@ -466,21 +468,24 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         ))
     );
     assert_eq!(entities.len(), 4);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Line { start, end }
-            if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Arc { start_angle, end_angle, .. }
-            if start_angle.0 == 0.0
-                && end_angle.0 == -std::f64::consts::FRAC_PI_2
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position } if position == Point2::new(2.5, 4.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Line { start, end }
+                if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc { start_angle, end_angle, .. }
+                if start_angle.0 == 0.0
+                    && end_angle.0 == -std::f64::consts::FRAC_PI_2
+        )));
     let nurbs = entities
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
@@ -615,12 +620,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         &entities,
     );
     assert!(matches!(
-        constraints[0].definition,
-        SketchConstraintDefinition::Horizontal { .. }
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     assert!(matches!(
-        constraints[1].definition,
-        SketchConstraintDefinition::Native {
+        constraints[1].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             native_state: Some(0x1_0000_0040),
             native_flags: None,
@@ -639,39 +644,49 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 ]
     ));
     assert!(matches!(
-        constraints[2].definition,
-        SketchConstraintDefinition::Coincident { ref entities } if entities.len() == 2
+        constraints[2].definition.kind(),
+        SketchConstraintDefinitionInput::Coincident { ref entities } if entities.len() == 2
     ));
     assert!(matches!(
-        constraints[3].definition,
-        SketchConstraintDefinition::Midpoint { .. }
+        constraints[3].definition.kind(),
+        SketchConstraintDefinitionInput::Midpoint { .. }
     ));
     assert!(matches!(
-        constraints[4].definition,
-        SketchConstraintDefinition::Native {
+        constraints[4].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ref entities,
             ..
         } if native_kind == "curvature" && entities.len() == 4
     ));
     assert!(matches!(
-        constraints[5].definition,
-        SketchConstraintDefinition::SplineGroup { ref entities }
+        constraints[5].definition.kind(),
+        SketchConstraintDefinitionInput::SplineGroup { ref entities }
             if entities == &[
-                neutral_sketch_curve_id(&sketches[0].id, 20, 0),
-                neutral_sketch_curve_id(&sketches[0].id, 21, 0),
+                neutral_sketch_curve_id(&sketches[0].id, 20, 0).unwrap(),
+                neutral_sketch_curve_id(&sketches[0].id, 21, 0).unwrap(),
             ]
     ));
     let line = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .unwrap();
     let point = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
         .unwrap();
     let other_point = SketchEntity::new(
-        SketchEntityId("generated:point#other".into()),
+        SketchEntityId::mint("generated:test:point#other").unwrap(),
         point.sketch.clone(),
         point.geometry.clone(),
     )
@@ -681,22 +696,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        })
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::U,
-            ..
-        })
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
-        Some(SketchConstraintDefinition::Midpoint { .. })
+        Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
         SketchConstraintKind::Tangent,
@@ -706,7 +715,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
     }
     let other_line = SketchEntity::new(
-        SketchEntityId("generated:line#other".into()),
+        SketchEntityId::mint("generated:test:line#other").unwrap(),
         line.sketch.clone(),
         line.geometry.clone(),
     )
@@ -716,15 +725,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Tangent { .. })
+        Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Curvature { .. })
+        Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Equal { .. })
+        Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
         SketchConstraintKind::Colinear,
@@ -741,7 +750,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
 #[test]
 fn nonplanar_sketch_curves_project_in_model_space() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
@@ -1026,24 +1035,27 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     );
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(13.0, 21.0, 32.0)
-                && end == Point3::new(16.0, 24.0, 35.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(14.0, 22.0, 33.0)
-                && end == Point3::new(17.0, 25.0, 36.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(10.0, 21.0, 32.0)
-                && end == Point3::new(10.0, 24.0, 32.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(13.0, 21.0, 32.0)
+                    && end == Point3::new(16.0, 24.0, 35.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(14.0, 22.0, 33.0)
+                    && end == Point3::new(17.0, 25.0, 36.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(10.0, 21.0, 32.0)
+                    && end == Point3::new(10.0, 24.0, 32.0)
+        )));
     let constraints = project_spatial_sketch_constraints(
         &[placement],
         &relations,
@@ -1053,61 +1065,51 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &entities,
     );
     assert!(matches!(
-        constraints.first(),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
-            ..
-        }) if entities == &[
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0),
+        constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0).unwrap(),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0).unwrap(),
         ]
     ));
     assert!(matches!(
-        constraints.get(1),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Midpoint { .. },
-            ..
-        })
+        constraints
+            .get(1)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
-        constraints.get(2),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident { .. },
-            ..
-        })
+        constraints
+            .get(2)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        constraints.get(3),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelToDirection {
+        constraints.get(3).map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelToDirection {
                 entity,
                 direction,
-            },
-            ..
-        }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
+            }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
             &sketches[0].id,
             7,
             0,
-        ) && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ).unwrap() && direction == &Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
-        constraints.get(4),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface { .. },
-            ..
-        })
+        constraints
+            .get(4)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointOnSurface { .. })
     ));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Circle {
-            center,
-            normal,
-            reference_direction,
-            radius: Length(2.0),
-        } if center == Point3::new(13.0, 21.0, 32.0)
-            && normal == Vector3::new(0.0, 1.0, 0.0)
-            && reference_direction == Vector3::new(0.0, 0.0, 1.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius: Length(2.0),
+            } if center == Point3::new(13.0, 21.0, 32.0)
+                && normal == Vector3::new(0.0, 1.0, 0.0)
+                && reference_direction == Vector3::new(0.0, 0.0, 1.0)
+        )));
 }
 
 #[test]

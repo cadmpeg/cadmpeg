@@ -8,7 +8,7 @@ use std::num::NonZeroU32;
 
 use crate::features::{FeatureId, ParameterId};
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable spreadsheet identity.
     SpreadsheetId
 );
@@ -333,15 +333,14 @@ mod tests {
             ("row_heights", vec!["", "0", "-1", "A", "4294967296"]),
         ] {
             for name in names {
-                let mut value =
-                    serde_json::json!({"id": "sheet", "feature": "feature", "cells": []});
+                let mut value = serde_json::json!({"id": "synthetic:test:spreadsheet#sheet", "feature": "synthetic:test:feature#feature", "cells": []});
                 value[field] = serde_json::json!([{"name": name, "pixels": 10}]);
                 let error =
                     serde_json::from_value::<Spreadsheet>(value).expect_err("invalid dimension");
                 assert!(error.to_string().contains(field));
             }
         }
-        let value = serde_json::json!({"id": "sheet", "feature": "feature", "cells": [], "column_widths": [{"name": "AA", "pixels": 0}], "row_heights": [{"name": "4294967295", "pixels": 0}]});
+        let value = serde_json::json!({"id": "synthetic:test:spreadsheet#sheet", "feature": "synthetic:test:feature#feature", "cells": [], "column_widths": [{"name": "AA", "pixels": 0}], "row_heights": [{"name": "4294967295", "pixels": 0}]});
         let sheet: Spreadsheet = serde_json::from_value(value.clone()).expect("valid dimensions");
         assert_eq!(sheet.column_widths[0].index.get(), 27);
         assert_eq!(sheet.row_heights[0].index.get(), u32::MAX);
@@ -356,11 +355,11 @@ mod tests {
     #[test]
     fn spreadsheet_round_trip_preserves_b2_address() {
         let sheet = Spreadsheet {
-            id: SpreadsheetId::mint("sheet").unwrap(),
-            feature: FeatureId::mint("feature").unwrap(),
+            id: SpreadsheetId::mint("synthetic:test:spreadsheet#sheet").unwrap(),
+            feature: FeatureId::mint("synthetic:test:feature#feature").unwrap(),
             cells: vec![SpreadsheetCell {
                 address: CellAddress::new(2, 2).unwrap(),
-                parameter: ParameterId::mint("parameter").unwrap(),
+                parameter: ParameterId::mint("synthetic:test:parameter#parameter").unwrap(),
             }],
             column_widths: Vec::new(),
             row_heights: Vec::new(),

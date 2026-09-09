@@ -946,3 +946,20 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }
+
+#[test]
+fn rejects_feature_names_that_break_neutral_identity_grammar() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Source#part" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Source#part"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("fcstd:design:feature#Source#part"));
+}

@@ -118,9 +118,9 @@ pub(crate) use cadmpeg_ir::features::{
 pub(crate) use cadmpeg_ir::ids::FaceId;
 pub(crate) use cadmpeg_ir::math::{Point2, Point3, Vector3};
 pub(crate) use cadmpeg_ir::sketches::{
-    Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus, SketchNativeOperand, SpatialSketch,
-    SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
+    Sketch, SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId,
+    SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand, SpatialSketch,
+    SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub(crate) use std::collections::{BTreeMap, HashMap};

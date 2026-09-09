@@ -83,7 +83,30 @@ pub(in super::super) fn transfer_sketches(
                 section.offset,
             )
         });
-        let sketch_id = model_sketch_id(scan, definition);
+        let placement = match transform {
+            Some(transform) => cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(
+                    transform.origin()[0],
+                    transform.origin()[1],
+                    transform.origin()[2],
+                ),
+                Vector3::new(
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
+                ),
+                Vector3::new(
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
+                ),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+            None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        };
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
@@ -190,11 +213,9 @@ pub(in super::super) fn transfer_sketches(
                     .cloned()
                     .flatten()
                     .or_else(|| {
-                        Some(SketchGeometry::Native {
-                            native_kind: cadmpeg_ir::products::NonEmptyString::new(
-                                "line".to_string(),
-                            )?,
-                        })
+                        Some(SketchGeometry::native(
+                            cadmpeg_ir::products::NonEmptyString::new("line".to_string())?,
+                        ))
                     });
             }
             segment_geometries.get(&segment.offset).cloned().flatten()
@@ -445,14 +466,18 @@ pub(in super::super) fn transfer_sketches(
             profiles,
             &profile_entities,
         )?;
+        let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(definition) {
-            let id = sketch_entity_id(&sketch_id, external_id);
+            let Some(id) = sketch_entity_id(&sketch_id, external_id) else {
+                continue;
+            };
             if entities.iter().any(|entity| entity.id() == &id) {
                 continue;
             }
             annotate(
                 annotations,
-                &id.0,
+                id.as_str(),
                 "FeatDefs",
                 offset as u64,
                 "solver_only_section_entity",
@@ -462,8 +487,8 @@ pub(in super::super) fn transfer_sketches(
                 SketchEntity::new(
                     id,
                     sketch_id.clone(),
-                    SketchGeometry::Native {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    SketchGeometry::native(
+                        cadmpeg_ir::products::NonEmptyString::new(
                             match solver_only_section_entity_family(definition, external_id) {
                                 Some(SectionEntityIncidenceFamily::Point) => "point",
                                 Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
@@ -477,7 +502,7 @@ pub(in super::super) fn transfer_sketches(
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                         })?,
-                    },
+                    ),
                 )
                 .with_construction(true)
                 .with_native_ref(Some(sketch_native_ref(&sketch_id))),
@@ -495,7 +520,7 @@ pub(in super::super) fn transfer_sketches(
             .iter()
             .filter_map(|segment| {
                 let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
-                let entity = sketch_entity_id(&sketch_id, &suffix);
+                let entity = sketch_entity_id(&sketch_id, &suffix)?;
                 Some((
                     suffix,
                     section_segment_verhor_definition(segment, &sketch_id, entity)?,
@@ -507,23 +532,25 @@ pub(in super::super) fn transfer_sketches(
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.centered_lines())
-                    .map(|segment| {
-                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                            segment.external_id.to_string()
-                        } else {
-                            format!("centered_line:offset:{}", segment.offset)
-                        };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
-                        (
-                            suffix,
-                            native_section_segment_verhor_definition(
-                                &sketch_id,
-                                entity,
-                                segment.external_id,
-                                0,
-                            ),
-                            segment.offset,
-                        )
+                    .filter_map(|segment| {
+                        Some({
+                            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                                segment.external_id.to_string()
+                            } else {
+                                format!("centered_line:offset:{}", segment.offset)
+                            };
+                            let entity = sketch_entity_id(&sketch_id, &suffix)?;
+                            (
+                                suffix,
+                                native_section_segment_verhor_definition(
+                                    &sketch_id,
+                                    entity,
+                                    segment.external_id,
+                                    0,
+                                ),
+                                segment.offset,
+                            )
+                        })
                     }),
             )
             .chain(
@@ -538,7 +565,7 @@ pub(in super::super) fn transfer_sketches(
                         } else {
                             format!("bounded_curve:offset:{}", segment.offset)
                         };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -563,7 +590,7 @@ pub(in super::super) fn transfer_sketches(
                         } else {
                             format!("reference_line:offset:{}", segment.offset)
                         };
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -585,7 +612,7 @@ pub(in super::super) fn transfer_sketches(
                         let verhor = segment.vertical_horizontal?;
                         let suffix =
                             opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
-                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        let entity = sketch_entity_id(&sketch_id, &suffix)?;
                         Some((
                             suffix,
                             native_section_segment_verhor_definition(
@@ -605,10 +632,10 @@ pub(in super::super) fn transfer_sketches(
                     &emitted_entity_ids,
                 )
                 .then_some(())?;
-                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"));
+                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"))?;
                 annotate(
                     annotations,
-                    &id.0,
+                    id.as_str(),
                     "FeatDefs",
                     offset as u64,
                     "section_verhor_constraint",
@@ -617,7 +644,10 @@ pub(in super::super) fn transfer_sketches(
                 Some(SketchConstraint {
                     id,
                     sketch: sketch_id.clone(),
-                    definition: constraint_definition,
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        constraint_definition,
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: None,
@@ -643,14 +673,20 @@ pub(in super::super) fn transfer_sketches(
             else {
                 continue;
             };
-            if !reconcile_section_dimension_constraint(
-                &mut constraint.definition,
-                definition,
-                &sketch_id,
-                relation,
-                &emitted_entity_ids,
-                &available_parameter_ids,
-            ) {
+            if !constraint
+                .definition
+                .edit(|kind| {
+                    reconcile_section_dimension_constraint(
+                        kind,
+                        definition,
+                        &sketch_id,
+                        relation,
+                        &emitted_entity_ids,
+                        &available_parameter_ids,
+                    )
+                })
+                .unwrap_or(false)
+            {
                 continue;
             }
             annotate(
@@ -729,14 +765,16 @@ pub(in super::super) fn transfer_sketches(
         let mut rejected_equation_offsets = BTreeSet::new();
         let mut reconciled_equation_constraints = Vec::new();
         for (mut constraint, offset) in equation_constraints {
-            let entity_reconciled = reconcile_constraint_entity_references(
-                &mut constraint.definition,
-                &emitted_entity_ids,
-            );
-            let parameter_reconciled = reconcile_constraint_parameter_reference(
-                &mut constraint.definition,
-                &available_parameter_ids,
-            );
+            let entity_reconciled = constraint
+                .definition
+                .edit(|kind| reconcile_constraint_entity_references(kind, &emitted_entity_ids))
+                .unwrap_or(false);
+            let parameter_reconciled = constraint
+                .definition
+                .edit(|kind| {
+                    reconcile_constraint_parameter_reference(kind, &available_parameter_ids)
+                })
+                .unwrap_or(false);
             if !entity_reconciled || !parameter_reconciled {
                 rejected_equation_offsets.insert(offset);
                 continue;
@@ -781,10 +819,11 @@ pub(in super::super) fn transfer_sketches(
             &sketch_id,
             Some(&emitted_entity_geometry),
         ) {
-            if !reconcile_constraint_entity_references(
-                &mut constraint.definition,
-                &emitted_entity_ids,
-            ) {
+            if !constraint
+                .definition
+                .edit(|kind| reconcile_constraint_entity_references(kind, &emitted_entity_ids))
+                .unwrap_or(false)
+            {
                 continue;
             }
             annotate(
@@ -802,7 +841,7 @@ pub(in super::super) fn transfer_sketches(
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
-            &sketch_id.0,
+            sketch_id.as_str(),
             "FeatDefs",
             source_offset as u64,
             if transform.is_some() {
@@ -817,26 +856,7 @@ pub(in super::super) fn transfer_sketches(
             name: None,
             configuration: None,
             visible: None,
-            placement: transform.map_or(
-                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
-                |transform| cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: Point3::new(
-                        transform.origin()[0],
-                        transform.origin()[1],
-                        transform.origin()[2],
-                    ),
-                    normal: Vector3::new(
-                        transform.normal()[0],
-                        transform.normal()[1],
-                        transform.normal()[2],
-                    ),
-                    u_axis: Vector3::new(
-                        transform.u_axis()[0],
-                        transform.u_axis()[1],
-                        transform.u_axis()[2],
-                    ),
-                },
-            ),
+            placement,
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });

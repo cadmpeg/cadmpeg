@@ -259,7 +259,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             op: BooleanOp::NewBody,
             solid: Some(true),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if profile == &neutral_sketch_id(&placement).unwrap()
     ));
     let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -534,16 +534,17 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let sketches = [cadmpeg_ir::sketches::Sketch {
-        id: neutral_sketch_id(&placement),
+        id: neutral_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some(placement.id.clone()),
     }];
     crate::design::feature_project::bind_sketch_feature_geometry(
@@ -574,16 +575,23 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            boundary: Vec::new(),
-        }],
+        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            vec![cadmpeg_ir::sketches::SpatialSketchEntityUse {
+                entity: cadmpeg_ir::sketches::SpatialSketchEntityId::mint(
+                    "synthetic:test:spatial-entity#extrude-profile",
+                )
+                .unwrap(),
+                reversed: false,
+            }],
+        )
+        .unwrap()],
         native_ref: Some(placement.id.clone()),
     };
     crate::design::feature_project::bind_sketch_feature_geometry(
@@ -624,7 +632,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -996,7 +1004,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(ref profile),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if profile == &neutral_sketch_id(&placement).unwrap()
     ));
     {
         let value = Some(DesignFixedExtrudeParameters {
@@ -1535,24 +1543,24 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         definition,
         native_ref: None,
     };
-    let planar_sketch = SketchId("f3d:sketch:planar".into());
-    let spatial_sketch = SpatialSketchId("f3d:sketch:spatial".into());
+    let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
+    let spatial_sketch = SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap();
     let planar_feature = feature(
-        "f3d:feature:planar-sketch",
+        "synthetic:test:id#f3d:feature:planar-sketch",
         0,
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar_sketch.clone())),
         },
     );
     let spatial_feature = feature(
-        "f3d:feature:spatial-sketch",
+        "synthetic:test:id#f3d:feature:spatial-sketch",
         1,
         FeatureDefinition::SpatialSketch {
             sketch: Some(spatial_sketch.clone()),
         },
     );
     let base_flange = feature(
-        "f3d:feature:base-flange",
+        "synthetic:test:id#f3d:feature:base-flange",
         2,
         FeatureDefinition::SheetMetalBaseFlange {
             profile: ProfileRef::Sketch(planar_sketch.clone()),
@@ -1561,7 +1569,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         },
     );
     let loft = feature(
-        "f3d:feature:loft",
+        "synthetic:test:id#f3d:feature:loft",
         3,
         FeatureDefinition::Loft {
             sections: vec![

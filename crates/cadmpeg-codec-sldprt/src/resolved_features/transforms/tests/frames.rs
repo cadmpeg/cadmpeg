@@ -16,8 +16,9 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchPlacement,
+    Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchPlacement,
 };
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap};
@@ -106,21 +107,22 @@ fn circle_dimension_driver_supplies_the_center_operand() {
 
 #[test]
 fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, u: f64| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
+            SketchEntityId::mint(id).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some(id.into()))
     };
     let entities = vec![
-        point("hint-a", 0.0),
-        point("hint-b", 2.0),
-        point("solved", 5.0),
+        point("synthetic:test:id#hint-a", 0.0),
+        point("synthetic:test:id#hint-b", 2.0),
+        point("synthetic:test:id#solved", 5.0),
     ];
     let hint_a = marker("hint-a", Some([0.0, 0.0]));
     let hint_b = marker("hint-b", Some([0.002, 0.0]));
@@ -128,11 +130,15 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let mut loci = HashMap::from([
         (
             hint_a.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("hint-a".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#hint-a").unwrap(),
+            )],
         ),
         (
             hint_b.id.clone(),
-            vec![SketchLocus::Entity(SketchEntityId("hint-b".into()))],
+            vec![SketchLocus::Entity(
+                SketchEntityId::mint("synthetic:test:id#hint-b").unwrap(),
+            )],
         ),
     ]);
     let relation = FeatureInputRelationInstance {
@@ -167,8 +173,8 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ],
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("distance").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -189,12 +195,12 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci {
+        Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             ..
-        }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
-            && [&first, &second].contains(&&SketchEntityId("hint-b".into()))
+        }) if [&first, &second].contains(&&SketchEntityId::mint("synthetic:test:id#hint-a").unwrap())
+            && [&first, &second].contains(&&SketchEntityId::mint("synthetic:test:id#hint-b").unwrap())
     ));
 
     let mut horizontal_relation = relation.clone();
@@ -208,30 +214,38 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance {
+        Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             ..
-        }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
-            && [&first, &second].contains(&&SketchEntityId("hint-b".into()))
+        }) if [&first, &second].contains(&&SketchEntityId::mint("synthetic:test:id#hint-a").unwrap())
+            && [&first, &second].contains(&&SketchEntityId::mint("synthetic:test:id#hint-b").unwrap())
     ));
 
-    let mut directional_entities = vec![point("hint-a", 0.0), point("hint-b", 1.0)];
+    let mut directional_entities = vec![
+        point("synthetic:test:id#hint-a", 0.0),
+        point("synthetic:test:id#hint-b", 1.0),
+    ];
     let mut projected_relation = relation.clone();
     for operand in &mut projected_relation.operands {
         operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C);
     }
     loci.insert(
         super::qualified_point_marker_key(&hint_a.id),
-        vec![SketchLocus::Entity(SketchEntityId("hint-a".into()))],
+        vec![SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#hint-a").unwrap(),
+        )],
     );
     loci.insert(
         super::qualified_point_marker_key(&hint_b.id),
-        vec![SketchLocus::Entity(SketchEntityId("hint-b".into()))],
+        vec![SketchLocus::Entity(
+            SketchEntityId::mint("synthetic:test:id#hint-b").unwrap(),
+        )],
     );
-    directional_entities[1].geometry = SketchGeometry::Point {
+    directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 0.05),
-    };
+    })
+    .unwrap();
     let mut directional_parameter = parameter.clone();
     directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
     assert!(matches!(
@@ -243,7 +257,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     directional_parameter.value = Some(ParameterValue::Length(Length(0.05)));
     assert!(matches!(
@@ -255,11 +269,12 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
-    directional_entities[1].geometry = SketchGeometry::Point {
+    directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(1.0, 1.0),
-    };
+    })
+    .unwrap();
     directional_parameter.value = Some(ParameterValue::Length(Length(1.0)));
     assert!(matches!(
         typed_relation_definition(
@@ -270,11 +285,11 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
             &markers,
             &loci,
         ),
-        Some(SketchConstraintDefinition::DistanceLoci { .. })
+        Some(SketchConstraintDefinitionInput::DistanceLoci { .. })
     ));
 
     let mut ambiguous_entities = entities;
-    ambiguous_entities.push(point("other-solved", -5.0));
+    ambiguous_entities.push(point("synthetic:test:id#other-solved", -5.0));
     for candidate in [&relation, &horizontal_relation] {
         assert!(typed_relation_definition(
             candidate,
@@ -288,10 +303,10 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     }
 
     let unrelated_entities = vec![
-        point("hint-a", 0.0),
-        point("hint-b", 2.0),
-        point("unrelated-a", 10.0),
-        point("unrelated-b", 15.0),
+        point("synthetic:test:id#hint-a", 0.0),
+        point("synthetic:test:id#hint-b", 2.0),
+        point("synthetic:test:id#unrelated-a", 10.0),
+        point("synthetic:test:id#unrelated-b", 15.0),
     ];
     for candidate in [&relation, &horizontal_relation] {
         assert!(typed_relation_definition(
@@ -309,7 +324,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
 #[test]
 fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -325,7 +340,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         name: "D1".into(),
         ordinal: 0,
@@ -535,7 +550,8 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ..relation.clone()
     };
     let driving_parameter = DesignParameter {
-        id: ParameterId::mint("driving-by-name-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#driving-by-name-parameter")
+            .expect("identity grammar"),
         name: "D".into(),
         native_ref: None,
         ..parameter.clone()
@@ -625,16 +641,17 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
 #[test]
 fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(28.65, -35.0, 0.35),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(0.0, 0.0, -1.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(28.65, -35.0, 0.35),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("axis frame");
@@ -714,16 +731,17 @@ fn marker_transform_reports_the_profile_axis_for_each_native_axis() {
 fn rotated_sketch_frame_projects_native_plane_coordinates() {
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     let sketch = Sketch {
-        id: SketchId("sketch".into()),
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(10.0, 3.0, 20.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(10.0, 3.0, 20.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(diagonal, 0.0, -diagonal),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
     let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("rotated frame");
@@ -737,9 +755,9 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
 
 #[test]
 fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -756,20 +774,22 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     };
     let mut entities = vec![
         SketchEntity::new(
-            SketchEntityId("horizontal".into()),
+            SketchEntityId::mint("synthetic:test:id#horizontal").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(10.0, 20.0),
                 end: Point2::new(30.0, 20.0),
-            },
+            })
+            .unwrap(),
         ),
         SketchEntity::new(
-            SketchEntityId("vertical".into()),
+            SketchEntityId::mint("synthetic:test:id#vertical").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(30.0, 20.0),
                 end: Point2::new(30.0, 50.0),
-            },
+            })
+            .unwrap(),
         ),
     ];
     let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
@@ -824,8 +844,8 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         sketch_entities: vec![horizontal, vertical, center],
     };
     let parameter = DesignParameter {
-        id: ParameterId::mint("diameter").expect("identity grammar"),
-        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
+        id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
+        owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         name: "D1".into(),
         ordinal: 0,
         expression: String::new(),
@@ -845,9 +865,8 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         &[parameter],
         std::slice::from_ref(&lane),
     );
-    assert!(matches!(
-        &entities[2].geometry,
-        SketchGeometry::Circle { center, radius }
+    assert!(matches!(entities[2].geometry.definition(),
+        SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(15.0, 40.0) && *radius == Length(4.0)
     ));
     assert!(!entities[2].construction);
@@ -1093,27 +1112,29 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
 
 #[test]
 fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
-    let sketch_id = SketchId("nested".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#nested").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     };
     let circle = SketchEntity::new(
-        SketchEntityId("circle".into()),
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch_id,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(10.0, 20.0),
             radius: Length(5.0),
-        },
+        })
+        .unwrap(),
     );
     let declared = [([0.010, 0.020], 5.0)];
 
@@ -1123,12 +1144,13 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         &declared,
     ));
     let mut arc = circle;
-    arc.geometry = SketchGeometry::Arc {
+    arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(10.0, 20.0),
         radius: Length(5.0),
         start_angle: Angle(0.0),
         end_angle: Angle(std::f64::consts::PI),
-    };
+    })
+    .unwrap();
     assert!(nested_profile_contains_declared_circular_carriers(
         &sketch,
         std::slice::from_ref(&arc),
@@ -1169,7 +1191,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         features: vec![native_feature],
     };
     let mut features = vec![Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1185,7 +1207,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
-        id: ParameterId::mint("diameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#diameter").expect("identity grammar"),
         owner: Some(features[0].id.clone()),
         ordinal: 0,
         name: "diameter".into(),
@@ -1267,42 +1289,47 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         }],
         sketch_entities: vec![center, radial],
     };
-    let sketch_id = SketchId("support-sketch".into());
-    let entity_id = SketchEntityId("support-entity".into());
-    let constraint_id = SketchConstraintId("support-constraint".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#support-sketch").unwrap();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#support-entity").unwrap();
+    let constraint_id = SketchConstraintId::mint("synthetic:test:id#support-constraint").unwrap();
     let mut sketches = vec![Sketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     }];
     let mut entities = vec![SketchEntity::new(
         entity_id.clone(),
         sketch_id.clone(),
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
-        },
+        })
+        .unwrap(),
     )];
     let mut constraints = vec![SketchConstraint {
         id: constraint_id.clone(),
         sketch: sketch_id.clone(),
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "endpoint".into(),
-            native_state: None,
-            native_flags: None,
-            native_properties: BTreeMap::new(),
-            entities: vec![entity_id.clone()],
-            parameter: None,
-            operands: Vec::new(),
-        },
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Native {
+                native_kind: "endpoint".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: BTreeMap::new(),
+                entities: vec![entity_id.clone()],
+                parameter: None,
+                operands: Vec::new(),
+            },
+        )
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -1316,10 +1343,16 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     }];
     let mut builder = AnnotationBuilder::new();
     let stream = builder.stream("test:support");
-    builder.note(&sketch_id.0, &stream, 200).tag("support");
+    builder
+        .note(sketch_id.as_str(), &stream, 200)
+        .tag("support");
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
-    for id in [&sketch_id.0, &entity_id.0, &constraint_id.0] {
+    for id in [
+        sketch_id.as_str(),
+        entity_id.as_str(),
+        constraint_id.as_str(),
+    ] {
         builder.exactness(id, cadmpeg_ir::Exactness::Derived);
     }
     annotations = builder.build();

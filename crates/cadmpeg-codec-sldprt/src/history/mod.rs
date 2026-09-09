@@ -10,7 +10,7 @@ mod literals;
 mod parameters;
 mod project;
 mod selections;
-mod write;
+pub(crate) mod write;
 
 pub(crate) use bind::*;
 pub(crate) use classify::*;

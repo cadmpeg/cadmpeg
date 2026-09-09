@@ -176,29 +176,32 @@ fn parameter_identity_distinguishes_repeated_source_ordinals() {
 fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
     use cadmpeg_ir::sketches::{SketchId, SpatialSketchId};
 
-    let sketch = SketchId("f3d:model:sketch#Design/A@10".into());
-    let other_sketch = SketchId("f3d:model:sketch#Design/A@11".into());
-    let point = neutral_sketch_point_id(&sketch, 42);
-    let same_point = neutral_sketch_point_id(&sketch, 42);
-    let curve = neutral_sketch_curve_id(&sketch, 42, 0);
-    let same_curve = neutral_sketch_curve_id(&sketch, 42, 0);
+    let sketch = SketchId::mint("f3d:model:sketch#Design/A@10").unwrap();
+    let other_sketch = SketchId::mint("f3d:model:sketch#Design/A@11").unwrap();
+    let point = neutral_sketch_point_id(&sketch, 42).unwrap();
+    let same_point = neutral_sketch_point_id(&sketch, 42).unwrap();
+    let curve = neutral_sketch_curve_id(&sketch, 42, 0).unwrap();
+    let same_curve = neutral_sketch_curve_id(&sketch, 42, 0).unwrap();
 
     assert_eq!(point, same_point);
     assert_eq!(curve, same_curve);
     assert_ne!(point, curve);
-    assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1));
-    assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42));
-    assert_ne!(curve, neutral_sketch_curve_id(&other_sketch, 42, 0));
-
-    let spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@10".into());
-    let other_spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@11".into());
+    assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1).unwrap());
+    assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42).unwrap());
     assert_ne!(
-        crate::ids::neutral_spatial_sketch_point_id(&spatial, 42),
-        crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42)
+        curve,
+        neutral_sketch_curve_id(&other_sketch, 42, 0).unwrap()
+    );
+
+    let spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@10").unwrap();
+    let other_spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@11").unwrap();
+    assert_ne!(
+        crate::ids::neutral_spatial_sketch_point_id(&spatial, 42).unwrap(),
+        crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42).unwrap()
     );
     assert_ne!(
-        crate::ids::neutral_spatial_sketch_curve_id(&spatial, 42, 0),
-        crate::ids::neutral_spatial_sketch_curve_id(&other_spatial, 42, 0)
+        crate::ids::neutral_spatial_sketch_curve_id(&spatial, 42, 0).unwrap(),
+        crate::ids::neutral_spatial_sketch_curve_id(&other_spatial, 42, 0).unwrap()
     );
 }
 
@@ -206,18 +209,20 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 fn governing_dimension_identity_uses_parameter_identity() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12")
         .expect("identity grammar");
-    let relocated = neutral_dimension_constraint_id(&parameter, "pair");
-    let same = neutral_dimension_constraint_id(&parameter, "pair");
-    let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
+    let relocated = neutral_dimension_constraint_id(&parameter, "pair").unwrap();
+    let same = neutral_dimension_constraint_id(&parameter, "pair").unwrap();
+    let other_form = neutral_dimension_constraint_id(&parameter, "null-pair").unwrap();
     let other_parameter = neutral_dimension_constraint_id(
-        &cadmpeg_ir::features::ParameterId::mint("parameter:Design/A").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:Design/A")
+            .expect("identity grammar"),
         "12:pair",
-    );
+    )
+    .unwrap();
 
     assert_eq!(relocated, same);
     assert_ne!(relocated, other_form);
     assert_ne!(relocated, other_parameter);
-    assert_eq!(relocated.0.matches('#').count(), 1);
+    assert_eq!(relocated.as_str().matches('#').count(), 1);
 }
 
 #[test]

@@ -3073,16 +3073,17 @@ mod tests {
     #[test]
     fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         let sketch = Sketch {
-            id: SketchId("sketch".into()),
+            id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
             name: None,
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 2.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 2.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         };
         let face = |id: &str, surface: &str| Face {

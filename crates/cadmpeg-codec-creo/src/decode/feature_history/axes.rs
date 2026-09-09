@@ -13,7 +13,6 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::SketchId;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FULL_TURN: f64 = 1.0e-12;
@@ -215,19 +214,19 @@ pub(in super::super) fn feature_revolution_axis_for_transfer(
 }
 
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
-    let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
+    let sketch_id = native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1);
     let Some(sketch) = exactly_one(
         ir.model
             .sketches
             .iter()
-            .filter(|sketch| sketch.id == sketch_id),
+            .filter(|sketch| sketch.id.as_str() == sketch_id),
     ) else {
         return ProfileRef::Native(native_ref);
     };
     if sketch.profiles.is_empty() {
         ProfileRef::Native(native_ref)
     } else {
-        ProfileRef::Sketch(sketch_id)
+        ProfileRef::Sketch(sketch.id.clone())
     }
 }
 

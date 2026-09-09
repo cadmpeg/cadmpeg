@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable assembly-joint identity.
     JointId
 );

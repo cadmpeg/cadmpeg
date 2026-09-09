@@ -25,7 +25,7 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::{HashMap, HashSet};
 
 use crate::layout::compact_legacy_140_relation_display_curve as legacy_140_relation;
@@ -5070,12 +5070,13 @@ pub(super) fn minor_arc_geometry(
     if sweep <= SKETCH_ANGLE_TOLERANCE {
         return None;
     }
-    Some(SketchGeometry::Arc {
+    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center,
         radius: Length(radius),
         start_angle: Angle(start_angle),
         end_angle: Angle(end_angle),
     })
+    .ok()
 }
 
 pub(super) fn legacy_coordinate_roster_selected_axis_endpoint_indices(

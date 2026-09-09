@@ -6,7 +6,9 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
 use crate::records::{
     FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -47,7 +49,7 @@ fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("hole").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#hole").expect("identity grammar"),
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
@@ -165,9 +167,9 @@ fn cylinder(id: usize, x: f64) -> Surface {
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity::new(
-        SketchEntityId(format!("profile-line-{ordinal}")),
+        SketchEntityId::mint(format!("synthetic:test:id#profile-line-{ordinal}")).unwrap(),
         sketch.clone(),
-        SketchGeometry::Line { start, end },
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
     )
 }
 
