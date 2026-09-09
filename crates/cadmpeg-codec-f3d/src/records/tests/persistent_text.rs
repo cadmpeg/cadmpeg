@@ -14,7 +14,7 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
         assert_eq!(design_id.as_str(), text);
         let link = PersistentDesignLink {
             id: "link".into(),
-            target: AttributeTarget::Body(BodyId::mint("test:body#1").unwrap()),
+            target: AttributeTarget::Body(BodyId::mint("test:model:body#1").unwrap()),
             design_id,
             design_reference: 1,
             ordinal: 0,
@@ -44,7 +44,7 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
     for text in ["-1", "0003", " ", "named-token", "面"] {
         let tag = PersistentSubentityTag {
             id: "tag".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:face#1").unwrap()),
+            target: AttributeTarget::Face(FaceId::mint("test:model:face#1").unwrap()),
             selector: 1,
             token: NonEmptyString::new(text).unwrap(),
             design_references: vec![],
