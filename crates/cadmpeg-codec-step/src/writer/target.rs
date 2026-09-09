@@ -28,7 +28,9 @@ pub(crate) fn plan(
     let Some(index) = resolved.index() else {
         return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
-    let schema = StepSchema::ALL[index];
+    let schema = StepSchema::ALL.get(index).copied().ok_or_else(|| {
+        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
+    })?;
     let mut bytes = Vec::new();
     let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
         .map_err(CodecError::from)?;

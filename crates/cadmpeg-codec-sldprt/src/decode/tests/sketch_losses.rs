@@ -5,8 +5,8 @@
 use super::super::*;
 use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
-    SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
+    SketchConstraintDefinitionInput, SketchConstraintId, SpatialSketchConstraint,
+    SpatialSketchConstraintDefinitionInput, SpatialSketchEntityId, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -14,10 +14,10 @@ use std::collections::BTreeMap;
 #[test]
 fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     assert!(sketch_constraint_has_complete_neutral_semantics(
-        &SketchConstraintDefinition::Disabled
+        &SketchConstraintDefinitionInput::Disabled
     ));
     assert!(!sketch_constraint_has_complete_neutral_semantics(
-        &SketchConstraintDefinition::Native {
+        &SketchConstraintDefinitionInput::Native {
             native_kind: "unresolved".into(),
             native_state: None,
             native_flags: None,
@@ -28,13 +28,13 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
         }
     ));
     assert!(spatial_sketch_constraint_has_complete_neutral_semantics(
-        &SpatialSketchConstraintDefinition::Coincident {
-            first: SpatialSketchEntityId("first".into()),
-            second: SpatialSketchEntityId("second".into()),
+        &SpatialSketchConstraintDefinitionInput::Coincident {
+            first: SpatialSketchEntityId::mint("synthetic:test:id#first").unwrap(),
+            second: SpatialSketchEntityId::mint("synthetic:test:id#second").unwrap(),
         }
     ));
     assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
-        &SpatialSketchConstraintDefinition::Native {
+        &SpatialSketchConstraintDefinitionInput::Native {
             native_kind: "unresolved".into(),
             native_state: None,
             parameter: None,
@@ -49,14 +49,17 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
-            id: SketchConstraintId("native-spatial".into()),
-            sketch: SpatialSketchId("spatial-sketch".into()),
-            definition: SpatialSketchConstraintDefinition::Native {
-                native_kind: "unresolved".into(),
-                native_state: None,
-                parameter: None,
-                operands: Vec::new(),
-            },
+            id: SketchConstraintId::mint("synthetic:test:id#native-spatial").unwrap(),
+            sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
+            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                SpatialSketchConstraintDefinitionInput::Native {
+                    native_kind: "unresolved".into(),
+                    native_state: None,
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+            )
+            .unwrap(),
             native_ref: None,
         });
     let mut report = super::empty_report(true);
@@ -73,15 +76,15 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
 fn typed_native_operands_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("combine").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#combine").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Combine {

@@ -24,12 +24,9 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
         data: (&[] as &[u8]).into(),
         physical_size: 0,
         layout: if legacy_cfb {
-            crate::container::ContainerLayout::LegacyCfb {
-                version,
-                entry_count: 0,
-            }
+            crate::container::ContainerLayout::LegacyCfb { version }
         } else {
-            crate::container::test_modern_layout(version, 0)
+            crate::container::test_modern_layout(version)
         },
         entries: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
@@ -135,9 +132,15 @@ fn each_container_parser_classifies_into_its_own_row() {
 
 #[test]
 fn the_container_kind_label_and_the_registry_id_come_from_one_enum() {
-    assert_eq!(NxDialect::Splmsstr.container_kind(), "splmsstr");
+    assert_eq!(
+        NxDialect::Splmsstr.container_kind(),
+        cadmpeg_ir::ContainerKind::Splmsstr
+    );
     assert_eq!(NxDialect::Splmsstr.id().as_str(), "nx:splmsstr");
-    assert_eq!(NxDialect::LegacyCfb.container_kind(), "cfb");
+    assert_eq!(
+        NxDialect::LegacyCfb.container_kind(),
+        cadmpeg_ir::ContainerKind::Cfb
+    );
     assert_eq!(NxDialect::LegacyCfb.id().as_str(), "nx:legacy-cfb");
 }
 

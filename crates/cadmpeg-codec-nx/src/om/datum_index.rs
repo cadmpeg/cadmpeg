@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Terminal datum-plane index lanes with derived token positions.
 
+use super::compact::NullableCompactIndex;
 use super::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
-use super::{compact_index, CompactIndex};
 use cadmpeg_core::decode::View;
 use std::ops::Add;
 
@@ -93,13 +93,13 @@ pub(crate) fn scan(bytes: &[u8]) -> Vec<DatumIndexLane> {
         let mut scan_at = start + 2;
         let mut complete = true;
         for _ in 1..declared_count {
-            let Some((CompactIndex::Value(_), width)) =
-                bytes.get(scan_at..).and_then(compact_index)
+            let Some(token) =
+                NullableCompactIndex::read(bytes, scan_at).filter(|token| token.atom.is_some())
             else {
                 complete = false;
                 break;
             };
-            scan_at += width;
+            scan_at += token.raw().len();
         }
         if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
             continue;

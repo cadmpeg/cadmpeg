@@ -187,29 +187,29 @@ fn offset_plane_frame_translates_its_reference_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: Some(native_ref.into()),
     };
     let features = vec![
         neutral(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
             FeatureDefinition::DatumPrincipalPlane {
                 plane: PrincipalPlane::Top,
             },
         ),
         neutral(
-            "offset",
+            "synthetic:test:id#offset",
             "offset-native",
             FeatureDefinition::DatumOffsetPlane {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                    FeatureId::mint("plane").expect("identity grammar"),
+                    FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
                 )),
                 distance: Length::new(3.0).unwrap(),
             },

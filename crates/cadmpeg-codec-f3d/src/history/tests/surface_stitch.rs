@@ -38,38 +38,47 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     scope.previous_history_state_id = Some(1);
     scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
-    let group = |record_index, scope_reference_ordinal, member| DesignConstructionOperandGroup {
-        id: format!("{stream}:design-construction-operand-group#{record_index}"),
-        scope_record_index: 42,
-        scope_reference_ordinal,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: member,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 0,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X5,
-        ),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 0,
+    let group = |record_index, scope_reference_ordinal, member| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("{stream}:design-construction-operand-group#{record_index}"),
+                scope_record_index: 42,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: member,
+                    offset: 0,
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
+            },
+        )
+        .unwrap()
     };
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];
     let operand = |group_record_index, record_index, face_slot| DesignEntitySelectionOperand {

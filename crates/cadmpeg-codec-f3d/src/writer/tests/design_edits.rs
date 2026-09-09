@@ -106,21 +106,19 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = crate::records::ActRegistryFlag::Off;
-    act_root.layout = act_root
-        .layout
-        .with_strings("1_3".into(), "(Renamed)".into())
+    act_root
+        .try_set_strings("1_3".into(), "(Renamed)".into())
         .unwrap();
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset().is_some());
     assert!(act_entity.channel_entity_id_offset().is_some());
     act_entity
-        .channel_group_mut()
-        .unwrap()
-        .channels
-        .get_mut("Appearance")
-        .unwrap()
-        .value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
-        .try_into()
+        .set_channel_guid(
+            "Appearance",
+            String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+                .try_into()
+                .unwrap(),
+        )
         .unwrap();
     let binding = &mut edited.model.appearance_bindings[0];
     binding.channels.insert(
@@ -147,12 +145,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .value = "Prism-002".into();
     native.body_native_keys[0].asm_body_key = Some(84);
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
-    edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
-        r: 0.8,
-        g: 0.6,
-        b: 0.4,
-        a: 1.0,
-    });
+    edited.model.appearances[0].base_color =
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"));
     edited.model.appearances[0]
         .properties
         .insert("reflectivity_at_0deg".into(), 0.7);
@@ -160,7 +154,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .properties
         .insert("refraction_index".into(), 1.8);
     assert_eq!(
-        native.act_entities[0].entity_id,
+        native.act_entities[0].entity_id(),
         native.design_material_assignments[0].entity_id.as_str()
     );
     native.store(edited.native.namespace_mut("f3d")).unwrap();
@@ -243,8 +237,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, crate::records::ActRegistryFlag::Off);
-    assert_eq!(act_root.layout.entity_id(), "1_3");
-    assert_eq!(act_root.layout.display_name(), "(Renamed)");
+    assert_eq!(act_root.layout().entity_id(), "1_3");
+    assert_eq!(act_root.layout().display_name(), "(Renamed)");
     assert_eq!(
         f3d_native(round_trip.ir()).act_registry_channels[0]
             .guid
@@ -252,11 +246,12 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee"
     );
     let act_entity = &f3d_native(round_trip.ir()).act_entities[0];
-    assert_eq!(act_entity.entity_id, "0_985");
+    assert_eq!(act_entity.entity_id(), "0_985");
     assert_eq!(
         act_entity
             .channel_group()
-            .and_then(|group| group.channels.get("Appearance"))
+            .channels()
+            .get("Appearance")
             .map(|guid| guid.value.as_str()),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
@@ -290,12 +285,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     );
     assert_eq!(
         round_trip.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.8,
-            g: 0.6,
-            b: 0.4,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"))
     );
     assert_eq!(
         round_trip.ir().model.appearances[0]

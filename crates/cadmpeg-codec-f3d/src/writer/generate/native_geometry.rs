@@ -21,15 +21,6 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
 pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
-    if !target.tolerances.linear.is_finite()
-        || target.tolerances.linear <= 0.0
-        || !target.tolerances.angular.is_finite()
-        || target.tolerances.angular <= 0.0
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D tolerances must be finite and positive".into(),
-        ));
-    }
     let mut bytes = b"ASM BinaryFile8".to_vec();
     // Release word matching the product string, the zero region, then the
     // entity-count and flags words (bit 0: history partition present).
@@ -41,8 +32,8 @@ pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
     native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
     native_f64(&mut bytes, 60.0);
-    native_f64(&mut bytes, target.tolerances.linear);
-    native_f64(&mut bytes, target.tolerances.angular);
+    native_f64(&mut bytes, target.tolerances.linear.get());
+    native_f64(&mut bytes, target.tolerances.angular.get());
     Ok(bytes)
 }
 

@@ -10,12 +10,12 @@ use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_refere
 use crate::design::decode::meta::typed_primary_frames;
 use crate::design::decode::sketch::{parse_genesis_entity_header, parse_settled_entity_header};
 use crate::design::presentation::{
-    is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID,
-    BODY_PRESENTATION_BASE_TYPE_GUID, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID,
-    BODY_PRESENTATION_TYPE_GUID, BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID,
-    BODY_SCENE_NODE_TYPE_VERSION, BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION,
-    BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN,
-    MODERN_APPEARANCE_LIBRARY_IDS, PHYSICAL_MATERIAL_LIBRARY_ID,
+    is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
+    BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
+    BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+    BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+    BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
+    PHYSICAL_MATERIAL_LIBRARY_ID,
 };
 use crate::records::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
@@ -37,7 +37,7 @@ pub(crate) struct PresentationMaterial {
     pub node_guid: String,
     pub physical_token: String,
     pub physical_token_offset: u64,
-    pub visual_guid: String,
+    pub visual_guid: crate::records::DesignVisualToken,
     pub visual_guid_offset: u64,
     pub visual_preset: Option<crate::records::Located<String>>,
 }
@@ -359,9 +359,9 @@ fn presentation_material(
         let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, visual_at, 1..=256) else {
             continue;
         };
-        if visual_token(&visual_guid).is_none() {
+        let Ok(visual_guid) = crate::records::DesignVisualToken::try_from(visual_guid) else {
             continue;
-        }
+        };
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
             continue;
         };
@@ -479,9 +479,9 @@ fn bare_presentation_material(
         let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, *visual_at, 1..=256) else {
             continue;
         };
-        if visual_token(&visual_guid).is_none() {
+        let Ok(visual_guid) = crate::records::DesignVisualToken::try_from(visual_guid) else {
             continue;
-        }
+        };
         let Some(marker_at) = skip_zeros(bytes, after_visual, end) else {
             continue;
         };
@@ -739,7 +739,7 @@ mod tests {
         let material = presentation.material.as_ref().unwrap();
         assert_eq!(material.node_guid, node_guid);
         assert_eq!(material.physical_token, "PrismMaterial-001");
-        assert_eq!(material.visual_guid, visual_guid);
+        assert_eq!(&*material.visual_guid, visual_guid);
         assert_eq!(material.visual_preset, None);
     }
 
@@ -1006,6 +1006,6 @@ mod tests {
         );
         let material = presentation.material.as_ref().expect("material envelope");
         assert_eq!(material.physical_token, "PrismMaterial-018");
-        assert_eq!(material.visual_guid, visual_guid);
+        assert_eq!(&*material.visual_guid, visual_guid);
     }
 }

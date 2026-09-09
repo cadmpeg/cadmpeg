@@ -69,7 +69,6 @@ pub(crate) fn read_entry_bounded(
                 "F3D entry allocation",
                 MAX_INFLATED_ENTRY_BYTES,
                 bytes.len().saturating_add(read) as u64,
-                None,
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);

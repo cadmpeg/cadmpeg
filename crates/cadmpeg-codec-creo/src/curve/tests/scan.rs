@@ -162,7 +162,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.type_byte, 8);
     assert_eq!(parameters.scalar_values(), vec![0.0, 1.0, 3.0]);
     assert_eq!(parameters.scalar_tokens[2].offset, 5);
-    assert_eq!(parameters.scalar_tokens[2].length, 8);
+    assert_eq!(parameters.scalar_tokens[2].raw.len(), 8);
     assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
     assert_eq!(parameters.skipped_references(), vec![256]);
     assert_eq!(parameters.references[0].entity_id, 256);
@@ -191,6 +191,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
     assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
     assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields().contains_key("suffix_candidate_count"));
     assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]

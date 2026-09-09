@@ -392,7 +392,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         Some("xProtrusion id 40")
     );
     assert_eq!(
-        scan.features.operation_states[0].identifier_keyword(),
+        scan.features.operation_states[0].name.identifier_keyword(),
         Some("id")
     );
     assert_eq!(

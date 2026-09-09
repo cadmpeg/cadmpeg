@@ -34,12 +34,7 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         );
         assert_eq!(
             text.color,
-            cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }
+            cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color")
         );
         assert_eq!(text.placement().map(|placement| placement.anchor), None);
         assert_eq!(
@@ -281,7 +276,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
-    assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
+    assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
         .try_into()
@@ -394,12 +389,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // that order.
     assert_eq!(
         text.color,
-        cadmpeg_ir::topology::Color {
-            r: 0.25,
-            g: 0.5,
-            b: 0.75,
-            a: 1.0,
-        }
+        cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color")
     );
     assert_eq!(
         (match text.layout {
@@ -590,12 +580,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     // as the other form.
     assert_eq!(
         text.color,
-        cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.3,
-            b: 1.0,
-            a: 1.0,
-        }
+        cadmpeg_ir::topology::Color::new(0.0, 0.3, 1.0, 1.0).expect("valid color")
     );
     assert_eq!(
         (match text.layout {

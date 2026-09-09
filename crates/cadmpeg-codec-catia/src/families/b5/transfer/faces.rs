@@ -8,7 +8,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -17,6 +17,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
+use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::UnionFind;
 
@@ -43,10 +44,6 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         return None;
     }
 
-    let vertex_count = graph
-        .vertex_points
-        .len()
-        .checked_add(graph.logical_vertices.len())?;
     let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
@@ -54,10 +51,7 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let face = loop_owners[loop_id];
         for member in &loop_.members {
             let edge = member.edge;
-            let endpoints = graph.edge_vertices.get(&edge)?;
-            if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
-                return None;
-            }
+            graph.vertices.edges().get(&edge)?;
             *edge_uses.entry(edge).or_default() += 1;
             if let Some(other_face) = first_face_by_edge.insert(edge, face) {
                 parents.union(face, other_face);
@@ -138,10 +132,10 @@ pub(super) fn orient_loop_members(
         "catia b5 loop orientation constraints",
     )
     .ok()?;
-    for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
-        let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
-            unreachable!("filtered to two occurrences");
-        };
+    for [(left, left_reversed), (right, right_reversed)] in uses
+        .values()
+        .filter_map(|occurrences| <&[_; 2]>::try_from(occurrences.as_slice()).ok())
+    {
         let parity = left_reversed == right_reversed;
         if left == right {
             if parity {
@@ -164,9 +158,8 @@ pub(super) fn orient_loop_members(
             continue;
         }
         flips[root] = Some(false);
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
-            let flip = flips[node]?;
+        let mut pending = vec![(root, false)];
+        while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -174,7 +167,7 @@ pub(super) fn orient_loop_members(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        pending.push(neighbor);
+                        pending.push((neighbor, required));
                     }
                 }
             }
@@ -217,7 +210,7 @@ fn b5_planar_loop_points(
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
 ) -> Option<Vec<Point3>> {
     let surface = ir
         .model
@@ -242,18 +235,11 @@ fn b5_planar_loop_points(
     let mut points = Vec::with_capacity(loop_.members.len());
     for member in loop_orientation.member_order() {
         let edge = loop_.members[member].edge;
-        let endpoints = graph.edge_vertices.get(&edge)?;
-        let endpoint_indices = if loop_orientation.members[member].reversed {
-            [endpoints[1], endpoints[0]]
-        } else {
-            *endpoints
-        };
-        let [Some(start), Some(end)] = endpoint_indices.map(|index| {
-            super::b5_vertex_point(graph, index)
-                .map(|point| Point3::new(point[0], point[1], point[2]))
-        }) else {
-            return None;
-        };
+        let mut endpoints = graph.vertices.edge_points(edge)?;
+        if loop_orientation.members[member].reversed {
+            endpoints.swap(0, 1);
+        }
+        let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
         let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
         if !parameter_range
             .iter()
@@ -298,7 +284,7 @@ fn b5_boundary_roles(
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
 ) -> Option<Vec<LoopBoundaryRole>> {
     if face.loops.len() == 1 {
         return Some(vec![LoopBoundaryRole::Outer]);
@@ -353,7 +339,7 @@ pub(super) fn emit_faces(
     graph: &B5Graph,
     plan: &TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+    pcurve_uses: &PcurveUses,
     edge_id_map: &HashMap<u32, EdgeId>,
 ) -> bool {
     let ownership = &plan.ownership;
@@ -377,9 +363,13 @@ pub(super) fn emit_faces(
         "single_body",
         Exactness::Inferred,
     );
-    annotations
+    if annotations
         .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
+        .and_then(|builder| builder.derived(&body_id, "regions"))
+        .is_err()
+    {
+        return false;
+    }
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
@@ -400,9 +390,13 @@ pub(super) fn emit_faces(
             "derived_region",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&region_id, "body")
-            .derived(&region_id, "shells");
+            .and_then(|builder| builder.derived(&region_id, "shells"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -415,9 +409,13 @@ pub(super) fn emit_faces(
             "derived_shell",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
+            .and_then(|builder| builder.derived(&shell_id, "faces"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.shells.push(
             match Shell::new(
                 shell_id,
@@ -461,10 +459,14 @@ pub(super) fn emit_faces(
             "5f_face",
             Exactness::Inferred,
         );
-        annotations
+        if annotations
             .derived(&face_id, "shell")
-            .derived(&face_id, "surface")
-            .derived(&face_id, "loops");
+            .and_then(|builder| builder.derived(&face_id, "surface"))
+            .and_then(|builder| builder.derived(&face_id, "loops"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -501,8 +503,9 @@ pub(super) fn emit_faces(
                 .member_order()
                 .map(|member| {
                     let edge = loop_.members[member].edge;
-                    let endpoints = graph.edge_vertices[&edge];
-                    let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)];
+                    let endpoints = graph.vertices.edges()[&edge];
+                    let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
+                        .combined_index(graph.vertices.raw_points().len());
                     AnchoredVertexUse {
                         vertex: VertexId::mint(format!("catia:b5:vertex#{endpoint}"))
                             .expect("identity grammar"),
@@ -518,16 +521,22 @@ pub(super) fn emit_faces(
                 "62_loop",
                 Exactness::ByteExact,
             );
-            annotations
+            if annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges")
-                .derived(&loop_id, "vertex_uses");
+                .and_then(|builder| builder.derived(&loop_id, "coedges"))
+                .and_then(|builder| builder.derived(&loop_id, "vertex_uses"))
+                .is_err()
+            {
+                return false;
+            }
             let boundary_role = boundary_roles
                 .get(loop_position)
                 .copied()
                 .unwrap_or_default();
-            if boundary_role != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role");
+            if boundary_role != LoopBoundaryRole::Unspecified
+                && annotations.derived(&loop_id, "boundary_role").is_err()
+            {
+                return false;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
             else {
@@ -558,7 +567,9 @@ pub(super) fn emit_faces(
                     "sense",
                     "pcurves",
                 ] {
-                    annotations.derived(&id, field);
+                    if annotations.derived(&id, field).is_err() {
+                        return false;
+                    }
                 }
                 let arena_index = ir.model.coedges.len();
                 coedges_by_edge.entry(edge).or_default().push(arena_index);
@@ -649,7 +660,10 @@ mod tests {
                 let end = vertices[(member + 1) % vertices.len()];
                 let edge = edge_base + member as u32;
                 let pcurve = pcurve_base + member as u32;
-                edge_vertices.insert(edge, [start, end]);
+                edge_vertices.insert(
+                    edge,
+                    [start, end].map(crate::families::b5::graph::vertex_refs::B5VertexRef::Raw),
+                );
                 loop_edges.push(edge);
                 loop_pcurves.push(pcurve);
                 let start_point = points[start];
@@ -693,7 +707,8 @@ mod tests {
                         })
                         .collect(),
                     metadata: B5LoopMetadata {
-                        framing_controls: [0, 0],
+                        framing_controls:
+                            [crate::families::b5::graph::controls::B5FramingControl::Control03; 2],
                         extension: None,
                     },
                     surface: 10,
@@ -719,7 +734,9 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![3, 2],
-                terminal_control: Some(3),
+                terminal_control: Some(
+                    crate::families::b5::graph::controls::B5FramingControl::Control03,
+                ),
             }],
             face_records: BTreeMap::new(),
             loops,
@@ -734,9 +751,12 @@ mod tests {
             parameter_incidences: BTreeMap::new(),
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
-            vertex_points: points,
-            logical_vertices: Vec::new(),
-            edge_vertices,
+            vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                points,
+                Vec::new(),
+                edge_vertices,
+            )
+            .expect("valid vertex bindings"),
             edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),

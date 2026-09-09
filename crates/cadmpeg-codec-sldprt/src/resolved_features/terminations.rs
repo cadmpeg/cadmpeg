@@ -39,10 +39,43 @@ pub(super) enum TerminationVote {
     },
     Face {
         condition: FaceCondition,
-        reference: Option<String>,
+        reference: FaceReference,
         identity: String,
+    },
+}
+
+/// A lane reference with its fallback or a resolved consensus reference.
+#[derive(Clone)]
+pub(super) enum FaceReference {
+    Lane {
+        reference: String,
         canonical: Option<String>,
     },
+    Canonical(String),
+    Unresolved,
+}
+
+impl FaceReference {
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Lane { reference, .. } | Self::Canonical(reference) => Some(reference),
+            Self::Unresolved => None,
+        }
+    }
+
+    fn canonical(&self) -> Self {
+        match self {
+            Self::Lane {
+                canonical: Some(reference),
+                ..
+            }
+            | Self::Canonical(reference) => Self::Canonical(reference.clone()),
+            Self::Lane {
+                canonical: None, ..
+            }
+            | Self::Unresolved => Self::Unresolved,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,7 +107,7 @@ impl TerminationVote {
     pub(super) fn reference(&self) -> Option<&str> {
         match self {
             Self::ToVertex { reference } => Some(reference),
-            Self::Face { reference, .. } => reference.as_deref(),
+            Self::Face { reference, .. } => reference.as_str(),
             _ => None,
         }
     }
@@ -182,7 +215,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             }
             let is_cosmetic_thread = |candidate: &crate::records::Feature| {
-                native_object_class(candidate.input_class.as_deref().unwrap_or_default()).kind
+                native_object_class(candidate.input_class.as_deref().unwrap_or_default())
                     == NativeClassKind::CosmeticThread
             };
             let has_depth =
@@ -220,7 +253,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .is_some_and(|feature| {
                         let class = feature.input_class.as_deref().unwrap_or_default();
                         is_profile_feature_object(feature)
-                            || native_object_class(class).kind == NativeClassKind::CosmeticThread
+                            || native_object_class(class) == NativeClassKind::CosmeticThread
                     });
                 if !skip {
                     break;
@@ -360,7 +393,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .or_insert(reference);
             }
             TerminationVote::Face {
-                reference: Some(reference),
+                reference:
+                    FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
                 ..
             } => {
                 feature.properties.entry("Face".into()).or_insert(reference);
@@ -396,18 +430,13 @@ pub(super) fn consensus_termination_vote(
         return None;
     }
     let mut consensus = first.clone();
-    if let TerminationVote::Face {
-        reference,
-        canonical,
-        ..
-    } = &mut consensus
-    {
+    if let TerminationVote::Face { reference, .. } = &mut consensus {
         if !votes
             .iter()
             .filter_map(Option::as_ref)
             .all(|vote| vote.reference() == first.reference())
         {
-            reference.clone_from(canonical);
+            *reference = reference.canonical();
         }
     }
     Some(consensus)
@@ -441,14 +470,16 @@ fn compact_termination_face_vote(
     let identity = reference_identity.unwrap_or_else(|| reference.clone());
     TerminationVote::Face {
         condition,
-        reference: Some(reference),
+        reference: FaceReference::Lane {
+            reference,
+            canonical: canonical_reference,
+        },
         identity,
-        canonical: canonical_reference,
     }
 }
 
 pub(super) fn is_extrusion_end_spec_owner(feature: &crate::records::Feature) -> bool {
-    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+    native_object_class(feature.input_class.as_deref().unwrap_or_default())
         == NativeClassKind::Extrusion
         || matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
 }
@@ -479,7 +510,7 @@ pub(crate) fn enrich_history_combine_selections(
             else {
                 continue;
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::Combine
             {
                 continue;
@@ -616,7 +647,7 @@ pub(crate) fn enrich_history_sweep_paths(
                 continue;
             };
             if !matches!(
-                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()),
                 NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface
             ) || feature.properties.contains_key("Path")
             {
@@ -748,7 +779,7 @@ pub(crate) fn project_surface_sweep_profiles(
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::SweepReferenceSurface
             {
                 continue;
@@ -1026,7 +1057,7 @@ pub(crate) fn project_compact_combine_paths(
                     ],
                     native.to_owned(),
                 )
-                .unwrap(),
+                .ok()?,
                 components,
                 feature,
             ))

@@ -75,7 +75,7 @@ pub fn project_decal_images(
             group.scope_record_index == scope.record_index
                 && group.record_index == image.target_group_record_index
                 && group.role() == DECAL_TARGET_ROLE
-                && group.members.len() == 1
+                && group.members().len() == 1
                 && ids::native_stream(&group.id) == native_stream
         }) else {
             continue;
@@ -83,7 +83,7 @@ pub fn project_decal_images(
         let Some(operand) = operands.iter().find(|operand| {
             operand.scope_record_index == scope.record_index
                 && operand.owner.group() == Some((group.record_index, 0))
-                && operand.record_index == group.members[0].value
+                && operand.record_index == group.members()[0].value
                 && ids::native_stream(&operand.id) == native_stream
         }) else {
             continue;

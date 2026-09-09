@@ -22,37 +22,43 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    DesignConstructionOperandGroup {
-        id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
-        scope_record_index,
-        scope_reference_ordinal,
-        record_index,
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: member,
-            offset: 0,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: Vec::new(),
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 88,
-            opaque_index_offset: 0,
-            opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
-            variant: false,
+    DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
+            scope_record_index,
+            scope_reference_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: member,
+                offset: 0,
+            }],
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 88,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+            role_offset: 0,
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_byte_offset: 0,
         },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
-        role_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        paired_byte_offset: 0,
-    }
+    )
+    .unwrap()
 }
 
 #[test]
@@ -164,8 +170,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
                 ..
             },) if faces.len() == 1
             && replacement_faces.len() == 1
-            && native.as_str() == &target_group.id
-            && replacement_native.as_str() == &replacement_group.id)));
+            && native.as_str() == target_group.id
+            && replacement_native.as_str() == replacement_group.id)));
 
     let mut invalid_scope = scope;
     invalid_scope.frame_length = 291;
@@ -242,7 +248,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
         } if faces.len() == 1
-            && native.as_str() == &target_group.id
+            && native.as_str() == target_group.id
             && tool == &tool_group.id
     ));
 }
@@ -264,41 +270,58 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         },
     );
     feature.native_ref = Some(scope.id.clone());
-    let operation = DesignSurfaceTrimOperation {
-        id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
-        scope_record_index: 1200,
-        selection_record_index: 1,
-        selection_byte_offset: 0,
-        selection_next_record_index: 2,
-        selection_next_byte_offset: 0,
-        chain_records: Vec::new(),
-        cell_table_record_index: 3,
-        cell_table_byte_offset: 0,
-        cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
-        cell_table_frame_length: 0,
-        cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
-            .unwrap(),
-        cell_table_paired_byte_offset: 0,
-        cell_count: 2,
-        cell_count_offset: 0,
-        cell_entries: vec![
-            DesignSurfaceTrimCellEntry {
-                record_index: 4,
-                record_reference_offset: 0,
-                ordinal: 1,
-                ordinal_offset: 0,
-            },
-            DesignSurfaceTrimCellEntry {
-                record_index: 5,
-                record_reference_offset: 0,
-                ordinal: 4,
-                ordinal_offset: 0,
-            },
-        ],
-        trailing_value: 5,
-        trailing_value_offset: 0,
-        trailing_zero_offset: 0,
-    };
+    let operation = DesignSurfaceTrimOperation::try_from(
+        crate::records::feature::DesignSurfaceTrimOperationWire {
+            id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
+            scope_record_index: 1200,
+            selection_record_index: 1,
+            selection_byte_offset: 0,
+            selection_next_record_index: 2,
+            selection_next_byte_offset: 0,
+            chain_records: [
+                crate::records::feature::DesignSurfaceTrimChainRecord {
+                    record_index: 2,
+                    byte_offset: 0,
+                    class_tag: "288".to_owned().try_into().unwrap(),
+                    frame_length: 11,
+                },
+                crate::records::feature::DesignSurfaceTrimChainRecord {
+                    record_index: 6,
+                    byte_offset: 11,
+                    class_tag: "271".to_owned().try_into().unwrap(),
+                    frame_length: 11,
+                },
+            ],
+            cell_table_record_index: 3,
+            cell_table_byte_offset: 0,
+            cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned())
+                .unwrap(),
+            cell_table_frame_length: 0,
+            cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+                .unwrap(),
+            cell_table_paired_byte_offset: 0,
+            cell_count: 2,
+            cell_count_offset: 0,
+            cell_entries: vec![
+                DesignSurfaceTrimCellEntry {
+                    record_index: 4,
+                    record_reference_offset: 0,
+                    ordinal: 1,
+                    ordinal_offset: 0,
+                },
+                DesignSurfaceTrimCellEntry {
+                    record_index: 5,
+                    record_reference_offset: 0,
+                    ordinal: 4,
+                    ordinal_offset: 0,
+                },
+            ],
+            trailing_value: 5,
+            trailing_value_offset: 0,
+            trailing_zero_offset: 0,
+        },
+    )
+    .unwrap();
 
     super::bind_surface_trim_cell_selections(
         std::slice::from_mut(&mut feature),

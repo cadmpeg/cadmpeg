@@ -13,6 +13,9 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
+mod patch_slots;
+use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
+
 fn exact_count(value: f64) -> Option<i64> {
     let count = value as i64;
     (count >= 0 && count as f64 == value).then_some(count)
@@ -258,33 +261,20 @@ pub(crate) fn patch_payload(
                 )));
             }
         };
-        patch_bytes(
-            payload,
-            record.value_offset,
-            &native_value.to_be_bytes(),
-            &record.id,
-        )?;
-        let precision = u8::try_from(semantic.precision)
-            .ok()
-            .filter(|value| *value < 128)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} requires fixint precision",
-                    record.id
-                ))
-            })?;
-        patch_bytes(payload, record.precision_offset, &[precision], &record.id)?;
-        for (offset, value) in [
-            (record.basic_offset, semantic.basic),
-            (record.inspection_offset, semantic.inspection),
-            (record.reference_only_offset, semantic.reference_only),
+        FloatPatchSlot::read(payload, record.offset)
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .write(native_value);
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision")
+            .and_then(|slot| slot.write(semantic.precision))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        for (field, value) in [
+            ("isBasic", semantic.basic),
+            ("isInspection", semantic.inspection),
+            ("isReferenceOnly", semantic.reference_only),
         ] {
-            patch_bytes(
-                payload,
-                offset,
-                &[if value { 0xc3 } else { 0xc2 }],
-                &record.id,
-            )?;
+            BooleanPatchSlot::read(payload, record.offset, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (
@@ -467,7 +457,7 @@ pub(crate) fn apply_to_parameters(
             expression,
             display,
             value,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: Some(semantic),
             native_ref: None,
@@ -667,17 +657,20 @@ fn extract_dimension(
             .to_string(),
         value,
         value_offset: value_field.data_offset as u64,
-        precision: int_from(precision_field).unwrap_or_default(),
+        precision: int_from(precision_field)
+            .ok_or_else(|| "valPrecision is not an integer".to_string())?,
         precision_offset: precision_field.data_offset as u64,
         display_text: outer.get("dimText").and_then(|field| match &field.kind {
             ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
             _ => None,
         }),
-        basic: bool_from(basic_field).unwrap_or(false),
+        basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
         basic_offset: basic_field.data_offset as u64,
-        inspection: bool_from(inspection_field).unwrap_or(false),
+        inspection: bool_from(inspection_field)
+            .ok_or_else(|| "inspection is not a boolean".to_string())?,
         inspection_offset: inspection_field.data_offset as u64,
-        reference_only: bool_from(reference_field).unwrap_or(false),
+        reference_only: bool_from(reference_field)
+            .ok_or_else(|| "reference_only is not a boolean".to_string())?,
         reference_only_offset: reference_field.data_offset as u64,
     }))
 }

@@ -46,9 +46,55 @@ pub(crate) struct GradientColorStop {
     pub(crate) position: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GradientKind {
+    None,
+    Linear,
+    Radial,
+    LinearDisabled,
+    RadialDisabled,
+}
+
+impl GradientKind {
+    fn value(self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Linear => 1,
+            Self::Radial => 2,
+            Self::LinearDisabled => 3,
+            Self::RadialDisabled => 4,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Linear => "linear",
+            Self::Radial => "radial",
+            Self::LinearDisabled => "linear_disabled",
+            Self::RadialDisabled => "radial_disabled",
+        }
+    }
+}
+
+impl TryFrom<i32> for GradientKind {
+    type Error = GeometryError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Linear),
+            2 => Ok(Self::Radial),
+            3 => Ok(Self::LinearDisabled),
+            4 => Ok(Self::RadialDisabled),
+            _ => Err(GeometryError::malformed(0, "invalid gradient type")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Gradient {
-    pub(crate) kind: i32,
+    pub(crate) kind: GradientKind,
     pub(crate) start: [f64; 3],
     pub(crate) end: [f64; 3],
     pub(crate) repeat: f64,
@@ -344,13 +390,8 @@ fn parse_gradient_userdata(
         });
     }
     let gradient_type_offset = reader.position();
-    let gradient_type = reader.i32()?;
-    if !(0..=4).contains(&gradient_type) {
-        return Err(GeometryError::malformed(
-            gradient_type_offset,
-            "invalid gradient type",
-        ));
-    }
+    let gradient_type = GradientKind::try_from(reader.i32()?)
+        .map_err(|_| GeometryError::malformed(gradient_type_offset, "invalid gradient type"))?;
     let start = gradient_point(&mut reader, scale, "gradient start point")?;
     let end = gradient_point(&mut reader, scale, "gradient end point")?;
     let repeat_offset = reader.position();
@@ -437,17 +478,9 @@ fn gradient_point(
 }
 
 pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
-    let gradient_type = match gradient.kind {
-        0 => "none",
-        1 => "linear",
-        2 => "radial",
-        3 => "linear_disabled",
-        4 => "radial_disabled",
-        _ => return None,
-    };
     serde_json::to_string(&serde_json::json!({
-        "type": gradient_type,
-        "type_value": gradient.kind,
+        "type": gradient.kind.name(),
+        "type_value": gradient.kind.value(),
         "start": gradient.start,
         "end": gradient.end,
         "repeat": gradient.repeat,
@@ -710,7 +743,7 @@ pub(crate) mod tests {
             )
             .expect("gradient userdata");
             let gradient = hatch.gradient.expect("gradient");
-            assert_eq!(gradient.kind, 1);
+            assert_eq!(gradient.kind, GradientKind::Linear);
             assert_eq!(gradient.start, [2.0, 4.0, 6.0]);
             assert_eq!(gradient.end, [8.0, 10.0, 12.0]);
             assert_eq!(gradient.repeat, 1.5);

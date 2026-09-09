@@ -8,13 +8,14 @@ use crate::decode::analytic::equations::PlaneEquation;
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
 
 fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylinderFrame {
-    crate::surface::PositionalCylinderFrame {
+    crate::surface::PositionalCylinderFrame::new(
         origin,
-        axis: [1.0, 0.0, 0.0],
-        ref_direction: [0.0, 1.0, 0.0],
-        radius: 4.0,
-        length: Some(6.0),
-    }
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        4.0,
+        Some(6.0),
+    )
+    .expect("valid positional cylinder frame")
 }
 
 #[test]
@@ -47,13 +48,14 @@ fn axial_interval_corner_frame_requires_a_unique_tangent_maximum() {
 
 #[test]
 fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
-    let stored = crate::surface::PositionalCylinderFrame {
-        origin: [-29.8, 5.25, 6.76],
-        axis: [1.0, 0.0, 0.0],
-        ref_direction: [0.0, -1.0, 0.0],
-        radius: 0.25,
-        length: None,
-    };
+    let stored = crate::surface::PositionalCylinderFrame::new(
+        [-29.8, 5.25, 6.76],
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+        0.25,
+        None,
+    )
+    .expect("valid positional cylinder frame");
     let tangent = PlaneEquation {
         origin: [0.0, -5.5, 0.0],
         normal: [0.0, 1.0, 0.0],
@@ -65,7 +67,7 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
 
     let selected = unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel])
         .expect("unique tangent origin");
-    assert_eq!(selected.origin, [-29.8, -5.25, 6.76]);
+    assert_eq!(selected.origin(), [-29.8, -5.25, 6.76]);
 }
 
 #[test]
@@ -90,7 +92,7 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -274,7 +276,8 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
         &scan,
         &mut ir,
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-    );
+    )
+    .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
     let [surface] = ir.model.surfaces.as_slice() else {
@@ -304,7 +307,8 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         2
     );
     assert!(ir.model.surfaces.iter().all(|surface| {
@@ -334,7 +338,8 @@ fn split_outline_rejects_duplicate_surface_rows() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert!(ir.model.surfaces.is_empty());
@@ -347,7 +352,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -371,13 +376,14 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 1.0,
-                        length: Some(2.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
+                        1.0,
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -393,6 +399,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -406,7 +413,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -439,13 +446,14 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         terminal_scalar_frame: None,
         carrier: crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder {
-                frame: crate::surface::PositionalCylinderFrame {
-                    origin: [0.0, 0.0, 0.0],
-                    axis: [0.0, 0.0, 1.0],
-                    ref_direction: [1.0, 0.0, 0.0],
+                frame: crate::surface::PositionalCylinderFrame::new(
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
                     radius,
-                    length: Some(2.0),
-                },
+                    Some(2.0),
+                )
+                .expect("valid positional cylinder frame"),
                 split_bounds: None,
             },
         ),
@@ -464,6 +472,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -477,7 +486,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -501,13 +510,14 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 1.0,
-                        length: Some(2.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
+                        1.0,
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -523,6 +533,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         1
     );
@@ -540,7 +551,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -564,13 +575,14 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [-12.5, 4.0, 0.0],
-                        axis: [0.0, 1.0, 0.0],
-                        ref_direction: [1.0, 0.0, 0.0],
-                        radius: 0.75,
-                        length: Some(34.0),
-                    },
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [-12.5, 4.0, 0.0],
+                        [0.0, 1.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        0.75,
+                        Some(34.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -587,6 +599,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -630,11 +643,11 @@ fn round_edge_support_frame_selects_one_offset_line() {
     )
     .expect("one offset round-edge cylinder");
 
-    assert_eq!(frame.origin, [1.2, 0.2, 0.0]);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 0.2);
-    assert_eq!(frame.length, Some(5.0));
+    assert_eq!(frame.origin(), [1.2, 0.2, 0.0]);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius(), 0.2);
+    assert_eq!(frame.length(), Some(5.0));
 }
 
 #[test]
@@ -659,13 +672,13 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
     .expect("one endpoint-solved perpendicular round cylinder");
 
     assert!(frame
-        .origin
+        .origin()
         .into_iter()
         .zip([1.2, 0.2, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < EPS_TEST_GEOMETRY));
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.2).abs() < EPS_TEST_GEOMETRY);
-    assert_eq!(frame.length, Some(5.0));
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert!((frame.radius() - 0.2).abs() < EPS_TEST_GEOMETRY);
+    assert_eq!(frame.length(), Some(5.0));
 }
 
 #[test]
@@ -697,7 +710,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -764,13 +777,14 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             terminal_scalar_frame: None,
             carrier: crate::surface::SurfaceParameterCarrier::Resolved(
                 crate::surface::InlineSurfaceCarrier::Cylinder {
-                    frame: crate::surface::PositionalCylinderFrame {
-                        origin: [0.0, 0.0, 0.0],
-                        axis: [0.0, 0.0, 1.0],
-                        ref_direction: [1.0, 0.0, 0.0],
+                    frame: crate::surface::PositionalCylinderFrame::new(
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0],
                         radius,
-                        length: Some(2.0),
-                    },
+                        Some(2.0),
+                    )
+                    .expect("valid positional cylinder frame"),
                     split_bounds: None,
                 },
             ),
@@ -811,6 +825,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         0
     );
@@ -833,6 +848,7 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         )
+        .expect("valid source object identity")
         .transferred,
         1
     );
@@ -862,7 +878,8 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         1
     );
 }
@@ -880,7 +897,8 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert!(ir
@@ -906,7 +924,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -939,7 +957,8 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
     assert_eq!(ir.model.surfaces.len(), 2);
@@ -1022,7 +1041,8 @@ fn split_outline_rejects_conflicting_model_plane_carrier() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        ),
+        )
+        .expect("valid source object identity"),
         0
     );
 }

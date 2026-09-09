@@ -147,7 +147,7 @@ fn neutral_feature(
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(format!("sldprt:history:feature#{id}")),

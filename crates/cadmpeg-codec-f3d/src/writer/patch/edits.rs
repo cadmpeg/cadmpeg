@@ -444,7 +444,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
             )));
         }
         let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
-            Some(tolerance) => tolerance,
+            Some(tolerance) => tolerance.get(),
             None if after.evaluated_unset => -1.0,
             None => {
                 return Err(CodecError::malformed(format_args!(
@@ -452,24 +452,24 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 )))
             }
         };
-        if !tolerance.is_finite()
-            || after
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
+        if after
+            .leading_tolerances
+            .iter()
+            .any(|value| !value.is_finite())
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D tolerant vertex {id} has non-finite fields"
             )));
         }
         if tolerance
-            != baseline_vertices[after.vertex.as_str()]
-                .tolerance
-                .unwrap_or(if before.evaluated_unset {
+            != baseline_vertices[after.vertex.as_str()].tolerance.map_or(
+                if before.evaluated_unset {
                     -1.0
                 } else {
                     tolerance
-                })
+                },
+                cadmpeg_ir::units::PositiveScalar::get,
+            )
             || after.leading_tolerances != before.leading_tolerances
         {
             // A negative tolerance is the unevaluated sentinel, stored
@@ -551,13 +551,8 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()].tolerance.ok_or_else(|| {
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
-        if !tolerance.is_finite() || tolerance < 0.0 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant edge {id} has invalid fields"
-            )));
-        }
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance / LEN_TO_MM);
+            edits.insert(after.record_index as usize, tolerance.get() / LEN_TO_MM);
         }
     }
     Ok(edits)
@@ -768,12 +763,7 @@ pub(crate) fn validate_material_assignment_appearances(
             let color = after.base_color.ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
             })?;
-            if before.base_color.is_none()
-                || ![color.r, color.g, color.b, color.a]
-                    .into_iter()
-                    .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-                || color.a != 1.0
-            {
+            if before.base_color.is_none() || color.a() != 1.0 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
@@ -1055,13 +1045,13 @@ pub(crate) fn validate_act_appearance_bindings(
     let mut baseline_entities_by_source = HashMap::<_, Vec<_>>::new();
     for entity in baseline_entities {
         baseline_entities_by_source
-            .entry(entity.entity_id.as_str())
+            .entry(entity.entity_id())
             .or_default()
             .push(entity);
     }
     let target_entities_by_id = target_entities
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
     for before in &baseline.model.appearance_bindings {
         let after = target_bindings
@@ -1103,7 +1093,7 @@ pub(crate) fn validate_act_appearance_bindings(
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
-                .get(before_entity.id.as_str())
+                .get(before_entity.id().as_str())
                 .copied()
                 .filter(|entity| {
                     after
@@ -1153,7 +1143,7 @@ pub(crate) fn validate_act_appearance_bindings(
         .map(|assignment| assignment.entity_id.as_str())
         .collect::<std::collections::HashSet<_>>();
     for (before, after) in baseline_entities.iter().zip(target_entities) {
-        let matching_bindings = derived_bindings.get(&before.entity_id);
+        let matching_bindings = derived_bindings.get(before.entity_id());
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings.iter().any(|(channels, _)| {
                 channels
@@ -1162,11 +1152,11 @@ pub(crate) fn validate_act_appearance_bindings(
                     .eq(act_channel_values(before))
             })
         });
-        let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
-        if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
+        let assignment_synchronized = assignment_entities.contains(after.entity_id());
+        if before.entity_id() != after.entity_id() && derived_binding && !assignment_synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without its material-assignment carrier",
-                before.id
+                before.id()
             )));
         }
         let synchronized = matching_bindings.is_some_and(|bindings| {
@@ -1177,7 +1167,7 @@ pub(crate) fn validate_act_appearance_bindings(
                         before_binding.appearance.clone(),
                     ))
                     .is_some_and(|binding| {
-                        binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
+                        binding.source_entity_id.as_deref() == Some(after.entity_id())
                             && binding
                                 .channels
                                 .iter()
@@ -1186,14 +1176,14 @@ pub(crate) fn validate_act_appearance_bindings(
                     })
             })
         });
-        if (before.entity_id != after.entity_id
+        if (before.entity_id() != after.entity_id()
             || act_channel_values(before).ne(act_channel_values(after)))
             && derived_binding
             && !synchronized
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity {} changed without a synchronized appearance binding",
-                before.id
+                before.id()
             )));
         }
     }
@@ -1203,8 +1193,8 @@ pub(crate) fn validate_act_appearance_bindings(
 fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
     entity
         .channel_group()
-        .into_iter()
-        .flat_map(|group| &group.channels)
+        .channels()
+        .iter()
         .map(|(name, guid)| (name, guid.value.as_str()))
 }
 
@@ -1223,11 +1213,11 @@ pub(crate) fn validate_act_entity_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
+        .map(|entity| (entity.id().as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1238,14 +1228,14 @@ pub(crate) fn validate_act_entity_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.entity_id.clone_from(&before.entity_id);
-        if let Some(group) = normalized.channel_group_mut() {
-            if let Some(before_group) = before.channel_group() {
-                for (name, guid) in &mut group.channels {
-                    if let Some(before_guid) = before_group.channels.get(name) {
-                        guid.value.clone_from(&before_guid.value);
-                    }
-                }
+        normalized
+            .try_set_entity_id(before.entity_id().to_owned())
+            .map_err(CodecError::malformed)?;
+        for (name, guid) in before.channel_group().channels() {
+            if normalized.channel_group().channels().contains_key(name) {
+                normalized
+                    .set_channel_guid(name, guid.value.clone())
+                    .map_err(CodecError::malformed)?;
             }
         }
         if &normalized != before {
@@ -1256,7 +1246,7 @@ pub(crate) fn validate_act_entity_edits(
         if after == before {
             continue;
         }
-        if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count() {
+        if after.entity_id().encode_utf16().count() != before.entity_id().encode_utf16().count() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
@@ -1286,11 +1276,11 @@ pub(crate) fn validate_act_guid_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|guid| (guid.id.as_str(), guid))
+        .map(|guid| (guid.id().as_str(), guid))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1340,11 +1330,11 @@ pub(crate) fn validate_act_registry_channel_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|channel| (channel.id.as_str(), channel))
+        .map(|channel| (channel.id().as_str(), channel))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1396,11 +1386,11 @@ pub(crate) fn validate_act_root_edits(
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|root| (root.id.as_str(), root))
+        .map(|root| (root.id().as_str(), root))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1414,11 +1404,10 @@ pub(crate) fn validate_act_root_edits(
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
-        normalized.layout = normalized
-            .layout
-            .with_strings(
-                before.layout.entity_id().into(),
-                before.layout.display_name().into(),
+        normalized
+            .try_set_strings(
+                before.layout().entity_id().into(),
+                before.layout().display_name().into(),
             )
             .map_err(CodecError::NotImplemented)?;
         if &normalized != before {
@@ -1429,10 +1418,10 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if after.layout.entity_id().encode_utf16().count()
-            != before.layout.entity_id().encode_utf16().count()
-            || after.layout.display_name().encode_utf16().count()
-                != before.layout.display_name().encode_utf16().count()
+        if after.layout().entity_id().encode_utf16().count()
+            != before.layout().entity_id().encode_utf16().count()
+            || after.layout().display_name().encode_utf16().count()
+                != before.layout().display_name().encode_utf16().count()
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root strings must retain their UTF-16 lengths: {id}"
@@ -1612,11 +1601,11 @@ pub(crate) fn validate_configuration_edits(
         .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|configuration| (configuration.entry_name.as_str(), configuration))
+        .map(|configuration| (configuration.entry_name().as_str(), configuration))
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -1626,12 +1615,12 @@ pub(crate) fn validate_configuration_edits(
     let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
-        if before.id != after.id || before.kind != after.kind {
+        if before.id() != after.id() || before.kind() != after.kind() {
             return Err(CodecError::NotImplemented(format!(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload || before.variant_order != after.variant_order {
+        if before.payload() != after.payload() || before.variant_order() != after.variant_order() {
             edits.insert(
                 name.to_owned(),
                 crate::design::configurations::encode_configuration_payload(after)?,
@@ -2359,21 +2348,17 @@ pub(crate) fn validate_sketch_point_edits(
     for point in target {
         let before = by_id[point.id.as_str()];
         let mut normalized = point.clone();
-        normalized.coordinates = before.coordinates;
+        normalized
+            .try_set_coordinates(before.coordinates())
+            .map_err(CodecError::Malformed)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-point edit changes fields other than coordinates: {}",
                 point.id
             )));
         }
-        if point.coordinates == before.coordinates {
+        if point.coordinates() == before.coordinates() {
             continue;
-        }
-        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D sketch point {} has non-finite coordinates",
-                point.id
-            )));
         }
         let stream = point
             .id
@@ -2386,7 +2371,7 @@ pub(crate) fn validate_sketch_point_edits(
         edits.entry(stream).or_default().push(SketchPointEdit {
             offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
-            coordinates: point.coordinates,
+            coordinates: point.coordinates(),
         });
     }
     Ok(edits)
@@ -2805,12 +2790,7 @@ pub(crate) fn validate_body_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D body color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D body color {id} must replace an existing opaque finite RGB color"
             )));
@@ -2961,12 +2941,7 @@ pub(crate) fn validate_face_color_edits(
         let color = after.color.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D face color: {id}"))
         })?;
-        if before.color.is_none()
-            || ![color.r, color.g, color.b, color.a]
-                .into_iter()
-                .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-            || color.a != 1.0
-        {
+        if before.color.is_none() || color.a() != 1.0 {
             return Err(CodecError::NotImplemented(format!(
                 "F3D face color {id} must replace an existing opaque finite RGB color"
             )));

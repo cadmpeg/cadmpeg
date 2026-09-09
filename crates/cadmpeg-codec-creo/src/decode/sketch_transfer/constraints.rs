@@ -33,7 +33,7 @@ use crate::decode::sketch_transfer::loci::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
-    NativeOperandField, SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis,
+    NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchDistancePair, SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,14 +44,14 @@ pub(in super::super) fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,
     sketch: &SketchId,
     entity: SketchEntityId,
-) -> Option<SketchConstraintDefinition> {
+) -> Option<SketchConstraintDefinitionInput> {
     let verhor = segment.vertical_horizontal?;
     match (segment.kind, verhor) {
         (crate::feature::FeatureSegmentKind::Line(_), 0) => {
-            Some(SketchConstraintDefinition::Vertical { entity })
+            Some(SketchConstraintDefinitionInput::Vertical { entity })
         }
         (crate::feature::FeatureSegmentKind::Line(_), 1) => {
-            Some(SketchConstraintDefinition::Horizontal { entity })
+            Some(SketchConstraintDefinitionInput::Horizontal { entity })
         }
         _ => Some(native_section_segment_verhor_definition(
             sketch,
@@ -67,8 +67,8 @@ pub(in super::super) fn native_section_segment_verhor_definition(
     entity: SketchEntityId,
     external_id: u32,
     verhor: u32,
-) -> SketchConstraintDefinition {
-    SketchConstraintDefinition::Native {
+) -> SketchConstraintDefinitionInput {
+    SketchConstraintDefinitionInput::Native {
         native_kind: "creo:segtab:verhor".into(),
         native_state: None,
         native_flags: None,
@@ -90,7 +90,7 @@ pub(in super::super) fn native_section_segment_verhor_definition(
 }
 
 pub(in super::super) fn reconcile_constraint_entity_references(
-    definition: &mut SketchConstraintDefinition,
+    definition: &mut SketchConstraintDefinitionInput,
     emitted: &BTreeSet<SketchEntityId>,
 ) -> bool {
     let locus_emitted = |locus: &SketchLocus| match locus {
@@ -100,97 +100,103 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchLocus::Center(entity) => emitted.contains(entity),
     };
     match definition {
-        SketchConstraintDefinition::Native { entities, .. } => {
+        SketchConstraintDefinitionInput::Native { entities, .. } => {
             entities.retain(|entity| emitted.contains(entity));
             true
         }
-        SketchConstraintDefinition::Coincident { entities }
-        | SketchConstraintDefinition::Distance { entities, .. } => {
+        SketchConstraintDefinitionInput::Coincident { entities }
+        | SketchConstraintDefinitionInput::Distance { entities, .. } => {
             entities.iter().all(|entity| emitted.contains(entity))
         }
-        SketchConstraintDefinition::CoincidentLoci { loci } => loci.iter().all(locus_emitted),
-        SketchConstraintDefinition::SameCoordinate { first, second, .. }
-        | SketchConstraintDefinition::TangentLoci { first, second }
-        | SketchConstraintDefinition::DistanceLoci { first, second, .. }
-        | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
-        | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
-        | SketchConstraintDefinition::PolarDistance { first, second, .. }
-        | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+        SketchConstraintDefinitionInput::CoincidentLoci { loci } => loci.iter().all(locus_emitted),
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
+            locus_emitted(relation.first()) && locus_emitted(relation.second())
+        }
+        SketchConstraintDefinitionInput::TangentLoci { first, second }
+        | SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinitionInput::DistanceLociValue { first, second, .. }
+        | SketchConstraintDefinitionInput::MidpointCoordinate { first, second, .. }
+        | SketchConstraintDefinitionInput::PolarDistance { first, second, .. }
+        | SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. }
+        | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
             locus_emitted(first) && locus_emitted(second)
         }
-        SketchConstraintDefinition::EqualDistance { first, second } => {
+        SketchConstraintDefinitionInput::EqualDistance { first, second } => {
             locus_emitted(&first.first)
                 && locus_emitted(&first.second)
                 && locus_emitted(&second.first)
                 && locus_emitted(&second.second)
         }
-        SketchConstraintDefinition::Midpoint { point, entity } => {
+        SketchConstraintDefinitionInput::Midpoint { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
-        SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_emitted(point),
-        SketchConstraintDefinition::AtIntersection {
+        SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
+            locus_emitted(point)
+        }
+        SketchConstraintDefinitionInput::AtIntersection {
             point,
             first,
             second,
         } => locus_emitted(point) && emitted.contains(first) && emitted.contains(second),
-        SketchConstraintDefinition::PointOnObject { point, entity } => {
+        SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
-        SketchConstraintDefinition::Symmetric {
+        SketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
         } => locus_emitted(first) && locus_emitted(second) && emitted.contains(axis),
-        SketchConstraintDefinition::PointSymmetric {
+        SketchConstraintDefinitionInput::PointSymmetric {
             first,
             second,
             center,
         } => locus_emitted(first) && locus_emitted(second) && locus_emitted(center),
-        SketchConstraintDefinition::Concentric { first, second }
-        | SketchConstraintDefinition::Coradial { first, second }
-        | SketchConstraintDefinition::Collinear { first, second }
-        | SketchConstraintDefinition::ProjectedCopy {
+        SketchConstraintDefinitionInput::Concentric { first, second }
+        | SketchConstraintDefinitionInput::Coradial { first, second }
+        | SketchConstraintDefinitionInput::Collinear { first, second }
+        | SketchConstraintDefinitionInput::ProjectedCopy {
             source: first,
             result: second,
         }
-        | SketchConstraintDefinition::Parallel { first, second }
-        | SketchConstraintDefinition::Perpendicular { first, second }
-        | SketchConstraintDefinition::Tangent { first, second }
-        | SketchConstraintDefinition::Equal { first, second }
-        | SketchConstraintDefinition::Angle { first, second, .. } => {
+        | SketchConstraintDefinitionInput::Parallel { first, second }
+        | SketchConstraintDefinitionInput::Perpendicular { first, second }
+        | SketchConstraintDefinitionInput::Tangent { first, second }
+        | SketchConstraintDefinitionInput::Equal { first, second }
+        | SketchConstraintDefinitionInput::Angle { first, second, .. } => {
             emitted.contains(first) && emitted.contains(second)
         }
-        SketchConstraintDefinition::Horizontal { entity }
-        | SketchConstraintDefinition::Vertical { entity }
-        | SketchConstraintDefinition::Fixed { entity }
-        | SketchConstraintDefinition::Radius { entity, .. }
-        | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
-        SketchConstraintDefinition::ArcAngle { entity, .. }
-        | SketchConstraintDefinition::EllipseAngle { entity, .. } => emitted.contains(entity),
-        SketchConstraintDefinition::SnellsLaw {
+        SketchConstraintDefinitionInput::Horizontal { entity }
+        | SketchConstraintDefinitionInput::Vertical { entity }
+        | SketchConstraintDefinitionInput::Fixed { entity }
+        | SketchConstraintDefinitionInput::Radius { entity, .. }
+        | SketchConstraintDefinitionInput::Diameter { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinitionInput::ArcAngle { entity, .. }
+        | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinitionInput::SnellsLaw {
             incident,
             refracted,
             interface,
             ..
         } => locus_emitted(incident) && locus_emitted(refracted) && emitted.contains(interface),
-        SketchConstraintDefinition::Weight { entity, .. } => emitted.contains(entity),
-        SketchConstraintDefinition::InternalAlignment { helper, parent, .. } => {
+        SketchConstraintDefinitionInput::Weight { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinitionInput::InternalAlignment { helper, parent, .. } => {
             emitted.contains(helper) && emitted.contains(parent)
         }
-        SketchConstraintDefinition::Group { elements }
-        | SketchConstraintDefinition::Text { elements, .. } => elements.iter().all(locus_emitted),
-        SketchConstraintDefinition::Disabled => true,
+        SketchConstraintDefinitionInput::Group { elements }
+        | SketchConstraintDefinitionInput::Text { elements, .. } => {
+            elements.iter().all(locus_emitted)
+        }
+        SketchConstraintDefinitionInput::Disabled => true,
         _ => true,
     }
 }
 
 pub(in super::super) fn reconcile_constraint_parameter_reference(
-    definition: &mut SketchConstraintDefinition,
+    definition: &mut SketchConstraintDefinitionInput,
     emitted: &BTreeSet<ParameterId>,
 ) -> bool {
     match definition {
-        SketchConstraintDefinition::Native { parameter, .. } => {
+        SketchConstraintDefinitionInput::Native { parameter, .. } => {
             if parameter
                 .as_ref()
                 .is_some_and(|parameter| !emitted.contains(parameter))
@@ -199,7 +205,7 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
             }
             true
         }
-        SketchConstraintDefinition::PolarDistance {
+        SketchConstraintDefinitionInput::PolarDistance {
             distance_parameter, ..
         } => {
             if distance_parameter
@@ -210,7 +216,7 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
             }
             true
         }
-        SketchConstraintDefinition::DistanceLociValue { parameter, .. } => {
+        SketchConstraintDefinitionInput::DistanceLociValue { parameter, .. } => {
             if parameter
                 .as_ref()
                 .is_some_and(|parameter| !emitted.contains(parameter))
@@ -219,43 +225,45 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
             }
             true
         }
-        SketchConstraintDefinition::Distance { parameter, .. }
-        | SketchConstraintDefinition::DistanceLoci { parameter, .. }
-        | SketchConstraintDefinition::HorizontalDistance { parameter, .. }
-        | SketchConstraintDefinition::VerticalDistance { parameter, .. }
-        | SketchConstraintDefinition::Angle { parameter, .. }
-        | SketchConstraintDefinition::Radius { parameter, .. }
-        | SketchConstraintDefinition::Diameter { parameter, .. } => emitted.contains(parameter),
-        SketchConstraintDefinition::SnellsLaw { parameter, .. }
-        | SketchConstraintDefinition::Weight { parameter, .. } => emitted.contains(parameter),
-        SketchConstraintDefinition::Coincident { .. }
-        | SketchConstraintDefinition::CoincidentLoci { .. }
-        | SketchConstraintDefinition::SameCoordinate { .. }
-        | SketchConstraintDefinition::Midpoint { .. }
-        | SketchConstraintDefinition::PointCoordinateValues { .. }
-        | SketchConstraintDefinition::MidpointCoordinate { .. }
-        | SketchConstraintDefinition::Concentric { .. }
-        | SketchConstraintDefinition::Coradial { .. }
-        | SketchConstraintDefinition::Collinear { .. }
-        | SketchConstraintDefinition::Symmetric { .. }
-        | SketchConstraintDefinition::PointSymmetric { .. }
-        | SketchConstraintDefinition::Horizontal { .. }
-        | SketchConstraintDefinition::Vertical { .. }
-        | SketchConstraintDefinition::Parallel { .. }
-        | SketchConstraintDefinition::Perpendicular { .. }
-        | SketchConstraintDefinition::Tangent { .. }
-        | SketchConstraintDefinition::TangentLoci { .. }
-        | SketchConstraintDefinition::Equal { .. }
-        | SketchConstraintDefinition::EqualDistance { .. }
-        | SketchConstraintDefinition::Fixed { .. } => true,
-        SketchConstraintDefinition::Disabled
-        | SketchConstraintDefinition::PointOnObject { .. }
-        | SketchConstraintDefinition::AtIntersection { .. }
-        | SketchConstraintDefinition::ArcAngle { .. }
-        | SketchConstraintDefinition::EllipseAngle { .. }
-        | SketchConstraintDefinition::InternalAlignment { .. }
-        | SketchConstraintDefinition::Group { .. }
-        | SketchConstraintDefinition::Text { .. } => true,
+        SketchConstraintDefinitionInput::Distance { parameter, .. }
+        | SketchConstraintDefinitionInput::DistanceLoci { parameter, .. }
+        | SketchConstraintDefinitionInput::HorizontalDistance { parameter, .. }
+        | SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
+        | SketchConstraintDefinitionInput::Angle { parameter, .. }
+        | SketchConstraintDefinitionInput::Radius { parameter, .. }
+        | SketchConstraintDefinitionInput::Diameter { parameter, .. } => {
+            emitted.contains(parameter)
+        }
+        SketchConstraintDefinitionInput::SnellsLaw { parameter, .. }
+        | SketchConstraintDefinitionInput::Weight { parameter, .. } => emitted.contains(parameter),
+        SketchConstraintDefinitionInput::Coincident { .. }
+        | SketchConstraintDefinitionInput::CoincidentLoci { .. }
+        | SketchConstraintDefinitionInput::SameCoordinate { .. }
+        | SketchConstraintDefinitionInput::Midpoint { .. }
+        | SketchConstraintDefinitionInput::PointCoordinateValues { .. }
+        | SketchConstraintDefinitionInput::MidpointCoordinate { .. }
+        | SketchConstraintDefinitionInput::Concentric { .. }
+        | SketchConstraintDefinitionInput::Coradial { .. }
+        | SketchConstraintDefinitionInput::Collinear { .. }
+        | SketchConstraintDefinitionInput::Symmetric { .. }
+        | SketchConstraintDefinitionInput::PointSymmetric { .. }
+        | SketchConstraintDefinitionInput::Horizontal { .. }
+        | SketchConstraintDefinitionInput::Vertical { .. }
+        | SketchConstraintDefinitionInput::Parallel { .. }
+        | SketchConstraintDefinitionInput::Perpendicular { .. }
+        | SketchConstraintDefinitionInput::Tangent { .. }
+        | SketchConstraintDefinitionInput::TangentLoci { .. }
+        | SketchConstraintDefinitionInput::Equal { .. }
+        | SketchConstraintDefinitionInput::EqualDistance { .. }
+        | SketchConstraintDefinitionInput::Fixed { .. } => true,
+        SketchConstraintDefinitionInput::Disabled
+        | SketchConstraintDefinitionInput::PointOnObject { .. }
+        | SketchConstraintDefinitionInput::AtIntersection { .. }
+        | SketchConstraintDefinitionInput::ArcAngle { .. }
+        | SketchConstraintDefinitionInput::EllipseAngle { .. }
+        | SketchConstraintDefinitionInput::InternalAlignment { .. }
+        | SketchConstraintDefinitionInput::Group { .. }
+        | SketchConstraintDefinitionInput::Text { .. } => true,
         _ => true,
     }
 }
@@ -268,7 +276,10 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(ir: &mut Ca
         .map(|parameter| parameter.id.clone())
         .collect::<BTreeSet<_>>();
     ir.model.sketch_constraints.retain_mut(|constraint| {
-        reconcile_constraint_parameter_reference(&mut constraint.definition, &emitted)
+        constraint
+            .definition
+            .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
+            .unwrap_or(false)
     });
 }
 
@@ -401,7 +412,7 @@ pub(in super::super) fn relation_incidence_entities(
     incidence
         .items
         .iter()
-        .map(|item| sketch_entity_id(sketch, item.entity_id))
+        .filter_map(|item| sketch_entity_id(sketch, item.entity_id))
         .collect()
 }
 
@@ -416,7 +427,7 @@ pub(in super::super) fn joined_relation_incidence_entities(
     incidence
         .items
         .iter()
-        .map(|item| sketch_entity_id(sketch, item.entity_id))
+        .filter_map(|item| sketch_entity_id(sketch, item.entity_id))
         .collect()
 }
 
@@ -462,8 +473,11 @@ pub(in super::super) fn section_angular_entities(
     let [Some(first), Some(second)] = [first, second] else {
         return None;
     };
-    (first != second)
-        .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
+    (first != second).then_some(())?;
+    Some([
+        sketch_entity_id(sketch, first)?,
+        sketch_entity_id(sketch, second)?,
+    ])
 }
 
 pub(in super::super) fn native_section_segment_radius_definition(
@@ -472,8 +486,8 @@ pub(in super::super) fn native_section_segment_radius_definition(
     external_id: u32,
     field: &str,
     dimension_ordinal: u32,
-) -> SketchConstraintDefinition {
-    SketchConstraintDefinition::Native {
+) -> SketchConstraintDefinitionInput {
+    SketchConstraintDefinitionInput::Native {
         native_kind: format!("creo:segtab:{field}"),
         native_state: None,
         native_flags: None,
@@ -616,8 +630,8 @@ fn section_segment_radius_bindings(
 fn section_segment_radius_constraint(
     binding: SectionSegmentRadiusBinding,
     sketch: &SketchId,
-) -> (SketchConstraint, usize) {
-    let entity = sketch_entity_id(sketch, &binding.suffix);
+) -> Option<(SketchConstraint, usize)> {
+    let entity = sketch_entity_id(sketch, &binding.suffix)?;
     let (definition, kind) = match binding.typed_circle {
         Some((dimension_type, parameter)) if matches!(dimension_type, 3 | 4) => (
             circular_dimension_constraint(entity.clone(), parameter, dimension_type),
@@ -642,11 +656,12 @@ fn section_segment_radius_constraint(
             },
         ),
     };
-    (
+    Some((
         SketchConstraint {
-            id: sketch_constraint_id(sketch, format_args!("{kind}:{}", binding.suffix)),
+            id: sketch_constraint_id(sketch, format_args!("{kind}:{}", binding.suffix))?,
             sketch: sketch.clone(),
-            definition,
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .ok()?,
             name: None,
             driving: None,
             active: None,
@@ -659,7 +674,7 @@ fn section_segment_radius_constraint(
             native_ref: Some(sketch_native_ref(sketch)),
         },
         binding.offset,
-    )
+    ))
 }
 
 pub(in super::super) fn section_segment_radius_constraints(
@@ -668,7 +683,7 @@ pub(in super::super) fn section_segment_radius_constraints(
 ) -> Vec<(SketchConstraint, usize)> {
     section_segment_radius_bindings(definition, sketch)
         .into_iter()
-        .map(|binding| section_segment_radius_constraint(binding, sketch))
+        .filter_map(|binding| section_segment_radius_constraint(binding, sketch))
         .collect()
 }
 
@@ -683,20 +698,25 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
         .into_iter()
         .zip(bindings)
         .filter_map(|((mut constraint, offset), binding)| {
-            reconcile_section_segment_radius_constraint(
-                &mut constraint.definition,
-                sketch,
-                &binding,
-                emitted,
-                available_parameters,
-            )
-            .then_some((constraint, offset))
+            constraint
+                .definition
+                .edit(|kind| {
+                    reconcile_section_segment_radius_constraint(
+                        kind,
+                        sketch,
+                        &binding,
+                        emitted,
+                        available_parameters,
+                    )
+                })
+                .unwrap_or(false)
+                .then_some((constraint, offset))
         })
         .collect()
 }
 
 fn reconcile_section_segment_radius_constraint(
-    constraint_definition: &mut SketchConstraintDefinition,
+    constraint_definition: &mut SketchConstraintDefinitionInput,
     sketch: &SketchId,
     binding: &SectionSegmentRadiusBinding,
     emitted: &BTreeSet<SketchEntityId>,
@@ -708,9 +728,12 @@ fn reconcile_section_segment_radius_constraint(
     if entity_reconciled && parameter_reconciled {
         return true;
     }
+    let Some(entity) = sketch_entity_id(sketch, &binding.suffix) else {
+        return false;
+    };
     *constraint_definition = native_section_segment_radius_definition(
         sketch,
-        sketch_entity_id(sketch, &binding.suffix),
+        entity,
         binding.external_id,
         binding.field.key(),
         binding.ordinal,
@@ -780,35 +803,41 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
                 .into_iter()
                 .flatten()
                 .copied()
-                .map(|external_id| {
-                    let entity = sketch_entity_id(sketch, external_id);
-                    (
-                        SketchConstraint {
-                            id: sketch_constraint_id(
-                                sketch,
-                                format_args!(
-                                    "equation:{}:radius:{}",
-                                    equation.equation_id, external_id
-                                ),
-                            ),
-                            sketch: sketch.clone(),
-                            definition: SketchConstraintDefinition::Radius {
-                                entity,
-                                parameter: parameter.clone(),
+                .filter_map(|external_id| {
+                    Some({
+                        let entity = sketch_entity_id(sketch, external_id)?;
+                        (
+                            SketchConstraint {
+                                id: sketch_constraint_id(
+                                    sketch,
+                                    format_args!(
+                                        "equation:{}:radius:{}",
+                                        equation.equation_id, external_id
+                                    ),
+                                )?,
+                                sketch: sketch.clone(),
+                                definition:
+                                    cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                                        SketchConstraintDefinitionInput::Radius {
+                                            entity,
+                                            parameter: parameter.clone(),
+                                        },
+                                    )
+                                    .ok()?,
+                                name: None,
+                                driving: None,
+                                active: Some(equation.active),
+                                virtual_space: None,
+                                visible: None,
+                                orientation: None,
+                                label_distance: None,
+                                label_position: None,
+                                metadata: None,
+                                native_ref: Some(sketch_native_ref(sketch)),
                             },
-                            name: None,
-                            driving: None,
-                            active: Some(equation.active),
-                            virtual_space: None,
-                            visible: None,
-                            orientation: None,
-                            label_distance: None,
-                            label_position: None,
-                            metadata: None,
-                            native_ref: Some(sketch_native_ref(sketch)),
-                        },
-                        equation.offset,
-                    )
+                            equation.offset,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -841,9 +870,15 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         };
         Some((
             SketchConstraint {
-                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                id: sketch_constraint_id(
+                    sketch,
+                    format_args!("equation:{}", equation.equation_id),
+                )?,
                 sketch: sketch.clone(),
-                definition: SketchConstraintDefinition::EqualDistance { first, second },
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    SketchConstraintDefinitionInput::EqualDistance { first, second },
+                )
+                .ok()?,
                 name: None,
                 driving: None,
                 active: Some(equation.active),
@@ -941,14 +976,17 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     id: sketch_constraint_id(
                         sketch,
                         format_args!("equation:{}", equation.equation_id),
-                    ),
+                    )?,
                     sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::DistanceLociValue {
-                        first,
-                        second,
-                        distance: Length::new(distance)?,
-                        parameter,
-                    },
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        SketchConstraintDefinitionInput::DistanceLociValue {
+                            first,
+                            second,
+                            distance: Length::new(distance)?,
+                            parameter,
+                        },
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(equation.active()),
@@ -996,14 +1034,20 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
         };
         Some((
             SketchConstraint {
-                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                id: sketch_constraint_id(
+                    sketch,
+                    format_args!("equation:{}", equation.equation_id),
+                )?,
                 sketch: sketch.clone(),
-                definition: SketchConstraintDefinition::MidpointCoordinate {
-                    first,
-                    second,
-                    axis,
-                    value: Length::new(value)?,
-                },
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    SketchConstraintDefinitionInput::MidpointCoordinate {
+                        first,
+                        second,
+                        axis,
+                        value: Length::new(value)?,
+                    },
+                )
+                .ok()?,
                 name: None,
                 driving: None,
                 active: Some(equation.active),
@@ -1049,12 +1093,18 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
         let point = section_point_locus(definition, sketch, equation.point)?;
         Some((
             SketchConstraint {
-                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                id: sketch_constraint_id(
+                    sketch,
+                    format_args!("equation:{}", equation.equation_id),
+                )?,
                 sketch: sketch.clone(),
-                definition: SketchConstraintDefinition::PointCoordinateValues {
-                    point,
-                    values: [Length::new(u)?, Length::new(v)?],
-                },
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    SketchConstraintDefinitionInput::PointCoordinateValues {
+                        point,
+                        values: [Length::new(u)?, Length::new(v)?],
+                    },
+                )
+                .ok()?,
                 name: None,
                 driving: None,
                 active: Some(equation.active),
@@ -1079,32 +1129,37 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
     section_equation_function_sixteen_angle_difference_rows(definition)
         .into_iter()
         .filter_map(|equation| {
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    ),
-                    sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::AngleDifference {
-                        first: equation.first.1,
-                        second: equation.second.1,
-                        difference: equation.difference.1,
-                        value: Angle::new(equation.value)?,
+            Some({
+                (
+                    SketchConstraint {
+                        id: sketch_constraint_id(
+                            sketch,
+                            format_args!("equation:{}", equation.equation_id),
+                        )?,
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            SketchConstraintDefinitionInput::AngleDifference {
+                                first: equation.first.1,
+                                second: equation.second.1,
+                                difference: equation.difference.1,
+                                value: Angle::new(equation.value)?,
+                            },
+                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active: Some(equation.active),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
                     },
-                    name: None,
-                    driving: None,
-                    active: Some(equation.active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            ))
+                    equation.offset,
+                )
+            })
         })
         .collect()
 }
@@ -1115,31 +1170,36 @@ pub(in super::super) fn section_equation_function_five_scalar_equality_constrain
 ) -> Vec<(SketchConstraint, usize)> {
     section_equation_function_five_scalar_equality_rows(definition)
         .into_iter()
-        .map(|equation| {
-            (
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:{}", equation.equation_id),
-                    ),
-                    sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::ScalarEquality {
-                        first: equation.first.1,
-                        second: equation.second.1,
+        .filter_map(|equation| {
+            Some({
+                (
+                    SketchConstraint {
+                        id: sketch_constraint_id(
+                            sketch,
+                            format_args!("equation:{}", equation.equation_id),
+                        )?,
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            SketchConstraintDefinitionInput::ScalarEquality {
+                                first: equation.first.1,
+                                second: equation.second.1,
+                            },
+                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active: Some(true),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
                     },
-                    name: None,
-                    driving: None,
-                    active: Some(true),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                equation.offset,
-            )
+                    equation.offset,
+                )
+            })
         })
         .collect()
 }
@@ -1180,15 +1240,18 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     id: sketch_constraint_id(
                         sketch,
                         format_args!("equation:{}", equation.equation_id),
-                    ),
+                    )?,
                     sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::PolarDistance {
-                        first,
-                        second,
-                        distance: Length::new(distance)?,
-                        angle,
-                        distance_parameter,
-                    },
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        SketchConstraintDefinitionInput::PolarDistance {
+                            first,
+                            second,
+                            distance: Length::new(distance)?,
+                            angle,
+                            distance_parameter,
+                        },
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(equation.active),
@@ -1219,108 +1282,114 @@ pub(in super::super) fn section_equation_native_constraints(
         .rows
         .into_iter()
         .filter(|equation| !typed_offsets.contains(&equation.offset))
-        .map(|equation| {
-            let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
-            let native_ref = sketch_native_ref(sketch);
-            let argument_slots = equation
-                .arguments
-                .iter()
-                .enumerate()
-                .map(|(slot, argument)| match argument {
-                    Some(argument) => format!("{slot}:{argument}"),
-                    None => format!("{slot}:null"),
-                })
-                .collect::<Vec<_>>();
-            let null_argument_ordinals = equation
-                .arguments
-                .iter()
-                .enumerate()
-                .filter_map(|(slot, argument)| argument.is_none().then_some(slot.to_string()))
-                .collect::<Vec<_>>();
-            let mut native_properties = BTreeMap::from([
-                ("equation_id".to_string(), equation.equation_id.to_string()),
-                ("function_id".to_string(), equation.function_id.to_string()),
-                ("offset".to_string(), equation.offset.to_string()),
-                ("table_offset".to_string(), table.offset.to_string()),
-                (
-                    "table_declared_count".to_string(),
-                    table.declared_count.to_string(),
-                ),
-                ("active".to_string(), active.to_string()),
-                ("argument_slots".to_string(), argument_slots.join(",")),
-            ]);
-            if let Some(explicit_argument_count) = equation.explicit_argument_count {
-                native_properties.insert(
-                    "explicit_argument_count".to_string(),
-                    explicit_argument_count.to_string(),
-                );
-            }
-            if let Some(entity_ref) = table.entity_ref {
-                native_properties.insert("table_entity_ref".to_string(), entity_ref.to_string());
-            }
-            if !null_argument_ordinals.is_empty() {
-                native_properties.insert(
-                    "null_argument_ordinals".to_string(),
-                    null_argument_ordinals.join(","),
-                );
-            }
-            let mut operands = vec![SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("eqtn_arr")
-                    .expect("source operand kind is nonempty"),
-                field: Some(NativeOperandField {
-                    name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
-                        .expect("source field name is nonempty"),
-                    role: None,
-                }),
-                object_index: equation.equation_id,
-                native_ref: Some(native_ref.clone()),
-            }];
-            operands.extend(equation.arguments.iter().enumerate().filter_map(
-                |(slot, argument)| {
-                    argument.map(|object_index| SketchNativeOperand {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("var_arr")
-                            .expect("source operand kind is nonempty"),
-                        field: Some(NativeOperandField {
-                            name: cadmpeg_ir::products::NonEmptyString::new(format!(
-                                "arguments[{slot}]"
-                            ))
-                            .expect("source field name is nonempty"),
-                            role: None,
-                        }),
-                        object_index,
-                        native_ref: Some(native_ref.clone()),
+        .filter_map(|equation| {
+            Some({
+                let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+                let native_ref = sketch_native_ref(sketch);
+                let argument_slots = equation
+                    .arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, argument)| match argument {
+                        Some(argument) => format!("{slot}:{argument}"),
+                        None => format!("{slot}:null"),
                     })
-                },
-            ));
-            (
-                SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("equation:offset:{}", equation.offset),
+                    .collect::<Vec<_>>();
+                let null_argument_ordinals = equation
+                    .arguments
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(slot, argument)| argument.is_none().then_some(slot.to_string()))
+                    .collect::<Vec<_>>();
+                let mut native_properties = BTreeMap::from([
+                    ("equation_id".to_string(), equation.equation_id.to_string()),
+                    ("function_id".to_string(), equation.function_id.to_string()),
+                    ("offset".to_string(), equation.offset.to_string()),
+                    ("table_offset".to_string(), table.offset.to_string()),
+                    (
+                        "table_declared_count".to_string(),
+                        table.declared_count.to_string(),
                     ),
-                    sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::Native {
-                        native_kind: format!("creo:equation:{}", equation.function_id),
-                        native_state: Some(u64::from(active)),
-                        native_flags: None,
-                        native_properties,
-                        entities: Vec::new(),
-                        parameter: None,
-                        operands,
+                    ("active".to_string(), active.to_string()),
+                    ("argument_slots".to_string(), argument_slots.join(",")),
+                ]);
+                if let Some(explicit_argument_count) = equation.explicit_argument_count {
+                    native_properties.insert(
+                        "explicit_argument_count".to_string(),
+                        explicit_argument_count.to_string(),
+                    );
+                }
+                if let Some(entity_ref) = table.entity_ref {
+                    native_properties
+                        .insert("table_entity_ref".to_string(), entity_ref.to_string());
+                }
+                if !null_argument_ordinals.is_empty() {
+                    native_properties.insert(
+                        "null_argument_ordinals".to_string(),
+                        null_argument_ordinals.join(","),
+                    );
+                }
+                let mut operands = vec![SketchNativeOperand {
+                    native_kind: cadmpeg_ir::products::NonEmptyString::new("eqtn_arr")
+                        .expect("source operand kind is nonempty"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                            .expect("source field name is nonempty"),
+                        role: None,
+                    }),
+                    object_index: equation.equation_id,
+                    native_ref: Some(native_ref.clone()),
+                }];
+                operands.extend(equation.arguments.iter().enumerate().filter_map(
+                    |(slot, argument)| {
+                        argument.map(|object_index| SketchNativeOperand {
+                            native_kind: cadmpeg_ir::products::NonEmptyString::new("var_arr")
+                                .expect("source operand kind is nonempty"),
+                            field: Some(NativeOperandField {
+                                name: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                    "arguments[{slot}]"
+                                ))
+                                .expect("source field name is nonempty"),
+                                role: None,
+                            }),
+                            object_index,
+                            native_ref: Some(native_ref.clone()),
+                        })
                     },
-                    name: None,
-                    driving: None,
-                    active: Some(active),
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(native_ref),
-                },
-                equation.offset,
-            )
+                ));
+                (
+                    SketchConstraint {
+                        id: sketch_constraint_id(
+                            sketch,
+                            format_args!("equation:offset:{}", equation.offset),
+                        )?,
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            SketchConstraintDefinitionInput::Native {
+                                native_kind: format!("creo:equation:{}", equation.function_id),
+                                native_state: Some(u64::from(active)),
+                                native_flags: None,
+                                native_properties,
+                                entities: Vec::new(),
+                                parameter: None,
+                                operands,
+                            },
+                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active: Some(active),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(native_ref),
+                    },
+                    equation.offset,
+                )
+            })
         })
         .collect()
 }
@@ -1353,13 +1422,17 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
                     id: sketch_constraint_id(
                         sketch,
                         format_args!("equation:{}", equation.equation_id),
-                    ),
+                    )?,
                     sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis,
-                    },
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        SketchConstraintDefinitionInput::SameCoordinate {
+                            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                first, second, axis,
+                            )
+                            .ok()?,
+                        },
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(equation.active),
@@ -1431,15 +1504,18 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
             let [line_external_id] = matching_line_ids.as_slice() else {
                 return None;
             };
-            let entity = sketch_entity_id(sketch, *line_external_id);
+            let entity = sketch_entity_id(sketch, *line_external_id)?;
             Some((
                 SketchConstraint {
                     id: sketch_constraint_id(
                         sketch,
                         format_args!("equation:{}", equation.equation_id),
-                    ),
+                    )?,
                     sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::PointOnObject { point, entity },
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        SketchConstraintDefinitionInput::PointOnObject { point, entity },
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(equation.active),
@@ -1493,12 +1569,12 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
             return None;
         }
         let definition = match equation.coordinate {
-            SectionAxis::U => SketchConstraintDefinition::HorizontalDistance {
+            SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
                 first,
                 second,
                 parameter,
             },
-            SectionAxis::V => SketchConstraintDefinition::VerticalDistance {
+            SectionAxis::V => SketchConstraintDefinitionInput::VerticalDistance {
                 first,
                 second,
                 parameter,
@@ -1506,9 +1582,13 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         };
         Some((
             SketchConstraint {
-                id: sketch_constraint_id(sketch, format_args!("equation:{}", equation.equation_id)),
+                id: sketch_constraint_id(
+                    sketch,
+                    format_args!("equation:{}", equation.equation_id),
+                )?,
                 sketch: sketch.clone(),
-                definition,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                    .ok()?,
                 name: None,
                 driving: None,
                 active: Some(equation.active),
@@ -1551,12 +1631,12 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
             )?
             .1;
             let definition = match equation.coordinate {
-                SectionAxis::U => SketchConstraintDefinition::HorizontalDistance {
+                SectionAxis::U => SketchConstraintDefinitionInput::HorizontalDistance {
                     first,
                     second,
                     parameter,
                 },
-                SectionAxis::V => SketchConstraintDefinition::VerticalDistance {
+                SectionAxis::V => SketchConstraintDefinitionInput::VerticalDistance {
                     first,
                     second,
                     parameter,
@@ -1567,9 +1647,12 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                     id: sketch_constraint_id(
                         sketch,
                         format_args!("equation:{}", equation.equation_id),
-                    ),
+                    )?,
                     sketch: sketch.clone(),
-                    definition,
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                        definition,
+                    )
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(equation.active),
@@ -1591,11 +1674,11 @@ pub(in super::super) fn circular_dimension_constraint(
     entity: SketchEntityId,
     parameter: ParameterId,
     dimension_type: u32,
-) -> SketchConstraintDefinition {
+) -> SketchConstraintDefinitionInput {
     if dimension_type == 4 {
-        SketchConstraintDefinition::Diameter { entity, parameter }
+        SketchConstraintDefinitionInput::Diameter { entity, parameter }
     } else {
-        SketchConstraintDefinition::Radius { entity, parameter }
+        SketchConstraintDefinitionInput::Radius { entity, parameter }
     }
 }
 
@@ -1603,9 +1686,9 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     relation: &crate::feature::FeatureRelation,
-) -> SketchConstraintDefinition {
+) -> SketchConstraintDefinitionInput {
     let Some(relations) = definition.relations.as_ref() else {
-        return SketchConstraintDefinition::Native {
+        return SketchConstraintDefinitionInput::Native {
             native_kind: format!("creo:relation:{}", relation.relation_type),
             native_state: Some(u64::from(relation.used)),
             native_flags: None,
@@ -1713,7 +1796,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
             }));
         }
     }
-    SketchConstraintDefinition::Native {
+    SketchConstraintDefinitionInput::Native {
         native_kind: format!("creo:relation:{}", relation.relation_type),
         native_state: Some(u64::from(relation.used)),
         native_flags: None,
@@ -1725,7 +1808,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
 }
 
 pub(in super::super) fn reconcile_section_dimension_constraint(
-    constraint_definition: &mut SketchConstraintDefinition,
+    constraint_definition: &mut SketchConstraintDefinitionInput,
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     relation: &crate::feature::FeatureRelation,
@@ -1766,293 +1849,299 @@ pub(in super::super) fn section_dimension_constraints(
     relations
         .rows
         .iter()
-        .map(|relation| {
-            let unique_relation_id = feature_relation_table_complete(relations)
-                && relations
-                    .rows
-                    .iter()
-                    .filter(|candidate| candidate.relation_id == relation.relation_id)
-                    .count()
-                    == 1;
-            let dimension = definition.dimensions.as_ref().and_then(|dimensions| {
-                resolved_feature_dimension_parameter(
-                    sketch,
-                    dimensions,
-                    usize::try_from(relation.dimension_id).ok()?,
-                )
-            });
-            let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
-            let joined_incidence_link = unique_relation_id
-                .then(|| joined_relation_incidence_link(definition, relation.relation_id))
-                .flatten();
-            let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
-            let typed = (|| {
-                unique_relation_id.then_some(())?;
-                let (dimension, _) = dimension.as_ref()?;
-                let parameter = parameter.clone()?;
-                if relation.relation_type == 1
-                    && dimension.unit() == crate::feature::DimensionUnit::Radians
-                {
-                    let [first, second] = section_angular_entities(
-                        definition,
-                        sketch,
-                        &segments,
-                        relation.operand_vectors?,
-                        &known_entities,
-                    )?;
-                    return Some(SketchConstraintDefinition::Angle {
-                        first,
-                        second,
-                        parameter,
-                    });
-                }
-                if relation.relation_type == 0
-                    && matches!(relation.sign, 0 | 1 | 0xf6)
-                    && dimension.unit() == crate::feature::DimensionUnit::SchemaDefined
-                    && dimension.value.resolved() == Some(0.0)
-                {
-                    let vectors = relation.operand_vectors?;
-                    if section_linear_distance_vectors(vectors) {
-                        let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
-                            return None;
-                        };
-                        let incidence = joined_incidence?;
-                        let [item] = incidence.items.as_slice() else {
-                            return None;
-                        };
-                        if !section_skamp_active(incidence.status) {
-                            return None;
-                        }
-                        let expected_coordinate = match incidence.kind {
-                            1 => 1,
-                            2 => 0,
-                            _ => return None,
-                        };
-                        if item.sense != 0 {
-                            return None;
-                        }
-                        let measured = unique_decoded_section_segment(definition, item.entity_id)?;
-                        if matches!(measured.kind, crate::feature::FeatureSegmentKind::Line(_))
-                            && (measured.point_ids() == [first_id, second_id]
-                                || measured.point_ids() == [second_id, first_id])
-                            && measured.vertical_horizontal == Some(expected_coordinate)
-                            && known_entities.contains(&measured.external_id)
-                        {
-                            let entity = sketch_entity_id(sketch, measured.external_id);
-                            return Some(if incidence.kind == 1 {
-                                SketchConstraintDefinition::Horizontal { entity }
-                            } else {
-                                SketchConstraintDefinition::Vertical { entity }
-                            });
-                        }
-                    }
-                }
-                if dimension.unit() != crate::feature::DimensionUnit::Millimeters {
-                    return None;
-                }
-                if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
-                    let segment = section_radius_relation_arc(definition, relation)?;
-                    return Some(circular_dimension_constraint(
-                        sketch_entity_id(sketch, segment.external_id),
-                        parameter,
-                        dimension.dimension_type,
-                    ));
-                }
-                if relation.relation_type == 14
-                    && relation.sign == 1
-                    && matches!(dimension.dimension_type, 1..=5)
-                    && relation.operand_vectors?[1] == [Some(0); 4]
-                    && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
-                {
-                    let vectors = relation.operand_vectors?;
-                    let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
-                        return None;
-                    };
-                    let matching = segments
+        .filter_map(|relation| {
+            Some({
+                let unique_relation_id = feature_relation_table_complete(relations)
+                    && relations
+                        .rows
                         .iter()
-                        .filter(|segment| {
-                            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-                        })
-                        .map(|segment| (segment.external_id, segment.radius_ref))
-                        .chain(
-                            definition
-                                .segments
-                                .iter()
-                                .flat_map(|table| table.rows.circles())
-                                .map(|segment| (segment.external_id, Some(segment.radius_ref))),
-                        )
-                        .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
-                        .collect::<Vec<_>>();
-                    let [(external_id, _)] = matching.as_slice() else {
-                        return None;
-                    };
-                    known_entities.contains(external_id).then_some(())?;
-                    return Some(circular_dimension_constraint(
-                        sketch_entity_id(sketch, *external_id),
-                        parameter,
-                        dimension.dimension_type,
-                    ));
-                }
-                if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
-                    return None;
-                }
-                if let Some(vectors) = relation.operand_vectors {
-                    if section_linear_distance_vectors(vectors) {
-                        if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
-                            let coordinate = section_linear_distance_coordinate(
-                                definition,
-                                &segments,
-                                first_id,
-                                second_id,
-                                &resolved_coordinates,
-                                &saved_coordinate_witnesses,
-                                &ambiguous_point_ids,
-                            );
-                            let matching = segments
-                                .iter()
-                                .filter(|segment| {
-                                    segment.point_ids() == [first_id, second_id]
-                                        || segment.point_ids() == [second_id, first_id]
-                                })
-                                .collect::<Vec<_>>();
-                            if let [measured] = matching.as_slice() {
-                                if matches!(
-                                    measured.kind,
-                                    crate::feature::FeatureSegmentKind::Line(_)
-                                ) && known_entities.contains(&measured.external_id)
-                                {
-                                    let entity = sketch_entity_id(sketch, measured.external_id);
-                                    let [first, second] =
-                                        if measured.point_ids() == [first_id, second_id] {
-                                            [
-                                                SketchLocus::Start(entity.clone()),
-                                                SketchLocus::End(entity),
-                                            ]
-                                        } else {
-                                            [
-                                                SketchLocus::End(entity.clone()),
-                                                SketchLocus::Start(entity),
-                                            ]
-                                        };
-                                    if let Some(coordinate) = coordinate {
-                                        return Some(match coordinate {
-                                            SectionAxis::U => {
-                                                SketchConstraintDefinition::HorizontalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                }
-                                            }
-                                            SectionAxis::V => {
-                                                SketchConstraintDefinition::VerticalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
+                        .filter(|candidate| candidate.relation_id == relation.relation_id)
+                        .count()
+                        == 1;
+                let dimension = definition.dimensions.as_ref().and_then(|dimensions| {
+                    resolved_feature_dimension_parameter(
+                        sketch,
+                        dimensions,
+                        usize::try_from(relation.dimension_id).ok()?,
+                    )
+                });
+                let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
+                let joined_incidence_link = unique_relation_id
+                    .then(|| joined_relation_incidence_link(definition, relation.relation_id))
+                    .flatten();
+                let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
+                let typed = (|| {
+                    unique_relation_id.then_some(())?;
+                    let (dimension, _) = dimension.as_ref()?;
+                    let parameter = parameter.clone()?;
+                    if relation.relation_type == 1
+                        && dimension.unit() == crate::feature::DimensionUnit::Radians
+                    {
+                        let [first, second] = section_angular_entities(
+                            definition,
+                            sketch,
+                            &segments,
+                            relation.operand_vectors?,
+                            &known_entities,
+                        )?;
+                        return Some(SketchConstraintDefinitionInput::Angle {
+                            first,
+                            second,
+                            parameter,
+                        });
+                    }
+                    if relation.relation_type == 0
+                        && matches!(relation.sign, 0 | 1 | 0xf6)
+                        && dimension.unit() == crate::feature::DimensionUnit::SchemaDefined
+                        && dimension.value.resolved() == Some(0.0)
+                    {
+                        let vectors = relation.operand_vectors?;
+                        if section_linear_distance_vectors(vectors) {
+                            let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
+                                return None;
+                            };
+                            let incidence = joined_incidence?;
+                            let [item] = incidence.items.as_slice() else {
+                                return None;
+                            };
+                            if !section_skamp_active(incidence.status) {
+                                return None;
                             }
-                            if let (Some(coordinate), Some(first), Some(second)) = (
-                                coordinate,
-                                section_point_locus(definition, sketch, first_id),
-                                section_point_locus(definition, sketch, second_id),
-                            ) {
-                                return Some(match coordinate {
-                                    SectionAxis::U => {
-                                        SketchConstraintDefinition::HorizontalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    }
-                                    SectionAxis::V => {
-                                        SketchConstraintDefinition::VerticalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    }
+                            let expected_coordinate = match incidence.kind {
+                                1 => 1,
+                                2 => 0,
+                                _ => return None,
+                            };
+                            if item.sense != 0 {
+                                return None;
+                            }
+                            let measured =
+                                unique_decoded_section_segment(definition, item.entity_id)?;
+                            if matches!(measured.kind, crate::feature::FeatureSegmentKind::Line(_))
+                                && (measured.point_ids() == [first_id, second_id]
+                                    || measured.point_ids() == [second_id, first_id])
+                                && measured.vertical_horizontal == Some(expected_coordinate)
+                                && known_entities.contains(&measured.external_id)
+                            {
+                                let entity = sketch_entity_id(sketch, measured.external_id)?;
+                                return Some(if incidence.kind == 1 {
+                                    SketchConstraintDefinitionInput::Horizontal { entity }
+                                } else {
+                                    SketchConstraintDefinitionInput::Vertical { entity }
                                 });
                             }
                         }
                     }
-                }
-                if let Some([first, second]) =
-                    relation_incidence_loci(definition, sketch, relation.relation_id)
-                {
-                    return Some(SketchConstraintDefinition::DistanceLoci {
-                        first,
-                        second,
-                        parameter,
-                    });
-                }
-                if let Some(incidence) =
-                    joined_incidence.filter(|incidence| !section_skamp_active(incidence.status))
-                {
-                    if let [first, second] = incidence.items.as_slice() {
-                        if let (Some(first), Some(second)) = (
-                            section_skamp_locus(definition, sketch, first),
-                            section_skamp_locus(definition, sketch, second),
-                        ) {
-                            return Some(SketchConstraintDefinition::DistanceLoci {
-                                first,
-                                second,
+                    if dimension.unit() != crate::feature::DimensionUnit::Millimeters {
+                        return None;
+                    }
+                    if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
+                        let segment = section_radius_relation_arc(definition, relation)?;
+                        return Some(circular_dimension_constraint(
+                            sketch_entity_id(sketch, segment.external_id)?,
+                            parameter,
+                            dimension.dimension_type,
+                        ));
+                    }
+                    if relation.relation_type == 14
+                        && relation.sign == 1
+                        && matches!(dimension.dimension_type, 1..=5)
+                        && relation.operand_vectors?[1] == [Some(0); 4]
+                        && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
+                    {
+                        let vectors = relation.operand_vectors?;
+                        let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
+                            return None;
+                        };
+                        let matching = segments
+                            .iter()
+                            .filter(|segment| {
+                                matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
+                            })
+                            .map(|segment| (segment.external_id, segment.radius_ref))
+                            .chain(
+                                definition
+                                    .segments
+                                    .iter()
+                                    .flat_map(|table| table.rows.circles())
+                                    .map(|segment| (segment.external_id, Some(segment.radius_ref))),
+                            )
+                            .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
+                            .collect::<Vec<_>>();
+                        let [(external_id, _)] = matching.as_slice() else {
+                            return None;
+                        };
+                        known_entities.contains(external_id).then_some(())?;
+                        return Some(circular_dimension_constraint(
+                            sketch_entity_id(sketch, *external_id)?,
+                            parameter,
+                            dimension.dimension_type,
+                        ));
+                    }
+                    if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
+                        return None;
+                    }
+                    if let Some(vectors) = relation.operand_vectors {
+                        if section_linear_distance_vectors(vectors) {
+                            if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
+                                let coordinate = section_linear_distance_coordinate(
+                                    definition,
+                                    &segments,
+                                    first_id,
+                                    second_id,
+                                    &resolved_coordinates,
+                                    &saved_coordinate_witnesses,
+                                    &ambiguous_point_ids,
+                                );
+                                let matching = segments
+                                    .iter()
+                                    .filter(|segment| {
+                                        segment.point_ids() == [first_id, second_id]
+                                            || segment.point_ids() == [second_id, first_id]
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let [measured] = matching.as_slice() {
+                                    if matches!(
+                                        measured.kind,
+                                        crate::feature::FeatureSegmentKind::Line(_)
+                                    ) && known_entities.contains(&measured.external_id)
+                                    {
+                                        let entity =
+                                            sketch_entity_id(sketch, measured.external_id)?;
+                                        let [first, second] =
+                                            if measured.point_ids() == [first_id, second_id] {
+                                                [
+                                                    SketchLocus::Start(entity.clone()),
+                                                    SketchLocus::End(entity),
+                                                ]
+                                            } else {
+                                                [
+                                                    SketchLocus::End(entity.clone()),
+                                                    SketchLocus::Start(entity),
+                                                ]
+                                            };
+                                        if let Some(coordinate) = coordinate {
+                                            return Some(match coordinate {
+                                                SectionAxis::U => {
+                                                    SketchConstraintDefinitionInput::HorizontalDistance {
+                                                        first,
+                                                        second,
+                                                        parameter,
+                                                    }
+                                                }
+                                                SectionAxis::V => {
+                                                    SketchConstraintDefinitionInput::VerticalDistance {
+                                                        first,
+                                                        second,
+                                                        parameter,
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                                if let (Some(coordinate), Some(first), Some(second)) = (
+                                    coordinate,
+                                    section_point_locus(definition, sketch, first_id),
+                                    section_point_locus(definition, sketch, second_id),
+                                ) {
+                                    return Some(match coordinate {
+                                        SectionAxis::U => {
+                                            SketchConstraintDefinitionInput::HorizontalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            }
+                                        }
+                                        SectionAxis::V => SketchConstraintDefinitionInput::VerticalDistance {
+                                            first,
+                                            second,
+                                            parameter,
+                                        },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    if let Some([first, second]) =
+                        relation_incidence_loci(definition, sketch, relation.relation_id)
+                    {
+                        return Some(SketchConstraintDefinitionInput::DistanceLoci {
+                            first,
+                            second,
+                            parameter,
+                        });
+                    }
+                    if let Some(incidence) =
+                        joined_incidence.filter(|incidence| !section_skamp_active(incidence.status))
+                    {
+                        if let [first, second] = incidence.items.as_slice() {
+                            if let (Some(first), Some(second)) = (
+                                section_skamp_locus(definition, sketch, first),
+                                section_skamp_locus(definition, sketch, second),
+                            ) {
+                                return Some(SketchConstraintDefinitionInput::DistanceLoci {
+                                    first,
+                                    second,
+                                    parameter,
+                                });
+                            }
+                        }
+                        if !incidence.items.is_empty() {
+                            return Some(SketchConstraintDefinitionInput::Distance {
+                                entities: incidence
+                                    .items
+                                    .iter()
+                                    .filter_map(|item| sketch_entity_id(sketch, item.entity_id))
+                                    .collect(),
                                 parameter,
                             });
                         }
                     }
-                    if !incidence.items.is_empty() {
-                        return Some(SketchConstraintDefinition::Distance {
-                            entities: incidence
-                                .items
-                                .iter()
-                                .map(|item| sketch_entity_id(sketch, item.entity_id))
-                                .collect(),
-                            parameter,
-                        });
-                    }
-                }
-                let entities =
-                    relation_incidence_entities(definition, sketch, relation.relation_id);
-                (!entities.is_empty()).then_some(SketchConstraintDefinition::Distance {
-                    entities,
-                    parameter,
-                })
-            })();
-            let active = joined_incidence.map(|incidence| section_skamp_active(incidence.status));
-            let constraint_definition = typed.unwrap_or_else(|| {
-                native_section_dimension_constraint_definition(definition, sketch, relation)
-            });
-            (
-                SketchConstraint {
-                    id: if unique_relation_id {
-                        sketch_constraint_id(
-                            sketch,
-                            format_args!("relation:{}", relation.relation_id),
+                    let entities =
+                        relation_incidence_entities(definition, sketch, relation.relation_id);
+                    (!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
+                        entities,
+                        parameter,
+                    })
+                })();
+                let active =
+                    joined_incidence.map(|incidence| section_skamp_active(incidence.status));
+                let constraint_definition = typed.unwrap_or_else(|| {
+                    native_section_dimension_constraint_definition(definition, sketch, relation)
+                });
+                (
+                    SketchConstraint {
+                        id: if unique_relation_id {
+                            sketch_constraint_id(
+                                sketch,
+                                format_args!("relation:{}", relation.relation_id),
+                            )?
+                        } else {
+                            sketch_constraint_id(
+                                sketch,
+                                format_args!("relation:offset:{}", relation.offset),
+                            )?
+                        },
+                        sketch: sketch.clone(),
+                        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            constraint_definition,
                         )
-                    } else {
-                        sketch_constraint_id(
-                            sketch,
-                            format_args!("relation:offset:{}", relation.offset),
-                        )
+                        .ok()?,
+                        name: None,
+                        driving: None,
+                        active,
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
                     },
-                    sketch: sketch.clone(),
-                    definition: constraint_definition,
-                    name: None,
-                    driving: None,
-                    active,
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                relation.offset,
-            )
+                    relation.offset,
+                )
+            })
         })
         .collect()
 }
@@ -2074,7 +2163,7 @@ mod tests {
         section_equation_function_sixteen_angle_difference_constraints,
     };
     use cadmpeg_ir::features::ParameterId;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchId};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
 
     #[test]
@@ -2131,19 +2220,20 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("synthetic:test:angle-difference".into());
+        let sketch =
+            SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
         let constraints =
             section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].1, 28);
         assert_eq!(constraints[0].0.active, Some(true));
         assert_eq!(
-            constraints[0].0.definition,
-            SketchConstraintDefinition::AngleDifference {
+            *(constraints[0].0.definition).kind(),
+            SketchConstraintDefinitionInput::AngleDifference {
                 first: 10,
                 second: 11,
                 difference: 20,
-                value: cadmpeg_ir::features::Angle::new(1.5).unwrap(),
+                value: cadmpeg_ir::features::Angle::new(1.5).expect("finite angle fixture"),
             }
         );
     }
@@ -2201,14 +2291,15 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("synthetic:test:scalar-equality".into());
+        let sketch =
+            SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
         let constraints =
             section_equation_function_five_scalar_equality_constraints(&definition, &sketch);
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].0.active, Some(true));
         assert_eq!(
-            constraints[0].0.definition,
-            SketchConstraintDefinition::ScalarEquality {
+            *(constraints[0].0.definition).kind(),
+            SketchConstraintDefinitionInput::ScalarEquality {
                 first: 10,
                 second: 11,
             }
@@ -2262,11 +2353,13 @@ mod tests {
             saved_section: None,
             offset: 0,
         };
-        let sketch = SketchId("synthetic:test:dimension-relation".into());
-        let missing = SketchEntityId("synthetic:test:dimension-relation#missing".into());
-        let mut constraint = SketchConstraintDefinition::Distance {
+        let sketch = SketchId::mint("synthetic:test:id#synthetic:test:dimension-relation")
+            .expect("valid test fixture");
+        let missing = SketchEntityId::mint("synthetic:test:dimension-relation#missing")
+            .expect("valid test fixture");
+        let mut constraint = SketchConstraintDefinitionInput::Distance {
             entities: vec![missing],
-            parameter: ParameterId::mint("synthetic:test:dimension-parameter")
+            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
                 .expect("identity grammar"),
         };
 
@@ -2280,17 +2373,18 @@ mod tests {
         ));
         assert!(matches!(
             constraint,
-            SketchConstraintDefinition::Native {
+            SketchConstraintDefinitionInput::Native {
                 native_kind,
                 entities,
                 ..
             } if native_kind == "creo:relation:0" && entities.is_empty()
         ));
 
-        let emitted_entity = SketchEntityId("synthetic:test:dimension-relation#emitted".into());
-        let mut missing_parameter = SketchConstraintDefinition::Distance {
+        let emitted_entity = SketchEntityId::mint("synthetic:test:dimension-relation#emitted")
+            .expect("valid test fixture");
+        let mut missing_parameter = SketchConstraintDefinitionInput::Distance {
             entities: vec![emitted_entity.clone()],
-            parameter: ParameterId::mint("synthetic:test:dimension-parameter")
+            parameter: ParameterId::mint("synthetic:test:id#synthetic:test:dimension-parameter")
                 .expect("identity grammar"),
         };
         assert!(reconcile_section_dimension_constraint(
@@ -2303,7 +2397,7 @@ mod tests {
         ));
         assert!(matches!(
             missing_parameter,
-            SketchConstraintDefinition::Native {
+            SketchConstraintDefinitionInput::Native {
                 native_kind,
                 ..
             } if native_kind == "creo:relation:0"

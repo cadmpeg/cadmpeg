@@ -9,6 +9,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::num::NonZeroUsize;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
@@ -36,7 +37,28 @@ enum CompressedField {
 }
 
 impl CompressedField {
-    fn number(self) -> usize {
+    const fn slot(self) -> usize {
+        match self {
+            Self::EntityType => 0,
+            Self::Structure => 1,
+            Self::LineFont => 2,
+            Self::Level => 3,
+            Self::View => 4,
+            Self::Transform => 5,
+            Self::LabelDisplay => 6,
+            Self::Status => 7,
+            Self::LineWeight => 8,
+            Self::Color => 9,
+            Self::ParameterLineCount => 10,
+            Self::Form => 11,
+            Self::ReservedFirst => 12,
+            Self::ReservedSecond => 13,
+            Self::Label => 14,
+            Self::Subscript => 15,
+        }
+    }
+
+    const fn number(self) -> usize {
         match self {
             Self::EntityType => 1,
             Self::Structure => 3,
@@ -63,7 +85,7 @@ struct DirectoryFields([Vec<u8>; 16]);
 
 impl DirectoryFields {
     fn get(&self, field: CompressedField) -> &[u8] {
-        &self.0[field as usize]
+        &self.0[field.slot()]
     }
 }
 
@@ -82,19 +104,15 @@ struct ParsedDirectoryRecord {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ParameterLexState {
-    at_field_start: bool,
-    hollerith_remaining: usize,
-    count_start: Option<usize>,
+enum ParameterLexState {
+    FieldStart { digits: Option<usize> },
+    InField,
+    Hollerith { remaining: NonZeroUsize },
 }
 
 impl Default for ParameterLexState {
     fn default() -> Self {
-        Self {
-            at_field_start: true,
-            hollerith_remaining: 0,
-            count_start: None,
-        }
+        Self::FieldStart { digits: None }
     }
 }
 
@@ -383,13 +401,13 @@ fn apply_field_specs(
     if let Some(previous) = previous {
         let mut fields = previous.clone();
         for (field, value) in specs {
-            fields.0[field as usize] = value;
+            fields.0[field.slot()] = value;
         }
         return Ok(fields);
     }
     let mut fields: [Option<Vec<u8>>; 16] = std::array::from_fn(|_| None);
     for (field, value) in specs {
-        fields[field as usize] = Some(value);
+        fields[field.slot()] = Some(value);
     }
     let [Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7), Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15)] =
         fields
@@ -488,26 +506,71 @@ fn append_directory_cards(
 ) -> Result<(), CodecError> {
     let entity_type = entity.fields.get(CompressedField::EntityType);
     let first_fields = [
-        fixed_field(1, entity_type)?,
+        fixed_field(CompressedField::EntityType.number(), entity_type)?,
         fixed_number(i64::from(parameter_start))?,
-        fixed_field(3, entity.fields.get(CompressedField::Structure))?,
-        fixed_field(4, entity.fields.get(CompressedField::LineFont))?,
-        fixed_field(5, entity.fields.get(CompressedField::Level))?,
-        fixed_field(6, entity.fields.get(CompressedField::View))?,
-        fixed_field(7, entity.fields.get(CompressedField::Transform))?,
-        fixed_field(8, entity.fields.get(CompressedField::LabelDisplay))?,
-        fixed_field(9, entity.fields.get(CompressedField::Status))?,
+        fixed_field(
+            CompressedField::Structure.number(),
+            entity.fields.get(CompressedField::Structure),
+        )?,
+        fixed_field(
+            CompressedField::LineFont.number(),
+            entity.fields.get(CompressedField::LineFont),
+        )?,
+        fixed_field(
+            CompressedField::Level.number(),
+            entity.fields.get(CompressedField::Level),
+        )?,
+        fixed_field(
+            CompressedField::View.number(),
+            entity.fields.get(CompressedField::View),
+        )?,
+        fixed_field(
+            CompressedField::Transform.number(),
+            entity.fields.get(CompressedField::Transform),
+        )?,
+        fixed_field(
+            CompressedField::LabelDisplay.number(),
+            entity.fields.get(CompressedField::LabelDisplay),
+        )?,
+        fixed_field(
+            CompressedField::Status.number(),
+            entity.fields.get(CompressedField::Status),
+        )?,
     ];
     let second_fields = [
         fixed_field(11, entity_type)?,
-        fixed_field(12, entity.fields.get(CompressedField::LineWeight))?,
-        fixed_field(13, entity.fields.get(CompressedField::Color))?,
-        fixed_field(14, entity.fields.get(CompressedField::ParameterLineCount))?,
-        fixed_field(15, entity.fields.get(CompressedField::Form))?,
-        fixed_field(16, entity.fields.get(CompressedField::ReservedFirst))?,
-        fixed_field(17, entity.fields.get(CompressedField::ReservedSecond))?,
-        fixed_field(18, entity.fields.get(CompressedField::Label))?,
-        fixed_field(19, entity.fields.get(CompressedField::Subscript))?,
+        fixed_field(
+            CompressedField::LineWeight.number(),
+            entity.fields.get(CompressedField::LineWeight),
+        )?,
+        fixed_field(
+            CompressedField::Color.number(),
+            entity.fields.get(CompressedField::Color),
+        )?,
+        fixed_field(
+            CompressedField::ParameterLineCount.number(),
+            entity.fields.get(CompressedField::ParameterLineCount),
+        )?,
+        fixed_field(
+            CompressedField::Form.number(),
+            entity.fields.get(CompressedField::Form),
+        )?,
+        fixed_field(
+            CompressedField::ReservedFirst.number(),
+            entity.fields.get(CompressedField::ReservedFirst),
+        )?,
+        fixed_field(
+            CompressedField::ReservedSecond.number(),
+            entity.fields.get(CompressedField::ReservedSecond),
+        )?,
+        fixed_field(
+            CompressedField::Label.number(),
+            entity.fields.get(CompressedField::Label),
+        )?,
+        fixed_field(
+            CompressedField::Subscript.number(),
+            entity.fields.get(CompressedField::Subscript),
+        )?,
     ];
     let mut first = [b' '; CARD_DATA_WIDTH];
     let mut second = [b' '; CARD_DATA_WIDTH];
@@ -532,39 +595,43 @@ fn parameter_record_terminator(
     record_delimiter: u8,
 ) -> bool {
     for byte in line.iter().copied() {
-        if state.hollerith_remaining > 0 {
-            state.hollerith_remaining -= 1;
-            continue;
-        }
-        if state.at_field_start {
-            if byte == b' ' {
+        match *state {
+            ParameterLexState::Hollerith { remaining } => {
+                *state = NonZeroUsize::new(remaining.get() - 1)
+                    .map_or(ParameterLexState::InField, |remaining| {
+                        ParameterLexState::Hollerith { remaining }
+                    });
                 continue;
             }
-            if byte.is_ascii_digit() {
-                state.count_start = Some(
-                    state
-                        .count_start
-                        .unwrap_or_default()
-                        .saturating_mul(10)
-                        .saturating_add(usize::from(byte - b'0')),
-                );
-                continue;
-            }
-            if matches!(byte, b'H' | b'h') {
-                let Some(count) = state.count_start.take() else {
-                    state.at_field_start = false;
+            ParameterLexState::FieldStart { digits } => {
+                if byte == b' ' {
                     continue;
-                };
-                state.hollerith_remaining = count;
-                state.at_field_start = false;
-                continue;
+                }
+                if byte.is_ascii_digit() {
+                    *state = ParameterLexState::FieldStart {
+                        digits: Some(
+                            digits
+                                .unwrap_or_default()
+                                .saturating_mul(10)
+                                .saturating_add(usize::from(byte - b'0')),
+                        ),
+                    };
+                    continue;
+                }
+                if matches!(byte, b'H' | b'h') {
+                    *state = digits
+                        .and_then(NonZeroUsize::new)
+                        .map_or(ParameterLexState::InField, |remaining| {
+                            ParameterLexState::Hollerith { remaining }
+                        });
+                    continue;
+                }
+                *state = ParameterLexState::InField;
             }
-            state.count_start = None;
-            state.at_field_start = false;
+            ParameterLexState::InField => {}
         }
         if byte == parameter_delimiter {
-            state.at_field_start = true;
-            state.count_start = None;
+            *state = ParameterLexState::FieldStart { digits: None };
         } else if byte == record_delimiter {
             return true;
         }

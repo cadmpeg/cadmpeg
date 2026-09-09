@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
@@ -30,49 +31,53 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#20"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 20,
-        source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-4".into(),
-            Some(21),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "thickness".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 20,
+            source_ordinal: 4,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-4".into(),
+                Some(21),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "thickness".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d4".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
-    let owner = DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#21"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 21,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-        parameter_record_index: 20,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 22,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d4".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
+    let owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 40,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 22,
+        })
+        .unwrap();
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,
@@ -102,31 +107,47 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         program: vec![-1],
         matching_edge_operand_ids: Vec::new(),
     };
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let line = |name: &str, start, end| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
     let point = |name: &str, position| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let entities = [
-        line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
-        line("second", Point2::new(0.0, 2.0), Point2::new(4.0, 2.0)),
-        line("third", Point2::new(10.0, 0.0), Point2::new(10.0, 4.0)),
-        line("fourth", Point2::new(12.0, 0.0), Point2::new(12.0, 4.0)),
+        line(
+            "synthetic:test:id#first",
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, 0.0),
+        ),
+        line(
+            "synthetic:test:id#second",
+            Point2::new(0.0, 2.0),
+            Point2::new(4.0, 2.0),
+        ),
+        line(
+            "synthetic:test:id#third",
+            Point2::new(10.0, 0.0),
+            Point2::new(10.0, 4.0),
+        ),
+        line(
+            "synthetic:test:id#fourth",
+            Point2::new(12.0, 0.0),
+            Point2::new(12.0, 4.0),
+        ),
     ];
     let mut recipe_entities = entities.to_vec();
     recipe_entities.extend([
-        point("point-first", Point2::new(20.0, 0.0)),
-        point("point-second", Point2::new(20.0, 2.0)),
+        point("synthetic:test:id#point-first", Point2::new(20.0, 0.0)),
+        point("synthetic:test:id#point-second", Point2::new(20.0, 2.0)),
     ]);
     let constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -148,11 +169,11 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let [constraint] = constraints.as_slice() else {
         panic!("expected one recipe-backed dimension")
     };
-    let SketchConstraintDefinition::RepeatedDistance {
+    let SketchConstraintDefinitionInput::RepeatedDistance {
         measurements,
         parameter: projected_parameter,
         ..
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("expected repeated recipe-backed dimension")
     };
@@ -164,24 +185,29 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Vertical { first, second },
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. },
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. },
-        ] if first == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("point-first".into()))
-            && second == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("point-second".into()))
+        ] if first == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#point-first").unwrap())
+            && second == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#point-second").unwrap())
     ));
 
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source = crate::records::DesignParameterSource::new(
-        "Radial Dimension-4".into(),
-        radial_parameter.owner_record_index(),
-        radial_parameter.family_discriminator(),
-    )
-    .unwrap();
+    radial_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Radial Dimension-4".into(),
+                radial_parameter.owner_record_index(),
+                radial_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let circle = SketchEntity::new(
-        SketchEntityId("radial-circle".into()),
+        SketchEntityId::mint("synthetic:test:id#radial-circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(20.0, 20.0),
             radius: Length::new(2.0).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let mut radial_entities = entities.to_vec();
     radial_entities.push(circle.clone());
@@ -205,32 +231,36 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         radial_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
                 entity,
                 parameter: actual_parameter,
-            },
-            ..
-        }] if entity == circle.id()
+            } if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
-    let annotation_point = SketchPoint {
+    let annotation_point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: format!("{stream}:sketch-point#50"),
         record_index: 50,
         owner_reference: Some(100),
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             50,
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(4.5, 0.0),
-    };
+    })
+    .unwrap();
     let annotation_curve = SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#51"),
         record_index: 51,
@@ -239,16 +269,17 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 51,
+        primary_id: std::num::NonZeroU64::new(51).unwrap(),
         secondary_id: 0,
         geometry: None,
     };
     let annotation_point_entity = SketchEntity::new(
-        SketchEntityId("radial-extension-point".into()),
+        SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
-            position: annotation_point.coordinates,
-        },
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: annotation_point.coordinates(),
+        })
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some(annotation_point.id.clone()));
@@ -317,14 +348,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         extension_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
                 entity,
                 parameter: actual_parameter,
-            },
-            ..
-        }] if entity == circle.id()
+            } if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
     let curves = [40, 41].map(|record_index| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
@@ -334,7 +365,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: u64::from(record_index),
+        primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
         geometry: None,
     });
@@ -400,20 +431,24 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert_eq!(with_independent_relation.len(), 2);
     assert!(with_independent_relation.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::RepeatedDistance { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::RepeatedDistance { .. }
     )));
     assert!(with_independent_relation.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Parallel { .. }
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Parallel { .. }
     )));
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source = crate::records::DesignParameterSource::new(
-        "Radial Dimension-2".into(),
-        radial_parameter.owner_record_index(),
-        radial_parameter.family_discriminator(),
-    )
-    .unwrap();
+    radial_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Radial Dimension-2".into(),
+                radial_parameter.owner_record_index(),
+                radial_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let radial_with_independent_relation = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -435,14 +470,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(radial_with_independent_relation
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Parallel { .. }
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Parallel { .. }
         )));
     assert!(radial_with_independent_relation
         .iter()
         .any(|constraint| matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Native {
+            constraint.definition.kind(),
+            SketchConstraintDefinitionInput::Native {
                 parameter: Some(_),
                 ..
             }
@@ -466,8 +501,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert_eq!(without_dimension_frame.len(), 2);
     assert!(without_dimension_frame.iter().any(|constraint| matches!(
-        constraint.definition,
-        SketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             parameter: Some(_),
             ..
         }
@@ -475,10 +510,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
     let mut incompatible_unit = parameter.clone();
     incompatible_unit
-        .unit
-        .as_mut()
-        .expect("parameter unit")
-        .value = "deg".into();
+        .try_set_unit_value("deg".to_owned())
+        .unwrap();
     let constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -499,10 +532,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native { operands, .. },
+            definition,
             ..
-        }] if operands.len() == 2
-    ));
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native { operands, .. } if operands.len() == 2
+    )));
 
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -524,7 +557,10 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native {
+            definition,
+            native_ref: Some(native_ref),
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native {
                 native_kind,
                 native_state: None,
                 native_flags: None,
@@ -532,10 +568,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: Some(actual_parameter),
                 operands,
                 ..
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if native_kind == "Linear Dimension-4"
+            } if native_kind == "Linear Dimension-4"
             && entities.is_empty()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == &companion.id
@@ -547,22 +580,27 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             }] if native_kind == "dimension_companion"
                 && field == "companion_payload"
                 && operand_ref == &companion.id)
-    ));
+    )));
 
     let mut radial_parameter = parameter.clone();
-    radial_parameter.source = crate::records::DesignParameterSource::new(
-        "Radial Dimension-2".into(),
-        radial_parameter.owner_record_index(),
-        radial_parameter.family_discriminator(),
-    )
-    .unwrap();
+    radial_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Radial Dimension-2".into(),
+                radial_parameter.owner_record_index(),
+                radial_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let radial_entity = SketchEntity::new(
-        SketchEntityId("circle".into()),
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
         sketch.clone(),
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(2.0).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -584,16 +622,16 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Radius {
-                entity,
-                parameter: actual_parameter,
-            },
+            definition,
             native_ref: Some(native_ref),
             ..
-        }] if entity == radial_entity.id()
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Radius {
+                entity,
+                parameter: actual_parameter,
+            } if entity == radial_entity.id()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == &companion.id
-    ));
+    )));
 
     let mut empty_companion = companion.clone();
     empty_companion.payload_byte_length = 0;
@@ -617,12 +655,13 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(retained.is_empty());
 
     let line = SketchEntity::new(
-        SketchEntityId("measured-line".into()),
+        SketchEntityId::mint("synthetic:test:id#measured-line").unwrap(),
         sketch,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(3.0, 4.0),
             end: Point2::new(3.0, 6.0),
-        },
+        })
+        .unwrap(),
     );
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -644,19 +683,19 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::DistanceLoci {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::DistanceLoci {
                 first: cadmpeg_ir::sketches::SketchLocus::Start(first),
                 second: cadmpeg_ir::sketches::SketchLocus::End(second),
                 parameter: actual_parameter,
-            },
-            ..
-        }] if first == line.id()
+            } if first == line.id()
             && second == line.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
-    ));
+    )));
 
     let second_line = SketchEntity::new(
-        SketchEntityId("second-measured-line".into()),
+        SketchEntityId::mint("synthetic:test:id#second-measured-line").unwrap(),
         line.sketch.clone(),
         line.geometry.clone(),
     )
@@ -684,33 +723,35 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::RepeatedLength {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::RepeatedLength {
                 entities,
                 parameter,
-            },
-            ..
-        }] if entities.len() == 2
+            } if entities.len() == 2
             && parameter == &neutral_parameter_id_parts(stream, radial_parameter.record_index)
-    ));
+    )));
 }
 
 #[test]
 fn recipe_dimension_requires_one_axis_aligned_point_pair() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |name: &str, u, v| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
-    let parameter = cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+        .expect("identity grammar");
     let mut entities = vec![
-        point("first", -30.0, 2.0),
-        point("second", -30.0, 0.0),
-        point("unrelated", 10.0, 10.0),
+        point("synthetic:test:id#first", -30.0, 2.0),
+        point("synthetic:test:id#second", -30.0, 0.0),
+        point("synthetic:test:id#unrelated", 10.0, 10.0),
     ];
     assert!(matches!(
         crate::design::dimensions::recipe_linear_dimension_candidates(
@@ -720,12 +761,12 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
             &parameter,
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual }]
-            if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("first".into()))
-                && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("second".into()))
+        [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
+            if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
+                && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
                 && *actual == parameter
     ));
-    entities.push(point("ambiguous", 10.0, 8.0));
+    entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
         &entities, &sketch, 2.0, &parameter, 0.0,
     );
@@ -733,123 +774,137 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     assert_eq!(
         crate::design::dimensions::recipe_dimension_candidate_entities(&candidates),
         [
-            SketchEntityId("first".into()),
-            SketchEntityId("second".into()),
-            SketchEntityId("unrelated".into()),
-            SketchEntityId("ambiguous".into()),
+            SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+            SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+            SketchEntityId::mint("synthetic:test:id#unrelated").unwrap(),
+            SketchEntityId::mint("synthetic:test:id#ambiguous").unwrap(),
         ]
     );
 }
 
 #[test]
 fn recipe_dimension_resolves_one_parallel_line_pair() {
-    let sketch = SketchId("sketch".into());
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line = |name: &str, start, end| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Line { start, end },
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         )
     };
     let mut entities = vec![
-        line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
-        line("second", Point2::new(1.0, 2.0), Point2::new(5.0, 2.0)),
-        line("unrelated", Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
+        line(
+            "synthetic:test:id#first",
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, 0.0),
+        ),
+        line(
+            "synthetic:test:id#second",
+            Point2::new(1.0, 2.0),
+            Point2::new(5.0, 2.0),
+        ),
+        line(
+            "synthetic:test:id#unrelated",
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+        ),
     ];
     assert!(matches!(
         crate::design::dimensions::recipe_linear_dimension_candidates(
             &entities,
             &sketch,
             2.0,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::Distance { entities, .. }]
-            if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+        [SketchConstraintDefinitionInput::Distance { entities, .. }]
+            if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
     let point = |name: &str, position| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point { position },
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
     let mut entities_with_endpoints = entities.clone();
     entities_with_endpoints.extend([
-        point("first-start", Point2::new(0.0, 0.0)),
-        point("first-end", Point2::new(4.0, 0.0)),
-        point("second-start", Point2::new(1.0, 2.0)),
-        point("second-end", Point2::new(5.0, 2.0)),
+        point("synthetic:test:id#first-start", Point2::new(0.0, 0.0)),
+        point("synthetic:test:id#first-end", Point2::new(4.0, 0.0)),
+        point("synthetic:test:id#second-start", Point2::new(1.0, 2.0)),
+        point("synthetic:test:id#second-end", Point2::new(5.0, 2.0)),
     ]);
     assert!(matches!(
         crate::design::dimensions::recipe_linear_dimension_candidates(
             &entities_with_endpoints,
             &sketch,
             2.0,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ).as_slice(),
-        [SketchConstraintDefinition::Distance { entities, .. }]
-            if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+        [SketchConstraintDefinitionInput::Distance { entities, .. }]
+            if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
 
-    let parameter = DesignParameter {
-        id: "f3d:A:design-parameter#1".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 1,
-        source_ordinal: 1,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(2),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "2 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:A:design-parameter#1".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 1,
+            source_ordinal: 1,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(2),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "2 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d1".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d1".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     assert!(matches!(
         crate::design::dimensions::unique_parallel_line_dimension_definition(
             &entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             0.0,
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
         }) if entities.as_slice()
-            == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+            == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
 
     let fragment = line(
-        "second-fragment",
+        "synthetic:test:id#second-fragment",
         Point2::new(7.0, 2.0),
         Point2::new(9.0, 2.0),
     );
     let mut fragmented_entities = entities.clone();
     fragmented_entities.push(fragment);
     fragmented_entities.push(line(
-        "disjoint-first",
+        "synthetic:test:id#disjoint-first",
         Point2::new(20.0, 0.0),
         Point2::new(20.0, 1.0),
     ));
     fragmented_entities.push(line(
-        "disjoint-second",
+        "synthetic:test:id#disjoint-second",
         Point2::new(22.0, 3.0),
         Point2::new(22.0, 4.0),
     ));
@@ -858,26 +913,27 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &fragmented_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::ParallelLineSetDistance {
+        Some(SketchConstraintDefinitionInput::ParallelLineSetDistance {
             first,
             second,
             ..
-        }) if first == vec![SketchEntityId("first".into())]
+        }) if first == vec![SketchEntityId::mint("synthetic:test:id#first").unwrap()]
             && second == vec![
-                SketchEntityId("second".into()),
-                SketchEntityId("second-fragment".into()),
+                SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+                SketchEntityId::mint("synthetic:test:id#second-fragment").unwrap(),
             ]
     ));
 
     let point = SketchEntity::new(
-        SketchEntityId("point".into()),
+        SketchEntityId::mint("synthetic:test:id#point").unwrap(),
         sketch.clone(),
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let mut point_entities = entities.clone();
     point_entities.push(point);
@@ -886,23 +942,28 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &point_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
         }) if entities.as_slice()
-            == [SketchEntityId("point".into()), SketchEntityId("first".into())]
+            == [SketchEntityId::mint("synthetic:test:id#point").unwrap(), SketchEntityId::mint("synthetic:test:id#first").unwrap()]
     ));
 
-    entities.push(line("third", Point2::new(-1.0, 4.0), Point2::new(3.0, 4.0)));
+    entities.push(line(
+        "synthetic:test:id#third",
+        Point2::new(-1.0, 4.0),
+        Point2::new(3.0, 4.0),
+    ));
     assert!(
         crate::design::dimensions::unique_parallel_line_dimension_definition(
             &entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             0.0,
         )
         .is_none()
@@ -913,7 +974,8 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &point_entities,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             1.0e-6,
         )
         .is_none()
@@ -922,31 +984,34 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 
 #[test]
 fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
-    let sketch = SketchId("sketch".into());
-    let parameter = cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar");
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+        .expect("identity grammar");
     let point = |name: &str, u, v| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Point {
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(u, v),
-            },
+            })
+            .unwrap(),
         )
     };
     let entities = vec![
         SketchEntity::new(
-            SketchEntityId("carrier".into()),
+            SketchEntityId::mint("synthetic:test:id#carrier").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(2.0, 0.0),
                 end: Point2::new(0.0, 0.0),
-            },
+            })
+            .unwrap(),
         ),
-        point("carrier-start", 2.0, 0.0),
-        point("carrier-end", 0.0, 0.0),
-        point("extension", 4.0, 0.0),
-        point("off-carrier-horizontal", 2.0, 3.0),
-        point("off-carrier-vertical", 4.0, 2.0),
+        point("synthetic:test:id#carrier-start", 2.0, 0.0),
+        point("synthetic:test:id#carrier-end", 0.0, 0.0),
+        point("synthetic:test:id#extension", 4.0, 0.0),
+        point("synthetic:test:id#off-carrier-horizontal", 2.0, 3.0),
+        point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
         &entities, &sketch, 2.0, &parameter, 0.0,
@@ -958,23 +1023,24 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
             &entities,
             &sketch,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { first, second, parameter: actual })
-            if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("carrier-start".into()))
-                && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("extension".into()))
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter: actual })
+            if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#carrier-start").unwrap())
+                && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#extension").unwrap())
                 && actual == parameter
     ));
 
     let mut ambiguous = entities;
     ambiguous.extend([
-        point("second-carrier-start", 12.0, 5.0),
-        point("second-extension", 14.0, 5.0),
+        point("synthetic:test:id#second-carrier-start", 12.0, 5.0),
+        point("synthetic:test:id#second-extension", 14.0, 5.0),
         SketchEntity::new(
-            SketchEntityId("second-carrier".into()),
+            SketchEntityId::mint("synthetic:test:id#second-carrier").unwrap(),
             sketch.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(12.0, 5.0),
                 end: Point2::new(10.0, 5.0),
-            },
+            })
+            .unwrap(),
         ),
     ]);
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
@@ -990,91 +1056,100 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
 
 #[test]
 fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
-    let sketch = SketchId("sketch".into());
-    let parameter = DesignParameter {
-        id: "f3d:A:design-parameter#1".into(),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 1,
-        source_ordinal: 1,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-2".into(),
-            Some(2),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "2 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: "f3d:A:design-parameter#1".into(),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 1,
+            source_ordinal: 1,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-2".into(),
+                Some(2),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "2 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d1".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d1".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
     let circle = |name: &str, center, radius| {
         SketchEntity::new(
-            SketchEntityId(name.into()),
+            SketchEntityId::mint(name).unwrap(),
             sketch.clone(),
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length::new(radius).unwrap(),
-            },
+            })
+            .unwrap(),
         )
     };
     let mut circles = vec![
-        circle("outer-a", Point2::new(0.0, 0.0), 5.0),
-        circle("inner-a", Point2::new(0.0, 0.0), 3.0),
-        circle("outer-b", Point2::new(20.0, 0.0), 8.0),
-        circle("inner-b", Point2::new(20.0, 0.0), 6.0),
+        circle("synthetic:test:id#outer-a", Point2::new(0.0, 0.0), 5.0),
+        circle("synthetic:test:id#inner-a", Point2::new(0.0, 0.0), 3.0),
+        circle("synthetic:test:id#outer-b", Point2::new(20.0, 0.0), 8.0),
+        circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
     let definition = crate::design::dimensions::concentric_circle_dimension_definition(
         &circles,
         &sketch,
         &parameter,
-        &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+            .expect("identity grammar"),
         0.0,
     )
     .expect("two disjoint concentric pairs");
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::RepeatedDistance {
+        SketchConstraintDefinitionInput::RepeatedDistance {
             measurements,
             ..
         } if measurements == vec![
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
                 first: cadmpeg_ir::sketches::SketchLocus::Entity(
-                    SketchEntityId("outer-a".into())
+                    SketchEntityId::mint("synthetic:test:id#outer-a").unwrap()
                 ),
                 second: cadmpeg_ir::sketches::SketchLocus::Entity(
-                    SketchEntityId("inner-a".into())
+                    SketchEntityId::mint("synthetic:test:id#inner-a").unwrap()
                 ),
             },
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
                 first: cadmpeg_ir::sketches::SketchLocus::Entity(
-                    SketchEntityId("outer-b".into())
+                    SketchEntityId::mint("synthetic:test:id#outer-b").unwrap()
                 ),
                 second: cadmpeg_ir::sketches::SketchLocus::Entity(
-                    SketchEntityId("inner-b".into())
+                    SketchEntityId::mint("synthetic:test:id#inner-b").unwrap()
                 ),
             },
         ]
     ));
 
-    circles.push(circle("overlap", Point2::new(0.0, 0.0), 1.0));
+    circles.push(circle(
+        "synthetic:test:id#overlap",
+        Point2::new(0.0, 0.0),
+        1.0,
+    ));
     assert!(
         crate::design::dimensions::concentric_circle_dimension_definition(
             &circles,
             &sketch,
             &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("parameter").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
             0.0,
         )
         .is_none()

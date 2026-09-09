@@ -13,7 +13,7 @@ use crate::decode::sketch_transfer::constraints::{
 use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
     SketchLocus,
 };
 use std::collections::BTreeSet;
@@ -42,7 +42,8 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_native_constraints(&definition, &sketch, &BTreeSet::new());
     assert_eq!(constraints.len(), 1);
     let (constraint, offset) = &constraints[0];
@@ -52,13 +53,13 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
     assert_eq!(constraint.active, Some(true));
-    let SketchConstraintDefinition::Native {
+    let SketchConstraintDefinitionInput::Native {
         native_kind,
         native_state,
         native_properties,
         operands,
         ..
-    } = &constraint.definition
+    } = constraint.definition.kind()
     else {
         panic!("equation fallback must be native");
     };
@@ -125,8 +126,8 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     let disabled_constraints =
         section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new());
     assert_eq!(disabled_constraints[0].0.active, Some(false));
-    let SketchConstraintDefinition::Native { native_state, .. } =
-        &disabled_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { native_state, .. } =
+        disabled_constraints[0].0.definition.kind()
     else {
         panic!("equation fallback must be native");
     };
@@ -205,18 +206,26 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(SketchEntityId("creo:featdefs:sketch_entity#40:12".into(),)),
-            second: SketchLocus::Entity(
-                SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)
-            ),
-            axis: SketchCoordinateAxis::V,
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchCoordinateAxis::V
+            )
+            .expect("valid test fixture")
         }
     );
     assert_eq!(
@@ -255,13 +264,20 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(SketchEntityId("creo:featdefs:sketch_entity#40:12".into(),)),
-            second: SketchLocus::Entity(
-                SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)
-            ),
-            axis: SketchCoordinateAxis::U,
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::SameCoordinate {
+            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",)
+                        .expect("valid test fixture")
+                ),
+                SketchLocus::Entity(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                SketchCoordinateAxis::U
+            )
+            .expect("valid test fixture")
         }
     );
     assert_eq!(
@@ -345,7 +361,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_radius_dimension_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
@@ -355,9 +372,10 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::Radius {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#40:13".into()),
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::Radius {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:13")
+                .expect("valid test fixture"),
             parameter: ParameterId::mint("creo:featdefs:parameter#40:100")
                 .expect("identity grammar"),
         }
@@ -474,18 +492,25 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_polar_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::PolarDistance {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
-            distance: Length::new(2.0).unwrap(),
-            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).unwrap()),
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PolarDistance {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
+                    .expect("valid test fixture")
+            ),
+            distance: Length::new(2.0).expect("finite length fixture"),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
             distance_parameter: None,
         }
     );
@@ -509,12 +534,18 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         section_equation_polar_distance_constraints(&propagated_polar, &sketch);
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::PolarDistance {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into(),)),
-            distance: Length::new(2.0).unwrap(),
-            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).unwrap()),
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PolarDistance {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
+                    .expect("valid test fixture")
+            ),
+            distance: Length::new(2.0).expect("finite length fixture"),
+            angle: Some(Angle::new(std::f64::consts::FRAC_PI_2).expect("finite angle fixture")),
             distance_parameter: None,
         }
     );
@@ -640,17 +671,24 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_function_six_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::DistanceLociValue {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
-            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:11".into())),
-            distance: Length::new(5.0).unwrap(),
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::DistanceLociValue {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10")
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:11")
+                    .expect("valid test fixture")
+            ),
+            distance: Length::new(5.0).expect("finite length fixture"),
             parameter: None,
         }
     );
@@ -754,7 +792,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let function_forty_two = crate::feature::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
@@ -803,12 +842,18 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     assert_eq!(midpoint_constraints[0].1, 28);
     assert_eq!(midpoint_constraints[0].0.active, Some(true));
     assert_eq!(
-        midpoint_constraints[0].0.definition,
-        SketchConstraintDefinition::MidpointCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:31".into())),
+        *(midpoint_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::MidpointCoordinate {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:31")
+                    .expect("valid test fixture")
+            ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length::new(2.0).unwrap(),
+            value: Length::new(2.0).expect("finite length fixture"),
         }
     );
 
@@ -830,12 +875,18 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         );
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::MidpointCoordinate {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            second: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:31".into())),
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::MidpointCoordinate {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:31")
+                    .expect("valid test fixture")
+            ),
             axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
-            value: Length::new(2.0).unwrap(),
+            value: Length::new(2.0).expect("finite length fixture"),
         }
     );
     let mut conflicting_equality_midpoint = propagated_midpoint.clone();
@@ -916,10 +967,16 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     assert_eq!(point_constraints[0].1, 28);
     assert_eq!(point_constraints[0].0.active, Some(true));
     assert_eq!(
-        point_constraints[0].0.definition,
-        SketchConstraintDefinition::PointCoordinateValues {
-            point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
+        *(point_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointCoordinateValues {
+            point: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
+                    .expect("valid test fixture")
+            ),
+            values: [
+                Length::new(2.0).expect("finite length fixture"),
+                Length::new(1.0).expect("finite length fixture")
+            ],
         }
     );
 
@@ -940,10 +997,16 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     );
     assert_eq!(propagated_constraints.len(), 1);
     assert_eq!(
-        propagated_constraints[0].0.definition,
-        SketchConstraintDefinition::PointCoordinateValues {
-            point: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:30".into())),
-            values: [Length::new(2.0).unwrap(), Length::new(1.0).unwrap()],
+        *(propagated_constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointCoordinateValues {
+            point: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:30")
+                    .expect("valid test fixture")
+            ),
+            values: [
+                Length::new(2.0).expect("finite length fixture"),
+                Length::new(1.0).expect("finite length fixture")
+            ],
         }
     );
     let mut conflicting_equality_point = propagated_point.clone();
@@ -1050,7 +1113,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_equal_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1059,23 +1123,27 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::EqualDistance {
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::EqualDistance {
             first: SketchDistancePair {
-                first: SketchLocus::Start(SketchEntityId(
-                    "creo:featdefs:sketch_entity#40:10".into(),
-                )),
-                second: SketchLocus::End(SketchEntityId(
-                    "creo:featdefs:sketch_entity#40:10".into(),
-                )),
+                first: SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
+                second: SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                        .expect("valid test fixture")
+                ),
             },
             second: SketchDistancePair {
-                first: SketchLocus::Start(SketchEntityId(
-                    "creo:featdefs:sketch_entity#40:11".into(),
-                )),
-                second: SketchLocus::End(SketchEntityId(
-                    "creo:featdefs:sketch_entity#40:11".into(),
-                )),
+                first: SketchLocus::Start(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
+                        .expect("valid test fixture")
+                ),
+                second: SketchLocus::End(
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#40:11",)
+                        .expect("valid test fixture")
+                ),
             },
         }
     );
@@ -1197,7 +1265,8 @@ fn equation_function_thirty_five_emits_point_on_line() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_point_on_line_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1206,10 +1275,14 @@ fn equation_function_thirty_five_emits_point_on_line() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::PointOnObject {
-            point: SketchLocus::Entity(SketchEntityId("creo:featdefs:sketch_entity#40:12".into(),)),
-            entity: SketchEntityId("creo:featdefs:sketch_entity#40:10".into()),
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::PointOnObject {
+            point: SketchLocus::Entity(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:12",)
+                    .expect("valid test fixture")
+            ),
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:10")
+                .expect("valid test fixture"),
         }
     );
 
@@ -1361,7 +1434,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let constraints = section_equation_unsigned_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1370,10 +1444,16 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     );
     assert_eq!(constraints[0].0.active, Some(true));
     assert_eq!(
-        constraints[0].0.definition,
-        SketchConstraintDefinition::HorizontalDistance {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+        *(constraints[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::HorizontalDistance {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10",)
+                    .expect("valid test fixture")
+            ),
             parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
                 .expect("identity grammar"),
         }
@@ -1386,8 +1466,9 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     assert!(matches!(
         section_equation_unsigned_distance_constraints(&vertical, &sketch)[0]
             .0
-            .definition,
-        SketchConstraintDefinition::VerticalDistance { .. }
+            .definition
+            .kind(),
+        SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
 
     let mut disabled = definition;
@@ -1517,16 +1598,23 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         saved_section: None,
         offset: 0,
     };
-    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let horizontal =
         section_equation_axis_distance_constraints(&definition([10.0, 0.0], 10.0), &sketch);
     assert_eq!(horizontal.len(), 1);
     assert_eq!(horizontal[0].0.active, Some(true));
     assert_eq!(
-        horizontal[0].0.definition,
-        SketchConstraintDefinition::HorizontalDistance {
-            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
-            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
+        *(horizontal[0].0.definition).kind(),
+        SketchConstraintDefinitionInput::HorizontalDistance {
+            first: SketchLocus::Start(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10")
+                    .expect("valid test fixture")
+            ),
+            second: SketchLocus::End(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#40:10")
+                    .expect("valid test fixture")
+            ),
             parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
                 .expect("identity grammar"),
         }
@@ -1535,8 +1623,10 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     let vertical =
         section_equation_axis_distance_constraints(&definition([0.0, 10.0], 10.0), &sketch);
     assert!(matches!(
-        vertical.first().map(|constraint| &constraint.0.definition),
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        vertical
+            .first()
+            .map(|constraint| constraint.0.definition.kind()),
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
 
     let mut missing = definition([10.0, 0.0], 10.0);

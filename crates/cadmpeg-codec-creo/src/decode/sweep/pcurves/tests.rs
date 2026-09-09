@@ -15,9 +15,10 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
         minor_radius: 5.0,
     };
     let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point fixture"),
         direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-            .unwrap(),
+            .expect("valid direction fixture"),
         reference: None,
     };
     let pcurve =

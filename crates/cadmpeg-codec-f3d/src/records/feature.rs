@@ -2,6 +2,7 @@
 //! Typed modeling-feature scopes, operations, and source operands.
 
 use super::topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand};
+use super::SketchPlacementMatrix;
 use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
     ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
@@ -794,16 +795,16 @@ pub struct DesignCoilPlacement {
     /// Dynamic class tag of the frame carrier.
     pub transform_class_tag: DesignClassTag,
     /// Explicit matrix and its byte offset; absent for the encoded identity form.
-    pub explicit_transform: Option<Located<[[f64; 4]; 4]>>,
+    pub explicit_transform: Option<Located<SketchPlacementMatrix>>,
 }
 
 impl DesignCoilPlacement {
     /// Row-major local-to-model matrix with translation in source centimetres.
     #[must_use]
-    pub fn transform(&self) -> &[[f64; 4]; 4] {
+    pub fn transform(&self) -> &SketchPlacementMatrix {
         self.explicit_transform
             .as_ref()
-            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.value)
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| &matrix.value)
     }
 }
 
@@ -826,7 +827,7 @@ struct DesignCoilPlacementWire {
     transform_class_tag: String,
     /// Row-major local-to-model rigid transform. Matrix values are in source
     /// centimetres for the translation column.
-    transform: [[f64; 4]; 4],
+    transform: SketchPlacementMatrix,
     /// Byte offset of the matrix, or absent for the encoded identity form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -888,7 +889,7 @@ impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
 pub struct DesignCoilTransform {
     /// Row-major local-to-model rigid transform. Translation is in source
     /// centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
 }
@@ -967,7 +968,7 @@ pub struct DesignCylinderPrimitive {
     pub diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Located<[[f64; 4]; 4]>>,
+    pub transform: Option<Located<SketchPlacementMatrix>>,
     /// Result Boolean operation.
     pub operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
@@ -990,7 +991,7 @@ struct DesignCylinderPrimitiveWire {
     diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<[[f64; 4]; 4]>,
+    transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the shifted-form source frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -1038,7 +1039,7 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
     pub transform_offset: u64,
     /// Sphere diameter in source centimetres.
@@ -1057,7 +1058,7 @@ pub struct DesignSpherePrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignTorusPrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
     pub transform_offset: u64,
     /// Major diameter in source centimetres.
@@ -1142,7 +1143,7 @@ pub struct DesignThickenOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
     /// Indexed class-349 record carrying `transform`.
@@ -1229,8 +1230,60 @@ pub struct DesignFixedFilletParameters {
     into = "DesignFixedFilletGroupWire"
 )]
 pub struct DesignFixedFilletGroup {
-    pub tangency_weight: Option<DesignFixedFilletScalar>,
-    pub law: DesignFixedFilletLaw,
+    tangency_weight: Option<DesignFixedFilletScalar>,
+    law: DesignFixedFilletLaw,
+}
+
+impl DesignFixedFilletGroup {
+    /// Admit a fillet radius law and optional tangency weight.
+    pub fn try_new(
+        tangency_weight: Option<DesignFixedFilletScalar>,
+        law: DesignFixedFilletLaw,
+    ) -> Result<Self, String> {
+        if tangency_weight
+            .as_ref()
+            .is_some_and(|weight| DesignPositiveScalar::new(weight.value).is_none())
+        {
+            return Err("tangency_weight must be positive and finite".into());
+        }
+        if !law
+            .radii()
+            .all(|radius| radius.value.is_finite() && radius.value >= 0.0)
+        {
+            return Err("radii must be finite and non-negative".into());
+        }
+        if !law.radii().any(|radius| radius.value > 0.0) {
+            return Err("radii must contain a positive radius".into());
+        }
+        if !law
+            .intermediate()
+            .iter()
+            .all(|row| row.parameter.value.is_finite() && (0.0..1.0).contains(&row.parameter.value))
+        {
+            return Err("intermediate_parameters must be finite and in [0, 1)".into());
+        }
+        if !law
+            .intermediate()
+            .windows(2)
+            .all(|rows| rows[0].parameter.value < rows[1].parameter.value)
+        {
+            return Err("intermediate_parameters must be strictly increasing".into());
+        }
+        Ok(Self {
+            tangency_weight,
+            law,
+        })
+    }
+
+    /// The admitted radius law.
+    pub fn law(&self) -> &DesignFixedFilletLaw {
+        &self.law
+    }
+
+    /// The optional positive tangency weight.
+    pub fn tangency_weight(&self) -> Option<&DesignFixedFilletScalar> {
+        self.tangency_weight.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1361,10 +1414,7 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
                 }
             }
         };
-        Ok(Self {
-            tangency_weight: wire.tangency_weight,
-            law,
-        })
+        Self::try_new(wire.tangency_weight, law)
     }
 }
 
@@ -1615,7 +1665,30 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
 
 /// Ordered scalar lanes carried by a rectangular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignRectangularPatternConstructionWire",
+    into = "DesignRectangularPatternConstructionWire"
+)]
 pub struct DesignRectangularPatternConstruction {
+    /// Positive U-direction instance count, including the seed.
+    u_count: NonZeroU32,
+    /// Positive V-direction instance count, including the seed.
+    v_count: NonZeroU32,
+    /// Signed U-direction seed-to-final-instance span in source centimetres.
+    u_extent: f64,
+    /// Signed V-direction seed-to-final-instance span in source centimetres.
+    v_extent: f64,
+    /// Parameter-owner records for U count, V count, U extent, and V extent.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+    /// Exact serialized instance sequence when one pattern direction is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct DesignRectangularPatternConstructionWire {
     /// Positive U-direction instance count, including the seed.
     pub u_count: u32,
     /// Positive V-direction instance count, including the seed.
@@ -1631,6 +1704,59 @@ pub struct DesignRectangularPatternConstruction {
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
+    type Error = &'static str;
+    fn try_from(wire: DesignRectangularPatternConstructionWire) -> Result<Self, Self::Error> {
+        let u_count = NonZeroU32::new(wire.u_count).ok_or("u_count must be nonzero")?;
+        let v_count = NonZeroU32::new(wire.v_count).ok_or("v_count must be nonzero")?;
+        if u_count.get() == 1 && v_count.get() == 1 {
+            return Err("u_count and v_count must not both be one");
+        }
+        if !wire.u_extent.is_finite() || (u_count.get() == 1) != (wire.u_extent == 0.0) {
+            return Err("u_extent must be finite and zero exactly when u_count is one");
+        }
+        if !wire.v_extent.is_finite() || (v_count.get() == 1) != (wire.v_extent == 0.0) {
+            return Err("v_extent must be finite and zero exactly when v_count is one");
+        }
+        Ok(Self {
+            u_count,
+            v_count,
+            u_extent: wire.u_extent,
+            v_extent: wire.v_extent,
+            owner_record_indices: wire.owner_record_indices,
+            value_offsets: wire.value_offsets,
+            instances: wire.instances,
+        })
+    }
+}
+impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternConstructionWire {
+    fn from(value: DesignRectangularPatternConstruction) -> Self {
+        Self {
+            u_count: value.u_count.get(),
+            v_count: value.v_count.get(),
+            u_extent: value.u_extent,
+            v_extent: value.v_extent,
+            owner_record_indices: value.owner_record_indices,
+            value_offsets: value.value_offsets,
+            instances: value.instances,
+        }
+    }
+}
+impl DesignRectangularPatternConstruction {
+    pub(crate) fn u_count(&self) -> u32 {
+        self.u_count.get()
+    }
+    pub(crate) fn v_count(&self) -> u32 {
+        self.v_count.get()
+    }
+    pub(crate) fn u_extent(&self) -> f64 {
+        self.u_extent
+    }
+    pub(crate) fn v_extent(&self) -> f64 {
+        self.v_extent
+    }
 }
 
 /// Serialized placements of one linearized rectangular-pattern instance run.
@@ -1651,7 +1777,7 @@ pub enum DesignRectangularPatternInstances {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DesignPatternInstance {
     pub record_index: u32,
-    pub transform: Located<[[f64; 4]; 4]>,
+    pub transform: Located<SketchPlacementMatrix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1692,7 +1818,7 @@ struct DesignRectangularPatternInstancesWire {
     /// Seed record followed by the generated-instance records in pattern order.
     record_indices: Vec<u32>,
     /// Row-major local-to-model placements parallel to `record_indices`.
-    transforms: Vec<[[f64; 4]; 4]>,
+    transforms: Vec<SketchPlacementMatrix>,
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
     transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
@@ -1803,7 +1929,27 @@ pub enum DesignAssemblyLimitKind {
 
 /// Ordered lower and upper limits carried by a legacy As-built assembly scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignAssemblyLimitsWire",
+    into = "DesignAssemblyLimitsWire"
+)]
 pub struct DesignAssemblyLimits {
+    /// Degree-of-freedom domain of the limits.
+    #[serde(default)]
+    pub kind: DesignAssemblyLimitKind,
+    /// Lower bound in the domain's native units.
+    minimum: f64,
+    /// Upper bound in the domain's native units.
+    maximum: f64,
+    /// Parameter-owner records for the lower and upper bounds.
+    pub owner_record_indices: [u32; 2],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 2],
+}
+
+/// Wire fields for finite ordered assembly limits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignAssemblyLimitsWire {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
     pub kind: DesignAssemblyLimitKind,
@@ -1815,6 +1961,42 @@ pub struct DesignAssemblyLimits {
     pub owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 2],
+}
+
+impl DesignAssemblyLimits {
+    pub(crate) fn minimum(&self) -> f64 {
+        self.minimum
+    }
+    pub(crate) fn maximum(&self) -> f64 {
+        self.maximum
+    }
+}
+
+impl TryFrom<DesignAssemblyLimitsWire> for DesignAssemblyLimits {
+    type Error = String;
+    fn try_from(wire: DesignAssemblyLimitsWire) -> Result<Self, Self::Error> {
+        if !wire.minimum.is_finite() || !wire.maximum.is_finite() || wire.minimum > wire.maximum {
+            return Err("assembly limits minimum and maximum must be finite and ordered".into());
+        }
+        Ok(Self {
+            kind: wire.kind,
+            minimum: wire.minimum,
+            maximum: wire.maximum,
+            owner_record_indices: wire.owner_record_indices,
+            value_offsets: wire.value_offsets,
+        })
+    }
+}
+impl From<DesignAssemblyLimits> for DesignAssemblyLimitsWire {
+    fn from(value: DesignAssemblyLimits) -> Self {
+        Self {
+            kind: value.kind,
+            minimum: value.minimum,
+            maximum: value.maximum,
+            owner_record_indices: value.owner_record_indices,
+            value_offsets: value.value_offsets,
+        }
+    }
 }
 
 /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
@@ -1829,7 +2011,7 @@ pub struct DesignAssemblySolvedFrame {
     /// Dynamic class of the frame-carrier indexed record.
     pub class_tag: DesignClassTag,
     /// Row-major solved connector frame.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
 }
@@ -1846,11 +2028,28 @@ pub struct DesignAssemblyLegacyOperand<C> {
 /// The ordered point and hole constructions of a legacy 421-byte assembly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignAssemblyLegacyOperands {
-    pub point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
-    pub hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
+    point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
+    hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
 }
 
 impl DesignAssemblyLegacyOperands {
+    /// Admit legacy operand carriers with finite solved positions.
+    pub fn try_new(
+        point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
+        hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
+    ) -> Result<Self, String> {
+        if !point
+            .construction
+            .position
+            .iter()
+            .chain(hole.construction.position.iter())
+            .all(|value| value.is_finite())
+        {
+            return Err("legacy_operand_carriers position must be finite".into());
+        }
+        Ok(Self { point, hole })
+    }
+
     pub(crate) fn references(&self) -> [Located<u32>; 2] {
         [
             Located {
@@ -1871,24 +2070,26 @@ impl DesignAssemblyLegacyOperands {
     pub(crate) fn frames(
         &self,
         solved: &DesignAssemblySolvedFrame,
-    ) -> [DesignAssemblyOperandFrame; 2] {
+    ) -> Result<[DesignAssemblyOperandFrame; 2], String> {
         let references = self.references();
         let positions = [
             self.point.construction.position,
             self.hole.construction.position,
         ];
-        [0, 1].map(|index| {
-            let mut transform = solved.transform;
+        let frames: [Result<DesignAssemblyOperandFrame, String>; 2] = [0, 1].map(|index| {
+            let mut transform = solved.transform.rows();
             for (row, value) in positions[index].into_iter().enumerate() {
                 transform[row][3] = value;
             }
-            DesignAssemblyOperandFrame {
+            Ok(DesignAssemblyOperandFrame {
                 reference_record_index: references[index].value,
                 reference_offset: references[index].offset,
-                transform,
+                transform: transform.try_into()?,
                 transform_offset: solved.transform_offset,
-            }
-        })
+            })
+        });
+        let [first, second] = frames;
+        Ok([first?, second?])
     }
 
     fn from_wire(
@@ -1918,8 +2119,8 @@ impl DesignAssemblyLegacyOperands {
                     .into(),
             );
         }
-        let carriers = Self {
-            point: DesignAssemblyLegacyOperand {
+        let carriers = Self::try_new(
+            DesignAssemblyLegacyOperand {
                 construction_class_tag: point
                     .construction_class_tag
                     .try_into()
@@ -1928,7 +2129,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: point.selection,
                 reference_offset: point.frame.reference_offset,
             },
-            hole: DesignAssemblyLegacyOperand {
+            DesignAssemblyLegacyOperand {
                 construction_class_tag: hole
                     .construction_class_tag
                     .try_into()
@@ -1937,8 +2138,8 @@ impl DesignAssemblyLegacyOperands {
                 selection: hole.selection,
                 reference_offset: hole.frame.reference_offset,
             },
-        };
-        if [point.frame, hole.frame] != carriers.frames(solved) {
+        )?;
+        if [point.frame, hole.frame] != carriers.frames(solved)? {
             return Err(
                 "legacy_operand_carriers frame disagrees with construction and solved_frame".into(),
             );
@@ -1946,9 +2147,12 @@ impl DesignAssemblyLegacyOperands {
         Ok(carriers)
     }
 
-    fn into_wire(self, solved: &DesignAssemblySolvedFrame) -> [DesignAssemblyLegacyOperandWire; 2] {
-        let [point_frame, hole_frame] = self.frames(solved);
-        [
+    fn into_wire(
+        self,
+        solved: &DesignAssemblySolvedFrame,
+    ) -> Result<[DesignAssemblyLegacyOperandWire; 2], String> {
+        let [point_frame, hole_frame] = self.frames(solved)?;
+        Ok([
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.point.construction.point_record_index,
                 construction_byte_offset: self.point.construction.point_record_byte_offset,
@@ -1965,7 +2169,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: self.hole.selection,
                 frame: hole_frame,
             },
-        ]
+        ])
     }
 }
 
@@ -2030,16 +2234,13 @@ pub struct DesignAssemblyLegacySelection {
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyAlignmentSerde",
-    into = "DesignAssemblyAlignmentSerde"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignAssemblyAlignmentSerde")]
 pub struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
-    pub angle: f64,
+    angle: f64,
     /// Signed local-frame translation in source centimetres.
-    pub offset: [f64; 3],
+    offset: [f64; 3],
     /// Parameter-owner records and their evaluated-value locations.
     pub owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
@@ -2102,6 +2303,32 @@ impl DesignAssemblyAlignmentForm {
 }
 
 impl DesignAssemblyAlignment {
+    pub(crate) fn try_new(
+        angle: f64,
+        offset: [f64; 3],
+        owners: Vec<Located<u32>>,
+        form: Option<DesignAssemblyAlignmentForm>,
+    ) -> Result<Self, String> {
+        if !angle.is_finite() {
+            return Err("assembly alignment angle must be finite".into());
+        }
+        if !offset.iter().all(|value| value.is_finite()) {
+            return Err("assembly alignment offset must be finite".into());
+        }
+        Ok(Self {
+            angle,
+            offset,
+            owners,
+            form,
+        })
+    }
+    pub(crate) fn angle(&self) -> f64 {
+        self.angle
+    }
+    pub(crate) fn offset(&self) -> [f64; 3] {
+        self.offset
+    }
+
     pub(crate) fn operand_frames(&self) -> Option<[DesignAssemblyOperandFrame; 2]> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::Frames { frames } => Some(frames.clone()),
@@ -2112,7 +2339,7 @@ impl DesignAssemblyAlignment {
                 carriers,
                 solved_frame,
                 ..
-            } => Some(carriers.frames(solved_frame)),
+            } => carriers.frames(solved_frame).ok(),
             DesignAssemblyAlignmentForm::DatumEnvelope { .. }
             | DesignAssemblyAlignmentForm::LimitsOnly { .. }
             | DesignAssemblyAlignmentForm::SolvedOnly { .. }
@@ -2227,7 +2454,8 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             ),
             (Some(carriers), Some(solved_frame), frames, None, limits, None) => {
                 let carriers = DesignAssemblyLegacyOperands::from_wire(carriers, &solved_frame)?;
-                if frames.as_ref().is_some_and(|frames| frames != &carriers.frames(&solved_frame)) {
+                let derived_frames = carriers.frames(&solved_frame)?;
+                if frames.as_ref().is_some_and(|frames| frames != &derived_frames) {
                     return Err("operand_frames must match legacy_operand_carriers frames".into());
                 }
                 Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, frames_field_present: frames.is_some() })
@@ -2251,17 +2479,21 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Ok(Self {
-            angle: wire.angle,
-            offset: wire.offset,
-            owners,
-            form,
-        })
+        Self::try_new(wire.angle, wire.offset, owners, form)
     }
 }
 
-impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
-    fn from(alignment: DesignAssemblyAlignment) -> Self {
+impl Serialize for DesignAssemblyAlignment {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignAssemblyAlignmentSerde::try_from(self.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
+    type Error = String;
+    fn try_from(alignment: DesignAssemblyAlignment) -> Result<Self, Self::Error> {
         let (
             operand_frames,
             legacy_operand_carriers,
@@ -2294,8 +2526,10 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
                 limits,
                 frames_field_present,
             }) => {
-                let frames = frames_field_present.then(|| carriers.frames(&solved_frame));
-                let carriers = carriers.into_wire(&solved_frame);
+                let frames = frames_field_present
+                    .then(|| carriers.frames(&solved_frame))
+                    .transpose()?;
+                let carriers = carriers.into_wire(&solved_frame)?;
                 (
                     frames,
                     Some(carriers),
@@ -2338,7 +2572,7 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
             .into_iter()
             .map(|owner| (owner.value, owner.offset))
             .unzip();
-        Self {
+        Ok(Self {
             angle: alignment.angle,
             offset: alignment.offset,
             owner_record_indices,
@@ -2349,7 +2583,7 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
             operand_qualifiers,
             limits,
             joint_origin_scope_record_index,
-        }
+        })
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2696,14 +2930,14 @@ pub struct DesignAssemblyOperandPathLink {
     into = "DesignAssemblyOperandPathWire"
 )]
 pub struct DesignAssemblyOperandPath {
-    pub link: DesignAssemblyOperandPathLink,
+    link: DesignAssemblyOperandPathLink,
     pub record_index: u32,
-    pub class_tag: DesignClassTag,
-    pub byte_offset: u64,
+    class_tag: DesignClassTag,
+    byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
-    pub occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+    occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
-    pub identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+    identity_guids: Vec<Located<DesignRelaxedGuidText>>,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -2729,6 +2963,90 @@ struct DesignAssemblyOperandPathWire {
     identity_guid_offsets: Vec<u64>,
 }
 
+impl DesignAssemblyOperandPath {
+    pub(crate) fn try_new(
+        link: DesignAssemblyOperandPathLink,
+        record_index: u32,
+        class_tag: DesignClassTag,
+        byte_offset: u64,
+        occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
+        identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+    ) -> Result<Self, String> {
+        let legacy_pair =
+            class_tag.as_str() == "386" && matches!(link.locator_class_tag.as_str(), "363" | "378");
+        if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
+            return Err("occurrence_guids has invalid assembly path arity".into());
+        }
+        let identity_arity = if legacy_pair {
+            identity_guids.len() == 1
+        } else {
+            match class_tag.as_str() {
+                "294" | "299" | "307" | "386" | "390" | "412" => identity_guids.len() == 4,
+                "329" => matches!(identity_guids.len(), 0 | 4),
+                "330" => !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4),
+                _ => false,
+            }
+        };
+        if !identity_arity {
+            return Err("identity_guids has invalid assembly path class arity".into());
+        }
+        for (field, guids) in [
+            ("occurrence_guids", &occurrence_guids),
+            ("identity_guids", &identity_guids),
+        ] {
+            if !guids.windows(2).all(|pair| pair[0].offset < pair[1].offset) {
+                return Err(format!("{field} offsets must strictly increase"));
+            }
+            if !legacy_pair
+                && class_tag.as_str() != "412"
+                && guids.iter().any(|guid| guid.offset <= byte_offset)
+            {
+                return Err(format!("{field} offsets must follow byte_offset"));
+            }
+        }
+        Ok(Self {
+            link,
+            record_index,
+            class_tag,
+            byte_offset,
+            occurrence_guids,
+            identity_guids,
+        })
+    }
+    pub(crate) fn link(&self) -> &DesignAssemblyOperandPathLink {
+        &self.link
+    }
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn occurrence_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
+        &self.occurrence_guids
+    }
+    pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
+        &self.identity_guids
+    }
+    pub(crate) fn try_append(self, continuation: Self) -> Result<Self, String> {
+        if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
+            return Err("assembly path continuations require class_tag 330".into());
+        }
+        let mut occurrences = self.occurrence_guids;
+        occurrences.extend(continuation.occurrence_guids);
+        let mut identities = self.identity_guids;
+        identities.extend(continuation.identity_guids);
+        Self::try_new(
+            self.link,
+            self.record_index,
+            self.class_tag,
+            self.byte_offset,
+            occurrences,
+            identities,
+        )
+    }
+}
+
 impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
     type Error = String;
 
@@ -2741,24 +3059,22 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         if wire.identity_guids.len() != wire.identity_guid_offsets.len() {
             return Err("identity_guids and identity_guid_offsets must have equal lengths".into());
         }
-        Ok(Self {
-            link: wire.link,
-            record_index: wire.record_index,
-            class_tag: wire.class_tag.try_into()?,
-            byte_offset: wire.byte_offset,
-            occurrence_guids: wire
-                .occurrence_guids
+        Self::try_new(
+            wire.link,
+            wire.record_index,
+            wire.class_tag.try_into()?,
+            wire.byte_offset,
+            wire.occurrence_guids
                 .into_iter()
                 .zip(wire.occurrence_guid_offsets)
                 .map(|(value, offset)| Located { value, offset })
                 .collect(),
-            identity_guids: wire
-                .identity_guids
+            wire.identity_guids
                 .into_iter()
                 .zip(wire.identity_guid_offsets)
                 .map(|(value, offset)| Located { value, offset })
                 .collect(),
-        })
+        )
     }
 }
 
@@ -2834,7 +3150,7 @@ pub struct DesignAssemblyOperandFrame {
     /// Byte offset of `reference_record_index`.
     pub reference_offset: u64,
     /// Row-major operand-local-to-model transform.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first transform scalar.
     pub transform_offset: u64,
 }
@@ -2866,16 +3182,18 @@ pub struct DesignComponentInsertConstruction {
 /// Scope-local matrix with an optional equal matrix in the grouped carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignComponentInsertMatrix {
-    pub scope: Located<[[f64; 4]; 4]>,
+    pub scope: Located<SketchPlacementMatrix>,
     pub carrier_offset: Option<u64>,
 }
 
 impl DesignComponentInsertConstruction {
     #[must_use]
-    pub fn transform(&self) -> &[[f64; 4]; 4] {
+    pub fn transform(&self) -> &SketchPlacementMatrix {
         self.placement
             .as_ref()
-            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.scope.value)
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| {
+                &matrix.scope.value
+            })
     }
 
     #[must_use]
@@ -2907,7 +3225,7 @@ struct DesignComponentInsertConstructionWire {
     /// Byte offset of the occurrence-role string payload.
     neutron_role_offset: u64,
     /// Row-major local occurrence transform in centimetres.
-    transform: [[f64; 4]; 4],
+    transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar. `None` is the
     /// stored identity form, which has no scalar block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2988,7 +3306,7 @@ pub struct DesignDerivedInstanceConstruction {
     /// Placed occurrence GUID carried by the joined occurrence.
     pub occurrence_guid: DesignRelaxedGuidText,
     /// Row-major local-to-model placement in centimetres.
-    pub transform: [[f64; 4]; 4],
+    pub transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar.
     pub transform_offset: u64,
 }
@@ -3030,7 +3348,7 @@ pub enum DesignComponentOccurrencePlacement {
     /// Explicit matrix and one-based occurrence ordinal.
     Explicit {
         ordinal: NonZeroU32,
-        transform: Located<[[f64; 4]; 4]>,
+        transform: Located<SketchPlacementMatrix>,
     },
 }
 
@@ -3044,7 +3362,7 @@ impl DesignComponentOccurrence {
     }
 
     #[must_use]
-    pub fn transform(&self) -> Option<Located<[[f64; 4]; 4]>> {
+    pub fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => None,
             DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(transform),
@@ -3076,7 +3394,7 @@ struct DesignComponentOccurrenceWire {
     occurrence_ordinal: u32,
     /// Explicit local-to-model placement for placed occurrences.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<[[f64; 4]; 4]>,
+    transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the explicit placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     transform_offset: Option<u64>,
@@ -3146,11 +3464,11 @@ pub struct DesignCopyPasteComponentOperation {
     /// Newly copied occurrence identity.
     pub copied_occurrence_guid: DesignRelaxedGuidText,
     /// Source placement embedded by the scope.
-    pub source_transform: [[f64; 4]; 4],
+    pub source_transform: SketchPlacementMatrix,
     /// Byte offset of the source placement.
     pub source_transform_offset: u64,
     /// Copied placement embedded by both scope and occurrence carrier.
-    pub copied_transform: [[f64; 4]; 4],
+    pub copied_transform: SketchPlacementMatrix,
     /// Byte offset of the scope-local copied placement.
     pub copied_transform_offset: u64,
 }
@@ -3480,7 +3798,7 @@ pub struct DesignRevolveConstruction {
     /// Byte offset of the operation u32.
     pub operation_offset: u64,
     /// Positive angular travel in radians.
-    pub angle: f64,
+    pub angle: DesignPositiveScalar,
     /// Referenced angular-travel scalar record.
     pub angle_record_index: u32,
     /// Byte offset of the angular-travel scalar.
@@ -3515,7 +3833,7 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
         Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle,
+            angle: value.angle.get(),
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
@@ -3530,7 +3848,8 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
         Ok(Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle,
+            angle: DesignPositiveScalar::new(value.angle)
+                .ok_or("angle must be positive and finite")?,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle: match (
@@ -3626,6 +3945,45 @@ pub struct DesignExternalVersion {
 )]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
+    selector_asset_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_asset_id`.
+    selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    selector_context_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_context_id`.
+    selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    occurrence_reference_offset: u64,
+    /// Entity reference of the body in the referenced document.
+    external_body_reference: u64,
+    /// Byte offset of `external_body_reference`.
+    external_body_reference_offset: u64,
+    /// Segment carried by the cross-document body reference.
+    external_segment: u32,
+    /// Byte offset of `external_segment`.
+    external_segment_offset: u64,
+    /// Byte offset of `external_asset_id`.
+    external_asset_id_offset: u64,
+    /// Link name carried by the cross-document body reference.
+    external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    external_link_name_offset: u64,
+    /// Located property key and referenced-document version identity.
+    external_version: Option<DesignExternalVersion>,
+    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    #[serde(default)]
+    tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    #[serde(default)]
+    tail_value_offsets: [u64; 2],
+}
+
+/// Wire fields for an external Combine body identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignCombineExternalBodyIdentityWire {
+    /// Asset GUID of the enclosing body selector.
     pub selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
     pub selector_asset_id_offset: u64,
@@ -3653,8 +4011,18 @@ pub struct DesignCombineExternalBodyIdentity {
     pub external_link_name: String,
     /// Byte offset of `external_link_name`.
     pub external_link_name_offset: u64,
-    /// Located property key and referenced-document version identity.
-    pub external_version: Option<DesignExternalVersion>,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key: Option<DesignRelaxedGuidText>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn_offset: Option<u64>,
     /// Retained u64 values around the fixed `u32 48` member in the selector tail.
     #[serde(default)]
     pub tail_values: [u64; 2],
@@ -3663,59 +4031,168 @@ pub struct DesignCombineExternalBodyIdentity {
     pub tail_value_offsets: [u64; 2],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct DesignCombineExternalBodyIdentityWire {
-    /// Asset GUID of the enclosing body selector.
-    selector_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_asset_id`.
-    selector_asset_id_offset: u64,
-    /// Context GUID of the enclosing body selector.
-    selector_context_id: DesignRelaxedGuidText,
-    /// Byte offset of `selector_context_id`.
-    selector_context_id_offset: u64,
-    /// Same-segment occurrence reference preceding the external body reference.
-    occurrence_reference: u64,
-    /// Byte offset of `occurrence_reference`.
-    occurrence_reference_offset: u64,
-    /// Entity reference of the body in the referenced document.
-    external_body_reference: u64,
-    /// Byte offset of `external_body_reference`.
-    external_body_reference_offset: u64,
-    /// Segment carried by the cross-document body reference.
-    external_segment: u32,
-    /// Byte offset of `external_segment`.
-    external_segment_offset: u64,
-    /// Asset GUID carried by the cross-document body reference.
-    external_asset_id: DesignRelaxedGuidText,
-    /// Byte offset of `external_asset_id`.
-    external_asset_id_offset: u64,
-    /// Link name carried by the cross-document body reference.
-    external_link_name: String,
-    /// Byte offset of `external_link_name`.
-    external_link_name_offset: u64,
-    /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key: Option<DesignRelaxedGuidText>,
-    /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_property_key_offset: Option<u64>,
-    /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_version_urn: Option<String>,
-    /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_version_urn_offset: Option<u64>,
-    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
-    #[serde(default)]
-    tail_values: [u64; 2],
-    /// Byte offsets of `tail_values` in source order.
-    #[serde(default)]
-    tail_value_offsets: [u64; 2],
+impl DesignCombineExternalBodyIdentity {
+    pub(crate) fn selector_asset_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_asset_id
+    }
+    pub(crate) fn selector_asset_id_offset(&self) -> u64 {
+        self.selector_asset_id_offset
+    }
+    pub(crate) fn selector_context_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_context_id
+    }
+    pub(crate) fn occurrence_reference(&self) -> u64 {
+        self.occurrence_reference
+    }
+    pub(crate) fn external_body_reference(&self) -> u64 {
+        self.external_body_reference
+    }
+    pub(crate) fn external_segment(&self) -> u32 {
+        self.external_segment
+    }
+    pub(crate) fn external_asset_id(&self) -> &DesignRelaxedGuidText {
+        &self.selector_asset_id
+    }
+    pub(crate) fn external_link_name(&self) -> &str {
+        &self.external_link_name
+    }
+    pub(crate) fn external_version(&self) -> Option<&DesignExternalVersion> {
+        self.external_version.as_ref()
+    }
+    #[cfg(test)]
+    pub(crate) fn tail_values(&self) -> [u64; 2] {
+        self.tail_values
+    }
+    #[cfg(test)]
+    pub(crate) fn tail_value_offsets(&self) -> [u64; 2] {
+        self.tail_value_offsets
+    }
+    #[cfg(test)]
+    pub(crate) fn external_asset_id_offset(&self) -> u64 {
+        self.external_asset_id_offset
+    }
 }
 
 impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBodyIdentity {
     type Error = String;
     fn try_from(wire: DesignCombineExternalBodyIdentityWire) -> Result<Self, Self::Error> {
+        let external_version = match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
+            (None, None, None, None) => None,
+            (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
+            _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
+        };
+        if wire.external_asset_id != wire.selector_asset_id {
+            return Err("external_asset_id must match selector_asset_id".into());
+        }
+        if wire.occurrence_reference == 0 {
+            return Err("occurrence_reference must be nonzero".into());
+        }
+        if wire.external_body_reference == 0 {
+            return Err("external_body_reference must be nonzero".into());
+        }
+        if wire.external_link_name.is_empty() {
+            return Err("external_link_name must not be empty".into());
+        }
+        let utf16_end = |offset: u64, text: &str| -> Option<u64> {
+            offset.checked_add(
+                u64::try_from(text.encode_utf16().count())
+                    .ok()?
+                    .checked_mul(2)?,
+            )
+        };
+        let after_text = |offset: u64, text: &str, delta: u64| {
+            utf16_end(offset, text).and_then(|end| end.checked_add(delta))
+        };
+        let prefix = (crate::layout::combine_external_selector_prefix::LEN + 4) as u64;
+        if wire.selector_asset_id_offset < prefix {
+            return Err("selector_asset_id_offset must follow the selector header".into());
+        }
+        for (field, actual, expected) in [
+            (
+                "selector_context_id_offset",
+                wire.selector_context_id_offset,
+                after_text(
+                    wire.selector_asset_id_offset,
+                    wire.selector_asset_id.as_str(),
+                    4,
+                ),
+            ),
+            (
+                "occurrence_reference_offset",
+                wire.occurrence_reference_offset,
+                after_text(
+                    wire.selector_context_id_offset,
+                    wire.selector_context_id.as_str(),
+                    13,
+                ),
+            ),
+            (
+                "external_body_reference_offset",
+                wire.external_body_reference_offset,
+                wire.occurrence_reference_offset.checked_add(15),
+            ),
+            (
+                "external_segment_offset",
+                wire.external_segment_offset,
+                wire.external_body_reference_offset.checked_add(9),
+            ),
+            (
+                "external_asset_id_offset",
+                wire.external_asset_id_offset,
+                wire.external_segment_offset.checked_add(8),
+            ),
+            (
+                "external_link_name_offset",
+                wire.external_link_name_offset,
+                after_text(
+                    wire.external_asset_id_offset,
+                    wire.external_asset_id.as_str(),
+                    5,
+                ),
+            ),
+            (
+                "tail_value_offsets[1]",
+                wire.tail_value_offsets[1],
+                wire.tail_value_offsets[0].checked_add(12),
+            ),
+        ] {
+            if expected != Some(actual) {
+                return Err(format!(
+                    "{field} disagrees with the external identity offset chain"
+                ));
+            }
+        }
+        let tail_offset = match &external_version {
+            None => after_text(wire.external_link_name_offset, &wire.external_link_name, 7),
+            Some(version) => {
+                if version.version_urn.value.is_empty() {
+                    return Err("external_version_urn must not be empty".into());
+                }
+                if after_text(wire.external_link_name_offset, &wire.external_link_name, 5)
+                    != Some(version.property_key.offset)
+                {
+                    return Err(
+                        "external_property_key_offset disagrees with external_link_name".into(),
+                    );
+                }
+                if after_text(
+                    version.property_key.offset,
+                    version.property_key.value.as_str(),
+                    4,
+                ) != Some(version.version_urn.offset)
+                {
+                    return Err(
+                        "external_version_urn_offset disagrees with external_property_key".into(),
+                    );
+                }
+                after_text(version.version_urn.offset, &version.version_urn.value, 6)
+            }
+        };
+        if tail_offset != Some(wire.tail_value_offsets[0]) {
+            return Err(
+                "tail_value_offsets[0] disagrees with the external identity offset chain".into(),
+            );
+        }
         Ok(Self {
             selector_asset_id: wire.selector_asset_id,
             selector_asset_id_offset: wire.selector_asset_id_offset,
@@ -3727,15 +4204,10 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
             external_body_reference_offset: wire.external_body_reference_offset,
             external_segment: wire.external_segment,
             external_segment_offset: wire.external_segment_offset,
-            external_asset_id: wire.external_asset_id,
             external_asset_id_offset: wire.external_asset_id_offset,
             external_link_name: wire.external_link_name,
             external_link_name_offset: wire.external_link_name_offset,
-            external_version: match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
-                (None, None, None, None) => None,
-                (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
-                _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
-            },
+            external_version,
             tail_values: wire.tail_values,
             tail_value_offsets: wire.tail_value_offsets,
         })
@@ -3745,7 +4217,7 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
 impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdentityWire {
     fn from(record: DesignCombineExternalBodyIdentity) -> Self {
         Self {
-            selector_asset_id: record.selector_asset_id,
+            selector_asset_id: record.selector_asset_id.clone(),
             selector_asset_id_offset: record.selector_asset_id_offset,
             selector_context_id: record.selector_context_id,
             selector_context_id_offset: record.selector_context_id_offset,
@@ -3755,7 +4227,7 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
             external_body_reference_offset: record.external_body_reference_offset,
             external_segment: record.external_segment,
             external_segment_offset: record.external_segment_offset,
-            external_asset_id: record.external_asset_id,
+            external_asset_id: record.selector_asset_id,
             external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name,
             external_link_name_offset: record.external_link_name_offset,
@@ -3920,21 +4392,51 @@ pub struct DesignThreadConstruction {
     /// Byte offset of the designation LP-UTF16 field.
     pub designation_offset: u64,
     /// Standard thread designation.
-    pub designation: String,
+    pub designation: cadmpeg_ir::NonEmptyString,
     /// Validated nominal-size spelling; its numeric value is derived on read.
     pub nominal_size: DesignThreadNominalSize,
     /// Thread profile name.
-    pub profile: String,
-    /// Physical major diameter in Design length units.
-    pub major_diameter: f64,
-    /// Physical minor diameter in Design length units.
-    pub minor_diameter: f64,
+    pub profile: cadmpeg_ir::NonEmptyString,
+    /// Ordered physical thread diameters in Design length units.
+    pub diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
-    pub pitch: f64,
-    /// Pitch diameter in Design length units.
-    pub pitch_diameter: f64,
+    pub pitch: DesignPositiveScalar,
     /// Ordered counted face-selection groups referenced by the scope.
     pub face_group_record_indices: Vec<u32>,
+}
+
+/// Positive finite thread diameters ordered from minor through pitch to major.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignThreadDiameters {
+    major: DesignPositiveScalar,
+    minor: DesignPositiveScalar,
+    pitch: DesignPositiveScalar,
+}
+
+impl DesignThreadDiameters {
+    /// Admit strictly ordered positive finite thread diameters.
+    pub fn new(major: f64, minor: f64, pitch: f64) -> Option<Self> {
+        let major = DesignPositiveScalar::new(major)?;
+        let minor = DesignPositiveScalar::new(minor)?;
+        let pitch = DesignPositiveScalar::new(pitch)?;
+        (minor.get() < pitch.get() && pitch.get() < major.get()).then_some(Self {
+            major,
+            minor,
+            pitch,
+        })
+    }
+    /// Physical major diameter in Design length units.
+    pub fn major(self) -> f64 {
+        self.major.get()
+    }
+    /// Physical minor diameter in Design length units.
+    pub fn minor(self) -> f64 {
+        self.minor.get()
+    }
+    /// Physical pitch diameter in Design length units.
+    pub fn pitch(self) -> f64 {
+        self.pitch.get()
+    }
 }
 
 /// Original spelling of a finite positive nominal thread size.
@@ -4035,14 +4537,14 @@ impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {
         Ok(Self {
             form,
             designation_offset: value.designation_offset,
-            designation: value.designation,
+            designation: value.designation.as_str().to_owned(),
             nominal_size_text: value.nominal_size.0,
             nominal_size,
-            profile: value.profile,
-            major_diameter: value.major_diameter,
-            minor_diameter: value.minor_diameter,
-            pitch: value.pitch,
-            pitch_diameter: value.pitch_diameter,
+            profile: value.profile.as_str().to_owned(),
+            major_diameter: value.diameters.major(),
+            minor_diameter: value.diameters.minor(),
+            pitch: value.pitch.get(),
+            pitch_diameter: value.diameters.pitch(),
             trailing_reference_record_index: trailing_reference.map(|located| located.value.get()),
             trailing_reference_offset: trailing_reference.map(|located| located.offset),
             face_group_record_indices: value.face_group_record_indices,
@@ -4089,13 +4591,12 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         Ok(Self {
             form,
             designation_offset: value.designation_offset,
-            designation: value.designation,
+            designation: cadmpeg_ir::NonEmptyString::new(value.designation).ok_or("designation must not be empty")?,
             nominal_size,
-            profile: value.profile,
-            major_diameter: value.major_diameter,
-            minor_diameter: value.minor_diameter,
-            pitch: value.pitch,
-            pitch_diameter: value.pitch_diameter,
+            profile: cadmpeg_ir::NonEmptyString::new(value.profile).ok_or("profile must not be empty")?,
+            diameters: DesignThreadDiameters::new(value.major_diameter, value.minor_diameter, value.pitch_diameter)
+                .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
+            pitch: DesignPositiveScalar::new(value.pitch).ok_or("pitch must be positive finite")?,
             face_group_record_indices: value.face_group_record_indices,
         })
     }
@@ -4105,7 +4606,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignDraftOperation {
     /// Signed draft angle in radians.
-    pub angle: f64,
+    pub angle: DesignFiniteScalar,
     /// Referenced draft-angle scalar record.
     pub angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.
@@ -5430,7 +5931,7 @@ where
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct WorkPlaneFrameWire {
-    work_plane_transform: Option<[[f64; 4]; 4]>,
+    work_plane_transform: Option<SketchPlacementMatrix>,
     work_plane_transform_offset: Option<u64>,
     work_plane_reference: Option<u32>,
     work_plane_reference_offset: Option<u64>,
@@ -5481,7 +5982,7 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct JointOriginFrameWire {
-    joint_origin_transform: Option<[[f64; 4]; 4]>,
+    joint_origin_transform: Option<SketchPlacementMatrix>,
     joint_origin_transform_offset: Option<u64>,
     joint_origin_reference: Option<u32>,
     joint_origin_reference_offset: Option<u64>,
@@ -5844,7 +6345,7 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
-    pub work_plane_transform: [[f64; 4]; 4],
+    pub work_plane_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
     pub work_plane_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
@@ -5869,7 +6370,7 @@ pub struct DesignWorkPlaneReference {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
-    pub joint_origin_transform: [[f64; 4]; 4],
+    pub joint_origin_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
     pub joint_origin_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
@@ -5891,7 +6392,7 @@ pub struct DesignJointOriginReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
-    pub gap_tolerance: f64,
+    pub gap_tolerance: DesignPositiveScalar,
     /// Byte offset of `gap_tolerance`.
     pub gap_tolerance_offset: u64,
     /// Indexed tolerance-record identity.
@@ -6006,6 +6507,10 @@ pub struct DesignSurfaceTrimCellEntry {
 
 /// Exact auxiliary carrier of a `SurfaceTrim` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignSurfaceTrimOperationWire",
+    into = "DesignSurfaceTrimOperationWire"
+)]
 pub struct DesignSurfaceTrimOperation {
     /// Globally unique deterministic identifier for this native carrier.
     pub id: String,
@@ -6020,7 +6525,46 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the record immediately following the entity-selection frame.
     pub selection_next_byte_offset: u64,
     /// Two indexed records between the entity selection and the cell table.
-    pub chain_records: Vec<DesignSurfaceTrimChainRecord>,
+    pub chain_records: [DesignSurfaceTrimChainRecord; 2],
+    /// Indexed record carrying the counted BRep-cell table.
+    pub cell_table_record_index: u32,
+    /// Byte offset of the cell-table primary header.
+    pub cell_table_byte_offset: u64,
+    /// Dynamic class tag of the cell-table primary frame.
+    pub cell_table_class_tag: DesignClassTag,
+    /// Bytes from the cell-table primary header to its paired header.
+    pub cell_table_frame_length: u64,
+    /// Dynamic class tag of the cell-table paired frame.
+    pub cell_table_paired_class_tag: DesignClassTag,
+    /// Byte offset of the cell-table paired header.
+    pub cell_table_paired_byte_offset: u64,
+    /// Byte offset of the cell-table count.
+    pub cell_count_offset: u64,
+    /// Ordered cell-table entries.
+    cell_entries: Vec<DesignSurfaceTrimCellEntry>,
+    /// Total number of cells in the operation's partition.
+    pub trailing_value: u32,
+    /// Byte offset of `trailing_value`.
+    pub trailing_value_offset: u64,
+    /// Byte offset of the zero value after `trailing_value`.
+    pub trailing_zero_offset: u64,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DesignSurfaceTrimOperationWire {
+    /// Globally unique deterministic identifier for this native carrier.
+    pub id: String,
+    /// Owning `SurfaceTrim` parameter-scope record index.
+    pub scope_record_index: u32,
+    /// Indexed entity-selection record that starts the trimming tool chain.
+    pub selection_record_index: u32,
+    /// Byte offset of the entity-selection record.
+    pub selection_byte_offset: u64,
+    /// Indexed record immediately following the entity-selection frame.
+    pub selection_next_record_index: u32,
+    /// Byte offset of the record immediately following the entity-selection frame.
+    pub selection_next_byte_offset: u64,
+    /// Two indexed records between the entity selection and the cell table.
+    pub chain_records: [DesignSurfaceTrimChainRecord; 2],
     /// Indexed record carrying the counted BRep-cell table.
     pub cell_table_record_index: u32,
     /// Byte offset of the cell-table primary header.
@@ -6034,7 +6578,7 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the cell-table paired header.
     pub cell_table_paired_byte_offset: u64,
     /// Count of entries in the cell table.
-    pub cell_count: u32,
+    pub cell_count: usize,
     /// Byte offset of the cell-table count.
     pub cell_count_offset: u64,
     /// Ordered cell-table entries.
@@ -6045,6 +6589,70 @@ pub struct DesignSurfaceTrimOperation {
     pub trailing_value_offset: u64,
     /// Byte offset of the zero value after `trailing_value`.
     pub trailing_zero_offset: u64,
+}
+impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
+    type Error = &'static str;
+    fn try_from(wire: DesignSurfaceTrimOperationWire) -> Result<Self, Self::Error> {
+        if wire.cell_entries.is_empty() {
+            return Err("cell_entries must not be empty");
+        }
+        if wire.cell_count != wire.cell_entries.len() {
+            return Err("cell_count disagrees with cell_entries");
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            selection_record_index: wire.selection_record_index,
+            selection_byte_offset: wire.selection_byte_offset,
+            selection_next_record_index: wire.selection_next_record_index,
+            selection_next_byte_offset: wire.selection_next_byte_offset,
+            chain_records: wire.chain_records,
+            cell_table_record_index: wire.cell_table_record_index,
+            cell_table_byte_offset: wire.cell_table_byte_offset,
+            cell_table_class_tag: wire.cell_table_class_tag,
+            cell_table_frame_length: wire.cell_table_frame_length,
+            cell_table_paired_class_tag: wire.cell_table_paired_class_tag,
+            cell_table_paired_byte_offset: wire.cell_table_paired_byte_offset,
+            cell_count_offset: wire.cell_count_offset,
+            cell_entries: wire.cell_entries,
+            trailing_value: wire.trailing_value,
+            trailing_value_offset: wire.trailing_value_offset,
+            trailing_zero_offset: wire.trailing_zero_offset,
+        })
+    }
+}
+impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
+    fn from(value: DesignSurfaceTrimOperation) -> Self {
+        Self {
+            cell_count: value.cell_count(),
+            id: value.id,
+            scope_record_index: value.scope_record_index,
+            selection_record_index: value.selection_record_index,
+            selection_byte_offset: value.selection_byte_offset,
+            selection_next_record_index: value.selection_next_record_index,
+            selection_next_byte_offset: value.selection_next_byte_offset,
+            chain_records: value.chain_records,
+            cell_table_record_index: value.cell_table_record_index,
+            cell_table_byte_offset: value.cell_table_byte_offset,
+            cell_table_class_tag: value.cell_table_class_tag,
+            cell_table_frame_length: value.cell_table_frame_length,
+            cell_table_paired_class_tag: value.cell_table_paired_class_tag,
+            cell_table_paired_byte_offset: value.cell_table_paired_byte_offset,
+            cell_count_offset: value.cell_count_offset,
+            cell_entries: value.cell_entries,
+            trailing_value: value.trailing_value,
+            trailing_value_offset: value.trailing_value_offset,
+            trailing_zero_offset: value.trailing_zero_offset,
+        }
+    }
+}
+impl DesignSurfaceTrimOperation {
+    pub(crate) fn cell_count(&self) -> usize {
+        self.cell_entries.len()
+    }
+    pub(crate) fn cell_entries(&self) -> &[DesignSurfaceTrimCellEntry] {
+        &self.cell_entries
+    }
 }
 
 /// Direction law encoded by a `SurfaceRuled` operation.
@@ -6186,7 +6794,7 @@ pub struct DesignSurfacePatchBoundary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
-    pub thickness: f64,
+    pub thickness: DesignPositiveScalar,
     /// Byte offset of `thickness`.
     pub thickness_offset: u64,
     /// Counted sketch-profile operand group.
@@ -7597,7 +8205,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub(crate) fn work_plane_transform(&self) -> Option<SketchPlacementMatrix> {
         self.work_plane_frame()
             .map(|frame| frame.work_plane_transform)
     }
@@ -7619,7 +8227,7 @@ impl DesignParameterScope {
             .and_then(|frame| frame.work_plane_construction.as_mut())
     }
 
-    pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
+    pub(crate) fn joint_origin_transform(&self) -> Option<SketchPlacementMatrix> {
         self.joint_origin_frame()
             .map(|frame| frame.joint_origin_transform)
     }
@@ -7653,7 +8261,7 @@ impl DesignParameterScope {
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
-    pub(crate) fn with_work_plane_transform(&mut self, transform: [[f64; 4]; 4]) {
+    pub(crate) fn with_work_plane_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::WorkPlane(Some(DesignWorkPlaneTransform {
             work_plane_transform: transform,
             work_plane_transform_offset: 0,
@@ -7671,7 +8279,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn with_joint_origin_transform(&mut self, transform: [[f64; 4]; 4]) {
+    pub(crate) fn with_joint_origin_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::JointOrigin(Some(DesignJointOriginTransform {
             joint_origin_transform: transform,
             joint_origin_transform_offset: 0,
@@ -7729,15 +8337,18 @@ pub enum DesignEdgeFlangeHeightExtent {
 pub struct DesignEdgeFlangeEdge {
     pub wrapper_record_index: u32,
     pub group_record_index: u32,
-    pub operand_record_index: u32,
     pub aggregate_operand_record_index: u32,
 }
 
 impl DesignEdgeFlangeEdge {
+    pub(crate) fn operand_record_index(&self) -> u32 {
+        self.group_record_index.saturating_add(3)
+    }
+
     pub(crate) fn from_columns(
         wrappers: Vec<u32>,
         groups: Vec<u32>,
-        operands: Vec<u32>,
+        operands: &[u32],
         aggregate_operands: Vec<u32>,
     ) -> Result<Vec<Self>, String> {
         if groups.len() != wrappers.len()
@@ -7746,37 +8357,88 @@ impl DesignEdgeFlangeEdge {
         {
             return Err("edge_wrapper_record_indices, edge_group_record_indices, edge_operand_record_indices, and aggregate_operand_record_indices must have equal lengths".into());
         }
+        if groups
+            .iter()
+            .zip(operands)
+            .any(|(group, operand)| *operand != group.saturating_add(3))
+        {
+            return Err(
+                "edge_operand_record_indices must equal edge_group_record_indices + 3".into(),
+            );
+        }
         Ok(wrappers
             .into_iter()
             .zip(groups)
-            .zip(operands)
             .zip(aggregate_operands)
             .map(
-                |(
-                    ((wrapper_record_index, group_record_index), operand_record_index),
-                    aggregate_operand_record_index,
-                )| Self {
-                    wrapper_record_index,
-                    group_record_index,
-                    operand_record_index,
-                    aggregate_operand_record_index,
+                |((wrapper_record_index, group_record_index), aggregate_operand_record_index)| {
+                    Self {
+                        wrapper_record_index,
+                        group_record_index,
+                        aggregate_operand_record_index,
+                    }
                 },
             )
             .collect())
     }
 }
 
-/// Positive finite inside bend radius in source centimetres.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignBendRadius(f64);
+/// A positive finite source scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DesignPositiveScalar(f64);
 
-impl DesignBendRadius {
+impl DesignPositiveScalar {
+    /// Admit a positive finite scalar.
     pub fn new(value: f64) -> Option<Self> {
         (value.is_finite() && value > 0.0).then_some(Self(value))
     }
 
+    /// The source scalar value.
     pub fn get(self) -> f64 {
         self.0
+    }
+}
+
+impl TryFrom<f64> for DesignPositiveScalar {
+    type Error = &'static str;
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("scalar must be positive and finite")
+    }
+}
+
+impl From<DesignPositiveScalar> for f64 {
+    fn from(value: DesignPositiveScalar) -> Self {
+        value.get()
+    }
+}
+
+/// A finite source scalar with unrestricted sign.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct DesignFiniteScalar(f64);
+
+impl DesignFiniteScalar {
+    /// Admit a finite scalar.
+    pub fn new(value: f64) -> Option<Self> {
+        value.is_finite().then_some(Self(value))
+    }
+    /// The source scalar value.
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for DesignFiniteScalar {
+    type Error = &'static str;
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("scalar must be finite")
+    }
+}
+
+impl From<DesignFiniteScalar> for f64 {
+    fn from(value: DesignFiniteScalar) -> Self {
+        value.get()
     }
 }
 
@@ -7787,10 +8449,8 @@ impl DesignBendRadius {
     into = "DesignEdgeFlangeOperationSerde"
 )]
 pub struct DesignEdgeFlangeOperation {
-    /// Selected edges, width law, and height extent.
-    pub shape: DesignEdgeFlangeShape,
-    /// Role-`0x43` aggregate operand-group record.
-    pub aggregate_group_record_index: u32,
+    /// Selected flange edges and their aggregate operand group.
+    pub selection: DesignEdgeFlangeSelection,
     /// Height parameter-owner record.
     pub height_owner_record_index: u32,
     /// Angle parameter-owner record.
@@ -7802,13 +8462,50 @@ pub struct DesignEdgeFlangeOperation {
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignBendRadius,
+    pub bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
     pub bend_position: DesignBendPosition,
+}
+
+/// Flange edge shape paired with its aggregate operand group.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignEdgeFlangeSelection {
+    shape: DesignEdgeFlangeShape,
+    aggregate_group_record_index: u32,
+}
+
+impl DesignEdgeFlangeSelection {
+    pub(crate) fn try_new(
+        shape: DesignEdgeFlangeShape,
+        aggregate_group_record_index: u32,
+    ) -> Result<Self, String> {
+        let mismatched_aggregate = {
+            let mut edges = shape.edges();
+            let first = edges.next();
+            edges.next().is_none()
+                && first.is_some_and(|edge| {
+                    edge.aggregate_operand_record_index
+                        != aggregate_group_record_index.saturating_add(3)
+                })
+        };
+        if mismatched_aggregate {
+            return Err("single-edge aggregate_operand_record_indices must equal aggregate_group_record_index + 3".into());
+        }
+        Ok(Self {
+            shape,
+            aggregate_group_record_index,
+        })
+    }
+    pub(crate) fn shape(&self) -> &DesignEdgeFlangeShape {
+        &self.shape
+    }
+    pub(crate) fn aggregate_group_record_index(&self) -> u32 {
+        self.aggregate_group_record_index
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -7849,24 +8546,26 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
         let edges = DesignEdgeFlangeEdge::from_columns(
             wire.edge_wrapper_record_indices,
             wire.edge_group_record_indices,
-            wire.edge_operand_record_indices,
+            &wire.edge_operand_record_indices,
             wire.aggregate_operand_record_indices,
         )?;
         Ok(Self {
-            shape: DesignEdgeFlangeShape::from_wire(
-                edges,
-                wire.width_mode,
-                wire.width_distance_owner_record_indices,
-                wire.width_distance_owner_record_indices_by_edge,
-                wire.width_parameter_source,
-                wire.height_extent,
+            selection: DesignEdgeFlangeSelection::try_new(
+                DesignEdgeFlangeShape::from_wire(
+                    edges,
+                    wire.width_mode,
+                    wire.width_distance_owner_record_indices,
+                    wire.width_distance_owner_record_indices_by_edge,
+                    wire.width_parameter_source,
+                    wire.height_extent,
+                )?,
+                wire.aggregate_group_record_index,
             )?,
-            aggregate_group_record_index: wire.aggregate_group_record_index,
             height_owner_record_index: wire.height_owner_record_index,
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius)
+            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
             height_datum: wire.height_datum,
@@ -7877,10 +8576,14 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
 
 impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
     fn from(operation: DesignEdgeFlangeOperation) -> Self {
-        let width_mode = Some(operation.shape.mode());
-        let width_distance_owner_record_indices =
-            operation.shape.owner_indices().copied().collect();
-        let width_distance_owner_record_indices_by_edge = match &operation.shape {
+        let width_mode = Some(operation.selection.shape().mode());
+        let width_distance_owner_record_indices = operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect();
+        let width_distance_owner_record_indices_by_edge = match operation.selection.shape() {
             DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } => {
                 edges.iter().map(|row| row.owners).collect()
             }
@@ -7888,34 +8591,38 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
         };
         Self {
             edge_wrapper_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.wrapper_record_index)
                 .collect(),
             edge_group_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect(),
             edge_operand_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(DesignEdgeFlangeEdge::operand_record_index)
                 .collect(),
-            aggregate_group_record_index: operation.aggregate_group_record_index,
+            aggregate_group_record_index: operation.selection.aggregate_group_record_index(),
             aggregate_operand_record_indices: operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.aggregate_operand_record_index)
                 .collect(),
             height_owner_record_index: operation.height_owner_record_index,
-            height_extent: operation.shape.height(),
+            height_extent: operation.selection.shape().height(),
             angle_owner_record_index: operation.angle_owner_record_index,
             width_mode,
             width_distance_owner_record_indices,
             width_distance_owner_record_indices_by_edge,
             auxiliary_reference_record_indices: operation.auxiliary_reference_record_indices,
-            width_parameter_source: operation.shape.source(),
+            width_parameter_source: operation.selection.shape().source(),
             settings_record_index: operation.settings_record_index,
             bend_radius: operation.bend_radius.get(),
             bend_radius_offset: operation.bend_radius_offset,
@@ -7964,18 +8671,14 @@ pub struct DesignHemOperation {
     pub edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
     pub edge_group_record_index: u32,
-    /// Recipe-backed role-`0x08` operand record.
-    pub edge_operand_record_index: u32,
     /// Role-`0x43` aggregate operand-group record.
     pub aggregate_group_record_index: u32,
-    /// Recipe-backed role-`0x43` operand record.
-    pub aggregate_operand_record_index: u32,
     /// Parameter-owner layout selected by the owned source kinds.
     pub parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignBendRadius,
+    pub bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
 }
@@ -8006,6 +8709,15 @@ struct DesignHemOperationWire {
     reference_side_code: u32,
 }
 
+impl DesignHemOperation {
+    pub(crate) fn edge_operand_record_index(&self) -> u32 {
+        self.edge_group_record_index.saturating_add(3)
+    }
+    pub(crate) fn aggregate_operand_record_index(&self) -> u32 {
+        self.aggregate_group_record_index.saturating_add(3)
+    }
+}
+
 impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
     type Error = String;
 
@@ -8022,15 +8734,23 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
         if wire.reference_side_code != 4 {
             return Err("reference_side_code must be 4".into());
         }
+        if wire.edge_operand_record_index != wire.edge_group_record_index.saturating_add(3) {
+            return Err("edge_operand_record_index must equal edge_group_record_index + 3".into());
+        }
+        if wire.aggregate_operand_record_index
+            != wire.aggregate_group_record_index.saturating_add(3)
+        {
+            return Err(
+                "aggregate_operand_record_index must equal aggregate_group_record_index + 3".into(),
+            );
+        }
         Ok(Self {
             edge_wrapper_record_index: wire.edge_wrapper_record_index,
             edge_group_record_index: wire.edge_group_record_index,
-            edge_operand_record_index: wire.edge_operand_record_index,
             aggregate_group_record_index: wire.aggregate_group_record_index,
-            aggregate_operand_record_index: wire.aggregate_operand_record_index,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius)
+            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
         })
@@ -8042,9 +8762,9 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
         Self {
             edge_wrapper_record_index: record.edge_wrapper_record_index,
             edge_group_record_index: record.edge_group_record_index,
-            edge_operand_record_index: record.edge_operand_record_index,
+            edge_operand_record_index: record.edge_operand_record_index(),
             aggregate_group_record_index: record.aggregate_group_record_index,
-            aggregate_operand_record_index: record.aggregate_operand_record_index,
+            aggregate_operand_record_index: record.aggregate_operand_record_index(),
             parameter_owners: record.parameter_owners,
             settings_record_index: record.settings_record_index,
             bend_radius: record.bend_radius.get(),
@@ -8133,19 +8853,19 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     into = "DesignCopyPasteBodiesOperationWire"
 )]
 pub struct DesignCopyPasteBodiesOperation {
-    pub bodies: Vec<DesignCopiedBody>,
+    bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
     pub body_group_record_index: u32,
     /// Dynamic class tag of the body group's primary header.
     pub body_group_class_tag: DesignClassTag,
     /// Byte offset of the body group's primary header.
-    pub body_group_byte_offset: u64,
+    body_group_byte_offset: u64,
     /// Indexed source-to-copy relation record named by the scope prefix.
     pub relation_record_index: u32,
     /// Dynamic class tag of the relation record's primary header.
     pub relation_class_tag: DesignClassTag,
     /// Byte offset of the relation record's primary header.
-    pub relation_byte_offset: u64,
+    relation_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8182,6 +8902,59 @@ struct DesignCopyPasteBodiesOperationWire {
     copied_body_entity_suffixes: Vec<u32>,
     /// Byte offsets parallel to `copied_body_entity_suffixes`.
     copied_body_entity_suffix_offsets: Vec<u64>,
+}
+
+impl DesignCopyPasteBodiesOperation {
+    pub(crate) fn try_new(
+        bodies: Vec<DesignCopiedBody>,
+        body_group_record_index: u32,
+        body_group_class_tag: DesignClassTag,
+        body_group_byte_offset: u64,
+        relation_record_index: u32,
+        relation_class_tag: DesignClassTag,
+        relation_byte_offset: u64,
+    ) -> Result<Self, String> {
+        if bodies.is_empty() {
+            return Err("bodies must not be empty".into());
+        }
+        let mut suffixes = std::collections::HashSet::new();
+        let mut operand_offset = body_group_byte_offset.saturating_add(26);
+        let mut source_offset = relation_byte_offset.saturating_add(25);
+        for body in &bodies {
+            if !suffixes.insert(body.source.value) || !suffixes.insert(body.copied.value) {
+                return Err("source and copied body suffixes must be pairwise distinct".into());
+            }
+            if body.operand.offset != operand_offset
+                || body.source.offset != source_offset
+                || body.copied.offset != source_offset.saturating_add(15)
+            {
+                return Err(
+                    "bodies operand, source, and copied offsets must follow their record strides"
+                        .into(),
+                );
+            }
+            operand_offset = operand_offset.saturating_add(11);
+            source_offset = source_offset.saturating_add(30);
+        }
+        Ok(Self {
+            bodies,
+            body_group_record_index,
+            body_group_class_tag,
+            body_group_byte_offset,
+            relation_record_index,
+            relation_class_tag,
+            relation_byte_offset,
+        })
+    }
+    pub(crate) fn bodies(&self) -> &[DesignCopiedBody] {
+        &self.bodies
+    }
+    pub(crate) fn body_group_byte_offset(&self) -> u64 {
+        self.body_group_byte_offset
+    }
+    pub(crate) fn relation_byte_offset(&self) -> u64 {
+        self.relation_byte_offset
+    }
 }
 
 impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperation {
@@ -8243,15 +9016,15 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 },
             )
             .collect();
-        Ok(Self {
+        Self::try_new(
             bodies,
-            body_group_record_index: wire.body_group_record_index,
-            body_group_class_tag: wire.body_group_class_tag.try_into()?,
-            body_group_byte_offset: wire.body_group_byte_offset,
-            relation_record_index: wire.relation_record_index,
-            relation_class_tag: wire.relation_class_tag.try_into()?,
-            relation_byte_offset: wire.relation_byte_offset,
-        })
+            wire.body_group_record_index,
+            wire.body_group_class_tag.try_into()?,
+            wire.body_group_byte_offset,
+            wire.relation_record_index,
+            wire.relation_class_tag.try_into()?,
+            wire.relation_byte_offset,
+        )
     }
 }
 impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire {

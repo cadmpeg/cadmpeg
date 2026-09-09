@@ -4592,24 +4592,38 @@ anchor = "followed by two marked same-segment operand-path-locator references"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "399 => Some([51, 62]),"
-note = "The As-built form uses the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form uses the same standard offsets."
+contains = "399 => (None, Some((4, 0, 4)), Some([51, 62])),"
+note = "The As-built form uses the two tabulated scope-relative locator-reference offsets."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "627 | 637 | 692 | 748 => Some([366, 377]),"
-note = "The standard assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form is admitted by its class pair and frame length."
+contains = "627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),"
+note = "The standard assembly forms use the two tabulated scope-relative locator-reference offsets."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "return Some([366, 377]);"
+contains = '748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),'
+note = "The class-430/262 748-byte Assemble form uses the standard locator-reference offsets."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "alignment: AssemblyAlignmentLanes::Variable(lanes), locator_offsets: Some([366, 377]),"
 note = "The variable-span class-283/264 and class-347/260 Assemble forms use the standard locator-reference offsets and are admitted by class pair."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "633 | 732 | 744 => Some([362, 373]),"
-note = "The compact assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 744-byte Assemble form is admitted by its class pair and frame length."
+contains = "633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),"
+note = "The 633-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets."
 
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "732 => (Some(Compact), Some((8, 4, 8)), Some([362, 373])),"
+note = "The 732-byte compact assembly form uses the two tabulated scope-relative locator-reference offsets."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = '744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),'
+note = "The class-430/262 744-byte Assemble form uses the compact locator-reference offsets."
 
 [[record]]
 name = "assembly_as_built_421_scope"

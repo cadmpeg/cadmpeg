@@ -118,7 +118,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
         return true;
     };
     let mut required_features = if ir.model.features.is_empty() {
-        BTreeSet::new()
+        BTreeMap::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
             return true;
@@ -129,21 +129,16 @@ pub(crate) fn active_configuration_state_is_incomplete(
         ir.model
             .features
             .iter()
-            .filter(|feature| feature.suppressed == Some(true))
-            .map(|feature| feature.id.clone()),
+            .enumerate()
+            .filter(|(_, feature)| feature.suppressed == Some(true))
+            .map(|(index, feature)| (feature.id.clone(), index)),
     );
     if configuration.feature_states.len() != required_features.len() {
         return true;
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature))
-        .collect::<BTreeMap<_, _>>();
-    if required_features.iter().any(|id| {
-        let (Some(feature), Some(state)) = (features.get(id), configuration.feature_states.get(id))
-        else {
+    if required_features.iter().any(|(id, &index)| {
+        let feature = &ir.model.features[index];
+        let Some(state) = configuration.feature_states.get(id) else {
             return true;
         };
         Some(state.evaluation.is_suppressed()) != feature.suppressed

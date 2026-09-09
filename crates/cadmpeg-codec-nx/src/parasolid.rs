@@ -619,7 +619,7 @@ pub fn extract_streams<'a>(
         .entries
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
-        .and_then(|entry| entry.file_span)
+        .and_then(crate::container::DirEntry::file_span)
     else {
         return Ok(Vec::new());
     };
@@ -777,11 +777,7 @@ pub fn extract_legacy_streams<'a>(
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
         })?;
-        let inflated = ctx.copy_retained(
-            payload,
-            "retain legacy NX Parasolid stream",
-            Some(part.location()),
-        )?;
+        let inflated = ctx.copy_retained(payload, "retain legacy NX Parasolid stream")?;
         let body = classify(&inflated);
         let consumed = u64::try_from(payload.len()).map_err(|_| {
             CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
@@ -853,11 +849,7 @@ fn inflate_stream<'a>(
     let Ok(consumed) = u64::try_from(consumed) else {
         return Ok(None);
     };
-    let inflated = ctx.copy_retained(
-        view.window(),
-        "retain NX inflated stream",
-        Some(source.location()),
-    )?;
+    let inflated = ctx.copy_retained(view.window(), "retain NX inflated stream")?;
     Ok(Some((inflated, consumed)))
 }
 

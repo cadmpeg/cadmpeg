@@ -23,7 +23,8 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -611,7 +612,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     .unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
     parameter.record_index = 301;
-    let owner = DesignParameterOwner {
+    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
         byte_offset: pair.paired_byte_offset + 59,
         frame_length: 104,
@@ -625,7 +626,8 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         owned_ordinal: 3,
         variant: Some(0),
         companion_record_index: 302,
-    };
+    })
+    .unwrap();
     assert_eq!(
         crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
@@ -714,12 +716,13 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     axis_pair.loci[0].role = 14;
     axis_pair.loci[1].role = 3;
     let entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity#line".into()),
-        SketchId("f3d:model:sketch#axis-angle".into()),
-        SketchGeometry::Line {
+        SketchEntityId::mint("f3d:model:sketch-entity#line").unwrap(),
+        SketchId::mint("f3d:model:sketch#axis-angle").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 1.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
@@ -732,7 +735,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::AngleToAxis {
+        Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
@@ -759,12 +762,13 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     .is_none());
 
     let radial_entity = SketchEntity::new(
-        SketchEntityId("f3d:model:sketch-entity:circle".into()),
-        SketchId("f3d:model:sketch#radial".into()),
-        SketchGeometry::Circle {
+        SketchEntityId::mint("synthetic:test:id#f3d:model:sketch-entity:circle").unwrap(),
+        SketchId::mint("f3d:model:sketch#radial").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length::new(1.000_000_014_901_161_2).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         null_locus_dimension_definition(
@@ -775,7 +779,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter.clone(),
             TEST_LINEAR_TOLERANCE,
         ),
-        Some(SketchConstraintDefinition::Diameter {
+        Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter

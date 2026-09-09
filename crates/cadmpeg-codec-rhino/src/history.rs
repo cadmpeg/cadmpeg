@@ -1110,7 +1110,7 @@ fn structured_value_properties(
                             }
                             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                                 crate::surfaces::DecodedSurface::Typed { geometry, .. } => {
-                                    serde_json::to_string(&geometry)
+                                    serde_json::to_string(&geometry.into_geometry())
                                 }
                                 crate::surfaces::DecodedSurface::Procedural {
                                     geometry, ..
@@ -1333,7 +1333,7 @@ pub(crate) fn project(
             source_properties: properties,
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Native {

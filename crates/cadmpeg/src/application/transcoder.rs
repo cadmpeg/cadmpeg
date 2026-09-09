@@ -12,7 +12,7 @@ use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
-use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal};
 use crate::application::validators::validate_ir;
@@ -149,7 +149,7 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 pub enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
-    #[value(skip)]
+    #[value(hide = true)]
     Allow,
     /// Refuse decode losses only.
     #[value(name = "decode")]
@@ -185,32 +185,16 @@ pub enum DestinationPolicy {
         allow_binary: bool,
     },
     /// Write to a file.
-    File {
-        /// Output path.
-        path: PathBuf,
-        /// Replace an existing output.
-        overwrite: bool,
-    },
+    File(FileDestination),
 }
 
 impl DestinationPolicy {
-    /// Resolves CLI destination flags into a destination-specific policy.
-    #[must_use]
-    pub fn new(destination: Option<PathBuf>, overwrite: bool, binary_stdout: bool) -> Self {
-        match destination {
-            Some(path) => Self::File { path, overwrite },
-            None => Self::Stdout {
-                allow_binary: binary_stdout,
-            },
-        }
-    }
-
     /// Returns the output path used for format inference, if any.
     #[must_use]
     pub(crate) fn path(&self) -> Option<&Path> {
         match self {
             Self::Stdout { .. } => None,
-            Self::File { path, .. } => Some(path),
+            Self::File(destination) => Some(&destination.path),
         }
     }
 
@@ -228,7 +212,7 @@ impl DestinationPolicy {
                 ),
             }
             .into()),
-            Self::Stdout { .. } | Self::File { .. } => Ok(()),
+            Self::Stdout { .. } | Self::File(..) => Ok(()),
         }
     }
 
@@ -238,9 +222,9 @@ impl DestinationPolicy {
     pub(crate) fn resolve(&self, source: &Path) -> AnyResult<ResolvedDestination> {
         match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
-            Self::File { path, overwrite } => {
-                artifact_store::check_output_path(source, path, *overwrite)?;
-                Ok(ResolvedDestination::File(path.clone()))
+            Self::File(destination) => {
+                destination.check(source)?;
+                Ok(ResolvedDestination::File(destination.path.clone()))
             }
         }
     }

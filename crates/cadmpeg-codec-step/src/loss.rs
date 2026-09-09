@@ -97,6 +97,8 @@ pub enum StepLossCode {
     PmiLengthUnitUnresolved,
     /// A PMI angle measure unit scale did not resolve.
     PmiAngleUnitUnresolved,
+    /// A datum system has inconsistent precedence compartments.
+    PmiDatumSystemInvalid,
     /// Independent styled items assign conflicting scalar colors.
     ConflictingScalarColors,
     /// A surface style usage has an invalid `surface_side` enumeration value.
@@ -121,6 +123,8 @@ pub enum StepLossCode {
     DraughtingAssociatedItemUntyped,
     /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
+    /// A tessellation payload fails numeric or structural admission.
+    TessellationInvalidPayload,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
     /// A repositioned tessellation item has no valid placement.
@@ -341,6 +345,7 @@ impl StepLossCode {
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
+        Self::PmiDatumSystemInvalid,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
@@ -353,6 +358,7 @@ impl StepLossCode {
         Self::DraughtingSemanticDefinitionUntyped,
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
+        Self::TessellationInvalidPayload,
         Self::TessellationItemUndeclared,
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
@@ -493,6 +499,7 @@ impl StepLossCode {
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
+            Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
@@ -508,6 +515,7 @@ impl StepLossCode {
                 "drawing.draughting-semantic-definition-untyped"
             }
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
+            Self::TessellationInvalidPayload => "tessellation.invalid-payload",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
@@ -784,9 +792,9 @@ impl StepLossCode {
             Self::RootOccurrencePlacementNotRepresentable
             | Self::OccurrencePlacementNotRigid
             | Self::BodyNonRigidTransform => LossTaxonomy::BodyTransformNotApplied,
-            Self::TessellationRequiresAp242 | Self::TessellationInvalidCardinality => {
-                LossTaxonomy::TessellationOmitted
-            }
+            Self::TessellationRequiresAp242
+            | Self::TessellationInvalidCardinality
+            | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
             Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
@@ -799,9 +807,9 @@ impl StepLossCode {
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
             }
-            Self::SemanticAnnotationOmitted | Self::PmiAnnotationNotWritten => {
-                LossTaxonomy::PmiOmitted
-            }
+            Self::SemanticAnnotationOmitted
+            | Self::PmiAnnotationNotWritten
+            | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -816,7 +824,16 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced("step", self.code(), self.shared_taxonomy())
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("step") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -880,6 +897,7 @@ mod tests {
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
+                "pmi.datum-system-invalid",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
@@ -892,6 +910,7 @@ mod tests {
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
+                "tessellation.invalid-payload",
                 "tessellation.item-undeclared",
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",

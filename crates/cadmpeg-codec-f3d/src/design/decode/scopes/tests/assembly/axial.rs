@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
-    let first_transform = identity_matrix();
-    let mut second_transform = identity_matrix();
+    let first_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let mut second_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     second_transform[2][3] = 4.25;
     let first_role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let second_role = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -144,8 +144,8 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
 #[test]
 fn axial_assembly_selector_binds_a_document_root_joint_origin() {
-    let first_transform = identity_matrix();
-    let mut second_transform = identity_matrix();
+    let first_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let mut second_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     second_transform[1][3] = 2.5;
     let role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let mut bytes = Vec::new();
@@ -176,7 +176,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         crate::records::feature::DesignFeatureKind::JointOrigin,
         80,
     );
-    origin.with_joint_origin_transform(second_transform);
+    origin.with_joint_origin_transform(second_transform.try_into().unwrap());
     let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
 
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);

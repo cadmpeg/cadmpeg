@@ -397,7 +397,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !is_helix(record) || axis_native_ref != &record.id {
+            if !is_helix(record) || axis_native_ref != record.id {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes its native helix axis",
                     feature.id

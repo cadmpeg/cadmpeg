@@ -24,21 +24,47 @@ use crate::assemble::cgm_source;
 
 const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 
-pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeometry> {
+/// Direct geometry or a procedural surface construction.
+pub(super) enum B5SurfaceCarrier<'a> {
+    Analytic(SurfaceGeometry),
+    Procedural(B5ProceduralSurface<'a>),
+}
+
+/// Surface constructions that require procedural lowering.
+pub(super) enum B5ProceduralSurface<'a> {
+    Unresolved,
+    RollingBall {
+        carrier_object_id: u32,
+        definition: &'a ProceduralSurfaceDefinition,
+    },
+    Revolution {
+        profile_curve: u32,
+        axis_origin: [f64; 3],
+        axis_direction: [f64; 3],
+        angular_scale: f64,
+        bounds: [[f64; 2]; 2],
+    },
+}
+
+/// Classify a surface into its direct geometry or procedural construction.
+pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
     match surface {
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
             ..
-        } => orthonormal_plane(*origin, *direction_u, *direction_v),
+        } => orthonormal_plane(*origin, *direction_u, *direction_v).map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            B5SurfaceCarrier::Analytic,
+        ),
         B5Surface::Cylinder {
             origin,
             reference_x,
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Cylinder {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Cylinder {
             origin: point(*origin),
             axis: vector(*axis),
             ref_direction: vector(*reference_x),
@@ -53,7 +79,7 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             ..
         } => {
             let slant = slant_range[0];
-            Some(SurfaceGeometry::Cone {
+            B5SurfaceCarrier::Analytic(SurfaceGeometry::Cone {
                 origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),
                 ref_direction: vector(*direction_x),
@@ -68,7 +94,7 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             axis,
             radius,
             ..
-        } => Some(SurfaceGeometry::Sphere {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Sphere {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
@@ -81,18 +107,41 @@ pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeo
             major_radius,
             minor_radius,
             ..
-        } => Some(SurfaceGeometry::Torus {
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Torus {
             center: point(*center),
             axis: vector(*axis),
             ref_direction: vector(*direction_x),
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        B5Surface::Nurbs(surface) => Some(SurfaceGeometry::Nurbs(surface.clone())),
-        B5Surface::UnresolvedNurbs { .. }
-        | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. }
-        | B5Surface::Revolution { .. } => None,
+        B5Surface::Nurbs(surface) => {
+            B5SurfaceCarrier::Analytic(SurfaceGeometry::Nurbs(surface.clone()))
+        }
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => {
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
+        }
+        B5Surface::RollingBall {
+            carrier_object_id,
+            definition,
+        } => B5SurfaceCarrier::Procedural(B5ProceduralSurface::RollingBall {
+            carrier_object_id: *carrier_object_id,
+            definition,
+        }),
+        B5Surface::Revolution {
+            profile_curve,
+            axis_origin,
+            axis_direction,
+            angular_scale,
+            profile_range,
+            angular_range,
+            ..
+        } => B5SurfaceCarrier::Procedural(B5ProceduralSurface::Revolution {
+            profile_curve: *profile_curve,
+            axis_origin: *axis_origin,
+            axis_direction: *axis_direction,
+            angular_scale: *angular_scale,
+            bounds: [*profile_range, *angular_range],
+        }),
     }
 }
 
@@ -102,12 +151,15 @@ pub(super) fn neutral_surface(
     surface_id: u32,
     payload: &UnknownId,
 ) -> SurfacePlan {
-    if let Some(geometry) = neutral_analytic_surface(surface) {
-        return SurfacePlan {
-            geometry,
-            procedure: None,
-        };
-    }
+    let carrier = match surface_carrier(surface) {
+        B5SurfaceCarrier::Analytic(geometry) => {
+            return SurfacePlan {
+                geometry,
+                procedure: None,
+            }
+        }
+        B5SurfaceCarrier::Procedural(carrier) => carrier,
+    };
     if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id) {
         return SurfacePlan {
             geometry: SurfaceGeometry::Unknown {
@@ -117,36 +169,34 @@ pub(super) fn neutral_surface(
         };
     }
     let mut procedure = None;
-    let geometry = match surface {
-        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
+    let geometry = match carrier {
+        B5ProceduralSurface::Unresolved => SurfaceGeometry::Unknown {
             record: Some(payload.clone()),
         },
-        B5Surface::RollingBall {
+        B5ProceduralSurface::RollingBall {
             carrier_object_id,
             definition,
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
-                carrier_object_id: *carrier_object_id,
+                carrier_object_id,
                 definition: definition.clone(),
             });
             SurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
             }
         }
-        B5Surface::Revolution {
+        B5ProceduralSurface::Revolution {
             profile_curve,
             axis_origin,
             axis_direction,
-            profile_range,
-            angular_range,
             angular_scale,
-            ..
+            bounds,
         } => revolution_surface(
-            graph.profiles.get(profile_curve),
-            *axis_origin,
-            *axis_direction,
-            *angular_scale,
-            [*profile_range, *angular_range],
+            graph.profiles.get(&profile_curve),
+            axis_origin,
+            axis_direction,
+            angular_scale,
+            bounds,
         )
         .map_or_else(
             || SurfaceGeometry::Unknown {
@@ -157,13 +207,8 @@ pub(super) fn neutral_surface(
                 SurfaceGeometry::Nurbs(surface)
             },
         ),
-        B5Surface::Plane { .. }
-        | B5Surface::Cylinder { .. }
-        | B5Surface::Cone { .. }
-        | B5Surface::Sphere { .. }
-        | B5Surface::Torus { .. }
-        | B5Surface::Nurbs(_) => unreachable!("analytic carriers returned above"),
     };
+
     SurfacePlan {
         geometry,
         procedure,
@@ -455,7 +500,7 @@ pub(super) fn emit_surfaces(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &mut TransferPlan,
-) -> HashMap<u32, SurfaceId> {
+) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let surface_ids = surface_plan
         .keys()
@@ -506,16 +551,18 @@ pub(super) fn emit_surfaces(
             },
         );
         if revolution_cache {
-            annotations.derived(&id, "geometry");
+            annotations
+                .derived(&id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: plan.geometry,
-            source_object: Some(cgm_source("surface", object_id)),
+            source_object: Some(cgm_source("surface", object_id)?),
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
-                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
+                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion)?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
@@ -527,7 +574,9 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&directrix_id, "geometry");
+                annotations
+                    .derived(&directrix_id, "geometry")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(revolution.directrix),
@@ -627,7 +676,7 @@ pub(super) fn emit_surfaces(
             ),
         );
     }
-    surface_ids
+    Ok(surface_ids)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -646,7 +695,7 @@ fn emit_extrusion_procedure(
     surface_id: SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let directrix_id = CurveId::mint(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
@@ -676,7 +725,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
@@ -718,7 +767,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -743,7 +792,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)),
+                source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
                 annotations,
@@ -755,7 +804,7 @@ fn emit_extrusion_procedure(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
@@ -811,11 +860,28 @@ fn emit_extrusion_procedure(
             Some(parameter_record_bounds(extrusion.parameter_bounds)),
         ),
     );
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_plane_frame_is_an_unresolved_carrier() {
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [1.0, 0.0, 0.0],
+            u_range: [0.0, 1.0],
+            v_range: [0.0, 1.0],
+        };
+        assert!(matches!(
+            surface_carrier(&plane),
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
+        ));
+    }
+
     use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
 
@@ -896,7 +962,8 @@ mod tests {
             surface_id,
             30,
             extrusion,
-        );
+        )
+        .expect("valid source object identity");
 
         assert!(matches!(
             &ir.model.curves[0].geometry,

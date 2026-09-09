@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
-use crate::records::valid_sketch_transform;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
@@ -12,11 +11,9 @@ use crate::design::decode::assembly::{
 };
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
-    parse_face_operand, ConstructionOperandGroupParse,
+    parse_face_operand, ConstructionOperandGroupParse, RecordFrame,
 };
-use crate::design::decode::sketch::{
-    identity_matrix, next_indexed_record_offset, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
@@ -149,12 +146,12 @@ use crate::records::feature::{
     DesignAssemblyOperandQualifier, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
     DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
     DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
-    DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
-    DesignComponentInsertConstruction, DesignComponentOccurrence, DesignCopyPasteBodiesOperation,
-    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeHeightExtent,
-    DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode,
-    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignCombineExternalBodyIdentity, DesignCombineExternalBodyIdentityWire, DesignCombineForm,
+    DesignCombineOperation, DesignComponentInsertConstruction, DesignComponentOccurrence,
+    DesignCopyPasteBodiesOperation, DesignCopyPasteComponentOperation,
+    DesignDerivedInstanceConstruction, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource,
+    DesignEdgeWidthMode, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
     DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
@@ -880,25 +877,19 @@ pub(crate) fn parse_thread_payload(
         }
         _ => return None,
     };
-    if !([major_diameter, minor_diameter, pitch, pitch_diameter]
-        .into_iter()
-        .all(|value| value.is_finite() && value > 0.0)
-        && minor_diameter < pitch_diameter
-        && pitch_diameter < major_diameter)
-    {
-        return None;
-    }
     Some(DesignThreadConstruction {
         form,
         designation_offset: u64::try_from(designation_at).ok()?,
-        designation,
+        designation: cadmpeg_ir::NonEmptyString::new(designation)?,
         nominal_size,
-        profile,
-        major_diameter,
-        minor_diameter,
-        pitch,
-        pitch_diameter,
+        profile: cadmpeg_ir::NonEmptyString::new(profile)?,
+        pitch: crate::records::feature::DesignPositiveScalar::new(pitch)?,
         face_group_record_indices,
+        diameters: crate::records::feature::DesignThreadDiameters::new(
+            major_diameter,
+            minor_diameter,
+            pitch_diameter,
+        )?,
     })
 }
 
@@ -1315,7 +1306,7 @@ fn exact_assembly_axial_selector(
     let occurrence_reference_offset = cursor.checked_add(1)?;
     let occurrence = take_reference(bytes, &mut cursor)?;
     let (occurrence_reference, _) = occurrence.local()?;
-    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
+    if View::u32_le_at(bytes, cursor)? != 1 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -1576,13 +1567,13 @@ fn exact_surface_offset_face_groups(
             continue;
         };
         if group.role() != DesignOperandRole::PROFILE
-            || group.frame.opaque_index != 252
-            || group.members.is_empty()
+            || group.frame.opaque_index.get() != 252
+            || group.members().is_empty()
             || !covered_references.insert(group.record_index)
         {
             return None;
         }
-        for member in group.members.iter().map(|member| &member.value) {
+        for member in group.members().iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !scope
                     .reference_members
@@ -1623,8 +1614,7 @@ fn exact_construction_operand_group(
         if after_tag != start + 7 {
             continue;
         }
-        let header = DesignRecordHeader {
-            id: String::new(),
+        let header = RecordFrame {
             record_index,
             class_tag: class_tag.clone().try_into().ok()?,
             byte_offset: u64::try_from(start).ok()?,
@@ -1786,16 +1776,16 @@ pub(crate) fn exact_assembly_alignment(
     let mut lanes = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.evaluated_value.is_finite()
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|owner| owner.local_ordinal);
+    lanes.sort_by_key(|owner| owner.local_ordinal());
     if lanes
         .iter()
         .enumerate()
-        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+        .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -1810,12 +1800,13 @@ pub(crate) fn exact_assembly_alignment(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     );
+    let generation = crate::design::assembly::AssemblyScopeGeneration::new(
+        scope.frame_length,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    );
     let legacy_class_388 = matches!(
-        crate::design::assembly::operand_frame_variant(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+        generation.operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     );
     if legacy_class_388 {
@@ -1833,51 +1824,42 @@ pub(crate) fn exact_assembly_alignment(
                 limits: exact.limits,
             },
         };
-        return Some(DesignAssemblyAlignment {
-            angle: exact.angle,
-            offset: exact.offset,
-            owners: exact.owners,
-            form: Some(form),
-        });
+        return DesignAssemblyAlignment::try_new(
+            exact.angle,
+            exact.offset,
+            exact.owners,
+            Some(form),
+        )
+        .ok();
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
-            && crate::design::assembly::operand_frame_variant(
-                scope.frame_length,
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .is_none()
+            && generation.operand_frame_variant().is_none()
         {
             return None;
         }
-        let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
-            scope.frame_length,
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-            lanes.len(),
-        )?;
+        let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
-                angle.evaluated_value,
+                angle.evaluated_value(),
                 [
-                    offset_x.evaluated_value,
-                    offset_y.evaluated_value,
-                    offset_z.evaluated_value,
+                    offset_x.evaluated_value(),
+                    offset_y.evaluated_value(),
+                    offset_z.evaluated_value(),
                 ],
             ),
             [angle, axial_offset] => (
-                angle.evaluated_value,
-                [0.0, 0.0, axial_offset.evaluated_value],
+                angle.evaluated_value(),
+                [0.0, 0.0, axial_offset.evaluated_value()],
             ),
             _ => return None,
         };
         let owners: Vec<crate::records::Located<u32>> = alignment_lanes
             .iter()
             .map(|owner| crate::records::Located {
-                value: owner.record_index,
-                offset: owner.evaluated_value_offset,
+                value: owner.record_index(),
+                offset: owner.evaluated_value_offset(),
             })
             .collect();
         if legacy_class_388 {
@@ -1885,11 +1867,12 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal) == Some(&owner.record_index)
+                    scope.reference_members.values().nth(scope_ordinal)
+                        == Some(&owner.record_index())
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "282" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1905,11 +1888,12 @@ pub(crate) fn exact_assembly_alignment(
                 .into_iter()
                 .zip(lanes.iter())
                 .all(|(scope_ordinal, owner)| {
-                    scope.reference_members.values().nth(scope_ordinal) == Some(&owner.record_index)
+                    scope.reference_members.values().nth(scope_ordinal)
+                        == Some(&owner.record_index())
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "284" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1926,7 +1910,7 @@ pub(crate) fn exact_assembly_alignment(
         ) {
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag.as_str() != "289" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
                 || (0..scope.reference_members.len())
                     .filter(|&start| {
                         scope
@@ -1995,12 +1979,7 @@ pub(crate) fn exact_assembly_alignment(
             }
         })
     };
-    Some(DesignAssemblyAlignment {
-        angle,
-        offset,
-        owners,
-        form,
-    })
+    DesignAssemblyAlignment::try_new(angle, offset, owners, form).ok()
 }
 
 pub(crate) fn exact_derived_instance_construction(
@@ -2182,32 +2161,32 @@ pub(crate) fn exact_component_insert_construction(
                 )
             }
             (261, "263") if scope.class_tag.as_str() == "296" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "261") if scope.class_tag.as_str() == "410" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "258") if scope.class_tag.as_str() == "426" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "266") if scope.class_tag.as_str() == "434" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (261, "264") if scope.class_tag.as_str() == "414" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
             (257 | 267, "264") if scope.class_tag.as_str() == "414" => (
-                identity_matrix(),
+                crate::records::SketchPlacementMatrix::IDENTITY,
                 None,
                 exact_component_insert_identity_scope_shifted(bytes, start, relation_record_index)?,
             ),
@@ -2327,7 +2306,7 @@ pub(crate) fn exact_component_insert_construction(
                     carrier_at,
                     relation_at,
                     carrier_record_index,
-                    transform,
+                    transform.into(),
                 )?;
             (
                 carrier_record_index,
@@ -2566,7 +2545,7 @@ fn exact_component_insert_scope_283_262_257(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(
             start + component_scope_283_257::RELATION_MARKER
@@ -2607,7 +2586,7 @@ fn exact_component_insert_scope_283_262_257(
         return None;
     }
     Some((
-        identity_matrix(),
+        crate::records::SketchPlacementMatrix::IDENTITY,
         None,
         View::u64_le_at(bytes, start + component_scope_283_257::OCCURRENCE_IDENTITY)?,
     ))
@@ -2617,7 +2596,7 @@ fn exact_component_insert_scope_283_262_385(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 44..start + 52)? != [1, 0, 0, 0, 0, 0, 0, 0]
         || bytes.get(start + 38..start + 44)? != [0; 6]
@@ -2743,7 +2722,7 @@ fn exact_component_insert_scope_414_264_389(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+) -> Option<(crate::records::SketchPlacementMatrix, Option<usize>, u64)> {
     if bytes.get(start + 11..start + 20)? != [0; 9]
         || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
         || bytes.get(start + 33..start + 37)? != [0; 4]
@@ -2782,7 +2761,7 @@ fn legacy_component_insert_placements(
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-    transform: [[f64; 4]; 4],
+    transform: crate::records::SketchPlacementMatrix,
 ) -> Vec<(String, usize, Option<usize>)> {
     let Some((class_tag, after_tag)) =
         lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
@@ -3022,13 +3001,16 @@ fn unique_indexed_record_before(
     Some(*at)
 }
 
-pub(crate) fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+pub(crate) fn rigid_transform_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<crate::records::SketchPlacementMatrix> {
     let values = f64s_at(bytes, at, 16)?;
     let mut transform = [[0.0; 4]; 4];
     for (ordinal, value) in values.into_iter().enumerate() {
         transform[ordinal / 4][ordinal % 4] = value;
     }
-    valid_sketch_transform(&transform).then_some(transform)
+    transform.try_into().ok()
 }
 
 fn exact_assembly_operand_frames(
@@ -3036,11 +3018,12 @@ fn exact_assembly_operand_frames(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let frame_variant = crate::design::assembly::operand_frame_variant(
+    let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_frame_variant()?;
     let frame_offsets = match frame_variant {
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
             class_388_assemble::FIRST_OPERAND_REFERENCE,
@@ -3150,9 +3133,7 @@ fn exact_assembly_operand_frames(
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        if !valid_sketch_transform(&transform) {
-            return None;
-        }
+        let transform = crate::records::SketchPlacementMatrix::try_from(transform).ok()?;
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
             reference_offset: (reference_at + 1) as u64,
@@ -3571,8 +3552,8 @@ fn exact_legacy_class_383_operand_path(
         bytes,
         leading_at.checked_add(class_383_leading::IDENTITY_REFERENCE)?,
     )?;
-    Some(DesignAssemblyOperandPath {
-        link: DesignAssemblyOperandPathLink {
+    DesignAssemblyOperandPath::try_new(
+        DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
             locator_class_tag: "378".to_owned().try_into().ok()?,
@@ -3584,18 +3565,19 @@ fn exact_legacy_class_383_operand_path(
             wrapper_byte_offset: u64::try_from(leading_identity_at).ok()?,
             path_reference_offset: occurrence_guid_offset,
         },
-        record_index: leading_identity_record_index,
-        class_tag: "386".to_owned().try_into().ok()?,
-        byte_offset: u64::try_from(leading_identity_at).ok()?,
-        occurrence_guids: vec![crate::records::Located {
+        leading_identity_record_index,
+        "386".to_owned().try_into().ok()?,
+        u64::try_from(leading_identity_at).ok()?,
+        vec![crate::records::Located {
             value: leading_occurrence_guid,
             offset: occurrence_guid_offset,
         }],
-        identity_guids: vec![crate::records::Located {
+        vec![crate::records::Located {
             value: leading_identity_guid,
             offset: identity_guid_offset,
         }],
-    })
+    )
+    .ok()
 }
 
 fn exact_legacy_class_383_record_frame(
@@ -3658,11 +3640,12 @@ fn exact_legacy_class_388_operand_paths(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !matches!(
-        crate::design::assembly::operand_frame_variant(
+        crate::design::assembly::AssemblyScopeGeneration::new(
             scope.frame_length,
             scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        ),
+            scope.paired_class_tag.as_str()
+        )
+        .operand_frame_variant(),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
@@ -3702,15 +3685,15 @@ fn exact_legacy_class_388_operand_paths(
         return None;
     };
     let wrapper_end = |path: &DesignAssemblyOperandPath| {
-        let wrapper_at = usize::try_from(path.link.wrapper_byte_offset).ok()?;
+        let wrapper_at = usize::try_from(path.link().wrapper_byte_offset).ok()?;
         next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)
     };
-    let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
+    let first_start = usize::try_from(first.link().locator_byte_offset).ok()?;
     let first_end = wrapper_end(&first)?;
-    let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
+    let second_start = usize::try_from(second.link().locator_byte_offset).ok()?;
     let second_end = wrapper_end(&second)?;
-    if first.link.locator_record_index == second.link.locator_record_index
-        || first.link.wrapper_record_index == second.link.wrapper_record_index
+    if first.link().locator_record_index == second.link().locator_record_index
+        || first.link().wrapper_record_index == second.link().wrapper_record_index
         || (first_start < second_end && second_start < first_end)
     {
         return None;
@@ -3847,8 +3830,8 @@ fn exact_legacy_class_388_operand_path_envelope(
         .map(|path| path.occurrence_guid.clone())
         .chain(std::iter::once(final_path.occurrence_guid.clone()))
         .collect::<Vec<_>>();
-    Some(DesignAssemblyOperandPath {
-        link: DesignAssemblyOperandPathLink {
+    DesignAssemblyOperandPath::try_new(
+        DesignAssemblyOperandPathLink {
             locator_reference_offset,
             locator_record_index,
             locator_class_tag: locator_class_tag.try_into().ok()?,
@@ -3860,12 +3843,13 @@ fn exact_legacy_class_388_operand_path_envelope(
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             path_reference_offset: final_path_reference_offset?,
         },
-        record_index: final_path.record_index,
-        class_tag: "412".to_owned().try_into().ok()?,
-        byte_offset: final_path.byte_offset,
+        final_path.record_index,
+        "412".to_owned().try_into().ok()?,
+        final_path.byte_offset,
         occurrence_guids,
-        identity_guids: final_path.identity_guids,
-    })
+        final_path.identity_guids,
+    )
+    .ok()
 }
 
 fn exact_legacy_class_412_path(
@@ -3945,7 +3929,7 @@ fn exact_as_built_operand_frames(
     paths: &[DesignAssemblyOperandPath; 2],
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths.each_ref().map(|path| {
-        let locator_at = usize::try_from(path.link.locator_byte_offset).ok()?;
+        let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
         let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
         let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
         Some(DesignAssemblyOperandFrame {
@@ -3970,11 +3954,12 @@ fn exact_assembly_operand_paths(
     let search_start = usize::try_from(scope.paired_byte_offset)
         .ok()?
         .checked_add(11)?;
-    let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
+    let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::new(
         scope.frame_length,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
-    )?;
+    )
+    .operand_path_locator_offsets()?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
     if View::u32_le_at(bytes, count_at)? != 2 {
@@ -4007,21 +3992,21 @@ fn exact_assembly_operand_paths(
     let [Some(first), Some(second)] = paths else {
         return None;
     };
-    let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
+    let first_start = usize::try_from(first.link().locator_byte_offset).ok()?;
     let first_end = next_indexed_record_offset(
         bytes,
-        usize::try_from(first.link.wrapper_byte_offset)
+        usize::try_from(first.link().wrapper_byte_offset)
             .ok()?
             .checked_add(1)?,
     )?;
-    let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
+    let second_start = usize::try_from(second.link().locator_byte_offset).ok()?;
     let second_end = next_indexed_record_offset(
         bytes,
-        usize::try_from(second.link.wrapper_byte_offset)
+        usize::try_from(second.link().wrapper_byte_offset)
             .ok()?
             .checked_add(1)?,
     )?;
-    if first.link.locator_record_index == second.link.locator_record_index
+    if first.link().locator_record_index == second.link().locator_record_index
         || (first_start < second_end && second_start < first_end)
     {
         return None;
@@ -4190,16 +4175,15 @@ fn exact_assembly_operand_path_envelope(
         exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
     });
     let mut path = paths.next()??;
-    if variable_reference && path.class_tag.as_str() != "330" {
+    if variable_reference && path.class_tag().as_str() != "330" {
         return None;
     }
     for continuation in paths {
         let continuation = continuation?;
-        if !variable_reference || continuation.class_tag.as_str() != "330" {
+        if !variable_reference || continuation.class_tag().as_str() != "330" {
             return None;
         }
-        path.occurrence_guids.extend(continuation.occurrence_guids);
-        path.identity_guids.extend(continuation.identity_guids);
+        path = path.try_append(continuation).ok()?;
     }
     Some(path)
 }
@@ -4323,14 +4307,15 @@ fn exact_assembly_operand_path(
         }
         _ => return None,
     }
-    Some(DesignAssemblyOperandPath {
+    DesignAssemblyOperandPath::try_new(
         link,
         record_index,
-        class_tag: class_tag.try_into().ok()?,
-        byte_offset: u64::try_from(start).ok()?,
+        class_tag.try_into().ok()?,
+        u64::try_from(start).ok()?,
         occurrence_guids,
         identity_guids,
-    })
+    )
+    .ok()
 }
 
 pub(crate) fn exact_rectangular_pattern_construction(
@@ -4346,19 +4331,19 @@ pub(crate) fn exact_rectangular_pattern_construction(
     let mut lanes = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.evaluated_value.is_finite()
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|owner| owner.local_ordinal);
+    lanes.sort_by_key(|owner| owner.local_ordinal());
     let [u_count, v_count, u_extent, v_extent] = lanes.as_slice() else {
         return None;
     };
     if [u_count, v_count, u_extent, v_extent]
         .iter()
         .enumerate()
-        .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+        .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -4366,35 +4351,30 @@ pub(crate) fn exact_rectangular_pattern_construction(
         (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
             .then_some(value as u32)
     };
-    let u_count_value = exact_count(u_count.evaluated_value)?;
-    let v_count_value = exact_count(v_count.evaluated_value)?;
-    if u_count_value == 1 && v_count_value == 1
-        || (u_count_value > 1 && u_extent.evaluated_value == 0.0)
-        || (v_count_value > 1 && v_extent.evaluated_value == 0.0)
-        || (u_count_value == 1 && u_extent.evaluated_value != 0.0)
-        || (v_count_value == 1 && v_extent.evaluated_value != 0.0)
-    {
-        return None;
-    }
-    let mut construction = DesignRectangularPatternConstruction {
-        u_count: u_count_value,
-        v_count: v_count_value,
-        u_extent: u_extent.evaluated_value,
-        v_extent: v_extent.evaluated_value,
-        owner_record_indices: [
-            u_count.record_index,
-            v_count.record_index,
-            u_extent.record_index,
-            v_extent.record_index,
-        ],
-        value_offsets: [
-            u_count.evaluated_value_offset,
-            v_count.evaluated_value_offset,
-            u_extent.evaluated_value_offset,
-            v_extent.evaluated_value_offset,
-        ],
-        instances: None,
-    };
+    let u_count_value = exact_count(u_count.evaluated_value())?;
+    let v_count_value = exact_count(v_count.evaluated_value())?;
+    let mut construction = DesignRectangularPatternConstruction::try_from(
+        crate::records::feature::DesignRectangularPatternConstructionWire {
+            u_count: u_count_value,
+            v_count: v_count_value,
+            u_extent: u_extent.evaluated_value(),
+            v_extent: v_extent.evaluated_value(),
+            owner_record_indices: [
+                u_count.record_index(),
+                v_count.record_index(),
+                u_extent.record_index(),
+                v_extent.record_index(),
+            ],
+            value_offsets: [
+                u_count.evaluated_value_offset(),
+                v_count.evaluated_value_offset(),
+                u_extent.evaluated_value_offset(),
+                v_extent.evaluated_value_offset(),
+            ],
+            instances: None,
+        },
+    )
+    .ok()?;
     construction.instances =
         exact_rectangular_pattern_instances(bytes, records, scope, &construction);
     Some(construction)
@@ -4407,8 +4387,8 @@ fn exact_rectangular_pattern_instances(
     construction: &DesignRectangularPatternConstruction,
 ) -> Option<DesignRectangularPatternInstances> {
     let active = [
-        (construction.u_count, construction.u_extent),
-        (construction.v_count, construction.v_extent),
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
     ]
     .into_iter()
     .filter(|(count, _)| *count > 1)
@@ -4530,7 +4510,7 @@ fn exact_rectangular_pattern_instances(
     ))
 }
 
-type TransformCandidate = ([[f64; 4]; 4], u64);
+type TransformCandidate = (crate::records::SketchPlacementMatrix, u64);
 
 fn exact_rigid_transform_candidates(
     bytes: &[u8],
@@ -4566,14 +4546,17 @@ fn exact_rigid_transform_candidates(
         for (ordinal, value) in values.into_iter().enumerate() {
             transform[ordinal / 4][ordinal % 4] = value;
         }
-        if valid_sketch_transform(&transform) {
+        if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
             candidates.push((transform, u64::try_from(offset).ok()?));
         }
     }
     (!candidates.is_empty()).then_some(candidates)
 }
 
-fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
+fn same_transform_basis(
+    left: &crate::records::SketchPlacementMatrix,
+    right: &crate::records::SketchPlacementMatrix,
+) -> bool {
     (0..3).all(|row| {
         (0..3).all(|column| {
             (left[row][column] - right[row][column]).abs() <= EPS_SCOPES_SAME_TRANSFORM_BASIS_E10
@@ -4581,7 +4564,10 @@ fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
     })
 }
 
-fn translation_delta(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> [f64; 3] {
+fn translation_delta(
+    left: &crate::records::SketchPlacementMatrix,
+    right: &crate::records::SketchPlacementMatrix,
+) -> [f64; 3] {
     [
         right[0][3] - left[0][3],
         right[1][3] - left[1][3],
@@ -4613,16 +4599,16 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *selection_record_index,
                 scope.record_index,
             ) {
-                axis_candidates.push((
-                    crate::records::feature::DesignCircularPatternAxis::Inline {
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis: crate::records::feature::DesignCircularPatternAxis::Inline {
                         origin,
                         origin_offset: (start + 25) as u64,
                         direction,
                         direction_offset: (start + 49) as u64,
                     },
-                    *record_index,
-                    *selection_record_index,
-                ));
+                    axis_record_index: *record_index,
+                    selection_record_index: *selection_record_index,
+                });
             }
         }
     }
@@ -4636,27 +4622,34 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 *record_index,
                 scope,
             ) {
-                axis_candidates.push((axis, *record_index, selection_record_index));
+                axis_candidates.push(CircularPatternAxisCandidate {
+                    axis,
+                    axis_record_index: *record_index,
+                    selection_record_index,
+                });
             }
         }
     }
-    let (axis, record_index, selection_record_index) =
-        select_circular_pattern_axis(&axis_candidates)?;
+    let CircularPatternAxisCandidate {
+        axis,
+        axis_record_index,
+        selection_record_index,
+    } = select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
-        if native_stream(&owner.id) != native_stream(&scope.id)
-            || owner.scope_record_index != scope.record_index
-            || owner.local_ordinal != 0
-            || !owner.evaluated_value.is_finite()
-            || owner.evaluated_value <= 0.0
-            || owner.evaluated_value > f64::from(u32::MAX)
-            || owner.evaluated_value.fract() != 0.0
+        if native_stream(owner.id()) != native_stream(&scope.id)
+            || owner.scope_record_index() != scope.record_index
+            || owner.local_ordinal() != 0
+            || !owner.evaluated_value().is_finite()
+            || owner.evaluated_value() <= 0.0
+            || owner.evaluated_value() > f64::from(u32::MAX)
+            || owner.evaluated_value().fract() != 0.0
         {
             return None;
         }
         Some((
-            owner.evaluated_value as u32,
-            owner.record_index,
-            owner.evaluated_value_offset,
+            owner.evaluated_value() as u32,
+            owner.record_index(),
+            owner.evaluated_value_offset(),
         ))
     });
     let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
@@ -4672,15 +4665,15 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         return None;
     };
     let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
-        (native_stream(&owner.id) == native_stream(&scope.id)
-            && owner.scope_record_index == scope.record_index
-            && owner.local_ordinal == 1
-            && owner.evaluated_value.is_finite()
-            && owner.evaluated_value > 0.0)
+        (native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
+            && owner.local_ordinal() == 1
+            && owner.evaluated_value().is_finite()
+            && owner.evaluated_value() > 0.0)
             .then_some((
-                owner.evaluated_value,
-                owner.record_index,
-                owner.evaluated_value_offset,
+                owner.evaluated_value(),
+                owner.record_index(),
+                owner.evaluated_value_offset(),
             ))
     });
     let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
@@ -4711,13 +4704,17 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         axis: axis.clone(),
-        axis_record_index: *record_index,
+        axis_record_index: *axis_record_index,
         selection_record_index: *selection_record_index,
     })
 }
 
-pub(crate) type CircularPatternAxisCandidate =
-    (crate::records::feature::DesignCircularPatternAxis, u32, u32);
+/// Circular pattern axis with its carrier and selection record indices.
+pub(crate) struct CircularPatternAxisCandidate {
+    pub(crate) axis: crate::records::feature::DesignCircularPatternAxis,
+    pub(crate) axis_record_index: u32,
+    pub(crate) selection_record_index: u32,
+}
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
 pub(crate) fn select_circular_pattern_axis(
@@ -4725,9 +4722,9 @@ pub(crate) fn select_circular_pattern_axis(
 ) -> Option<&CircularPatternAxisCandidate> {
     let inline = candidates
         .iter()
-        .filter(|(axis, _, _)| {
+        .filter(|candidate| {
             matches!(
-                axis,
+                candidate.axis,
                 crate::records::feature::DesignCircularPatternAxis::Inline { .. }
             )
         })
@@ -4956,15 +4953,18 @@ pub(super) fn exact_legacy_mirror_scope_count(
         || owner.frame_length != u64::try_from(mirror_441_count::LEN).ok()?
         || owner.parameter_record_index != count_record_index.checked_add(2)?
         || owner.companion_record_index != count_record_index.checked_add(1)?
-        || owner.evaluated_value_offset != u64::try_from(mirror_441_count::COUNT).ok()?
+        || owner.evaluated_value_offset
+            != crate::design::decode::parameters::FrameRelative(
+                u64::try_from(mirror_441_count::COUNT).ok()?,
+            )
     {
         return None;
     }
     Some((
         count_record_index,
-        u64::try_from(*start)
-            .ok()?
-            .checked_add(owner.evaluated_value_offset)?,
+        owner
+            .evaluated_value_offset
+            .absolute(u64::try_from(*start).ok()?)?,
     ))
 }
 
@@ -5163,7 +5163,7 @@ pub fn bind_mirror_constructions(
         let [crate::records::Located {
             value: plane_member,
             ..
-        }] = plane_group.members.as_slice()
+        }] = plane_group.members()
         else {
             continue;
         };
@@ -5224,7 +5224,7 @@ pub fn bind_mirror_constructions(
             } else {
                 continue;
             };
-        let seed_feature = match seed_group.members.as_slice() {
+        let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
@@ -5240,8 +5240,8 @@ pub fn bind_mirror_constructions(
         let scope_owners = owners
             .iter()
             .filter(|owner| {
-                native_stream(&owner.id) == Some(stream.as_str())
-                    && owner.scope_record_index == scope_record_index
+                native_stream(owner.id()) == Some(stream.as_str())
+                    && owner.scope_record_index() == scope_record_index
             })
             .collect::<Vec<_>>();
         let records = record_offset_index
@@ -5251,9 +5251,9 @@ pub fn bind_mirror_constructions(
             .iter()
             .copied()
             .filter(|owner| {
-                owner.local_ordinal == 0
-                    && owner.evaluated_value == 2.0
-                    && owner.evaluated_value.is_finite()
+                owner.local_ordinal() == 0
+                    && owner.evaluated_value() == 2.0
+                    && owner.evaluated_value().is_finite()
             })
             .collect::<Vec<_>>();
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
@@ -5262,23 +5262,23 @@ pub fn bind_mirror_constructions(
             .iter()
             .copied()
             .filter(|owner| {
-                owner.local_ordinal == 1
-                    && owner.evaluated_value.is_finite()
-                    && owner.evaluated_value > 0.0
+                owner.local_ordinal() == 1
+                    && owner.evaluated_value().is_finite()
+                    && owner.evaluated_value() > 0.0
             })
             .collect::<Vec<_>>();
         let (count, tolerance_source) = (
             match (count.as_slice(), inline_count) {
-                ([count], None) => Some((count.record_index, count.evaluated_value_offset)),
+                ([count], None) => Some((count.record_index(), count.evaluated_value_offset())),
                 ([], Some(count)) => Some(count),
                 _ => None,
             },
             match (tolerance.as_slice(), inline_tolerance) {
                 ([tolerance], None) => Some((
-                    tolerance.evaluated_value,
-                    tolerance.evaluated_value_offset,
+                    tolerance.evaluated_value(),
+                    tolerance.evaluated_value_offset(),
                     crate::records::feature::DesignMirrorToleranceSource::Owner {
-                        record_index: tolerance.record_index,
+                        record_index: tolerance.record_index(),
                     },
                 )),
                 ([], Some((value, value_offset, scope_tail))) => Some((
@@ -5577,24 +5577,16 @@ pub(crate) fn exact_copy_paste_bodies_operation(
             },
         });
     }
-    if bodies
-        .iter()
-        .flat_map(|body| [body.source.value, body.copied.value])
-        .collect::<HashSet<_>>()
-        .len()
-        != reference_count
-    {
-        return None;
-    }
-    Some(DesignCopyPasteBodiesOperation {
+    DesignCopyPasteBodiesOperation::try_new(
         bodies,
         body_group_record_index,
-        body_group_class_tag: body_group_class_tag.try_into().ok()?,
-        body_group_byte_offset: u64::try_from(body_group_at).ok()?,
+        body_group_class_tag.try_into().ok()?,
+        u64::try_from(body_group_at).ok()?,
         relation_record_index,
-        relation_class_tag: relation_class_tag.try_into().ok()?,
-        relation_byte_offset: u64::try_from(relation_at).ok()?,
-    })
+        relation_class_tag.try_into().ok()?,
+        u64::try_from(relation_at).ok()?,
+    )
+    .ok()
 }
 
 pub(crate) fn exact_base_feature_construction(
@@ -6198,23 +6190,23 @@ fn exact_pipe_owner_lanes(
     let mut owners = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
                 && scope
                     .reference_members
                     .values()
-                    .any(|value| value == &owner.record_index)
-                && owner.class_tag.as_str() == "342"
-                && owner.frame_length == 103
-                && owner.evaluated_value.is_finite()
+                    .any(|value| value == &owner.record_index())
+                && owner.class_tag().as_str() == "342"
+                && owner.frame_length() == 103
+                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
-    owners.sort_by_key(|owner| owner.local_ordinal);
+    owners.sort_by_key(|owner| owner.local_ordinal());
     if owners.len() != 4
         || owners
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
     {
         return None;
     }
@@ -6222,12 +6214,12 @@ fn exact_pipe_owner_lanes(
         .into_iter()
         .map(|owner| {
             Some((
-                owner.record_index,
+                owner.record_index(),
                 FixedScalarFrame {
                     owner_record_index: Some(scope.record_index),
-                    ordinal: u8::try_from(owner.local_ordinal).ok()?,
-                    value: owner.evaluated_value,
-                    value_offset: owner.evaluated_value_offset,
+                    ordinal: u8::try_from(owner.local_ordinal()).ok()?,
+                    value: owner.evaluated_value(),
+                    value_offset: owner.evaluated_value_offset(),
                 },
             ))
         })
@@ -6630,9 +6622,9 @@ pub(crate) fn exact_move_operation(
                 .collect::<Vec<[f64; 4]>>()
                 .try_into()
                 .ok()?;
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(DesignMoveOperation {
                 transform,
                 transform_offset: (start + transform_offset) as u64,
@@ -6810,16 +6802,16 @@ pub(crate) fn exact_fixed_extrude_parameters(
         let source_kind = parameter_owners
             .iter()
             .find(|owner| {
-                native_stream(&owner.id) == native_stream(&scope.id)
-                    && owner.scope_record_index == scope.record_index
-                    && owner.record_index == record_index
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == record_index
             })
             .and_then(|owner| {
                 parameters
                     .iter()
                     .find(|parameter| {
                         native_stream(&parameter.id) == native_stream(&scope.id)
-                            && parameter.record_index == owner.parameter_record_index
+                            && parameter.record_index == owner.parameter_record_index()
                     })
                     .map(crate::records::DesignParameter::source_kind)
             });
@@ -6934,27 +6926,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
         value_offset: scalar.value_offset,
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
-        let tangency_weight = tangency_lane.map(scalar);
-        if tangency_weight
-            .as_ref()
-            .is_some_and(|weight| weight.value <= 0.0)
-            || law.radii().any(|radius| radius.value < 0.0)
-            || law.radii().all(|radius| radius.value == 0.0)
-            || law
-                .intermediate()
-                .iter()
-                .any(|row| !(0.0..1.0).contains(&row.parameter.value))
-            || law
-                .intermediate()
-                .windows(2)
-                .any(|pair| pair[0].parameter.value >= pair[1].parameter.value)
-        {
-            return None;
-        }
-        Some(DesignFixedFilletGroup {
-            tangency_weight,
-            law,
-        })
+        DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
     };
     let groups = if lanes.len() == 1 {
         vec![group(
@@ -7002,8 +6974,8 @@ pub(crate) fn exact_fixed_chamfer_parameters(
     let stream = native_stream(&scope.id);
     if parameter_owners.iter().any(|owner| {
         stream.is_some()
-            && native_stream(&owner.id) == stream
-            && owner.scope_record_index == scope.record_index
+            && native_stream(owner.id()) == stream
+            && owner.scope_record_index() == scope.record_index
     }) {
         return None;
     }
@@ -7046,16 +7018,16 @@ fn unique_revolve_angle_owner<'a>(
     record_index: Option<u32>,
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
-        native_stream(&owner.id) == native_stream(&scope.id)
-            && owner.scope_record_index == scope.record_index
+        native_stream(owner.id()) == native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
             && scope
                 .reference_members
                 .values()
-                .any(|value| value == &owner.record_index)
-            && record_index.is_none_or(|index| owner.record_index == index)
-            && owner.local_ordinal == 0
-            && owner.evaluated_value.is_finite()
-            && owner.evaluated_value > 0.0
+                .any(|value| value == &owner.record_index())
+            && record_index.is_none_or(|index| owner.record_index() == index)
+            && owner.local_ordinal() == 0
+            && owner.evaluated_value().is_finite()
+            && owner.evaluated_value() > 0.0
     });
     let angle = candidates.next()?;
     candidates.next().is_none().then_some(angle)
@@ -7091,9 +7063,11 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value,
-                    angle_record_index: angle.record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
+                    angle_record_index: angle.record_index(),
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -7129,7 +7103,7 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: angle.value,
+                    angle: crate::records::feature::DesignPositiveScalar::new(angle.value)?,
                     angle_record_index: *angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::Located {
@@ -7160,9 +7134,11 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
-                    angle: angle.evaluated_value,
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -7184,9 +7160,11 @@ pub(crate) fn exact_path_feature_construction(
                 crate::records::feature::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                    angle: angle.evaluated_value,
+                    angle: crate::records::feature::DesignPositiveScalar::new(
+                        angle.evaluated_value(),
+                    )?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset,
+                    angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
                 },
             ))
@@ -7327,7 +7305,7 @@ pub(crate) fn exact_path_feature_construction(
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ScopePlacementFrame {
-    pub(crate) transform: [[f64; 4]; 4],
+    pub(crate) transform: crate::records::SketchPlacementMatrix,
     pub(crate) transform_offset: u64,
     pub(crate) reference: Option<(u32, u64)>,
 }
@@ -7497,9 +7475,9 @@ pub(crate) fn exact_work_plane_frame(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(ScopePlacementFrame {
                 transform,
                 transform_offset: matrix_at as u64,
@@ -7734,7 +7712,7 @@ pub(crate) fn exact_joint_origin_frame(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if valid_sketch_transform(&transform) {
+                if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
                     candidates.push(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
@@ -7754,7 +7732,7 @@ pub(crate) fn exact_joint_origin_frame(
                 for (ordinal, value) in values.into_iter().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if valid_sketch_transform(&transform) {
+                if let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) {
                     candidates.push(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + 49) as u64,
@@ -7775,9 +7753,9 @@ pub(crate) fn exact_joint_origin_frame(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if !valid_sketch_transform(&transform) {
+            let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
-            }
+            };
             candidates.push(ScopePlacementFrame {
                 transform,
                 transform_offset: (start + 60) as u64,
@@ -8490,9 +8468,7 @@ fn exact_combine_external_body_identity(
     }
     cursor = cursor.checked_add(4)?;
     let external = take_external_reference_identity(bytes, &mut cursor)?;
-    if external.asset_id != selector_asset_id
-        || View::u32_le_at(bytes, cursor)? != 9
-        || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
+    if View::u32_le_at(bytes, cursor)? != 9 || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
     {
         return None;
     }
@@ -8525,7 +8501,7 @@ fn exact_combine_external_body_identity(
     if cursor != paired_at {
         return None;
     }
-    Some(DesignCombineExternalBodyIdentity {
+    DesignCombineExternalBodyIdentity::try_from(DesignCombineExternalBodyIdentityWire {
         selector_asset_id,
         selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
         selector_context_id,
@@ -8540,13 +8516,29 @@ fn exact_combine_external_body_identity(
         external_asset_id_offset: external.asset_id_offset,
         external_link_name: external.link_name,
         external_link_name_offset: external.link_name_offset,
-        external_version: external.version,
+        external_property_key: external
+            .version
+            .as_ref()
+            .map(|version| version.property_key.value.clone()),
+        external_property_key_offset: external
+            .version
+            .as_ref()
+            .map(|version| version.property_key.offset),
+        external_version_urn: external
+            .version
+            .as_ref()
+            .map(|version| version.version_urn.value.clone()),
+        external_version_urn_offset: external
+            .version
+            .as_ref()
+            .map(|version| version.version_urn.offset),
         tail_values: [first_tail_value, second_tail_value],
         tail_value_offsets: [
             u64::try_from(first_tail_value_at).ok()?,
             u64::try_from(second_tail_value_at).ok()?,
         ],
     })
+    .ok()
 }
 
 #[derive(Clone, Copy)]
@@ -8622,11 +8614,11 @@ pub(crate) fn exact_draft_operation_with_owners(
             let owners = parameter_owners
                 .iter()
                 .filter(|owner| {
-                    owner.record_index == *record_index
-                        && owner.scope_record_index == scope.record_index
+                    owner.record_index() == *record_index
+                        && owner.scope_record_index() == scope.record_index
                         && scope_stream
-                            .is_none_or(|stream| native_stream(&owner.id) == Some(stream))
-                        && owner.evaluated_value.is_finite()
+                            .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
+                        && owner.evaluated_value().is_finite()
                 })
                 .collect::<Vec<_>>();
             let [owner] = owners.as_slice() else {
@@ -8634,9 +8626,9 @@ pub(crate) fn exact_draft_operation_with_owners(
             };
             Some((
                 *record_index,
-                owner.local_ordinal,
-                owner.evaluated_value,
-                owner.evaluated_value_offset,
+                owner.local_ordinal(),
+                owner.evaluated_value(),
+                owner.evaluated_value_offset(),
             ))
         })
         .collect::<Vec<_>>();
@@ -8650,7 +8642,7 @@ pub(crate) fn exact_draft_operation_with_owners(
         return None;
     }
     Some(DesignDraftOperation {
-        angle: *angle,
+        angle: crate::records::feature::DesignFiniteScalar::new(*angle)?,
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,
@@ -8673,7 +8665,7 @@ fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
 pub(crate) fn parameter_scope_candidate_headers(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-) -> Vec<DesignRecordHeader> {
+) -> Vec<RecordFrame> {
     records
         .records()
         .flat_map(|(record_index, offsets)| {
@@ -8682,8 +8674,7 @@ pub(crate) fn parameter_scope_candidate_headers(
                 .filter_map(move |at| {
                     let (class_tag, _) =
                         lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
-                    Some(DesignRecordHeader {
-                        id: String::new(),
+                    Some(RecordFrame {
                         record_index,
                         class_tag: class_tag.try_into().ok()?,
                         byte_offset: *at as u64,
@@ -8712,15 +8703,25 @@ pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
     tail_length: usize,
 ) -> Option<usize> {
-    parameter_scope_previous_history_offset_for_form(kind.as_ref(), tail_length, false)
+    parameter_scope_previous_history_offset_for_form(
+        kind.as_ref(),
+        tail_length,
+        ScopeTailForm::Fixed,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScopeTailForm {
+    Fixed,
+    Named,
 }
 
 fn parameter_scope_previous_history_offset_for_form(
     kind: &str,
     tail_length: usize,
-    named_tail: bool,
+    tail_form: ScopeTailForm,
 ) -> Option<usize> {
-    if named_tail {
+    if tail_form == ScopeTailForm::Named {
         return None;
     }
     match (kind, tail_length) {
@@ -8761,7 +8762,13 @@ pub(crate) fn parse_parameter_scope(
         };
         let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
         if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
-            candidates.push((at, kind_end, tail_length, kind.clone(), false));
+            candidates.push((
+                at,
+                kind_end,
+                tail_length,
+                kind.clone(),
+                ScopeTailForm::Fixed,
+            ));
         }
         let named_tail = (78..=590).contains(&tail_length)
             && tail_length.is_multiple_of(2)
@@ -8769,13 +8776,18 @@ pub(crate) fn parse_parameter_scope(
             && named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                 .is_some_and(|valid| valid);
         if named_tail {
-            candidates.push((at, kind_end, tail_length, kind, true));
+            candidates.push((at, kind_end, tail_length, kind, ScopeTailForm::Named));
         }
     }
-    if candidates.iter().filter(|candidate| candidate.4).count() == 1 {
-        candidates.retain(|candidate| candidate.4);
+    if candidates
+        .iter()
+        .filter(|candidate| candidate.4 == ScopeTailForm::Named)
+        .count()
+        == 1
+    {
+        candidates.retain(|candidate| candidate.4 == ScopeTailForm::Named);
     }
-    let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
+    let [(kind_at, kind_end, tail_length, kind, tail_form)] = candidates.as_slice() else {
         return None;
     };
     let kind_text = kind.clone();
@@ -8791,7 +8803,7 @@ pub(crate) fn parse_parameter_scope(
     let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
         &kind_text,
         *tail_length,
-        *named_tail,
+        *tail_form,
     ) {
         Some(offset) => Some(kind_end.checked_add(offset)?),
         None => None,
@@ -9217,7 +9229,7 @@ fn exact_coil_placement(
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             Some(crate::records::Located {
-                value: transform,
+                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
                 offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
                     .ok()?,
             })
@@ -9270,7 +9282,7 @@ fn exact_coil_placement(
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             Some(crate::records::Located {
-                value: transform,
+                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
                 offset: u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?,
             })
         }
@@ -9522,10 +9534,7 @@ fn exact_coil_face_selection(
     })
 }
 
-fn valid_right_handed_coil_transform(transform: &[[f64; 4]; 4]) -> bool {
-    if !valid_sketch_transform(transform) {
-        return false;
-    }
+fn valid_right_handed_coil_transform(transform: &crate::records::SketchPlacementMatrix) -> bool {
     let radial = [transform[0][0], transform[1][0], transform[2][0]];
     let tangent = [transform[0][1], transform[1][1], transform[2][1]];
     let axis = [transform[0][2], transform[1][2], transform[2][2]];
@@ -9729,7 +9738,10 @@ fn exact_long_coil_transform(
     })
 }
 
-fn exact_long_coil_transform_values(bytes: &[u8], start: usize) -> Option<[[f64; 4]; 4]> {
+fn exact_long_coil_transform_values(
+    bytes: &[u8],
+    start: usize,
+) -> Option<crate::records::SketchPlacementMatrix> {
     let values = f64s_at(bytes, start.checked_add(77)?, 16)?;
     if !exact_long_coil_matrix(bytes, start) {
         return None;
@@ -9738,6 +9750,7 @@ fn exact_long_coil_transform_values(bytes: &[u8], start: usize) -> Option<[[f64;
     for (ordinal, value) in values.into_iter().enumerate() {
         transform[ordinal / 4][ordinal % 4] = value;
     }
+    let transform = crate::records::SketchPlacementMatrix::try_from(transform).ok()?;
     valid_right_handed_coil_transform(&transform).then_some(transform)
 }
 
@@ -9757,17 +9770,17 @@ fn bind_coil_extent_from_parameters(
     let mut owned_kinds = parameter_owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
         })
         .filter_map(|owner| {
             parameters
                 .iter()
                 .find(|parameter| {
                     native_stream(&parameter.id) == Some(stream)
-                        && parameter.record_index == owner.parameter_record_index
+                        && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(|parameter| (owner.local_ordinal, parameter.source_kind()))
+                .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
         })
         .collect::<Vec<_>>();
     owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);

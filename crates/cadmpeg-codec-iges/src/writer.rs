@@ -1318,7 +1318,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         for (index, vertex_id) in vertex_ids.iter().enumerate() {
             vertex_indices.insert(vertex_id.clone(), index);
         }
-        let mut parameters = format!("502,{}", vertex_ids.len());
+        let mut parameters = vertex_ids.len().to_string();
         for vertex_id in &vertex_ids {
             let vertex = ir
                 .model
@@ -1343,7 +1343,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
             form: 1,
             label: "VERTICES",
             status: EntityStatus::PhysicallyDependent,
-            parameters: parameters.into_bytes(),
+            parameter_body: parameters.into_bytes(),
             transform: None,
         });
 
@@ -1356,7 +1356,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         let edge_list_index = if edge_ids.is_empty() {
             None
         } else {
-            let mut parameters = format!("504,{}", edge_ids.len());
+            let mut parameters = edge_ids.len().to_string();
             for edge_id in &edge_ids {
                 let edge = ir
                     .model
@@ -1386,7 +1386,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 form: 1,
                 label: "EDGES",
                 status: EntityStatus::PhysicallyDependentEdgeList,
-                parameters: parameters.into_bytes(),
+                parameter_body: parameters.into_bytes(),
                 transform: None,
             });
             Some(index)
@@ -1429,7 +1429,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 .len()
                 .checked_add(loop_.vertices().count())
                 .ok_or_else(|| CodecError::Malformed("IGES loop use count overflows".into()))?;
-            let mut parameters = format!("508,{use_count}");
+            let mut parameters = use_count.to_string();
             for coedge_id in loop_.coedges() {
                 let coedge = ir
                     .model
@@ -1560,7 +1560,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 form: 1,
                 label: "LOOP",
                 status: EntityStatus::PhysicallyDependent,
-                parameters: parameters.into_bytes(),
+                parameter_body: parameters.into_bytes(),
                 transform: None,
             });
             loop_indices.insert(loop_id.as_str().to_owned(), index);
@@ -1579,7 +1579,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
             let loops = face_loop_order(ir, face)?;
             let has_outer = face_outer_loop(face, &loops).is_some();
             let mut parameters = format!(
-                "510,{},{},{}",
+                "{},{},{}",
                 reference_marker(surface_indices[face.surface.as_str()]),
                 loops.len(),
                 i32::from(has_outer)
@@ -1598,7 +1598,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 form: 1,
                 label: "FACE",
                 status: EntityStatus::PhysicallyDependent,
-                parameters: parameters.into_bytes(),
+                parameter_body: parameters.into_bytes(),
                 transform: None,
             });
             face_indices.insert(face_id.as_str().to_owned(), index);
@@ -1606,7 +1606,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
 
         let mut shell_indices = BTreeMap::new();
         for shell in &shells {
-            let mut parameters = format!("514,{}", shell.faces().len());
+            let mut parameters = shell.faces().len().to_string();
             for face_id in shell.faces() {
                 let face = ir
                     .model
@@ -1637,7 +1637,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 } else {
                     EntityStatus::Independent
                 },
-                parameters: parameters.into_bytes(),
+                parameter_body: parameters.into_bytes(),
                 transform: None,
             });
             shell_indices.insert(shell.id.as_str(), index);
@@ -1645,7 +1645,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         if body.kind == BodyKind::Solid {
             let (exterior_shell, void_shells) = solid_shell_roles(region)?;
             let mut parameters = format!(
-                "186,{},1,{}",
+                "{},1,{}",
                 reference_marker(shell_indices[exterior_shell.as_str()]),
                 void_shells.len()
             );
@@ -1662,7 +1662,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                 form: 0,
                 label: "SOLID",
                 status: EntityStatus::Independent,
-                parameters: parameters.into_bytes(),
+                parameter_body: parameters.into_bytes(),
                 transform: None,
             });
         }
@@ -2077,7 +2077,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 })
                 .map_or(0, |coedge| i32::from(!coedge.pcurves.is_empty()));
             format!(
-                "143,{representation},{},{}",
+                "{representation},{},{}",
                 reference_marker(surface_index),
                 loops.len()
             )
@@ -2089,7 +2089,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 &loops[..]
             };
             let mut parameters = format!(
-                "144,{},{},{},{}",
+                "{},{},{},{}",
                 reference_marker(surface_index),
                 i32::from(outer.is_some()),
                 inner.len(),
@@ -2118,7 +2118,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
             form: 0,
             label: if bounded { "BOUNDED" } else { "TRIMMED" },
             status: EntityStatus::Independent,
-            parameters: parameters.into_bytes(),
+            parameter_body: parameters.into_bytes(),
             transform: None,
         });
     }
@@ -2619,7 +2619,7 @@ fn boundary_entity(
         .is_some_and(|coedge| !coedge.pcurves.is_empty());
     let representation = i32::from(has_pcurves);
     let mut parameters = format!(
-        "141,{representation},{BOUNDARY_PREFERENCE_MODEL_CURVES},{},{}",
+        "{representation},{BOUNDARY_PREFERENCE_MODEL_CURVES},{},{}",
         reference_marker(surface_index),
         loop_.coedges().len()
     );
@@ -2695,7 +2695,7 @@ fn boundary_entity(
         form: 0,
         label: "BOUNDARY",
         status: EntityStatus::PhysicallyDependent,
-        parameters: parameters.into_bytes(),
+        parameter_body: parameters.into_bytes(),
         transform: None,
     })
 }
@@ -2836,8 +2836,8 @@ fn curve_on_surface_entity(
         form: 0,
         label: "CURVSURF",
         status: EntityStatus::PhysicallyDependent,
-        parameters: format!(
-            "142,{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
+        parameter_body: format!(
+            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
             reference_marker(parameter_curve),
             reference_marker(model_curve)
@@ -2869,7 +2869,7 @@ fn push_composite_entity_with_reference_offset(
             "IGES composite curve has no children".into(),
         ));
     }
-    let mut parameters = format!("102,{}", children.len());
+    let mut parameters = children.len().to_string();
     for child in children {
         let child = child
             .checked_add(reference_offset)
@@ -2884,7 +2884,7 @@ fn push_composite_entity_with_reference_offset(
         form: 0,
         label,
         status,
-        parameters: parameters.into_bytes(),
+        parameter_body: parameters.into_bytes(),
         transform: None,
     });
     Ok(index)
@@ -2934,15 +2934,10 @@ fn composite_entity_references(entity: &Entity) -> Result<Vec<usize>, CodecError
             "IGES composite reference extraction received a non-composite entity".into(),
         ));
     }
-    let text = std::str::from_utf8(&entity.parameters).map_err(|_| {
+    let text = std::str::from_utf8(&entity.parameter_body).map_err(|_| {
         CodecError::Malformed("IGES emitted composite curve parameters are not UTF-8".into())
     })?;
     let mut fields = text.trim_end_matches(';').split(',');
-    if fields.next() != Some("102") {
-        return Err(CodecError::Malformed(
-            "IGES emitted composite curve has an invalid type field".into(),
-        ));
-    }
     let count = fields
         .next()
         .ok_or_else(|| {
@@ -3482,11 +3477,13 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
             .ok_or_else(|| CodecError::Malformed("IGES entity sequence overflows".into()))?;
     }
     for entity in entities {
-        let mut resolved = Vec::with_capacity(entity.parameters.len());
+        let mut resolved = Vec::with_capacity(entity.parameter_body.len());
         let mut index = 0;
-        while index < entity.parameters.len() {
-            if entity.parameters[index] == b'@' && entity.parameters.get(index + 1) == Some(&b'R') {
-                let Some(end_offset) = entity.parameters[index + 2..]
+        while index < entity.parameter_body.len() {
+            if entity.parameter_body[index] == b'@'
+                && entity.parameter_body.get(index + 1) == Some(&b'R')
+            {
+                let Some(end_offset) = entity.parameter_body[index + 2..]
                     .iter()
                     .position(|byte| *byte == b'@')
                 else {
@@ -3495,7 +3492,7 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
                     ));
                 };
                 let end = index + 2 + end_offset;
-                let target = std::str::from_utf8(&entity.parameters[index + 2..end])
+                let target = std::str::from_utf8(&entity.parameter_body[index + 2..end])
                     .ok()
                     .and_then(|value| value.parse::<usize>().ok())
                     .ok_or_else(|| {
@@ -3509,11 +3506,11 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
                 resolved.extend_from_slice(sequence.to_string().as_bytes());
                 index = end + 1;
             } else {
-                resolved.push(entity.parameters[index]);
+                resolved.push(entity.parameter_body[index]);
                 index += 1;
             }
         }
-        entity.parameters = resolved;
+        entity.parameter_body = resolved;
     }
     Ok(())
 }
@@ -3780,7 +3777,9 @@ fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f6
 }
 
 fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
-    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    let mut tolerance = edge
+        .tolerance
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
     for vertex_id in [&edge.start, &edge.end] {
         if let Some(vertex) = ir
             .model
@@ -3788,7 +3787,11 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
         {
-            tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+            tolerance = tolerance.max(
+                vertex
+                    .tolerance
+                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+            );
         }
     }
     tolerance
@@ -3806,7 +3809,7 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
         )
-        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .map(cadmpeg_ir::units::PositiveScalar::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(ir);
@@ -3815,17 +3818,13 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
 
 fn minimum_resolution_for_output(ir: &CadIr) -> f64 {
     let generated = generated_minimum_resolution(ir);
-    if ir.tolerances.linear.is_finite() && ir.tolerances.linear > 0.0 {
-        generated.max(ir.tolerances.linear)
-    } else {
-        generated
-    }
+    generated.max(ir.tolerances.linear.get())
 }
 
 fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
     ir.source.as_ref()?;
-    let declared = ir.tolerances.linear;
-    if declared.is_finite() && declared > 0.0 && emitted <= declared {
+    let declared = ir.tolerances.linear.get();
+    if emitted <= declared {
         return None;
     }
     Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
@@ -4085,7 +4084,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -4145,7 +4145,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = format!("D{sequence}");
         if !ir.model.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges && source.object_id == object_id
+                source.format == cadmpeg_ir::CodecFormat::Iges
+                    && source.object_id.as_str() == object_id
             })
         }) {
             return Err(CodecError::NotImplemented(format!(
@@ -4249,8 +4250,8 @@ fn point_entity_with_status(position: Point3, status: EntityStatus) -> Entity {
         form: 0,
         label: "POINT",
         status,
-        parameters: format!(
-            "116,{},{},{};",
+        parameter_body: format!(
+            "{},{},{};",
             number(position.x),
             number(position.y),
             number(position.z)
@@ -4267,8 +4268,8 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         form: 0,
         label: "DIRECTN",
         status: EntityStatus::PhysicallyDependent,
-        parameters: format!(
-            "123,{},{},{};",
+        parameter_body: format!(
+            "{},{},{};",
             number(direction.x),
             number(direction.y),
             number(direction.z)
@@ -4510,7 +4511,7 @@ fn extrusion_surface_entities(
         end,
     };
     let mut entities = Vec::new();
-    let directrix_local_index = append_curve_entity_with_reference_offset(
+    let directrix_local_index = append_curve_entity(
         &mut entities,
         ir,
         CurveEntityRequest {
@@ -4531,8 +4532,8 @@ fn extrusion_surface_entities(
         form: 0,
         label: "TABULATE",
         status: EntityStatus::Independent,
-        parameters: format!(
-            "122,{},{},{},{};",
+        parameter_body: format!(
+            "{},{},{},{};",
             reference_marker(directrix_index),
             number(target.x),
             number(target.y),
@@ -4664,8 +4665,8 @@ fn revolution_surface_entities(
             form: 0,
             label: "REVOLVE",
             status: EntityStatus::Independent,
-            parameters: format!(
-                "120,{},{},{},{};",
+            parameter_body: format!(
+                "{},{},{},{};",
                 reference_marker(base_index),
                 reference_marker(directrix_index),
                 number(start_angle),
@@ -4702,7 +4703,7 @@ fn surface_entities(
                     form: 0,
                     label: "PLANE",
                     status: EntityStatus::Independent,
-                    parameters: b"108,0,0,1,0,0,0,0,0,0;".to_vec(),
+                    parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(*origin, u_axis, v_axis, normal)?),
                 }]);
             }
@@ -4715,8 +4716,8 @@ fn surface_entities(
                 form: 1,
                 label: "PLANE",
                 status: EntityStatus::PhysicallyDependent,
-                parameters: format!(
-                    "190,{},{},{};",
+                parameter_body: format!(
+                    "{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
                     reference_marker(reference)
@@ -4747,8 +4748,8 @@ fn surface_entities(
                 form: 1,
                 label: "CYLINDER",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "192,{},{},{},{};",
+                parameter_body: format!(
+                    "{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
                     number(*radius),
@@ -4795,8 +4796,8 @@ fn surface_entities(
                 form: 1,
                 label: "CONE",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "194,{},{},{},{},{};",
+                parameter_body: format!(
+                    "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
                     number(*radius),
@@ -4829,8 +4830,8 @@ fn surface_entities(
                 form: 1,
                 label: "SPHERE",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "196,{},{},{},{};",
+                parameter_body: format!(
+                    "{},{},{},{};",
                     reference_marker(location),
                     number(*radius),
                     reference_marker(axis),
@@ -4867,8 +4868,8 @@ fn surface_entities(
                 form: 1,
                 label: "TORUS",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "198,{},{},{},{},{};",
+                parameter_body: format!(
+                    "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
                     number(*major_radius),
@@ -4937,7 +4938,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     let closed_u = nurbs.u_periodic() || nurbs_surface_closed_u(nurbs, u_range, v_range);
     let closed_v = nurbs.v_periodic() || nurbs_surface_closed_v(nurbs, u_range, v_range);
     let mut parameters = format!(
-        "128,{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{}",
         u_count - 1,
         v_count - 1,
         nurbs.u_degree(),
@@ -4981,7 +4982,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         form: 0,
         label: "NURBS",
         status: EntityStatus::Independent,
-        parameters: parameters.into_bytes(),
+        parameter_body: parameters.into_bytes(),
         transform: None,
     })
 }
@@ -5068,14 +5069,6 @@ struct CurveEntityRequest<'a> {
 }
 
 fn append_curve_entity(
-    entities: &mut Vec<Entity>,
-    ir: &CadIr,
-    request: CurveEntityRequest<'_>,
-) -> Result<usize, CodecError> {
-    append_curve_entity_with_reference_offset(entities, ir, request)
-}
-
-fn append_curve_entity_with_reference_offset(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
     request: CurveEntityRequest<'_>,
@@ -5501,7 +5494,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
-    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    let mut tolerance = edge
+        .tolerance
+        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
     for vertex_id in [&edge.start, &edge.end] {
         let vertex = ir
             .model
@@ -5514,7 +5509,11 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
                     edge.id, vertex_id
                 ))
             })?;
-        tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+        tolerance = tolerance.max(
+            vertex
+                .tolerance
+                .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+        );
     }
     Ok(tolerance)
 }
@@ -5529,7 +5528,7 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
         CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         CurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
-            Ok([values[0], *values.last().expect("polyline has points")])
+            Ok([values.first, values.last])
         }
         CurveGeometry::Line { .. }
         | CurveGeometry::Parabola { .. }
@@ -5573,8 +5572,8 @@ fn curve_entity(
                 form: 0,
                 label: "LINE",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "110,{},{},{},{},{},{};",
+                parameter_body: format!(
+                    "{},{},{},{},{},{};",
                     number(span.start.x),
                     number(span.start.y),
                     number(span.start.z),
@@ -5611,8 +5610,8 @@ fn curve_entity(
                 form: 0,
                 label: "ARC",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "100,0,0,0,{},{},{},{};",
+                parameter_body: format!(
+                    "0,0,0,{},{},{},{};",
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),
@@ -5656,8 +5655,8 @@ fn curve_entity(
                 form,
                 label: "CONIC",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "104,{},0,{},0,0,-1,0,{},{},{},{};",
+                parameter_body: format!(
+                    "{},0,{},0,0,-1,0,{},{},{},{};",
                     number(1.0 / (major_radius * major_radius)),
                     number(1.0 / (minor_radius * minor_radius)),
                     number(start_xy[0]),
@@ -5689,8 +5688,8 @@ fn curve_entity(
                 form: 3,
                 label: "CONIC",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "104,1,0,0,0,{},0,0,{},{},{},{};",
+                parameter_body: format!(
+                    "1,0,0,0,{},0,0,{},{},{},{};",
                     number(-4.0 * focal_distance),
                     number(start_xy[0]),
                     number(start_xy[1]),
@@ -5727,8 +5726,8 @@ fn curve_entity(
                 form: 2,
                 label: "CONIC",
                 status: EntityStatus::Independent,
-                parameters: format!(
-                    "104,{},0,{},0,0,-1,0,{},{},{},{};",
+                parameter_body: format!(
+                    "{},0,{},0,0,-1,0,{},{},{},{};",
                     number(1.0 / (major_radius * major_radius)),
                     number(-1.0 / (minor_radius * minor_radius)),
                     number(start_xy[0]),
@@ -5817,7 +5816,7 @@ fn encode_nurbs(
     let closed = nurbs_is_closed(nurbs, &weights, domain);
     let k = control_count - 1;
     let mut parameters = format!(
-        "126,{k},{},{},{},{},{}",
+        "{k},{},{},{},{},{}",
         nurbs.degree(),
         i32::from(planar),
         i32::from(closed),
@@ -5858,7 +5857,7 @@ fn encode_nurbs(
         form: 0,
         label,
         status,
-        parameters: parameters.into_bytes(),
+        parameter_body: parameters.into_bytes(),
         transform: None,
     })
 }
@@ -6150,7 +6149,16 @@ fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {
     Ok([nurbs.knots()[degree], nurbs.knots()[end]])
 }
 
-fn polyline_parameters(count: usize, parameters: Option<&[f64]>) -> Result<Vec<f64>, CodecError> {
+struct PolylineParameters {
+    first: f64,
+    interior: Vec<f64>,
+    last: f64,
+}
+
+fn polyline_parameters(
+    count: usize,
+    parameters: Option<&[f64]>,
+) -> Result<PolylineParameters, CodecError> {
     if count < 2 {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least two polyline points".into(),
@@ -6160,22 +6168,29 @@ fn polyline_parameters(count: usize, parameters: Option<&[f64]>) -> Result<Vec<f
         || (0..count).map(|value| value as f64).collect(),
         <[f64]>::to_vec,
     );
-    if values.len() != count
-        || values.iter().any(|value| !value.is_finite())
-        || values.windows(2).any(|pair| pair[0] >= pair[1])
-    {
-        return Err(CodecError::Malformed(
+    match values.as_slice() {
+        [first, interior @ .., last]
+            if values.len() == count
+                && values.iter().all(|value| value.is_finite())
+                && values.windows(2).all(|pair| pair[0] < pair[1]) =>
+        {
+            Ok(PolylineParameters {
+                first: *first,
+                interior: interior.to_vec(),
+                last: *last,
+            })
+        }
+        _ => Err(CodecError::Malformed(
             "IGES polyline parameters must be finite and strictly increasing".into(),
-        ));
+        )),
     }
-    Ok(values)
 }
 
-fn polyline_knots(parameters: &[f64]) -> Vec<f64> {
-    let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.extend([parameters[0], parameters[0]]);
-    knots.extend_from_slice(&parameters[1..parameters.len() - 1]);
-    knots.extend([*parameters.last().expect("polyline has points"); 2]);
+fn polyline_knots(parameters: &PolylineParameters) -> Vec<f64> {
+    let mut knots = Vec::with_capacity(parameters.interior.len() + 4);
+    knots.extend([parameters.first; 2]);
+    knots.extend_from_slice(&parameters.interior);
+    knots.extend([parameters.last; 2]);
     knots
 }
 
@@ -6218,8 +6233,16 @@ struct Entity {
     form: i64,
     label: &'static str,
     status: EntityStatus,
-    parameters: Vec<u8>,
+    parameter_body: Vec<u8>,
     transform: Option<Placement>,
+}
+
+impl Entity {
+    fn parameter_text(&self) -> Vec<u8> {
+        let mut text = format!("{},", self.type_code).into_bytes();
+        text.extend_from_slice(&self.parameter_body);
+        text
+    }
 }
 
 fn encode_file(
@@ -6253,7 +6276,7 @@ fn encode_file(
                     form: 0,
                     label: "XFORM",
                     status: EntityStatus::Independent,
-                    parameters: format!("124,{transform_parameters};").into_bytes(),
+                    parameter_body: format!("{transform_parameters};").into_bytes(),
                     transform: None,
                 },
                 0_u32,
@@ -6280,7 +6303,7 @@ fn encode_file(
             .and_then(|value| value.checked_mul(2))
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| CodecError::Malformed("IGES directory sequence overflows".into()))?;
-        let fragments = crate::parameter::layout_parameter_cards(&entity.parameters)?;
+        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text())?;
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::Malformed("IGES parameter count overflows".into()))?;
@@ -6436,7 +6459,7 @@ fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
         return None;
     }
     let values = entity
-        .parameters
+        .parameter_body
         .split(|byte| matches!(byte, b',' | b';'))
         .filter(|token| !token.is_empty())
         .map(|token| {
@@ -6448,9 +6471,9 @@ fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
         })
         .collect::<Option<Vec<_>>>()?;
     let coordinates: &[f64] = match entity.type_code {
-        110 => values.get(1..=6)?,
-        116 => values.get(1..=3)?,
-        502 => values.get(2..)?,
+        110 => values.get(0..6)?,
+        116 => values.get(0..3)?,
+        502 => values.get(1..)?,
         123 | 141 | 142 | 143 | 144 | 186 | 190 | 192 | 194 | 196 | 198 | 504 | 508 | 510 | 514 => {
             &[]
         }

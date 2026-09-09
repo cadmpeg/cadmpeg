@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition};
+use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 
 use crate::container::ContainerScan;
 
@@ -29,7 +29,7 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
                     "unknown"
                 }
             },
-            |section| section.name.as_str(),
+            |section| section.name(),
         )
         .to_string()
 }
@@ -164,8 +164,8 @@ pub(crate) fn design_constraint_transfer_coverage(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {
                 coverage.transferred += 1;
-                let native_kind_text = match &constraint.definition {
-                    SketchConstraintDefinition::Native { native_kind, .. }
+                let native_kind_text = match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::Native { native_kind, .. }
                         if native_kind.starts_with(native_kind_prefix) =>
                     {
                         Some(native_kind.as_str())
@@ -225,6 +225,7 @@ pub(crate) fn curve_transfer_coverage(
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()
@@ -239,6 +240,7 @@ pub(crate) fn curve_transfer_coverage(
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()
@@ -296,6 +298,7 @@ pub(crate) fn surface_transfer_coverage(
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()?;
@@ -317,6 +320,7 @@ pub(crate) fn surface_transfer_coverage(
                 .as_ref()
                 .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
                 .object_id
+                .as_str()
                 .strip_prefix("VisibGeom:")?
                 .parse::<u32>()
                 .ok()
@@ -372,106 +376,9 @@ pub(crate) fn surface_prototype_family_name(
 pub(super) fn surface_named_parameter_record(
     parameter: &crate::surface::SurfaceNamedParameter,
 ) -> CreoSurfaceNamedParameterRecord {
-    let (
-        value_kind,
-        compact_values,
-        scalar_dimensions,
-        scalar_count,
-        scalar_values,
-        scalar_tokens,
-        opaque,
-    ) = match &parameter.value {
-        crate::surface::SurfaceNamedValue::Empty => (
-            "empty",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CompactInt(value) => (
-            "compact_int",
-            vec![*value],
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
-            "compact_int_array",
-            values.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
-            "contiguous_entity_references",
-            entity_ids.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ScalarArray {
-            dimensions,
-            count,
-            values,
-            tokens,
-        } => (
-            "scalar_array",
-            Vec::new(),
-            Some(*dimensions),
-            Some(*count),
-            values.clone(),
-            tokens.clone().unwrap_or_default(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::CountedScalarArray {
-            count,
-            values,
-            tokens,
-        } => (
-            "counted_scalar_array",
-            Vec::new(),
-            None,
-            Some(*count),
-            values.clone(),
-            tokens.clone(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
-            "scalar_sequence",
-            Vec::new(),
-            None,
-            None,
-            values.iter().copied().map(Some).collect(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::surface::SurfaceNamedValue::Opaque(value) => (
-            "opaque",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            value.clone(),
-        ),
-    };
     CreoSurfaceNamedParameterRecord {
         name: parameter.name.clone(),
-        value_kind,
-        compact_values,
-        scalar_dimensions,
-        scalar_count,
-        scalar_values,
-        scalar_tokens,
-        opaque,
+        value: parameter.value.clone(),
         body: parameter.body.clone(),
         offset: parameter.offset,
         value_offset: parameter.value_offset,

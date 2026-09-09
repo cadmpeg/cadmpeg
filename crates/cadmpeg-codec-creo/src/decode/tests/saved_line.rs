@@ -32,7 +32,10 @@ use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    SketchId,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -97,10 +100,13 @@ fn saved_line_joins_through_order_table() {
 
     assert_eq!(
         saved_section_line_geometry(&definition, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .expect("valid test fixture")
+        )
     );
     assert!(resolved_section_segment_geometry(
         &definition,
@@ -192,7 +198,7 @@ fn saved_line_joins_through_order_table() {
     assert!(materialized_saved_section_external_ids(&incomplete).is_empty());
     let (native_entity, offset) = unresolved_saved_section_entity(
         &incomplete,
-        &SketchId("creo:model:sketch#5".into()),
+        &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
         &incomplete
             .saved_section
             .as_ref()
@@ -200,12 +206,15 @@ fn saved_line_joins_through_order_table() {
             .entities[0],
         &unique_saved_section_internal_ids(&incomplete),
         &BTreeSet::new(),
-    );
+    )
+    .expect("valid test fixture");
     assert_eq!(offset, 20);
-    assert_eq!(native_entity.id().0, "creo:featdefs:sketch_entity#5:42");
-    assert!(matches!(
-        native_entity.geometry,
-        SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"
+    assert_eq!(
+        native_entity.id().as_str(),
+        "creo:featdefs:sketch_entity#5:42"
+    );
+    assert!(matches!(*native_entity.geometry.definition(),
+        SketchGeometryDefinition::Native { ref native_kind } if native_kind == "saved_line"
     ));
     let mut duplicate_order_row = definition.clone();
     duplicate_order_row
@@ -330,16 +339,20 @@ fn saved_line_joins_through_order_table() {
         }),
         offset: 28,
     });
-    let constraints =
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let constraints = section_skamp_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+    );
     assert!(matches!(
-        &constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+        constraints[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { entities, .. }
+            if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            )]
+            ).expect("valid test fixture")]
     ));
-    let SketchConstraintDefinition::Native { operands, .. } = &constraints[0].0.definition else {
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        constraints[0].0.definition.kind()
+    else {
         unreachable!();
     };
     assert!(operands.iter().any(|operand| {
@@ -364,10 +377,10 @@ fn saved_line_joins_through_order_table() {
         .relation_id = None;
     let equation_only_constraints = section_skamp_constraints(
         &equation_only_incidence,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &equation_only_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        equation_only_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -387,10 +400,10 @@ fn saved_line_joins_through_order_table() {
         .equation_id = None;
     let missing_equation_constraints = section_skamp_constraints(
         &missing_equation,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &missing_equation_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        missing_equation_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -416,10 +429,10 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     let duplicate_equation_constraints = section_skamp_constraints(
         &duplicate_equation,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
     );
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &duplicate_equation_constraints[0].0.definition
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        duplicate_equation_constraints[0].0.definition.kind()
     else {
         unreachable!();
     };
@@ -429,23 +442,27 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         relation_incidence_entities(
             &constrained,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
         ),
         vec![
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
         ]
     );
-    let dimension_constraints =
-        section_dimension_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let dimension_constraints = section_dimension_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+    );
     assert!(
         matches!(
-            &dimension_constraints[0].0.definition,
-            SketchConstraintDefinition::Distance { entities, .. }
+            dimension_constraints[0].0.definition.kind(),
+            SketchConstraintDefinitionInput::Distance { entities, .. }
                 if entities == &[
-                    SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-                    SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string()).expect("valid test fixture"),
+                    SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string()).expect("valid test fixture"),
                 ]
         ),
         "{:?}",
@@ -453,10 +470,12 @@ fn saved_line_joins_through_order_table() {
     );
     let mut native_join = constrained.clone();
     native_join.relations.as_mut().expect("relations").rows[0].relation_type = 99;
-    let native_join_constraints =
-        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &native_join_constraints[0].0.definition
+    let native_join_constraints = section_dimension_constraints(
+        &native_join,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+    );
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        native_join_constraints[0].0.definition.kind()
     else {
         panic!("untyped relation must remain native");
     };
@@ -489,10 +508,12 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("triples header")
         .declared_count = 2;
-    let ambiguous_join_constraints =
-        section_dimension_constraints(&native_join, &SketchId("creo:model:sketch#5".to_string()));
-    let SketchConstraintDefinition::Native { operands, .. } =
-        &ambiguous_join_constraints[0].0.definition
+    let ambiguous_join_constraints = section_dimension_constraints(
+        &native_join,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+    );
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        ambiguous_join_constraints[0].0.definition.kind()
     else {
         panic!("untyped relation must remain native");
     };
@@ -610,20 +631,23 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Line)
     );
     let solver_geometry = BTreeMap::from([(
-        SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
-        SketchGeometry::Native {
-            native_kind: "solver_only_section_entity".to_string(),
-        },
+        SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+            .expect("valid test fixture"),
+        SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new("solver_only_section_entity")
+                .expect("nonempty source identity"),
+        ),
     )]);
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
         )[0]
         .0
-        .definition,
-        SketchConstraintDefinition::Horizontal { .. }
+        .definition
+        .kind(),
+        SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     let unary = &mut solver_families
         .relations
@@ -638,12 +662,13 @@ fn saved_line_joins_through_order_table() {
     assert!(matches!(
         section_skamp_constraints_for_geometry(
             &solver_families,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             Some(&solver_geometry),
         )[0]
         .0
-        .definition,
-        SketchConstraintDefinition::Vertical { .. }
+        .definition
+        .kind(),
+        SketchConstraintDefinitionInput::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
     *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
@@ -682,21 +707,25 @@ fn saved_line_joins_through_order_table() {
     );
     let solver_geometry = BTreeMap::from([
         (
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-            SketchGeometry::Native {
-                native_kind: "line".to_string(),
-            },
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("line")
+                    .expect("nonempty source identity"),
+            ),
         ),
         (
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
-            SketchGeometry::Native {
-                native_kind: "point".to_string(),
-            },
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("point")
+                    .expect("nonempty source identity"),
+            ),
         ),
     ]);
     let solver_constraints = section_skamp_constraints_for_geometry(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         Some(&solver_geometry),
     );
     let point_item = &solver_families
@@ -713,21 +742,21 @@ fn saved_line_joins_through_order_table() {
         .items[1];
     assert!(section_skamp_point_locus(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         point_item
     )
     .is_some());
     assert!(section_skamp_incidence_locus(
         &solver_families,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         line_item,
         Some(&solver_geometry)
     )
     .is_some());
     assert!(
         matches!(
-            solver_constraints[0].0.definition,
-            SketchConstraintDefinition::CoincidentLoci { .. }
+            solver_constraints[0].0.definition.kind(),
+            SketchConstraintDefinitionInput::CoincidentLoci { .. }
         ),
         "{:?}",
         solver_constraints[0].0.definition
@@ -885,7 +914,7 @@ fn saved_line_joins_through_order_table() {
         .declared_count = 2;
     assert!(relation_incidence_entities(
         &duplicate_incidence,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
     )
     .is_empty());
@@ -900,36 +929,43 @@ fn saved_line_joins_through_order_table() {
         .status = 34;
     assert!(relation_incidence_entities(
         &constrained,
-        &SketchId("creo:model:sketch#5".to_string()),
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
         7,
     )
     .is_empty());
     assert_eq!(
         joined_relation_incidence_entities(
             &constrained,
-            &SketchId("creo:model:sketch#5".to_string()),
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
         ),
         vec![
-            SketchEntityId("creo:featdefs:sketch_entity#5:42".to_string()),
-            SketchEntityId("creo:featdefs:sketch_entity#5:99".to_string()),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
+                .expect("valid test fixture"),
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:99".to_string())
+                .expect("valid test fixture"),
         ]
     );
     assert_eq!(
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()))[0]
-            .0
-            .active,
+        section_skamp_constraints(
+            &constrained,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture")
+        )[0]
+        .0
+        .active,
         Some(false)
     );
     constrained.segments = None;
-    let constraints =
-        section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+    let constraints = section_skamp_constraints(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+    );
     assert!(matches!(
-        &constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+        constraints[0].0.definition.kind(),
+        SketchConstraintDefinitionInput::Native { entities, .. }
+            if entities == &[SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#5:42".to_string()
-            )]
+            ).expect("valid test fixture")]
     ));
 
     let mut completed = definition;
@@ -971,10 +1007,13 @@ fn saved_line_joins_through_order_table() {
     });
     assert_eq!(
         saved_section_line_geometry(&completed, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .expect("valid test fixture")
+        )
     );
     let mut replay_mismatched = completed.clone();
     replay_mismatched
@@ -996,10 +1035,13 @@ fn saved_line_joins_through_order_table() {
     );
     assert_eq!(
         saved_section_line_geometry(&replay_mismatched, &segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .expect("valid test fixture")
+        )
     );
     let mut incomplete_order = completed.clone();
     incomplete_order
@@ -1092,18 +1134,22 @@ fn saved_line_joins_through_order_table() {
         saved_section_missing_line_geometry(&missing_line),
         Some((
             omitted_segment.offset,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-            },
+            })
+            .expect("valid test fixture"),
         ))
     );
     assert_eq!(
         resolved_section_segment_geometry(&missing_line, &BTreeMap::new(), &omitted_segment),
-        Some(SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
-            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+            .expect("valid test fixture")
+        )
     );
 
     omitted_segment.vertical_horizontal = Some(0);
@@ -1160,10 +1206,11 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         saved_section_entity_geometry(&entity),
         Some((
             7,
-            SketchGeometry::Circle {
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(2.0, -3.0),
-                radius: Length::new(4.5).unwrap(),
-            },
+                radius: Length::new(4.5).expect("finite length fixture"),
+            })
+            .expect("valid test fixture"),
             19,
         ))
     );
@@ -1279,17 +1326,18 @@ fn generated_saved_geometry_forms_closed_profiles() {
     let line = |external_id: u32, start: (f64, f64), end: (f64, f64)| {
         (
             external_id,
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start.0, start.1),
                 end: Point2::new(end.0, end.1),
-            },
+            })
+            .expect("valid test fixture"),
         )
     };
     let geometries = vec![
         line(12, (0.0, 1.0), (1.0, 1.0)),
         (
             10,
-            SketchGeometry::Nurbs {
+            SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
                 curve: cadmpeg_ir::geometry::PcurveNurbs::new(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1298,33 +1346,37 @@ fn generated_saved_geometry_forms_closed_profiles() {
                     false,
                 )
                 .expect("valid test pcurve"),
-            },
+            })
+            .expect("valid test fixture"),
         ),
         line(13, (0.0, 0.0), (0.0, 1.0)),
         line(11, (1.0, 1.0), (1.0, 0.0)),
         line(20, (5.0, 5.0), (6.0, 5.0)),
         (
             30,
-            SketchGeometry::Arc {
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(8.0, 8.0),
-                radius: Length::new(2.0).unwrap(),
-                start_angle: Angle::ZERO,
-                end_angle: Angle::FULL_TURN,
-            },
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(0.0).expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
+            })
+            .expect("valid test fixture"),
         ),
     ];
 
-    let profiles =
-        saved_profile_chains(&SketchId("creo:model:sketch#917".to_string()), &geometries);
+    let profiles = saved_profile_chains(
+        &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
+        &geometries,
+    );
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(
-        profiles[0][0].entity.0,
+        profiles[0][0].entity.as_str(),
         "creo:featdefs:sketch_entity#917:30"
     );
     assert_eq!(profiles[1].len(), 4);
     assert_eq!(
-        profiles[1][0].entity.0,
+        profiles[1][0].entity.as_str(),
         "creo:featdefs:sketch_entity#917:10"
     );
     assert!(!profiles[1][0].reversed);
@@ -1332,7 +1384,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
     assert!(profiles
         .iter()
         .flatten()
-        .all(|entity| !entity.entity.0.ends_with(":20")));
+        .all(|entity| !entity.entity.as_str().ends_with(":20")));
 }
 
 #[test]
@@ -1398,12 +1450,16 @@ fn saved_arc_joins_through_order_table() {
 
     assert_eq!(
         saved_section_arc_geometry(&definition, &segment),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length::new(2.0).unwrap(),
-            start_angle: Angle::new(std::f64::consts::PI).unwrap(),
-            end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).unwrap(),
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
+                end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2)
+                    .expect("finite angle fixture"),
+            })
+            .expect("valid test fixture")
+        )
     );
     assert_eq!(
         saved_section_segment_point_coordinates(&definition, &segment),
@@ -1691,26 +1747,29 @@ fn saved_arc_joins_through_order_table() {
             &BTreeMap::new(),
             segment,
         ),
-        Some(SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            radius: Length::new(2.0).unwrap(),
-            start_angle: Angle::ZERO,
-            end_angle: Angle::FULL_TURN,
-        })
+        Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length::new(2.0).expect("finite length fixture"),
+                start_angle: Angle::new(0.0).expect("finite angle fixture"),
+                end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
+            })
+            .expect("valid test fixture")
+        )
     );
 }
 
 #[test]
 fn placed_extrusion_line_defines_plane() {
-    let transform = crate::placement::FeatureSectionTransform {
-        definition_id: 5,
-        feature_id: Some(5),
-        origin: [10.0, 20.0, 30.0],
-        u_axis: [0.0, 1.0, 0.0],
-        v_axis: [0.0, 0.0, 1.0],
-        normal: [1.0, 0.0, 0.0],
-        offset: 7,
-    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        5,
+        Some(5),
+        [10.0, 20.0, 30.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        7,
+    )
+    .expect("valid section frame");
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],

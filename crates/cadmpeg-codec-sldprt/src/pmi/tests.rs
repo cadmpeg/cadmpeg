@@ -44,11 +44,11 @@ fn named_feature(id: &str, name: &str) -> Feature {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::StoredGeometry,
@@ -80,15 +80,15 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     };
 
     let feature = Feature {
-        id: FeatureId::mint("pattern").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Pattern {
@@ -112,17 +112,17 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
 
 #[test]
 fn explicit_keywords_dimension_precedes_pmi_value() {
-    let owner = FeatureId::mint("feature").expect("identity grammar");
-    let feature = named_feature("feature", "Pattern1");
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        id: ParameterId::mint("keywords-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("keywords-dimension".into()),
@@ -151,7 +151,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
 
 #[test]
 fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
-    let feature = named_feature("feature", "Pattern1");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let first = dimension("Linear", 0.034);
     let mut second = dimension("Linear", 0.035);
     second.id = "dimension-2".into();
@@ -165,7 +165,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
 
 #[test]
 fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
-    let feature = named_feature("feature", "Pattern1");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let canonical = dimension("Linear", 0.034);
     let mut alias = canonical.clone();
     alias.id = "dimension-2".into();
@@ -331,6 +331,53 @@ fn parses_array16_dim_items() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].item_count, 16);
     assert_eq!(records[0].value, 0.025);
+}
+
+#[test]
+fn identical_dimension_fields_can_have_different_patch_positions() {
+    let payload = fixture_payload(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        false,
+        false,
+        false,
+    );
+    let mut losses = Vec::new();
+    let original = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(original.len(), 1);
+    let record = &original[0];
+    let basic = patch_slots::field_offset(&payload, record.offset, "isBasic").unwrap();
+    let inspection = patch_slots::field_offset(&payload, record.offset, "isInspection").unwrap();
+    let mut reordered = payload.clone();
+    let start = basic - (1 + "isBasic".len());
+    reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
+    let other = parse_payload(&reordered, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    let mut left = serde_json::to_value(&original[0]).unwrap();
+    let mut right = serde_json::to_value(&other[0]).unwrap();
+    for value in [&mut left, &mut right] {
+        for field in [
+            "value_offset",
+            "precision_offset",
+            "basic_offset",
+            "inspection_offset",
+            "reference_only_offset",
+        ] {
+            value.as_object_mut().unwrap().remove(field);
+        }
+    }
+    assert_eq!(left, right);
+    assert_ne!(
+        basic,
+        patch_slots::field_offset(&reordered, record.offset, "isBasic").unwrap()
+    );
+    assert_ne!(
+        inspection,
+        patch_slots::field_offset(&reordered, record.offset, "isInspection").unwrap()
+    );
 }
 
 #[test]
@@ -908,4 +955,35 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert_eq!(parameter.name, "D1");
     assert_eq!(parameter.expression, "25mm");
     assert!(parameter.pmi.is_some());
+}
+
+#[test]
+fn u16_precision_survives_plain_patch_round_trip() {
+    let mut payload = pmi_semantic_payload();
+    let record = parse_payload(&payload, &mut Vec::new()).remove(0);
+    let offset = record.precision_offset as usize;
+    payload.splice(offset..=offset, [0xcd, 0x00, 0x03]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let record = &native.pmi_dimensions[0];
+    assert_eq!(record.precision, 3);
+    assert!(decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|p| p.pmi.is_some()));
+    let original = payload.clone();
+    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
+    assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
+    assert_eq!(payload, original);
 }

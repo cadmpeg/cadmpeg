@@ -97,6 +97,17 @@ impl Transform2 {
     }
 }
 
+/// Failure to compute a finite affine transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TransformError {
+    /// Arithmetic produced a non-finite coefficient.
+    #[error("transform arithmetic produced non-finite coefficients")]
+    NonFinite,
+    /// The linear component has no inverse.
+    #[error("transform linear component is singular")]
+    Singular,
+}
+
 /// A 4×4 row-major affine transform applied to a body's geometry.
 ///
 /// The explicit matrix preserves source coefficients. The bottom row is
@@ -192,8 +203,7 @@ impl Transform {
     }
 
     /// Composes transforms as `self * right` for column-vector application.
-    #[must_use]
-    pub fn compose(self, right: Self) -> Self {
+    pub fn compose(self, right: Self) -> Result<Self, TransformError> {
         let mut rows = [[0.0; 4]; 4];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate() {
@@ -202,7 +212,7 @@ impl Transform {
                     .sum();
             }
         }
-        Self { rows }
+        Self::from_rows(rows).ok_or(TransformError::NonFinite)
     }
 
     /// Applies this affine transform to a point.
@@ -234,7 +244,7 @@ impl Transform {
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
     pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
-        let inverse = self.try_inverse_affine()?;
+        let inverse = self.try_inverse_affine().ok()?;
         let transformed = Vector3::new(
             inverse.rows[0][0] * normal.x
                 + inverse.rows[1][0] * normal.y
@@ -260,16 +270,16 @@ impl Transform {
     }
 
     /// Inverts a finite affine transform with a nonsingular linear component.
-    pub fn try_inverse_affine(self) -> Option<Self> {
-        if !self.is_affine() {
-            return None;
-        }
+    pub fn try_inverse_affine(self) -> Result<Self, TransformError> {
         let m = self.rows;
         let determinant = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
             - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-        if determinant == 0.0 || !determinant.is_finite() {
-            return None;
+        if !determinant.is_finite() {
+            return Err(TransformError::NonFinite);
+        }
+        if determinant == 0.0 {
+            return Err(TransformError::Singular);
         }
         let inverse_linear = [
             [
@@ -299,10 +309,7 @@ impl Transform {
                 .sum::<f64>();
         }
         rows[3][3] = 1.0;
-        rows.iter()
-            .flatten()
-            .all(|value| value.is_finite())
-            .then_some(Self { rows })
+        Self::from_rows(rows).ok_or(TransformError::NonFinite)
     }
 }
 
@@ -325,8 +332,35 @@ mod tests {
             .try_inverse_affine()
             .expect("invertible affine transform");
         assert_eq!(inverse.apply_point(transform.apply_point(point)), point);
-        assert_eq!(Transform::identity().compose(transform), transform);
+        assert_eq!(Transform::identity().compose(transform), Ok(transform));
         assert_eq!(transform.apply_vector(vector), Vector3::new(3.0, 6.0, 12.0));
+    }
+
+    #[test]
+    fn finite_transform_composition_rejects_overflow() {
+        let transform = Transform::affine([
+            [1e200, 0.0, 0.0, 0.0],
+            [0.0, 1e200, 0.0, 0.0],
+            [0.0, 0.0, 1e200, 0.0],
+        ])
+        .unwrap();
+        assert_eq!(transform.compose(transform), Err(TransformError::NonFinite));
+        assert!(Transform::from_rows(transform.rows()).is_some());
+    }
+
+    #[test]
+    fn finite_transform_inverse_rejects_overflow() {
+        let transform = Transform::affine([
+            [0.5, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        assert_eq!(
+            transform.try_inverse_affine(),
+            Err(TransformError::NonFinite)
+        );
+        assert!(Transform::from_rows(transform.rows()).is_some());
     }
 
     #[test]
@@ -349,7 +383,7 @@ mod tests {
         let mut rows = transform.rows();
         rows[0][0] = 0.0;
         let singular = Transform::from_rows(rows).expect("affine transform");
-        assert!(singular.try_inverse_affine().is_none());
+        assert_eq!(singular.try_inverse_affine(), Err(TransformError::Singular));
         assert!(singular.apply_normal(Vector3::new(1.0, 0.0, 0.0)).is_none());
     }
 

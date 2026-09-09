@@ -316,28 +316,26 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         .external_identity
         .as_ref()
         .expect("cross-document body identity");
-    assert_eq!(identity.occurrence_reference, 5_001);
-    assert_eq!(identity.external_body_reference, 6_001);
-    assert_eq!(identity.external_segment, 7);
-    assert_eq!(identity.external_link_name, "component-body-link");
+    assert_eq!(identity.occurrence_reference(), 5_001);
+    assert_eq!(identity.external_body_reference(), 6_001);
+    assert_eq!(identity.external_segment(), 7);
+    assert_eq!(identity.external_link_name(), "component-body-link");
     assert_eq!(
         identity
-            .external_version
-            .as_ref()
+            .external_version()
             .map(|version| version.property_key.value.as_str()),
         Some("33333333-3333-4333-8333-333333333333")
     );
     assert_eq!(
         identity
-            .external_version
-            .as_ref()
+            .external_version()
             .map(|version| version.version_urn.value.as_str()),
         Some("urn:example:version:4")
     );
-    assert_eq!(identity.tail_values, [11, 12]);
+    assert_eq!(identity.tail_values(), [11, 12]);
     assert_eq!(
-        identity.tail_value_offsets[1],
-        identity.tail_value_offsets[0] + 12
+        identity.tail_value_offsets()[1],
+        identity.tail_value_offsets()[0] + 12
     );
 
     let mut malformed_scope = scope.clone();
@@ -353,7 +351,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     .is_none());
 
     let mut malformed_external_asset = bytes;
-    malformed_external_asset[usize::try_from(identity.external_asset_id_offset).unwrap()] = b'g';
+    malformed_external_asset[usize::try_from(identity.external_asset_id_offset()).unwrap()] = b'g';
     let operation = exact_combine_operation(
         &malformed_external_asset,
         &IndexedRecordOffsets::build(&malformed_external_asset),

@@ -27,7 +27,7 @@ fn collect_pattern_paths<'a>(
     }
 }
 use crate::index::ModelIndex;
-use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
+use crate::sketches::{SketchConstraintDefinitionInput as Definition, SketchLocus};
 
 pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
@@ -39,23 +39,7 @@ pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &
 }
 
 pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if nonpositive(ir.tolerances.linear) {
-        findings.push(Finding {
-            check: Check::Tolerances,
-            severity: Severity::Warning,
-            message: "document linear tolerance is not positive and finite".into(),
-            entity: None,
-        });
-    }
-    if nonpositive(ir.tolerances.angular) {
-        findings.push(Finding {
-            check: Check::Tolerances,
-            severity: Severity::Warning,
-            message: "document angular tolerance is not positive and finite".into(),
-            entity: None,
-        });
-    }
-    if ir.tolerances.linear > 1.0e6 || ir.tolerances.angular > std::f64::consts::TAU {
+    if ir.tolerances.linear.get() > 1.0e6 || ir.tolerances.angular.get() > std::f64::consts::TAU {
         findings.push(Finding {
             check: Check::Tolerances,
             severity: Severity::Warning,
@@ -1550,19 +1534,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .model
         .sketches
         .iter()
-        .map(|sketch| sketch.id.0.as_str())
+        .map(|sketch| sketch.id.as_str())
         .collect::<HashSet<_>>();
     let sketch_entities = ir
         .model
         .sketch_entities
         .iter()
-        .map(|entity| entity.id().0.as_str())
+        .map(|entity| entity.id().as_str())
         .collect::<HashSet<_>>();
     let sketch_entity_owners = ir
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
         .collect::<HashMap<_, _>>();
     let parameters = ir
         .model
@@ -1572,29 +1556,39 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .collect::<HashSet<_>>();
     for sketch in &ir.model.sketches {
         for entity_use in sketch.profiles.iter().flatten() {
-            if !sketch_entities.contains(entity_use.entity.0.as_str()) {
+            if !sketch_entities.contains(entity_use.entity.as_str()) {
                 ref_error(
                     findings,
-                    &sketch.id.0,
+                    sketch.id.as_str(),
                     "sketch entity",
-                    &entity_use.entity.0,
+                    entity_use.entity.as_str(),
                 );
             }
         }
     }
     for entity in &ir.model.sketch_entities {
-        if !sketches.contains(entity.sketch.0.as_str()) {
-            ref_error(findings, entity.id().0.as_str(), "sketch", &entity.sketch.0);
+        if !sketches.contains(entity.sketch.as_str()) {
+            ref_error(
+                findings,
+                entity.id().as_str(),
+                "sketch",
+                entity.sketch.as_str(),
+            );
         }
     }
     for constraint in &ir.model.sketch_constraints {
-        if !sketches.contains(constraint.sketch.0.as_str()) {
-            ref_error(findings, &constraint.id.0, "sketch", &constraint.sketch.0);
+        if !sketches.contains(constraint.sketch.as_str()) {
+            ref_error(
+                findings,
+                constraint.id.as_str(),
+                "sketch",
+                constraint.sketch.as_str(),
+            );
         }
-        let (entities, parameter) = match &constraint.definition {
+        let (entities, parameter) = match constraint.definition.kind() {
             Definition::Disabled => (Vec::new(), None),
+            Definition::Polygon { polygon } => (polygon.entities().to_vec(), None),
             Definition::Coincident { entities }
-            | Definition::Polygon { entities }
             | Definition::SplineGroup { entities }
             | Definition::Distance {
                 entities,
@@ -1663,8 +1657,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::CoincidentLoci { loci } => {
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
-            Definition::SameCoordinate { first, second, .. }
-            | Definition::TangentLoci { first, second } => (
+            Definition::SameCoordinate { relation } => (
+                vec![
+                    locus_entity(relation.first()).clone(),
+                    locus_entity(relation.second()).clone(),
+                ],
+                None,
+            ),
+            Definition::TangentLoci { first, second } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
@@ -1849,51 +1849,38 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 Some(parameter.as_str()),
             ),
         };
-        let parameter = parameter.or(match &constraint.definition {
+        let parameter = parameter.or(match constraint.definition.kind() {
             Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
-        if let Definition::Polygon { entities } = &constraint.definition {
-            let distinct = entities.iter().collect::<HashSet<_>>();
-            if entities.len() < 3 || distinct.len() != entities.len() {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: "polygon constraint requires at least three distinct members".into(),
-                    entity: Some(constraint.id.0.clone()),
-                });
-            }
-        }
-        if let Definition::SameCoordinate { first, second, .. } = &constraint.definition {
-            if first == second {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: "axis-alignment constraint requires two distinct loci".into(),
-                    entity: Some(constraint.id.0.clone()),
-                });
-            }
-        }
         for entity in entities {
-            if !sketch_entities.contains(entity.0.as_str()) {
-                ref_error(findings, &constraint.id.0, "sketch entity", &entity.0);
-            } else if sketch_entity_owners.get(entity.0.as_str()).copied()
-                != Some(constraint.sketch.0.as_str())
+            if !sketch_entities.contains(entity.as_str()) {
+                ref_error(
+                    findings,
+                    constraint.id.as_str(),
+                    "sketch entity",
+                    entity.as_str(),
+                );
+            } else if sketch_entity_owners.get(entity.as_str()).copied()
+                != Some(constraint.sketch.as_str())
             {
                 findings.push(Finding {
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
-                    message: format!("sketch entity `{}` belongs to a different sketch", entity.0),
-                    entity: Some(constraint.id.0.clone()),
+                    message: format!(
+                        "sketch entity `{}` belongs to a different sketch",
+                        entity.as_str()
+                    ),
+                    entity: Some(constraint.id.as_str().to_owned()),
                 });
             }
         }
         if let Some(parameter) = parameter {
             if !parameters.contains(parameter) {
-                ref_error(findings, &constraint.id.0, "parameter", parameter);
+                ref_error(findings, constraint.id.as_str(), "parameter", parameter);
             }
         }
-        if let Definition::RectangularPattern { pattern } = &constraint.definition {
+        if let Definition::RectangularPattern { pattern } = constraint.definition.kind() {
             for parameter in pattern.directions().iter().flat_map(|direction| {
                 [
                     direction
@@ -1906,17 +1893,27 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 .flatten()
             }) {
                 if !parameters.contains(parameter.as_str()) {
-                    ref_error(findings, &constraint.id.0, "parameter", parameter.as_str());
+                    ref_error(
+                        findings,
+                        constraint.id.as_str(),
+                        "parameter",
+                        parameter.as_str(),
+                    );
                 }
             }
         }
-        if let Definition::CircularPattern { pattern } = &constraint.definition {
+        if let Definition::CircularPattern { pattern } = constraint.definition.kind() {
             for parameter in [pattern.angle_parameter(), pattern.count_parameter()]
                 .into_iter()
                 .flatten()
             {
                 if !parameters.contains(parameter.as_str()) {
-                    ref_error(findings, &constraint.id.0, "parameter", parameter.as_str());
+                    ref_error(
+                        findings,
+                        constraint.id.as_str(),
+                        "parameter",
+                        parameter.as_str(),
+                    );
                 }
             }
         }
@@ -2143,13 +2140,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .model
         .sketch_entities
         .iter()
-        .map(|entity| entity.id().0.clone())
+        .map(|entity| entity.id().as_str().to_owned())
         .collect::<HashSet<_>>();
     let spatial_sketch_entity_owners = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
         .collect::<HashMap<_, _>>();
     let mut reported_plane_cycles = HashSet::new();
     for feature in &ir.model.features {
@@ -2741,7 +2738,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
-                        ref_error(findings, feature.id.as_str(), "owned sketch", &sketch.0);
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "owned sketch",
+                            sketch.as_str(),
+                        );
                     }
                 }
             }
@@ -2757,7 +2759,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             findings,
                             feature.id.as_str(),
                             "owned spatial sketch",
-                            &sketch.0,
+                            sketch.as_str(),
                         );
                     }
                 }
@@ -3170,14 +3172,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     findings,
                     feature.id.as_str(),
                     "sketch path curve",
-                    curves.iter().map(|id| id.0.as_str()),
+                    curves.iter().map(crate::sketches::SketchEntityId::as_str),
                     |identity| sketch_entities.contains(identity),
                 ),
                 PathRef::SpatialSketchCurves { curves, .. } => check_ids(
                     findings,
                     feature.id.as_str(),
                     "spatial sketch path curve",
-                    curves.iter().map(|id| id.0.as_str()),
+                    curves
+                        .iter()
+                        .map(crate::sketches::SpatialSketchEntityId::as_str),
                     |identity| spatial_sketch_entity_owners.contains_key(identity),
                 ),
                 PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
@@ -3848,19 +3852,19 @@ fn check_feature_sketch_references(
         .model
         .spatial_sketches
         .iter()
-        .map(|sketch| sketch.id.0.as_str())
+        .map(|sketch| sketch.id.as_str())
         .collect::<HashSet<_>>();
     let sketch_entity_owners = ir
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
         .collect::<HashMap<_, _>>();
     let spatial_sketch_entity_owners = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
         .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
@@ -3868,10 +3872,10 @@ fn check_feature_sketch_references(
             FeatureDefinition::Sketch {
                 sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch)),
                 ..
-            } => sketch.0.as_str(),
+            } => sketch.as_str(),
             FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch),
-            } => sketch.0.as_str(),
+            } => sketch.as_str(),
             _ => continue,
         };
         if owners
@@ -3906,16 +3910,16 @@ fn check_feature_sketch_references(
                 native,
             } => {
                 !native.trim().is_empty()
-                    && sketches.contains(sketch.0.as_str())
+                    && sketches.contains(sketch.as_str())
                     && sketch_entity_owners
-                        .get(point.0.as_str())
-                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                        .get(point.as_str())
+                        .is_some_and(|owner| *owner == sketch.as_str())
                     && ir.model.sketch_entities.iter().any(|entity| {
                         entity.id() == point
                             && entity.sketch == *sketch
                             && matches!(
-                                &entity.geometry,
-                                crate::sketches::SketchGeometry::Point { .. }
+                                entity.geometry.definition(),
+                                crate::sketches::SketchGeometryDefinition::Point { .. }
                             )
                     })
             }
@@ -3925,16 +3929,16 @@ fn check_feature_sketch_references(
                 native,
             } => {
                 !native.trim().is_empty()
-                    && spatial_sketches.contains(sketch.0.as_str())
+                    && spatial_sketches.contains(sketch.as_str())
                     && spatial_sketch_entity_owners
-                        .get(point.0.as_str())
-                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                        .get(point.as_str())
+                        .is_some_and(|owner| *owner == sketch.as_str())
                     && ir.model.spatial_sketch_entities.iter().any(|entity| {
                         entity.id() == point
                             && entity.sketch == *sketch
                             && matches!(
-                                &entity.geometry,
-                                crate::sketches::SpatialSketchGeometry::Point { .. }
+                                entity.geometry.definition(),
+                                crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
                             )
                     })
             }
@@ -3949,8 +3953,8 @@ fn check_feature_sketch_references(
             );
         }
         let sketch_id = match point {
-            SketchPointSelection::Planar { sketch, .. } => Some(sketch.0.as_str()),
-            SketchPointSelection::Spatial { sketch, .. } => Some(sketch.0.as_str()),
+            SketchPointSelection::Planar { sketch, .. } => Some(sketch.as_str()),
+            SketchPointSelection::Spatial { sketch, .. } => Some(sketch.as_str()),
             SketchPointSelection::Native(_) | SketchPointSelection::Unresolved => None,
         };
         if let Some(sketch_id) = sketch_id {
@@ -4029,83 +4033,59 @@ fn check_feature_sketch_references(
             _ => {}
         }
         for profile in profiles {
-            if let ProfileRef::SpatialSketchProfiles { sketch, .. }
-            | ProfileRef::SpatialSketchSelection { sketch, .. } = profile
-            {
-                if !spatial_sketches.contains(sketch.0.as_str()) {
-                    ref_error(
-                        findings,
-                        feature.id.as_str(),
-                        "spatial sketch profile",
-                        &sketch.0,
-                    );
-                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
-                    if *ordinal >= feature.ordinal {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "spatial sketch owner `{owner}` does not precede its profile consumer"
-                            ),
-                            entity: Some(feature.id.as_str().to_owned()),
-                        });
-                    }
+            let (sketch, sketch_kind, defined_sketches) = match profile {
+                ProfileRef::SpatialSketchProfiles { sketch, .. }
+                | ProfileRef::SpatialSketchSelection { sketch, .. } => {
+                    (sketch.as_str(), "spatial sketch", &spatial_sketches)
                 }
-                match profile {
-                    ProfileRef::SpatialSketchProfiles { profiles, .. } => {
-                        let profile_count = ir
-                            .model
-                            .spatial_sketches
-                            .iter()
-                            .find(|candidate| candidate.id == *sketch)
-                            .map_or(0, |sketch| sketch.profiles.len());
-                        if profiles
-                            .iter()
-                            .any(|index| *index as usize >= profile_count)
-                        {
-                            feature_geometry_error(
-                                findings,
-                                feature,
-                                "spatial sketch profile indices are empty, repeated, or out of range",
-                            );
-                        }
-                    }
-                    ProfileRef::SpatialSketchSelection { .. } => {}
-                    _ => unreachable!(),
-                }
-                continue;
-            }
-            let sketch = match profile {
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
                 | ProfileRef::SketchEntities { sketch, .. }
-                | ProfileRef::SketchSelection { sketch, .. } => sketch,
-                ProfileRef::Native(_)
-                | ProfileRef::Unresolved(_)
-                | ProfileRef::Feature(_)
-                | ProfileRef::Generated { .. }
-                | ProfileRef::SpatialSketchProfiles { .. }
-                | ProfileRef::SpatialSketchSelection { .. }
-                | ProfileRef::HistoricalFaces { .. }
-                | ProfileRef::Faces(_) => continue,
+                | ProfileRef::SketchSelection { sketch, .. } => {
+                    (sketch.as_str(), "sketch", sketches)
+                }
+                _ => continue,
             };
-            if !sketches.contains(sketch.0.as_str()) {
-                ref_error(findings, feature.id.as_str(), "sketch profile", &sketch.0);
-            } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+            if !defined_sketches.contains(sketch) {
+                ref_error(
+                    findings,
+                    feature.id.as_str(),
+                    &format!("{sketch_kind} profile"),
+                    sketch,
+                );
+            } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(
-                            "sketch owner `{owner}` does not precede its profile consumer"
+                            "{sketch_kind} owner `{owner}` does not precede its profile consumer"
                         ),
                         entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }
             match profile {
-                ProfileRef::SketchProfiles { profiles, .. } => {
+                ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+                    let profile_count = ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .map_or(0, |sketch| sketch.profiles.len());
+                    if profiles
+                        .iter()
+                        .any(|index| *index as usize >= profile_count)
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "spatial sketch profile indices are empty, repeated, or out of range",
+                        );
+                    }
+                }
+                ProfileRef::SketchProfiles { sketch, profiles } => {
                     let sketch_profile_count = ir
                         .model
                         .sketches
@@ -4123,7 +4103,7 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchRegions { regions, .. } => {
+                ProfileRef::SketchRegions { sketch, regions } => {
                     let selected_sketch = ir
                         .model
                         .sketches
@@ -4163,11 +4143,11 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
-                ProfileRef::SketchEntities { entities, .. } => {
+                ProfileRef::SketchEntities { sketch, entities } => {
                     if entities.iter().any(|entity| {
                         sketch_entity_owners
-                            .get(entity.0.as_str())
-                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                            .get(entity.as_str())
+                            .is_none_or(|owner| *owner != sketch.as_str())
                     }) {
                         feature_geometry_error(
                             findings,
@@ -4182,7 +4162,6 @@ fn check_feature_sketch_references(
                 | ProfileRef::Generated { .. }
                 | ProfileRef::Sketch(_)
                 | ProfileRef::SketchSelection { .. }
-                | ProfileRef::SpatialSketchProfiles { .. }
                 | ProfileRef::SpatialSketchSelection { .. }
                 | ProfileRef::HistoricalFaces { .. }
                 | ProfileRef::Faces(_) => {}
@@ -4192,8 +4171,8 @@ fn check_feature_sketch_references(
             if let PathRef::SketchCurves { sketch, curves } = path {
                 let invalid = curves.iter().any(|curve| {
                     sketch_entity_owners
-                        .get(curve.0.as_str())
-                        .is_none_or(|owner| *owner != sketch.0.as_str())
+                        .get(curve.as_str())
+                        .is_none_or(|owner| *owner != sketch.as_str())
                 });
                 if invalid {
                     feature_geometry_error(
@@ -4204,15 +4183,15 @@ fn check_feature_sketch_references(
                 }
             }
             let (sketch, known_sketches, description) = match path {
-                PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path"),
+                PathRef::Sketch(sketch) => (sketch.as_str(), sketches, "sketch path"),
                 PathRef::SketchCurves { sketch, .. } => {
-                    (sketch.0.as_str(), sketches, "sketch curve path")
+                    (sketch.as_str(), sketches, "sketch curve path")
                 }
                 PathRef::SpatialSketchCurves { sketch, curves } => {
                     let invalid = curves.iter().any(|curve| {
                         spatial_sketch_entity_owners
-                            .get(curve.0.as_str())
-                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                            .get(curve.as_str())
+                            .is_none_or(|owner| *owner != sketch.as_str())
                     });
                     if invalid {
                         feature_geometry_error(
@@ -4222,13 +4201,13 @@ fn check_feature_sketch_references(
                         );
                     }
                     (
-                        sketch.0.as_str(),
+                        sketch.as_str(),
                         &spatial_sketches,
                         "spatial sketch curve path",
                     )
                 }
                 PathRef::SpatialSketchSelection { sketch, .. } => {
-                    (sketch.0.as_str(), &spatial_sketches, "spatial sketch path")
+                    (sketch.as_str(), &spatial_sketches, "spatial sketch path")
                 }
                 _ => continue,
             };

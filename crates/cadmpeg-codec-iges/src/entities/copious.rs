@@ -178,7 +178,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        if !presentation_use_flag_valid(entry.form, entry.status.use_flag()) {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
             losses.push(entity_loss(
                 entry,
                 "Type 106 presentation forms require Entity Use Flag 01",
@@ -203,7 +203,6 @@ pub(super) fn project(
                 "iges_copious_tuples",
                 MAX_COPIOUS_TUPLES as u64,
                 u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
-                None,
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
@@ -387,7 +386,15 @@ pub(super) fn project(
             ));
             continue;
         }
-        let topology_tolerance = (entry.form == 63 && resolution > 0.0).then_some(resolution);
+        let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
+            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(resolution) else {
+                losses.push(entity_loss(entry, "topology tolerance must be finite"));
+                continue;
+            };
+            Some(value)
+        } else {
+            None
+        };
         let parameter_end = (points.len() - 1) as f64;
         let mut knots = vec![0.0, 0.0];
         knots.extend((1..points.len() - 1).map(|value| value as f64));
@@ -437,7 +444,7 @@ pub(super) fn project(
                     CodecError::malformed(format_args!("copious-data curve: {error}"))
                 })?,
             ),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),

@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable semantic-annotation identity.
     SemanticAnnotationId
 );
@@ -56,13 +56,15 @@ pub struct SemanticAnnotation {
     pub references: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<f64>,
+    #[serde(deserialize_with = "deserialize_value")]
+    pub value: Option<crate::units::FiniteScalar>,
     /// Persisted formatting expression or visible dimension format.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// Persisted model- or page-space annotation position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<[f64; 3]>,
+    #[serde(deserialize_with = "deserialize_position")]
+    pub position: Option<crate::units::FiniteVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameters: BTreeMap<String, String>,
@@ -71,4 +73,16 @@ pub struct SemanticAnnotation {
     pub assets: Vec<String>,
     /// Native semantic annotation record supplying this entity.
     pub native_ref: String,
+}
+
+fn deserialize_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::FiniteScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "value")
+}
+
+fn deserialize_position<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::FiniteVector<3>>, D::Error> {
+    crate::units::deserialize_named(deserializer, "position")
 }

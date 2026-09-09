@@ -332,13 +332,10 @@ fn project_face_bindings(
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1];
-        if ![r, g, b, a]
-            .iter()
-            .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        {
+        let Some(color) = Color::new(r, g, b, a) else {
             projection.unresolved_face_overrides += 1;
             continue;
-        }
+        };
         let appearance_id = appearance_ids
             .entry((
                 style.identity.segment_token.as_str(),
@@ -359,7 +356,7 @@ fn project_face_bindings(
                     physical_token: None,
                     schema: Some("InventorPrimaryColorStyle".into()),
                     category: None,
-                    base_color: Some(Color { r, g, b, a }),
+                    base_color: Some(color),
                     properties: BTreeMap::new(),
                     textures: Vec::new(),
                 });
@@ -905,7 +902,7 @@ impl<'a> Cursor<'a> {
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
-        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string", None)?;
+        ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string")?;
         self.source
             .utf16_le(units)
             .map(|value| value.trim_end_matches('\0').to_owned())
@@ -917,15 +914,17 @@ impl<'a> Cursor<'a> {
     }
 
     fn guid(&mut self, field: &str) -> Result<String, CodecError> {
-        let bytes: [u8; 16] = self.take(16, field)?.try_into().expect("16-byte read");
+        let first = self.u32(field)?;
+        let second = self.u16(field)?;
+        let third = self.u16(field)?;
+        let tail: [u8; 8] = self.source.array().ok_or_else(|| {
+            CodecError::malformed(format_args!("truncated Inventor presentation {field}"))
+        })?;
         Ok(format!(
-            "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{}",
-            View::u32_le_at(&bytes, 0).expect("four-byte group"),
-            View::u16_le_at(&bytes, 4).expect("two-byte group"),
-            View::u16_le_at(&bytes, 6).expect("two-byte group"),
-            bytes[8],
-            bytes[9],
-            hex(&bytes[10..])
+            "{first:08x}-{second:04x}-{third:04x}-{:02x}{:02x}-{}",
+            tail[0],
+            tail[1],
+            hex(&tail[2..])
         ))
     }
 
@@ -1286,12 +1285,7 @@ mod tests {
         };
         assert_eq!(
             appearance.base_color,
-            Some(Color {
-                r: 0.2,
-                g: 0.4,
-                b: 0.6,
-                a: 0.8
-            })
+            Some(Color::new(0.2, 0.4, 0.6, 0.8).expect("valid color"))
         );
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");

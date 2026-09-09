@@ -11,7 +11,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_projects_nested_feature_input_profile_as_a_sketch() {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SketchLocus};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
+    };
 
     let source = sldprt_with_nested_sketch_profile(&triangle_body());
     let decoded = SldprtCodec
@@ -35,7 +37,10 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
         .model
         .sketch_entities
         .iter()
-        .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
+        .all(|entity| matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        )));
     assert!(decoded.ir().model.sketch_entities.iter().all(|entity| {
         entity
             .native_ref
@@ -54,8 +59,8 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
         .iter()
         .all(|constraint| {
             matches!(
-                &constraint.definition,
-                SketchConstraintDefinition::CoincidentLoci { loci }
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::CoincidentLoci { loci }
                     if loci.len() == 2
                         && loci.iter().all(|locus| matches!(
                             locus,
@@ -320,21 +325,28 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
 
-    let sketch_id = SketchId("sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
-            entity: cadmpeg_ir::sketches::SketchEntityId("sketch:entity".into()),
-            reversed: false,
-        }]],
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
+            cadmpeg_ir::sketches::SketchEntityUse {
+                entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+                    "synthetic:test:id#sketch:entity",
+                )
+                .unwrap(),
+                reversed: false,
+            },
+        ]])
+        .unwrap(),
         native_ref: None,
     };
     let neutral =
@@ -343,18 +355,18 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         };
     let mut features = vec![
         neutral(
-            "base",
+            "synthetic:test:id#base",
             "Profile",
             "native-base",
             FeatureDefinition::Sketch {
@@ -362,7 +374,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "alias",
+            "synthetic:test:id#alias",
             "Profile<3>",
             "native-alias",
             FeatureDefinition::Sketch {
@@ -370,7 +382,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "different",
+            "synthetic:test:id#different",
             "Profile<4>",
             "native-different",
             FeatureDefinition::Sketch {
@@ -378,7 +390,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             },
         ),
         neutral(
-            "consumer",
+            "synthetic:test:id#consumer",
             "Boss",
             "native-consumer",
             FeatureDefinition::Extrude {
@@ -442,7 +454,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
-        vec![FeatureId::mint("base").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -458,7 +470,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     ));
     assert_eq!(
         features[3].dependencies.as_slice(),
-        vec![FeatureId::mint("base").expect("identity grammar")]
+        vec![FeatureId::mint("synthetic:test:id#base").expect("identity grammar")]
     );
 }
 
@@ -555,7 +567,7 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
 
 #[test]
 fn decode_distinguishes_full_circle_sketch_geometry() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -565,8 +577,8 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
         .unwrap();
     assert_eq!(decoded.ir().model.sketches[0].profiles[0].len(), 1);
     assert!(matches!(
-        decoded.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Circle {
+        (decoded.ir().model.sketch_entities[0].geometry).definition(),
+        SketchGeometryDefinition::Circle {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
             radius: actual_radius,
         } if actual_radius.get() == 1000.0
@@ -575,7 +587,9 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
 
 #[test]
 fn decode_projects_full_ellipse_sketch_geometry() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    const EPS_ELLIPSE_ANGLE: f64 = 1.0e-12;
 
     let decoded = SldprtCodec
         .decode(
@@ -584,20 +598,20 @@ fn decode_projects_full_ellipse_sketch_geometry() {
         )
         .unwrap();
     assert!(matches!(
-        decoded.ir().model.sketch_entities[0].geometry,
-        SketchGeometry::Ellipse {
+        decoded.ir().model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
             major_angle: value,
             major_radius: actual_major_radius,
             minor_radius: actual_minor_radius,
             bounds: None,
-        } if ((value.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_major_radius.get() == 2000.0 && actual_minor_radius.get() == 1000.0
+        } if ((value.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_ELLIPSE_ANGLE) && actual_major_radius.get() == 2000.0 && actual_minor_radius.get() == 1000.0
     ));
 }
 
 #[test]
 fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
         .decode(
@@ -610,8 +624,8 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         .model
         .sketch_entities
         .iter()
-        .filter_map(|entity| match &entity.geometry {
-            SketchGeometry::Nurbs { curve } => Some(curve),
+        .filter_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Nurbs { curve } => Some(curve),
             _ => None,
         })
         .collect::<Vec<_>>();

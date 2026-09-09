@@ -349,7 +349,7 @@ pub(super) fn validate_native_links(
             || !matches!(parsed.as_slice(), [parsed]
                 if parsed.range == (0..segment.data.len())
                     && parsed.type_word == segment.type_word
-                    && finjpl_family(parsed.kind) == segment.family
+                    && finjpl_family(parsed.kind()) == segment.family
                     && parsed.name == segment.name)
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

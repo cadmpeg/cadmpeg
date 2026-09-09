@@ -51,7 +51,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
             coordinate_pairs: &coordinate_pairs,
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("one complete coordinate pair retains a native sketch graph");
 
@@ -62,19 +62,18 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id().0,
+        ir.model.sketch_entities[0].id().as_str(),
         "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
     );
     assert!(cadmpeg_ir::ids::is_valid_identity(
-        &ir.model.sketch_entities[0].id().0
+        ir.model.sketch_entities[0].id().as_str()
     ));
     assert_eq!(
         ir.model.sketch_entities[0].native_ref.as_deref(),
         Some(pair.id.as_str())
     );
-    assert!(matches!(
-        &ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Native { native_kind } if native_kind == "nx-coordinate-pair"
+    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-coordinate-pair"
     ));
 }
 
@@ -114,7 +113,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("one complete fixed point retains a native sketch graph");
 
@@ -125,15 +124,14 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id().0,
+        ir.model.sketch_entities[0].id().as_str(),
         "nx:feature-history:sketch-entity#fixed-point-section-11-0000000000"
     );
     assert_eq!(
         ir.model.sketch_entities[0].native_ref.as_deref(),
         Some(point.id.as_str())
     );
-    assert!(matches!(
-        &ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Native { native_kind } if native_kind == "nx-fixed-point"
+    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point"
     ));
 }

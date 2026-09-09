@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Filled, knit, draft, thicken, and result-topology feature recipes.
 
-use super::super::sketch::normalized;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::{
@@ -11,6 +10,7 @@ use super::{
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;
+use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
@@ -33,7 +33,7 @@ pub(in super::super) fn filled_surface_feature_definition(
         &scan.features.section_transforms,
         feature_id,
     )
-    .map(|definition| model_sketch_id(scan, definition))
+    .and_then(|definition| model_sketch_id(scan, definition))
     .filter(|sketch| {
         ir.model
             .sketches
@@ -230,7 +230,7 @@ pub(in super::super) fn knit_surface_feature_definition(
                 });
             match generated {
                 Some(faces) => FaceSelection::generated(faces, native.clone())
-                    .unwrap_or_else(|_| FaceSelection::Native(native)),
+                    .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
         },
@@ -394,14 +394,14 @@ pub(in super::super) fn thicken_plane_offset(
         let source_row = crate::surface::unique_surface_row(rows, source_id)?;
         let output_row = crate::surface::unique_surface_row(rows, output_id)?;
         (source_row.reversed != output_row.reversed).then_some(())?;
-        let source_normal = normalized(source.normal)?.map(|component| {
+        let source_normal = normalize(source.normal)?.map(|component| {
             if source_row.reversed {
                 -component
             } else {
                 component
             }
         });
-        let output_normal = normalized(output.normal)?;
+        let output_normal = normalize(output.normal)?;
         if dot(source_normal, output_normal).abs() < 1.0 - EPS_NORMAL_ALIGNMENT {
             return None;
         }
@@ -490,22 +490,17 @@ pub(in super::super) fn feature_result_topology(
         .map(|curve_id| format!("curve#{curve_id}"))
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
-    Some(
-        FeatureResultTopology::new(
-            FeatureResultTopologyId::mint(format!(
-                "creo:model:feature-result-topology#{feature_id}"
-            ))
+    FeatureResultTopology::new(
+        FeatureResultTopologyId::mint(format!("creo:model:feature-result-topology#{feature_id}"))
             .expect("identity grammar"),
-            IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
-                .expect("identity grammar"),
-            Vec::new(),
-            faces,
-            edges,
-            Vec::new(),
-            None,
-        )
-        .ok()?,
+        IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"),
+        Vec::new(),
+        faces,
+        edges,
+        Vec::new(),
+        None,
     )
+    .ok()
 }
 
 pub(in super::super) fn generated_surface_face_refs(

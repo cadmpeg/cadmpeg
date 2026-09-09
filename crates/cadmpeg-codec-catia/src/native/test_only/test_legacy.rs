@@ -240,11 +240,10 @@ pub(super) fn validate_legacy_entity_runs(
                     && pair[0].entity_id < pair[1].entity_id
             })
             && run.identities.iter().all(|identity| {
-                matches!(identity.lead, 0x81 | 0x82 | 0xe5 | 0xfd)
-                    && identity
-                        .byte_offset
-                        .checked_add(6)
-                        .is_some_and(|end| end <= run.catalog_offset)
+                identity
+                    .byte_offset
+                    .checked_add(6)
+                    .is_some_and(|end| end <= run.catalog_offset)
             })
             && run
                 .role_selectors

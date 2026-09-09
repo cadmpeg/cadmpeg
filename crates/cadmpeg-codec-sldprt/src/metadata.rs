@@ -10,7 +10,10 @@ use cadmpeg_ir::Exactness;
 
 use crate::layout::transformed_reference_plane_metadata as trans_plane;
 
-pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
+pub(crate) fn attributes(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
     for section in scan.sections() {
         scan_vectors(

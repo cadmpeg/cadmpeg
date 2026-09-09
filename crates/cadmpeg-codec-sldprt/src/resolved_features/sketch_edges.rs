@@ -4,8 +4,8 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchGeometry,
-    SketchId, SketchLocus,
+    SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -52,13 +52,20 @@ pub(super) fn project_endpoint_constraints(
         if distinct_entities.len() < 2 {
             continue;
         }
-        let id = SketchConstraintId(format!(
+        let Ok(id) = SketchConstraintId::mint(format!(
             "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
             constraints.len()
-        ));
+        )) else {
+            continue;
+        };
+        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::CoincidentLoci { loci },
+        ) else {
+            continue;
+        };
         crate::annotations::note(
             annotations,
-            id.0.clone(),
+            id.as_str().to_owned(),
             section,
             0,
             "feature_input_shared_endpoint",
@@ -67,7 +74,7 @@ pub(super) fn project_endpoint_constraints(
         constraints.push(SketchConstraint {
             id,
             sketch: sketch.clone(),
-            definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -103,10 +110,13 @@ pub(super) fn project_edge(
         u_axis,
         v_axis,
     );
-    let line = || Some(SketchGeometry::Line { start, end });
+    let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     let tolerance = edge
         .tolerance
-        .unwrap_or(EPS_SKETCH_EDGES_PROJECT_EDGE_E9)
+        .map_or(
+            EPS_SKETCH_EDGES_PROJECT_EDGE_E9,
+            cadmpeg_ir::units::PositiveScalar::get,
+        )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle { center, radius, .. }) => {
@@ -117,26 +127,32 @@ pub(super) fn project_edge(
                 return line();
             }
             if (start.u - end.u).hypot(start.v - end.v) <= EPS_SKETCH_EDGES_PROJECT_EDGE_E9 {
-                Some(SketchGeometry::Circle {
-                    center,
-                    radius: cadmpeg_ir::features::Length::new(*radius)?,
-                })
+                Some(
+                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                        center,
+                        radius: cadmpeg_ir::features::Length::new(*radius)?,
+                    })
+                    .ok()?,
+                )
             } else {
                 let parameters = edge
                     .param_range
                     .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
-                Some(SketchGeometry::Arc {
-                    center,
-                    radius: cadmpeg_ir::features::Length::new(*radius)?,
-                    start_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
-                        || (start.v - center.v).atan2(start.u - center.u),
-                        |range| range[0],
-                    ))?,
-                    end_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
-                        || (end.v - center.v).atan2(end.u - center.u),
-                        |range| range[1],
-                    ))?,
-                })
+                Some(
+                    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                        center,
+                        radius: cadmpeg_ir::features::Length::new(*radius)?,
+                        start_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                            || (start.v - center.v).atan2(start.u - center.u),
+                            |range| range[0],
+                        ))?,
+                        end_angle: cadmpeg_ir::features::Angle::new(parameters.map_or_else(
+                            || (end.v - center.v).atan2(end.u - center.u),
+                            |range| range[1],
+                        ))?,
+                    })
+                    .ok()?,
+                )
             }
         }
         Some(CurveGeometry::Ellipse {
@@ -178,27 +194,30 @@ pub(super) fn project_edge(
             let parameters = edge
                 .param_range
                 .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
-            Some(SketchGeometry::Ellipse {
-                center,
-                major_angle: cadmpeg_ir::features::Angle::new(major_angle)?,
-                major_radius: cadmpeg_ir::features::Length::new(*major_radius)?,
-                minor_radius: cadmpeg_ir::features::Length::new(*minor_radius)?,
-                bounds: if full {
-                    None
-                } else {
-                    Some([
-                        cadmpeg_ir::features::Angle::new(
-                            parameters.map_or_else(|| parameter(start), |range| range[0]),
-                        )?,
-                        cadmpeg_ir::features::Angle::new(
-                            parameters.map_or_else(|| parameter(end), |range| range[1]),
-                        )?,
-                    ])
-                },
-            })
+            Some(
+                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+                    center,
+                    major_angle: cadmpeg_ir::features::Angle::new(major_angle)?,
+                    major_radius: cadmpeg_ir::features::Length::new(*major_radius)?,
+                    minor_radius: cadmpeg_ir::features::Length::new(*minor_radius)?,
+                    bounds: if full {
+                        None
+                    } else {
+                        Some([
+                            cadmpeg_ir::features::Angle::new(
+                                parameters.map_or_else(|| parameter(start), |range| range[0]),
+                            )?,
+                            cadmpeg_ir::features::Angle::new(
+                                parameters.map_or_else(|| parameter(end), |range| range[1]),
+                            )?,
+                        ])
+                    },
+                })
+                .ok()?,
+            )
         }
-        Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+        Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::PcurveNurbs::new(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
@@ -210,12 +229,14 @@ pub(super) fn project_edge(
                 nurbs.periodic(),
             )
             .ok()?,
-        }),
-        None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
+        )),
+        None if edge.start == edge.end => Some(
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
+        ),
         Some(CurveGeometry::Line { .. }) | None => line(),
-        Some(other) => Some(SketchGeometry::Native {
-            native_kind: format!("{other:?}"),
-        }),
+        Some(other) => Some(SketchGeometry::native(
+            cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
+        )),
     }
 }
 

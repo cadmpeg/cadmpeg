@@ -169,8 +169,8 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 carrier
                     .source_object
                     .as_ref()
-                    .map(|source| &source.object_id),
-                Some(&records[0].id)
+                    .map(|source| source.object_id.as_str()),
+                Some(records[0].id.as_str())
             );
             assert!(matches!(
                 &carrier.geometry,
@@ -314,8 +314,11 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
     assert_eq!(records[0].header_references[0], 1);
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
-        curve.source_object.as_ref().map(|source| &source.object_id),
-        Some(&records[0].id)
+        curve
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some(records[0].id.as_str())
     );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert_eq!(

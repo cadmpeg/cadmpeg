@@ -332,7 +332,8 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 #[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
-    ir.tolerances.linear = 2.5;
+    ir.tolerances.linear =
+        cadmpeg_ir::units::PositiveScalar::new(2.5).expect("positive finite tolerance");
     ir.model.points.push(Point {
         id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         source_object: None,
@@ -371,7 +372,7 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
             &DecodeOptions::default(),
         )
         .expect("source resolution witness decodes");
-    assert_eq!(decoded.ir().tolerances.linear, 0.001);
+    assert_eq!(decoded.ir().tolerances.linear.get(), 0.001);
 
     let plan = crate::IgesCodec
         .plan(
@@ -436,7 +437,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: Vec::new(),
+        parameter_body: Vec::new(),
         transform: None,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
@@ -487,7 +488,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         form: 0,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameters: b"102,1,@R0@;".to_vec(),
+        parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
     };
     assert!(matches!(
@@ -640,7 +641,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let start = hyperbola_point(2.0, 3.0, -range[1]).expect("reflected start evaluates");
     let end = hyperbola_point(2.0, 3.0, -range[0]).expect("reflected end evaluates");
     assert_eq!(
-        String::from_utf8(entity.parameters).expect("parameters are ASCII"),
+        String::from_utf8(entity.parameter_text()).expect("parameters are ASCII"),
         format!(
             "104,{},0,{},0,0,-1,0,{},{},{},{};",
             number(1.0 / 4.0),
@@ -743,7 +744,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         radius: 2.0,
     };
     let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
-    let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
+    let parameters = String::from_utf8(entity.parameter_text()).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
         .split(',')

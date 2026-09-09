@@ -61,7 +61,8 @@ fn source_less_points_round_trip_across_target_versions() {
 #[test]
 fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
-    ir.tolerances.linear = 2.0;
+    ir.tolerances.linear =
+        cadmpeg_ir::units::PositiveScalar::new(2.0).expect("positive finite tolerance");
     ir.model.points.push(Point {
         id: PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -80,7 +81,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generated settings record remains valid");
 
-    assert_eq!(decoded.ir().tolerances.linear, 2.0);
+    assert_eq!(decoded.ir().tolerances.linear.get(), 2.0);
     assert!(decoded
         .report()
         .losses
@@ -90,26 +91,19 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 
 #[test]
 fn invalid_archive_tolerances_are_rejected_before_output() {
-    for (linear, angular) in [
-        (0.0, 1.0e-10),
-        (f64::INFINITY, 1.0e-10),
-        (1.0e-6, 0.0),
-        (1.0e-6, std::f64::consts::PI.next_up()),
-    ] {
-        let mut ir = CadIr::empty();
-        ir.tolerances.linear = linear;
-        ir.tolerances.angular = angular;
-        let mut output = vec![0xaa];
-        let error = RhinoCodec
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-            )
-            .and_then(|plan| plan.write_to(&mut output))
-            .expect_err("invalid tolerance must not be serialized");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-        assert_eq!(output, [0xaa]);
-    }
+    let mut ir = CadIr::empty();
+    ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(std::f64::consts::PI.next_up())
+        .expect("positive finite tolerance");
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("invalid tolerance must not be serialized");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert_eq!(output, [0xaa]);
 }
 
 #[test]
@@ -171,7 +165,8 @@ fn source_less_circle_round_trips_with_its_frame() {
             .source_object
             .as_ref()
             .expect("generated object identity")
-            .object_id,
+            .object_id
+            .as_str(),
         expected
     );
 }
@@ -559,12 +554,9 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         regions: vec![region_id.clone()],
         transform: None,
         name: Some("survey points".into()),
-        color: Some(cadmpeg_ir::topology::Color {
-            r: 1.0,
-            g: 0.0,
-            b: 128.0 / 255.0,
-            a: 1.0,
-        }),
+        color: Some(
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color"),
+        ),
         visible: Some(false),
     });
     ir.model.regions.push(cadmpeg_ir::topology::Region {

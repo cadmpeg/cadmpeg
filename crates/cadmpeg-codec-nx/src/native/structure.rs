@@ -134,6 +134,10 @@ impl RosterIndex {
 
 /// One ordered component use referencing a reusable fast-load prototype.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FastLoadComponentOccurrenceWire",
+    into = "FastLoadComponentOccurrenceWire"
+)]
 pub struct FastLoadComponentOccurrence {
     /// Globally unique occurrence identity.
     pub id: String,
@@ -146,9 +150,9 @@ pub struct FastLoadComponentOccurrence {
     /// Absolute file offset of the occurrence marker.
     pub marker_source_offset: u64,
     /// Referenced [`FastLoadComponentPrototype::id`].
-    pub prototype: String,
+    prototype: String,
     /// One-based serialized prototype-table index.
-    pub prototype_index: RosterIndex,
+    prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
     pub component_uuid: String,
     /// Absolute file offset of the UUID-table index.
@@ -157,6 +161,59 @@ pub struct FastLoadComponentOccurrence {
     pub source_entry: String,
     /// Absolute file offset of the prototype index.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FastLoadComponentOccurrenceWire {
+    id: String,
+    ordinal: u32,
+    occurrence_lane_form: OccurrenceLaneForm,
+    marker: OccurrenceMarker,
+    marker_source_offset: u64,
+    prototype: String,
+    prototype_index: RosterIndex,
+    component_uuid: String,
+    uuid_source_offset: u64,
+    source_entry: String,
+    source_offset: u64,
+}
+impl TryFrom<FastLoadComponentOccurrenceWire> for FastLoadComponentOccurrence {
+    type Error = &'static str;
+    fn try_from(wire: FastLoadComponentOccurrenceWire) -> Result<Self, Self::Error> {
+        if wire.prototype != format!("nx:fast-load:prototype#{}", wire.prototype_index.ordinal()) {
+            return Err("FastLoadComponentOccurrence.prototype disagrees with prototype_index");
+        }
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            occurrence_lane_form: wire.occurrence_lane_form,
+            marker: wire.marker,
+            marker_source_offset: wire.marker_source_offset,
+            prototype: wire.prototype,
+            prototype_index: wire.prototype_index,
+            component_uuid: wire.component_uuid,
+            uuid_source_offset: wire.uuid_source_offset,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+impl From<FastLoadComponentOccurrence> for FastLoadComponentOccurrenceWire {
+    fn from(value: FastLoadComponentOccurrence) -> Self {
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            occurrence_lane_form: value.occurrence_lane_form,
+            marker: value.marker,
+            marker_source_offset: value.marker_source_offset,
+            prototype: value.prototype,
+            prototype_index: value.prototype_index,
+            component_uuid: value.component_uuid,
+            uuid_source_offset: value.uuid_source_offset,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
 }
 
 /// Equal-cardinality component uses and OM UUID values sharing one UUID.
@@ -270,14 +327,14 @@ pub fn fast_load_component_roster(
     let mut entries = container
         .entries
         .iter()
-        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span.is_some());
+        .filter(|entry| entry.name == ENTRY_NAME && entry.file_span().is_some());
     let Some(entry) = entries.next() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
     if entries.next().is_some() {
         return (Vec::new(), Vec::new(), Vec::new());
     }
-    let Some((entry_offset, entry_size)) = entry.file_span else {
+    let Some((entry_offset, entry_size)) = entry.file_span() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
@@ -351,29 +408,34 @@ pub fn fast_load_component_roster(
         .occurrences
         .into_iter()
         .enumerate()
-        .map(|(ordinal, occurrence)| FastLoadComponentOccurrence {
-            id: format!("nx:fast-load:occurrence#{ordinal}"),
-            ordinal: ordinal as u32,
-            occurrence_lane_form: candidate.occurrence_lane_form,
-            marker: occurrence.marker,
-            marker_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrence_markers_offset as u64
-                + ordinal as u64,
-            prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
-            prototype_index: occurrence.prototype_index,
-            component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
-            uuid_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.uuid_indices_offset as u64
-                + ordinal as u64,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrences_offset as u64
-                + ordinal as u64,
+        .map(|(ordinal, occurrence)| {
+            FastLoadComponentOccurrence::try_from(FastLoadComponentOccurrenceWire {
+                id: format!("nx:fast-load:occurrence#{ordinal}"),
+                ordinal: ordinal as u32,
+                occurrence_lane_form: candidate.occurrence_lane_form,
+                marker: occurrence.marker,
+                marker_source_offset: entry_offset
+                    + envelope::LEN as u64
+                    + candidate.occurrence_markers_offset as u64
+                    + ordinal as u64,
+                prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
+                prototype_index: occurrence.prototype_index,
+                component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
+                uuid_source_offset: entry_offset
+                    + envelope::LEN as u64
+                    + candidate.uuid_indices_offset as u64
+                    + ordinal as u64,
+                source_entry: entry.name.clone(),
+                source_offset: entry_offset
+                    + envelope::LEN as u64
+                    + candidate.occurrences_offset as u64
+                    + ordinal as u64,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(occurrences) = occurrences else {
+        return (Vec::new(), Vec::new(), Vec::new());
+    };
     (prototypes, uuids, occurrences)
 }
 
@@ -620,11 +682,11 @@ mod tests {
         Container {
             data: Cow::Owned(data),
             physical_size: len,
-            layout: crate::container::test_modern_layout(0x06, 1),
+            layout: crate::container::test_modern_layout(0x06),
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
-                file_span: Some((0, len)),
+                body: crate::container::DirEntryBody::File { offset: 0, len },
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -869,7 +931,7 @@ mod tests {
 
     #[test]
     fn occurrence_wire_preserves_closed_source_bytes() {
-        let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"prototype","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
+        let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"nx:fast-load:prototype#253","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
         let occurrence: FastLoadComponentOccurrence = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&occurrence).unwrap(), json);
         for (field, invalid) in [
@@ -887,6 +949,8 @@ mod tests {
                 .to_string()
                 .contains(field));
         }
+        let invalid = json.replace("nx:fast-load:prototype#253", "nx:fast-load:prototype#252");
+        assert!(serde_json::from_str::<FastLoadComponentOccurrence>(&invalid).is_err());
     }
 
     #[test]

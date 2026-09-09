@@ -24,7 +24,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation body".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh
@@ -36,43 +36,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation face".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if mesh
-            .chordal_deflection
-            .is_some_and(|value| !value.is_finite() || value < 0.0)
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "has an invalid tessellation deflection".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if mesh
-            .vertices()
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "contains a non-finite tessellation vertex".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if mesh
-            .normals()
-            .iter()
-            .chain(mesh.corner_normals())
-            .any(|normal| !normal.x.is_finite() || !normal.y.is_finite() || !normal.z.is_finite())
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "contains a non-finite tessellation normal".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
         if mesh.texture_assignments().iter().any(|assignment| {
@@ -85,7 +49,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "references a missing tessellation texture asset".into(),
-                entity: Some(mesh.id.clone()),
+                entity: Some(mesh.id.to_string()),
             });
         }
     }
@@ -185,14 +149,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
     {
-        if tolerance.is_some_and(nonpositive) {
-            findings.push(Finding {
-                check: Check::Tolerances,
-                severity: Severity::Error,
-                message: "topology tolerance is not positive and finite".into(),
-                entity: Some(id.to_owned()),
-            });
-        } else if tolerance.is_some_and(|value| value > 1.0e6) {
+        if tolerance.is_some_and(|value| value.get() > 1.0e6) {
             findings.push(Finding {
                 check: Check::Tolerances,
                 severity: Severity::Warning,

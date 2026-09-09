@@ -8,7 +8,7 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, DrawingRole, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -30,8 +30,13 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             ensure_unique_property_names(&owned)?;
-            let role = if is_page_type(&object.type_name) {
-                DrawingRole::Page {
+            let kind = if is_page_type(&object.type_name) {
+                TechDrawKind::Page {
+                    runtime: if object.type_name == "TechDraw::DrawPage" {
+                        crate::native::TechDrawPageKind::Page
+                    } else {
+                        crate::native::TechDrawPageKind::Python
+                    },
                     views: typed_links(&owned, "Views", "App::PropertyLinkList")?
                         .into_iter()
                         .filter_map(|link| link.object().map(str::to_owned))
@@ -40,13 +45,13 @@ pub(crate) fn transfer(
                         .and_then(|link| link.object().map(str::to_owned)),
                 }
             } else {
-                DrawingRole::Other
+                TechDrawKind::try_new(object.type_name.clone(), Vec::new(), None)
+                    .map_err(CodecError::malformed)?
             };
             Ok(DrawingRecord {
                 id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
-                kind: object.type_name.clone(),
-                role,
+                kind,
                 sources: [
                     "Source",
                     "XSource",
@@ -136,43 +141,34 @@ pub(crate) fn transfer_neutral(
                 )))
             }
         };
-        let scale = parameter("Scale")?;
-        if scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-positive or non-finite scale",
-                record.id
-            )));
-        }
-        let rotation_degrees = parameter("Rotation")?;
-        if rotation_degrees.is_some_and(|rotation| !rotation.is_finite()) {
-            return Err(CodecError::malformed(format_args!(
-                "drawing {} has a non-finite rotation",
-                record.id
-            )));
-        }
+        let scale = parameter("Scale")?
+            .map(|value| {
+                cadmpeg_ir::units::PositiveScalar::new(value).ok_or_else(|| {
+                    CodecError::malformed("drawing scale must be positive and finite")
+                })
+            })
+            .transpose()?;
+        let rotation_degrees = parameter("Rotation")?
+            .map(|value| {
+                cadmpeg_ir::units::FiniteScalar::new(value)
+                    .ok_or_else(|| CodecError::malformed("drawing rotation must be finite"))
+            })
+            .transpose()?;
         let direction = if record.parameters.contains_key("Direction") {
-            let direction = vector_property(&owned, "Direction")?.ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "drawing {} has no direction vector",
-                    record.id
-                ))
-            })?;
-            let length_squared = direction
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>();
-            if direction.iter().any(|component| !component.is_finite())
-                || length_squared <= f64::EPSILON
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite or zero direction",
-                    record.id
-                )));
-            }
-            Some(direction)
+            let value = vector_property(&owned, "Direction")?
+                .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
+            Some(cadmpeg_ir::units::NonzeroVector::new(value).ok_or_else(|| {
+                CodecError::malformed("drawing direction must be finite and nonzero")
+            })?)
         } else {
             None
         };
+        let position = position
+            .map(|value| {
+                cadmpeg_ir::units::FiniteVector::new(value)
+                    .ok_or_else(|| CodecError::malformed("drawing position must be finite"))
+            })
+            .transpose()?;
         let relationships = record
             .relationships
             .iter()
@@ -184,7 +180,7 @@ pub(crate) fn transfer_neutral(
                 Ok((role.clone(), targets))
             })
             .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
-        let template = if is_page_type(&record.kind) {
+        let template = if matches!(record.kind, TechDrawKind::Page { .. }) {
             record
                 .relationships
                 .get("Template")
@@ -198,13 +194,16 @@ pub(crate) fn transfer_neutral(
                 })
         } else {
             None
-        };
+        }
+        .map(DrawingId::mint)
+        .transpose()
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
         model.drawings.push(Drawing {
             id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
                 .expect("identity grammar"),
             object: record.object.clone(),
-            kind: classify(&record.kind),
-            runtime_type: record.kind.clone(),
+            kind: classify(record.kind.as_str()),
+            runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             visible: None,
             relationships,
@@ -582,7 +581,7 @@ fn root_value<'a>(
         "LockPosition" | "Perspective" => ("Bool", &[]),
         _ => return Ok(None),
     };
-    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "drawing property {} has invalid XML: {error}",
             property.id

@@ -9,6 +9,7 @@ use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputLane,
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
@@ -16,7 +17,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::sketches::SpatialSketchGeometry;
+use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 use std::collections::BTreeMap;
 
 fn current_compact_spatial_point_marker(
@@ -44,7 +45,7 @@ fn current_compact_spatial_point_marker(
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     let parent = "sldprt:feature-input:resolved-features#synthetic";
-    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_81D5);
     let reference = |offset| FeatureInputOperand {
         offset,
         reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
@@ -355,11 +356,11 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::SpatialSketch { sketch: None },
@@ -371,20 +372,18 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial"
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial"
     ));
 }
 
@@ -462,11 +461,11 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::SpatialSketch { sketch: None },
@@ -478,20 +477,18 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
-    assert!(matches!(
-        &entities[0].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[0].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, 15.0, 5.0)
     ));
-    assert!(matches!(
-        &entities[1].geometry,
-        SpatialSketchGeometry::Point { position }
+    assert!(matches!(entities[1].geometry.definition(),
+        SpatialSketchGeometryDefinition::Point { position }
             if *position == Point3::new(0.0, -15.0, 5.0)
     ));
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
-            if sketch.0 == "sldprt:model:spatial-sketch#spatial-indexed-profile"
+            if sketch.as_str() == "sldprt:model:spatial-sketch#spatial-indexed-profile"
     ));
 }
 
@@ -664,7 +661,9 @@ fn relation_binding_requires_family_operand_signature() {
     assert!(relation_bindings(
         "lane",
         &[class],
-        &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+        &[scalar(FeatureInputOperandKind::Native(
+            NativeOperandTag::TAG_8DDA
+        ))],
     )
     .is_empty());
 }
@@ -681,7 +680,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
         reference_ref: String::new(),
-        kind: FeatureInputOperandKind::Native(0x8152),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
         entity_ref: None,
     };
@@ -719,7 +718,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
     let operand = |entity_index| FeatureInputOperand {
         offset: 0,
         reference_ref: String::new(),
-        kind: FeatureInputOperandKind::Native(0x8152),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152),
         entity_index,
         entity_ref: None,
     };
@@ -1090,7 +1089,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
-            .find(|entity| entity.offset == offset as u64)
+            .find(|entity| entity.offset() == offset as u64)
             .expect("linked profile point");
         assert_eq!(point.kind, SketchInputKind::Point);
         assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
@@ -1160,7 +1159,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
-        .find(|entity| entity.offset == offset as u64)
+        .find(|entity| entity.offset() == offset as u64)
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind, SketchInputKind::Point);
     assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
@@ -1247,7 +1246,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
         .into_iter()
-        .find(|entity| entity.offset == offset as u64)
+        .find(|entity| entity.offset() == offset as u64)
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind, SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));

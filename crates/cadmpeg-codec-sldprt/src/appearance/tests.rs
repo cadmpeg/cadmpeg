@@ -153,12 +153,13 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .appearance_bindings
                 .iter()
                 .find(|binding| {
-                    binding.target == AppearanceTarget::Tessellation(tessellation.id.clone())
+                    binding.target == AppearanceTarget::Tessellation(tessellation.id.to_string())
                 })
                 .unwrap();
             let color = colors[&binding.appearance];
             let table_index = tessellation
                 .id
+                .as_str()
                 .rsplit(':')
                 .next()
                 .unwrap()
@@ -166,13 +167,15 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .unwrap();
             (
                 table_index,
-                [color.r, color.g, color.b].map(|value| (value * 255.0).round() as u8),
+                [color.r(), color.g(), color.b()].map(|value| (value * 255.0).round() as u8),
             )
         })
         .collect::<Vec<_>>();
     colors.sort_by_key(|(table_index, _)| *table_index);
     colors.into_iter().map(|(_, color)| color).collect()
 }
+
+const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
 #[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {
@@ -182,7 +185,7 @@ fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {
         (0x00ff_0000, [0.0, 0.0, 1.0]),
     ] {
         let color = super::packed_rgb(packed);
-        assert_eq!([color.r, color.g, color.b], expected);
+        assert_eq!([color.r(), color.g(), color.b()], expected);
     }
 }
 
@@ -200,7 +203,7 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
 
     let assignments = super::feature_assignments(&container::scan_bytes(&source));
     assert_eq!(assignments.len(), 1);
-    assert_eq!(assignments[0].feature_source_id, 36);
+    assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 0x6a81_f0f4);
     assert_eq!(assignments[0].packed_color, 0x0000_ffec);
 }
@@ -289,9 +292,9 @@ fn decode_retains_visual_property_without_fabricating_body_ownership() {
 
     assert!(result.ir().model.bodies[0].color.is_none());
     let color = result.ir().model.appearances[0].base_color.unwrap();
-    assert!((color.r - 32.0 / 255.0).abs() < 1.0e-6);
-    assert!((color.g - 64.0 / 255.0).abs() < 1.0e-6);
-    assert!((color.b - 128.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.r() - 32.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - 64.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - 128.0 / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert_eq!(
@@ -390,7 +393,7 @@ fn decode_binds_entity53_color_to_face() {
         .find(|appearance| appearance.id == binding.appearance)
         .unwrap();
     let color = appearance.base_color.unwrap();
-    assert_eq!([color.r, color.g, color.b], [0.25, 0.5, 0.75]);
+    assert_eq!([color.r(), color.g(), color.b()], [0.25, 0.5, 0.75]);
 }
 
 #[test]
@@ -477,5 +480,5 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
         .unwrap()
         .base_color
         .unwrap();
-    assert_eq!([color.r, color.g, color.b], [1.0, 0.125, 0.0]);
+    assert_eq!([color.r(), color.g(), color.b()], [1.0, 0.125, 0.0]);
 }

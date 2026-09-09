@@ -671,7 +671,7 @@ pub(crate) fn patch_nurbs_surface(
     patch_f64_span(bytes, v_knot_span, &new_v)
 }
 
-pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
+pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
     let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
     let mut out = HashMap::new();
@@ -822,7 +822,7 @@ fn surface_knot_values(
     (resolved.len() == 1).then(|| resolved.pop()).flatten()
 }
 
-pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier> {
+pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
         .values()

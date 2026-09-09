@@ -315,22 +315,22 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     let mut ir = CadIr::empty();
     ir.model.parameters = vec![
         parameter(
-            "length",
+            "synthetic:test:id#length",
             0,
             Some(ParameterValue::Length(Length::new(25.4).unwrap())),
             Vec::new(),
         ),
         parameter(
-            "angle",
+            "synthetic:test:id#angle",
             1,
             Some(ParameterValue::Angle(
                 Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             )),
-            vec![ParameterId::mint("length").expect("identity grammar")],
+            vec![ParameterId::mint("synthetic:test:id#length").expect("identity grammar")],
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("active").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -338,24 +338,25 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+    super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
         BTreeMap::from([
             (
-                ParameterId::mint("angle").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#angle").expect("identity grammar"),
                 ParameterValue::Angle(Angle::new(std::f64::consts::FRAC_PI_2).unwrap())
             ),
             (
-                ParameterId::mint("length").expect("identity grammar"),
+                ParameterId::mint("synthetic:test:id#length").expect("identity grammar"),
                 ParameterValue::Length(Length::new(25.4).unwrap())
             ),
         ])
@@ -378,7 +379,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         native_ref: None,
     };
     let configuration = || DesignConfiguration {
-        id: ConfigurationId::mint("active").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -386,30 +387,30 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
     };
     let mut cases = [
-        vec![parameter("p1", None, Vec::new())],
+        vec![parameter("synthetic:test:id#p1", None, Vec::new())],
         vec![parameter(
-            "p1",
+            "synthetic:test:id#p1",
             Some(ParameterValue::Real(
                 cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
             )),
-            vec![ParameterId::mint("missing").expect("identity grammar")],
+            vec![ParameterId::mint("synthetic:test:id#missing").expect("identity grammar")],
         )],
         vec![
             parameter(
-                "p1",
+                "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
                     cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
                 )),
                 Vec::new(),
             ),
             parameter(
-                "p1",
+                "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
                     cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
                 )),
@@ -418,18 +419,18 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ],
         vec![
             parameter(
-                "p1",
+                "synthetic:test:id#p1",
                 Some(ParameterValue::Real(
                     cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
                 )),
                 Vec::new(),
             ),
             parameter(
-                "p2",
+                "synthetic:test:id#p2",
                 Some(ParameterValue::Real(
                     cadmpeg_ir::features::FiniteReal::new(2.0).unwrap(),
                 )),
-                vec![ParameterId::mint("p1").expect("identity grammar")],
+                vec![ParameterId::mint("synthetic:test:id#p1").expect("identity grammar")],
             ),
         ],
     ];
@@ -439,7 +440,8 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations);
+        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+            .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
     }
@@ -457,12 +459,12 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::History,
-                    children: Default::default(),
+                    children: cadmpeg_ir::features::TreeChildren::default(),
                 },
                 outputs,
             )
@@ -470,7 +472,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -486,14 +488,14 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.features = vec![
-        feature("dependency", Vec::new(), Vec::new(), None),
+        feature("synthetic:test:id#dependency", Vec::new(), Vec::new(), None),
         feature(
-            "writer",
-            vec![FeatureId::mint("dependency").expect("identity grammar")],
+            "synthetic:test:id#writer",
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
             vec![body.clone()],
             None,
         ),
-        feature("unrelated", Vec::new(), Vec::new(), None),
+        feature("synthetic:test:id#unrelated", Vec::new(), Vec::new(), None),
     ];
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
         feature.ordinal = ordinal as u64;
@@ -504,7 +506,8 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     )];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_feature_states(&mut ir, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -513,18 +516,18 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     assert_eq!(
         states.keys().cloned().collect::<Vec<_>>(),
         [
-            FeatureId::mint("dependency").expect("identity grammar"),
-            FeatureId::mint("writer").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")
         ]
     );
     assert_eq!(
-        states[&FeatureId::mint("writer").expect("identity grammar")]
+        states[&FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")]
             .dependencies
             .as_slice(),
-        [FeatureId::mint("dependency").expect("identity grammar")]
+        [FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")]
     );
     assert_eq!(
-        states[&FeatureId::mint("writer").expect("identity grammar")]
+        states[&FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")]
             .evaluation
             .outputs(),
         [BodyId::mint("test:model:entity#body").expect("identity grammar")]
@@ -543,12 +546,12 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
             outputs,
         )
@@ -560,18 +563,19 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     body_record.id = body.clone();
     ir.model.bodies.push(body_record);
     ir.model.features = vec![
-        feature("dependency", 1, Vec::new(), Vec::new()),
+        feature("synthetic:test:id#dependency", 1, Vec::new(), Vec::new()),
         feature(
-            "writer",
+            "synthetic:test:id#writer",
             2,
-            vec![FeatureId::mint("dependency").expect("identity grammar")],
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
             vec![body],
         ),
-        feature("unrelated", 3, Vec::new(), Vec::new()),
+        feature("synthetic:test:id#unrelated", 3, Vec::new(), Vec::new()),
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_current_feature_states(&mut ir, &mut annotations);
+    super::attach_current_feature_states(&mut ir, &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -584,13 +588,15 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     )
     .is_err());
     ir.model.features[0].ordinal = 1;
-    ir.model.features[2].id = FeatureId::mint("writer").expect("identity grammar");
+    ir.model.features[2].id =
+        FeatureId::mint("synthetic:test:id#writer").expect("identity grammar");
     assert!(super::active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
     .is_err());
-    ir.model.features[2].id = FeatureId::mint("unrelated").expect("identity grammar");
+    ir.model.features[2].id =
+        FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
     assert!(super::active_feature_closure(
         &ir,
@@ -602,22 +608,24 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
 #[test]
 fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
     let producer = |dependency: &str| Feature {
-        id: FeatureId::mint("writer").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: (vec![FeatureId::mint(dependency).expect("identity grammar")])
-            .try_into()
-            .unwrap(),
+        dependencies: (vec![
+            FeatureId::mint(format!("synthetic:test:id#{dependency}")).expect("identity grammar")
+        ])
+        .try_into()
+        .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         )
@@ -641,7 +649,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     let mut missing_dependency = CadIr::empty();
     missing_dependency.model.features = vec![producer("missing")];
     missing_dependency.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Resolved(
             (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
@@ -650,7 +658,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ),
     )];
     let mut annotations = AnnotationBuilder::new();
-    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
         .feature_states
@@ -660,11 +669,12 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features = vec![producer("writer")];
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Unresolved,
     )];
-    super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
     assert!(unresolved_bodies.model.configurations[0]
         .feature_states
@@ -675,7 +685,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.features[0].dependencies.clear();
     contradicted.model.features[0].suppressed = Some(true);
     contradicted.model.configurations = vec![configuration(
-        "active",
+        "synthetic:test:id#active",
         true,
         ConfigurationBodies::Resolved(
             (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
@@ -683,7 +693,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 .unwrap(),
         ),
     )];
-    super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
     assert!(contradicted.model.configurations[0]
         .feature_states
@@ -694,7 +705,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     ambiguous.model.features[0].dependencies.clear();
     ambiguous.model.configurations = vec![
         configuration(
-            "first",
+            "synthetic:test:id#first",
             true,
             ConfigurationBodies::Resolved(
                 (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
@@ -703,7 +714,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ),
         ),
         configuration(
-            "second",
+            "synthetic:test:id#second",
             true,
             ConfigurationBodies::Resolved(
                 (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
@@ -712,7 +723,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ),
         ),
     ];
-    super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
+    super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(ambiguous.model.features[0].suppressed, None);
     assert!(ambiguous
         .model
@@ -765,13 +777,13 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("one exact point use projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
-        ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Point {
+        *ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point {
             position: Point2 { u: 12.5, v: -3.0 }
         }
     ));
@@ -791,7 +803,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             coordinate_pairs: &[],
         },
         &mut rejected_annotations,
-        rejected_stream,
+        &rejected_stream,
     )
     .is_none());
     assert!(rejected_ir.model.sketches.is_empty());
@@ -861,7 +873,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
             coordinate_pairs: &[],
         },
         &mut annotations,
-        stream,
+        &stream,
     )
     .expect("a complete named payload point projects a sketch");
     assert_eq!(ir.model.sketches[0].id, sketch);
@@ -871,8 +883,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
         Some("point-group")
     );
     assert!(matches!(
-        ir.model.sketch_entities[0].geometry,
-        SketchGeometry::Point {
+        *ir.model.sketch_entities[0].geometry.definition(),
+        SketchGeometryDefinition::Point {
             position: Point2 { u: 12.5, v: -3.0 }
         }
     ));
@@ -889,7 +901,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
-        source_table: "table".to_string(),
+        source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table").unwrap(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
@@ -1230,7 +1242,8 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         BooleanOp::Unresolved
     );
 
-    let prior = super::FeatureId::mint("prior-offset-writer").expect("identity grammar");
+    let prior =
+        super::FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
     let mut offset_history = super::BodyWriterHistory::default();
     offset_history.record_writer(None, Some(offset_body), &[], &prior);
@@ -1258,9 +1271,11 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: key.to_string(),
-        value: Some(f64::from(key)),
+        value: Some(
+            crate::native::om::finite_value::FiniteValue::try_from(f64::from(key)).unwrap(),
+        ),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table").unwrap(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -1277,7 +1292,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations).unwrap();
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+        .expect("valid exactness fields");
     let parameter_owners = ir
         .model
         .parameters
@@ -1303,7 +1319,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations);
+    super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
+        .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
         assert_eq!(
@@ -1319,18 +1336,22 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 
 #[test]
 fn nx_inch_expression_values_are_attached_in_millimeters() {
-    let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
-        id: format!("nx:test:expression#{key}"),
-        owner: None,
-        declaration: None,
-        name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-        unit: crate::native::om::ExpressionUnit::Inch,
-        expression: formula.into(),
-        value,
-        source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: "table".into(),
-        source_offset: u64::from(key),
-    };
+    let expression =
+        |key: u32, name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+            id: format!("nx:test:expression#{key}"),
+            owner: None,
+            declaration: None,
+            name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+            unit: crate::native::om::ExpressionUnit::Inch,
+            expression: formula.into(),
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
+            source_offset: u64::from(key),
+        };
     let expressions = [
         expression(1, "p1", "2", Some(2.0)),
         expression(2, "p2", "p1 * 3", Some(6.0)),
@@ -1338,7 +1359,8 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations).unwrap();
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+        .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.parameters[0].value,
@@ -1371,16 +1393,16 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
         unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
         expression: "4".into(),
-        value: Some(4.0),
+        value: Some(crate::native::om::finite_value::FiniteValue::try_from(4.0).unwrap()),
         source_entry: "part".into(),
-        source_table: "table".into(),
+        source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table").unwrap(),
         source_offset: 1,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
-        .unwrap();
+        .expect("valid exactness fields");
 
     assert_eq!(ir.model.parameters[0].value, None);
     assert_eq!(
@@ -1694,7 +1716,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
 
-    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
         .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
@@ -1740,7 +1762,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = annotations.stream("nx:container");
 
     assert!(
-        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream,)
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,)
             .is_none()
     );
     assert!(ir.model.bodies.is_empty());
@@ -1793,15 +1815,15 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         }
     );
     let feature = Feature {
-        id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]).unwrap(),
         native_ref: None,
@@ -1895,8 +1917,10 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     let target = operands.target();
     let tools = operands.tools();
 
-    let native_prior = FeatureId::mint("native-prior".to_string()).expect("identity grammar");
-    let offset_prior = FeatureId::mint("offset-prior".to_string()).expect("identity grammar");
+    let native_prior =
+        FeatureId::mint("synthetic:test:id#native-prior".to_string()).expect("identity grammar");
+    let offset_prior =
+        FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
     let mut history = super::BodyWriterHistory::default();
     history.record_writer(Some(401), None, &[], &native_prior);
     history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);

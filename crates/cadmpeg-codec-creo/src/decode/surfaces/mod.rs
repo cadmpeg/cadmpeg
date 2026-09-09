@@ -298,7 +298,7 @@ pub(super) fn transfer_fc05_cap_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for circle in &scan.curves.fc05_circles {
         let topology = scan
             .curves
@@ -402,7 +402,13 @@ pub(super) fn transfer_fc05_cap_circles(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("VisibGeom:{}", circle.curve_id),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "VisibGeom:{}",
+                        circle.curve_id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: None,
@@ -439,7 +445,12 @@ pub(super) fn transfer_fc05_cap_circles(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{cylinder_id}"),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{cylinder_id}"
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -448,4 +459,5 @@ pub(super) fn transfer_fc05_cap_circles(
             }),
         });
     }
+    Ok(())
 }

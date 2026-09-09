@@ -36,7 +36,7 @@ pub(crate) fn transfer(
                 .get(object.id.as_str())
                 .cloned()
                 .unwrap_or_default();
-            owned.sort_by_key(|property| (property.byte_start, property.byte_end));
+            owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
             let references = owned
                 .iter()
                 .filter(|property| !property.links().is_empty())
@@ -45,19 +45,22 @@ pub(crate) fn transfer(
             let parameters = owned
                 .iter()
                 .filter(|property| property.links().is_empty())
-                .map(|property| (property.name.clone(), property.raw_xml.clone()))
+                .map(|property| (property.name.clone(), property.xml.text().to_owned()))
                 .collect();
             SemanticAnnotationRecord {
                 id: crate::native::native_id("annotation", &object.name),
                 object: object.id.clone(),
                 kind,
-                text: owned
+                text: schema
+                    .text
                     .iter()
-                    .filter(|property| schema.text.contains(&property.name.as_str()))
-                    .filter_map(|property| {
-                        schema
-                            .text_type
-                            .and_then(|type_name| strict_text_values(property, type_name).ok())
+                    .flat_map(|carrier| {
+                        owned
+                            .iter()
+                            .filter(move |property| property.name == carrier.property)
+                            .filter_map(move |property| {
+                                strict_text_values(property, carrier.type_name).ok()
+                            })
                     })
                     .flatten()
                     .collect(),
@@ -141,11 +144,18 @@ pub(crate) fn transfer_neutral(
             text: record.text.clone(),
             references,
             value: None,
-            format: match schema.format {
-                Some(name) => string_property(&owned, name, "App::PropertyString")?,
-                None => None,
+            format: match schema.text {
+                Some(carrier) if carrier.has_format_spec => {
+                    string_property(&owned, carrier.property, carrier.type_name)?
+                }
+                _ => None,
             },
-            position: annotation_position(&owned, schema.position)?,
+            position: annotation_position(&owned, schema.position)?
+                .map(|value| {
+                    cadmpeg_ir::units::FiniteVector::new(value)
+                        .ok_or_else(|| CodecError::malformed("annotation position must be finite"))
+                })
+                .transpose()?,
             parameters: record.parameters.clone(),
             assets: record
                 .side_entries
@@ -165,10 +175,15 @@ pub(crate) fn is_annotation_type(type_name: &str) -> bool {
 #[derive(Clone)]
 struct AnnotationSchema {
     kind: SemanticAnnotationKind,
-    text: &'static [&'static str],
-    text_type: Option<&'static str>,
-    format: Option<&'static str>,
+    text: Option<TextCarrier>,
     position: PositionCarrier,
+}
+
+#[derive(Clone, Copy)]
+struct TextCarrier {
+    property: &'static str,
+    type_name: &'static str,
+    has_format_spec: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -195,9 +210,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
     match runtime_type {
         AnnotationRuntimeType::Annotation => AnnotationSchema {
             kind: Kind::Text,
-            text: &["LabelText"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "LabelText",
+                type_name: "App::PropertyStringList",
+                has_format_spec: false,
+            }),
             position: PositionCarrier::Vector {
                 name: "Position",
                 type_name: "App::PropertyVector",
@@ -205,9 +222,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         },
         AnnotationRuntimeType::AnnotationLabel => AnnotationSchema {
             kind: Kind::Text,
-            text: &["LabelText"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "LabelText",
+                type_name: "App::PropertyStringList",
+                has_format_spec: false,
+            }),
             position: PositionCarrier::Vector {
                 name: "TextPosition",
                 type_name: "App::PropertyVector",
@@ -216,9 +235,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawViewAnnotation
         | AnnotationRuntimeType::DrawViewAnnotationPython => AnnotationSchema {
             kind: Kind::Text,
-            text: &["Text"],
-            text_type: Some("App::PropertyStringList"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "Text",
+                type_name: "App::PropertyStringList",
+                has_format_spec: false,
+            }),
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -228,9 +249,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawRichAnno | AnnotationRuntimeType::DrawRichAnnoPython => {
             AnnotationSchema {
                 kind: Kind::Text,
-                text: &["AnnoText"],
-                text_type: Some("App::PropertyString"),
-                format: None,
+                text: Some(TextCarrier {
+                    property: "AnnoText",
+                    type_name: "App::PropertyString",
+                    has_format_spec: false,
+                }),
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -242,9 +265,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         | AnnotationRuntimeType::DrawViewDimExtent
         | AnnotationRuntimeType::LandmarkDimension => AnnotationSchema {
             kind: Kind::Dimension,
-            text: &["FormatSpec"],
-            text_type: Some("App::PropertyString"),
-            format: Some("FormatSpec"),
+            text: Some(TextCarrier {
+                property: "FormatSpec",
+                type_name: "App::PropertyString",
+                has_format_spec: true,
+            }),
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -253,9 +278,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         },
         AnnotationRuntimeType::DrawViewBalloon => AnnotationSchema {
             kind: Kind::Balloon,
-            text: &["Text"],
-            text_type: Some("App::PropertyString"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "Text",
+                type_name: "App::PropertyString",
+                has_format_spec: false,
+            }),
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -265,9 +292,7 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         AnnotationRuntimeType::DrawLeaderLine | AnnotationRuntimeType::DrawLeaderLinePython => {
             AnnotationSchema {
                 kind: Kind::Leader,
-                text: &[],
-                text_type: None,
-                format: None,
+                text: None,
                 position: PositionCarrier::Coordinates {
                     x_name: "X",
                     y_name: "Y",
@@ -280,9 +305,11 @@ fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
         | AnnotationRuntimeType::DrawWeldSymbol
         | AnnotationRuntimeType::DrawWeldSymbolPython => AnnotationSchema {
             kind: Kind::Symbol,
-            text: &["TailText"],
-            text_type: Some("App::PropertyString"),
-            format: None,
+            text: Some(TextCarrier {
+                property: "TailText",
+                type_name: "App::PropertyString",
+                has_format_spec: false,
+            }),
             position: PositionCarrier::Coordinates {
                 x_name: "X",
                 y_name: "Y",
@@ -417,14 +444,11 @@ fn validate_text_carriers(
     properties: &[&PropertyRecord],
     schema: &AnnotationSchema,
 ) -> Result<(), CodecError> {
-    let Some(type_name) = schema.text_type else {
+    let Some(carrier) = &schema.text else {
         return Ok(());
     };
-    for name in schema.text {
-        let Some(property) = typed_property(properties, name, &[type_name])? else {
-            continue;
-        };
-        strict_text_values(property, type_name)?;
+    if let Some(property) = typed_property(properties, carrier.property, &[carrier.type_name])? {
+        strict_text_values(property, carrier.type_name)?;
     }
     Ok(())
 }
@@ -453,7 +477,7 @@ fn direct_value_attributes(
     expected_tag: &str,
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id
@@ -513,7 +537,7 @@ fn strict_text_values(
             .filter(|value| !value.trim().is_empty())
             .collect());
     }
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         CodecError::malformed(format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id
@@ -706,13 +730,19 @@ pub(crate) mod tests {
             .find(|annotation| annotation.runtime_type == "App::Annotation")
             .expect("note annotation");
         assert_eq!(note.text, ["NOTE"]);
-        assert_eq!(note.position, Some([1.0, 2.0, 3.0]));
+        assert_eq!(
+            note.position.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.0, 2.0, 3.0])
+        );
         let label = annotations
             .iter()
             .find(|annotation| annotation.runtime_type == "App::AnnotationLabel")
             .expect("label annotation");
         assert_eq!(label.text, ["LABEL"]);
-        assert_eq!(label.position, Some([4.0, 5.0, 6.0]));
+        assert_eq!(
+            label.position.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([4.0, 5.0, 6.0])
+        );
     }
 
     #[test]
@@ -903,7 +933,9 @@ pub(crate) mod tests {
                 .model
                 .semantic_annotations
                 .iter()
-                .map(|annotation| annotation.position)
+                .map(|annotation| annotation
+                    .position
+                    .map(cadmpeg_ir::units::FiniteVector::get))
                 .collect::<Vec<_>>(),
             [Some([10.0, 20.0, 0.0]), Some([30.0, 40.0, 0.0])]
         );
@@ -1070,7 +1102,12 @@ pub(crate) mod tests {
         assert_eq!(semantic_dimension.text, ["12.5 mm"]);
         assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
         assert_eq!(semantic_dimension.value, None);
-        assert_eq!(semantic_dimension.position, Some([10.0, 20.0, 0.0]));
+        assert_eq!(
+            semantic_dimension
+                .position
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([10.0, 20.0, 0.0])
+        );
         assert_eq!(
             semantic_dimension.references["References2D"][0].subelements,
             ["Edge1"]
@@ -1100,14 +1137,6 @@ pub(crate) mod tests {
         );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
-
-        let mut corrupted = result.ir().clone();
-        corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
-        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message
-                == "invalid semantic annotation reference, order, or numeric state"));
     }
 
     #[test]

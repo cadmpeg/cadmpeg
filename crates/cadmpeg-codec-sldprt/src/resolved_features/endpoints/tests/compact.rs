@@ -8,18 +8,18 @@ use std::collections::HashMap;
 
 #[test]
 fn one_ended_line_uses_its_same_index_radius_relation_pair() {
-    let marker = |id: &str, kind, object_index, coordinates_m, links| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: crate::records::SketchInputLinks::new(0, links),
+    let marker = |id: &str, kind, object_index, coordinates_m, links| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = crate::records::SketchInputLinks::new(0, links);
+        constructed_marker
     };
     let first = marker(
         "first",
@@ -99,18 +99,18 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
 
 #[test]
 fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
-    let marker = |id: &str, kind, object_index, coordinates_m, links| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: crate::records::SketchInputLinks::new(0, links),
+    let marker = |id: &str, kind, object_index, coordinates_m, links| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = crate::records::SketchInputLinks::new(0, links);
+        constructed_marker
     };
     let first = marker(
         "first",
@@ -201,44 +201,58 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
 
 #[test]
 fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
-    let point = SketchInputEntity {
-        id: "point".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 1,
-        offset: 1,
-        object_index: Some(2),
-        local_id: Some(2),
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m: Some([0.0, 1.0]),
-        links: None,
+    let point = {
+        let marker_id: String = "point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            1,
+            1,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(2);
+        constructed_marker.local_id = Some(2);
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some([0.0, 1.0]);
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let relation = SketchInputEntity {
-        id: "relation".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 2,
-        offset: 2,
-        object_index: Some(3),
-        local_id: Some(3),
-        kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let relation = {
+        let marker_id: String = "relation".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            2,
+            2,
+            SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(3);
+        constructed_marker.local_id = Some(3);
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: Some(1),
-        local_id: Some(1),
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: Some([1.0, 0.0]),
-        links: crate::records::SketchInputLinks::new(
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = Some(1);
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = Some([1.0, 0.0]);
+        constructed_marker.links = crate::records::SketchInputLinks::new(
             0,
             vec![
                 SketchInputLink {
@@ -250,7 +264,8 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
                     entity_ref: point.id.clone(),
                 },
             ],
-        ),
+        );
+        constructed_marker
     };
     let markers = [&curve, &point, &relation];
     let markers_by_id = markers
@@ -292,31 +307,41 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
     payload[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[68..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let point = |id: &str, offset: u64, object_index: u32, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: Some(object_index),
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let point = |id: &str, offset: u64, object_index: u32, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(object_index);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        id: "line".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: Some(3),
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "line".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(3);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let first = point("first", 100, 1, Some([0.0, 0.0]));
     let second = point("second", 200, 2, Some([1.0, 0.0]));
@@ -368,45 +393,60 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         SketchInputKind::LineOrCircle
     );
 
-    let point = |id: &str, offset: u64, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let point = |id: &str, offset: u64, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        id: "line".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "line".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let first = point("first", 100, Some([0.0, 0.0]));
-    let non_point = SketchInputEntity {
-        id: "handle".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 200,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::from_native_code(7),
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let non_point = {
+        let marker_id: String = "handle".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            200,
+            SketchInputKind::from_native_code(7),
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let second = point("second", 300, Some([1.0, 0.0]));
     let markers = [&curve, &first, &non_point, &second];
@@ -887,18 +927,18 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, object_index, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = marker("curve", Some(1), SketchInputKind::LineOrCircle, None);
     let relation = marker(
@@ -951,23 +991,29 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, object_index, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        kind: SketchInputKind::LineOrCircle,
-        coordinates_m: None,
-        ..marker("curve", 0, Some(1), None)
+    let curve = {
+        let mut constructed_marker = marker("curve", 0, Some(1), None);
+        constructed_marker.kind = SketchInputKind::LineOrCircle;
+        constructed_marker.coordinates_m = None;
+        constructed_marker
     };
     let first = marker("first", 100, Some(99), Some([0.0, 0.0]));
     let second = marker("second", 200, Some(100), Some([1.0, 0.0]));
@@ -1008,18 +1054,23 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         ["first", "second"]
     );
 
-    let relation = SketchInputEntity {
-        id: "relation".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 200,
-        object_index: Some(100),
-        local_id: None,
-        kind: SketchInputKind::Relation(SketchRelationKind::Distance),
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let relation = {
+        let marker_id: String = "relation".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            200,
+            SketchInputKind::Relation(SketchRelationKind::Distance),
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(100);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [&curve, &first, &relation];
     assert!(relation_reference_curve_record(&payload, &curve, &markers));
@@ -1041,23 +1092,29 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
-    let curve = SketchInputEntity {
-        kind: SketchInputKind::LineOrCircle,
-        coordinates_m: None,
-        ..marker("curve", 0, None)
+    let curve = {
+        let mut constructed_marker = marker("curve", 0, None);
+        constructed_marker.kind = SketchInputKind::LineOrCircle;
+        constructed_marker.coordinates_m = None;
+        constructed_marker
     };
     let first = marker("first", 100, Some([0.0, 0.0]));
     let second = marker("second", 200, Some([1.0, 0.0]));
@@ -1096,18 +1153,18 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
     payload[80..84].copy_from_slice(&7u32.to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = marker("curve", 0, SketchInputKind::Arc, None);
     let first = marker("first", 10, SketchInputKind::Point, Some([1.0, 0.0]));
@@ -1154,18 +1211,18 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
     payload[80..84].copy_from_slice(&7u32.to_le_bytes());
     payload[84..].copy_from_slice(SKETCH_MARKER);
 
-    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, offset, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = marker("curve", 0, SketchInputKind::LineOrCircle, None);
     let relation = marker(
@@ -1212,33 +1269,43 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         compact_indexed_curve_raw_endpoint_indices(&payload, 0),
         Some([15, 6])
     );
-    let marker = |id: &str, object_index, offset, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, object_index, offset, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let first = marker("first", Some(15), 1, Some([0.0, 0.0]));
     let second = marker("second", Some(6), 2, Some([1.0, 0.0]));
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: Some(1),
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(1);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [&first, &second];
     let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
@@ -1283,34 +1350,44 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     assert!(candidates.contains(&[1, 2]));
     assert!(candidates.contains(&[2, 3]));
 
-    let marker = |id: &str, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::Point,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let marker = |id: &str, object_index, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::Point,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let first = marker("first", Some(1), Some([0.0, 0.0]));
     let second = marker("second", Some(2), Some([1.0, 0.0]));
     let coincident = marker("coincident", Some(3), Some([0.0, 0.0]));
-    let curve = SketchInputEntity {
-        id: "curve".into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index: None,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m: None,
-        links: None,
+    let curve = {
+        let marker_id: String = "curve".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = crate::records::SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            0,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let markers = [&first, &second];
     assert_eq!(

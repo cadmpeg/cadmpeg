@@ -2,6 +2,7 @@
 
 use super::super::CLASS_MARKER;
 use super::object_names;
+use crate::records::operand_tag::NativeOperandTag;
 
 #[test]
 fn object_names_follow_the_lane_name_class_token() {
@@ -30,4 +31,25 @@ fn object_names_follow_the_lane_name_class_token() {
             .collect::<Vec<_>>(),
         ["Favorites", "Boss"]
     );
+}
+
+#[test]
+#[should_panic(expected = "native kind name must not be empty")]
+fn native_kind_literal_rejects_empty_text() {
+    super::checked_nonempty_name("");
+}
+
+#[test]
+fn operand_kind_names_preserve_wire_spelling() {
+    use crate::records::FeatureInputOperandKind;
+    for (kind, expected) in [
+        (FeatureInputOperandKind::D6, "d6"),
+        (FeatureInputOperandKind::E1, "e1"),
+        (
+            FeatureInputOperandKind::Native(NativeOperandTag::TAG_80D5),
+            "d580",
+        ),
+    ] {
+        assert_eq!(super::operand_kind_name(kind).as_str(), expected);
+    }
 }

@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn dimension_proofs_require_the_evaluated_measurement() {
@@ -50,25 +51,27 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
     let entity = |id: &str, geometry: SketchGeometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let first = entity(
-        "generated:point#0",
-        SketchGeometry::Point {
+        "generated:test:point#0",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
-        "generated:point#1",
-        SketchGeometry::Point {
+        "generated:test:point#1",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(40.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
-    let parameter =
-        cadmpeg_ir::features::ParameterId::mint("generated:parameter#0").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#0")
+        .expect("identity grammar");
     assert!(crate::design::dimensions::directional_point_dimension(
         &[&first, &second],
         10.0,
@@ -83,13 +86,14 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             parameter.clone(),
             0.0,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let rounded = entity(
-        "generated:point#rounded",
-        SketchGeometry::Point {
+        "generated:test:point#rounded",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(40.000_000_5, 0.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(matches!(
         crate::design::dimensions::directional_point_dimension(
@@ -98,22 +102,24 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             parameter,
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
 
     let horizontal = entity(
-        "generated:line#horizontal",
-        SketchGeometry::Line {
+        "generated:test:line#horizontal",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let diagonal = entity(
-        "generated:line#diagonal",
-        SketchGeometry::Line {
+        "generated:test:line#diagonal",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(!crate::design::dimensions::parallel_line_separation(
         &horizontal,
@@ -132,17 +138,19 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         std::f64::consts::FRAC_PI_4,
     ));
     let vertical = entity(
-        "generated:line#vertical",
-        SketchGeometry::Line {
+        "generated:test:line#vertical",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -10.0),
             end: Point2::new(0.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     let offset_point = entity(
-        "generated:point#offset",
-        SketchGeometry::Point {
+        "generated:test:point#offset",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 4.0),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::point_line_separation(
         &offset_point,
@@ -164,18 +172,20 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     let inner_circle = entity(
-        "generated:circle#inner",
-        SketchGeometry::Circle {
+        "generated:test:circle#inner",
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length::new(4.0).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let outer_circle = entity(
-        "generated:circle#outer",
-        SketchGeometry::Circle {
+        "generated:test:circle#outer",
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -190,11 +200,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let displaced_circle = entity(
-        "generated:circle#displaced",
-        SketchGeometry::Circle {
+        "generated:test:circle#displaced",
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.001, -2.0),
             radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     assert!(!crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -204,11 +215,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     let tolerant_center_circle = entity(
-        "generated:circle#tolerant-center",
-        SketchGeometry::Circle {
+        "generated:test:circle#tolerant-center",
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.000_000_5, -2.0),
             radius: cadmpeg_ir::features::Length::new(4.25).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -223,11 +235,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let tolerant_parallel = entity(
-        "generated:line#tolerant-parallel",
-        SketchGeometry::Line {
+        "generated:test:line#tolerant-parallel",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 2.000_000_5),
             end: Point2::new(10.0, 2.000_000_5),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::parallel_line_separation(
         &horizontal,
@@ -242,11 +255,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
     let tolerant_outer_circle = entity(
-        "generated:circle#tolerant-outer",
-        SketchGeometry::Circle {
+        "generated:test:circle#tolerant-outer",
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(3.0, -2.0),
             radius: cadmpeg_ir::features::Length::new(4.250_000_5).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     assert!(crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
@@ -264,10 +278,10 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 
 #[test]
 fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
-    let sketch = SketchId("generated:sketch#presentation".into());
+    let sketch = SketchId::mint("generated:test:sketch#presentation").unwrap();
     let entity = |record_index: u32, geometry: SketchGeometry| {
         SketchEntity::new(
-            SketchEntityId(format!("generated:entity#{record_index}")),
+            SketchEntityId::mint(format!("generated:test:entity#{record_index}")).unwrap(),
             sketch.clone(),
             geometry,
         )
@@ -275,47 +289,53 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     };
     let line = entity(
         306,
-        SketchGeometry::Line {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(90.4875, -17.78),
             end: Point2::new(90.4875, 17.78),
-        },
+        })
+        .unwrap(),
     );
     let circle = entity(
         331,
-        SketchGeometry::Circle {
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length::new(11.1125).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let arc = entity(
         796,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, -19.05),
             radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
             start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
             end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let outer_arc = entity(
         782,
-        SketchGeometry::Arc {
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(60.344_057_626_1, 19.05),
             radius: cadmpeg_ir::features::Length::new(12.7).unwrap(),
             start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
             end_angle: cadmpeg_ir::features::Angle::new(0.975_682_713_4).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let first_point = entity(
         1061,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(11.1125, -11.1125),
-        },
+        })
+        .unwrap(),
     );
     let second_point = entity(
         1075,
-        SketchGeometry::Point {
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(11.1125, -7.3025),
-        },
+        })
+        .unwrap(),
     );
     let entities = [line, circle, arc, outer_arc, first_point, second_point];
     let projected = entities
@@ -368,10 +388,10 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &frame(vec![operand(306), operand(331)]),
             &projected,
             &tangent_span,
-            &cadmpeg_ir::features::ParameterId::mint("parameter:d4").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
 
@@ -390,11 +410,11 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &frame(vec![operand(796)]),
             &projected,
             &tangent_radius,
-            &cadmpeg_ir::features::ParameterId::mint("parameter:d16").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Radius { entity, .. })
-            if entity.0 == "generated:entity#796"
+        Some(SketchConstraintDefinitionInput::Radius { entity, .. })
+            if entity.as_str() == "generated:test:entity#796"
     ));
     assert!(matches!(
         crate::design::dimensions::presentation_dimension_definition(
@@ -402,10 +422,10 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &frame(vec![operand(782), operand(796)]),
             &projected,
             &tangent_radius,
-            &cadmpeg_ir::features::ParameterId::mint("parameter:d16").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, .. })
+        Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
     let ambiguous_tangent = parse_design_parameter(&parameter_record(
@@ -423,7 +443,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &frame(vec![operand(782), operand(796)]),
             &projected,
             &ambiguous_tangent,
-            &cadmpeg_ir::features::ParameterId::mint("parameter:d16_ambiguous")
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
                 .expect("identity grammar"),
             1.0e-6,
         )
@@ -444,12 +464,13 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         &frame(vec![operand(1061), operand(1075)]),
         &projected,
         &point_distance,
-        &cadmpeg_ir::features::ParameterId::mint("parameter:d32").expect("identity grammar"),
+        &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
+            .expect("identity grammar"),
         1.0e-6,
     );
     assert!(matches!(
         point_definition,
-        Some(SketchConstraintDefinition::VerticalDistance { .. })
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
 }
 
@@ -457,24 +478,26 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
 fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#symmetric-distance".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#symmetric-distance").unwrap(),
             geometry,
         )
     };
     let first = entity(
-        "generated:line#first",
-        SketchGeometry::Line {
+        "generated:test:line#first",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(0.0, 10.0),
-        },
+        })
+        .unwrap(),
     );
     let second = entity(
-        "generated:line#second",
-        SketchGeometry::Line {
+        "generated:test:line#second",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(5.0, 2.0),
             end: Point2::new(5.0, 8.0),
-        },
+        })
+        .unwrap(),
     );
     let parameter = parse_design_parameter(&parameter_record(
         Some(44),
@@ -485,8 +508,9 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
         1.0,
     ))
     .expect("symmetric line-width parameter");
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("generated:parameter#symmetric")
-        .expect("identity grammar");
+    let parameter_id =
+        cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#symmetric")
+            .expect("identity grammar");
 
     assert!(matches!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(
@@ -498,12 +522,12 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             parameter_id.clone(),
             1.0e-6,
         ),
-        Some(SketchConstraintDefinition::Distance { entities, parameter: actual })
+        Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
             if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
     ));
 
     let mut direct_parameter = parameter.clone();
-    direct_parameter.evaluated_value = 0.5;
+    direct_parameter.try_set_evaluated_value(0.5).unwrap();
     assert!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(
             &first,
@@ -534,21 +558,21 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
 fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let entity = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
-            SketchGeometry::Point { position },
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
         )
     };
-    let first = entity("generated:point#first", Point2::new(4.0, 16.0));
-    let second = entity("generated:point#second", Point2::new(4.0, 14.0));
-    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance")
+    let first = entity("generated:test:point#first", Point2::new(4.0, 16.0));
+    let second = entity("generated:test:point#second", Point2::new(4.0, 14.0));
+    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
     let definition =
         directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
     assert!(matches!(
         definition,
-        SketchConstraintDefinition::VerticalDistance {
+        SketchConstraintDefinitionInput::VerticalDistance {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
@@ -556,22 +580,22 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
-    let diagonal = entity("generated:point#diagonal", Point2::new(7.0, 14.0));
+    let diagonal = entity("generated:test:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
         directional_point_dimension(
             &[&first, &diagonal],
             3.0,
-            cadmpeg_ir::features::ParameterId::mint("generated:parameter#horizontal")
+            cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
                 .expect("identity grammar"),
             0.0,
         ),
-        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
-    let square = entity("generated:point#square", Point2::new(6.0, 18.0));
+    let square = entity("generated:test:point#square", Point2::new(6.0, 18.0));
     assert!(directional_point_dimension(
         &[&first, &square],
         2.0,
-        cadmpeg_ir::features::ParameterId::mint("generated:parameter#ambiguous")
+        cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#ambiguous")
             .expect("identity grammar"),
         0.0,
     )
@@ -582,31 +606,33 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
 fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let point = entity(
-        "generated:point#dimension",
-        SketchGeometry::Point {
+        "generated:test:point#dimension",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(0.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let line = entity(
-        "generated:line#dimension",
-        SketchGeometry::Line {
+        "generated:test:line#dimension",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(-10.0, 0.0),
             end: Point2::new(-50.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
-    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance")
+    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
     assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
     assert!(matches!(
         two_locus_distance_dimension(&[&point, &line], parameter.clone()),
-        Some(SketchConstraintDefinition::Distance {
+        Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
         }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter == &parameter
@@ -617,85 +643,93 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
 fn counted_linear_graph_projects_exact_auxiliary_relations() {
     let entity = |id: &str, geometry| {
         cadmpeg_ir::sketches::SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("generated:sketch#0".into()),
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
             geometry,
         )
     };
     let horizontal = entity(
-        "generated:line#horizontal",
-        SketchGeometry::Line {
+        "generated:test:line#horizontal",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(10.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let vertical = entity(
-        "generated:line#vertical",
-        SketchGeometry::Line {
+        "generated:test:line#vertical",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, -2.0),
             end: Point2::new(0.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let parallel = entity(
-        "generated:line#parallel",
-        SketchGeometry::Line {
+        "generated:test:line#parallel",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 2.0),
             end: Point2::new(10.0, 2.0),
-        },
+        })
+        .unwrap(),
     );
     let point = entity(
-        "generated:point#on-line",
-        SketchGeometry::Point {
+        "generated:test:point#on-line",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let duplicate_point = entity(
-        "generated:point#duplicate",
-        SketchGeometry::Point {
+        "generated:test:point#duplicate",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let arc = entity(
-        "generated:arc#bounded",
-        SketchGeometry::Arc {
+        "generated:test:arc#bounded",
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(3.0, 0.0),
             radius: cadmpeg_ir::features::Length::new(1.0).unwrap(),
             start_angle: cadmpeg_ir::features::Angle::new(0.0).unwrap(),
             end_angle: cadmpeg_ir::features::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-        },
+        })
+        .unwrap(),
     );
     let arc_start = entity(
-        "generated:point#arc-start",
-        SketchGeometry::Point {
+        "generated:test:point#arc-start",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(4.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
     let outside_arc = entity(
-        "generated:point#outside-arc",
-        SketchGeometry::Point {
+        "generated:test:point#outside-arc",
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(2.0, 0.0),
-        },
+        })
+        .unwrap(),
     );
 
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &vertical]),
-        Some(SketchConstraintDefinition::Perpendicular { .. })
+        Some(SketchConstraintDefinitionInput::Perpendicular { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &parallel]),
-        Some(SketchConstraintDefinition::Parallel { .. })
+        Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&horizontal, &point]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&point, &duplicate_point]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
         exact_counted_dimension_relation(&[&arc_start, &arc]),
-        Some(SketchConstraintDefinition::Coincident { .. })
+        Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
 }
@@ -722,49 +756,53 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let parameter = DesignParameter {
-        id: format!("{stream}:design-parameter#20"),
-        byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-        record_index: 20,
-        source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new(
-            "Linear Dimension-4".into(),
-            Some(21),
-            Some(crate::records::Located {
-                value: crate::records::DesignParameterDiscriminator::Code0,
-                offset: 0,
-            }),
-        )
-        .unwrap(),
-        expression: "2 mm".into(),
-        expression_offset: 0,
-        source_kind_offset: 0,
+    let parameter =
+        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            record_index: 20,
+            source_ordinal: 4,
+            source: crate::records::DesignParameterSource::new(
+                "Linear Dimension-4".into(),
+                Some(21),
+                Some(crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            )
+            .unwrap(),
+            expression: "2 mm".into(),
+            expression_offset: 40,
+            source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue {
-            value: "mm".into(),
-            offset: Some(0),
-        }),
-        name: "d4".into(),
-        name_offset: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-    };
-    let owner = DesignParameterOwner {
-        id: format!("{stream}:design-parameter-owner#21"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 21,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 0.2,
-        evaluated_value_offset: 0,
-        parameter_record_index: 20,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 22,
-    };
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(70),
+            }),
+            name: "d4".into(),
+            name_offset: 80,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 90,
+        })
+        .unwrap();
+    let owner =
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 40,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 22,
+        })
+        .unwrap();
     let companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 0,
@@ -833,34 +871,42 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_record_index: 32,
         next_byte_offset: 240,
     };
-    let point = |record_index, y| SketchPoint {
-        id: format!("{stream}:sketch-point#{record_index}"),
-        record_index,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 0,
-        record_form: crate::records::SketchPointRecordForm::version11(
-            u64::from(record_index),
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-            None,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(0.0, y),
+    let point = |record_index, y| {
+        SketchPoint::try_from(crate::records::SketchPointDraft {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            companion: crate::records::SketchPointCompanion {
+                prefix_present_zero: false,
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, y),
+        })
+        .unwrap()
     };
     let points = [point(40, 0.0), point(41, 2.0)];
-    let sketch = neutral_sketch_id(&placement);
+    let sketch = neutral_sketch_id(&placement).unwrap();
     let entities = points
         .iter()
         .map(|point| {
             SketchEntity::new(
-                SketchEntityId(format!("point-{}", point.record_index)),
+                SketchEntityId::mint(format!("synthetic:test:id#point-{}", point.record_index))
+                    .unwrap(),
                 sketch.clone(),
-                SketchGeometry::Point {
-                    position: point.coordinates,
-                },
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: point.coordinates(),
+                })
+                .unwrap(),
             )
             .with_native_ref(Some(point.id.clone()))
         })
@@ -886,12 +932,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     assert_eq!(constraints.len(), 1);
     assert!(matches!(
-        constraints[0].definition,
-        SketchConstraintDefinition::VerticalDistance { .. }
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
 
     let spatial_sketch = SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -902,14 +948,18 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         .iter()
         .map(|point| {
             cadmpeg_ir::sketches::SpatialSketchEntity::new(
-                cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-                    "spatial-point-{}",
+                cadmpeg_ir::sketches::SpatialSketchEntityId::mint(format!(
+                    "synthetic:test:id#spatial-point-{}",
                     point.record_index
-                )),
+                ))
+                .unwrap(),
                 spatial_sketch.id.clone(),
-                cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
-                    position: Point3::new(0.0, point.coordinates.v, 0.0),
-                },
+                cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+                    cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
+                        position: Point3::new(0.0, point.coordinates().v, 0.0),
+                    },
+                )
+                .unwrap(),
             )
             .with_native_ref(Some(point.id.clone()))
         })
@@ -955,16 +1005,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         &spatial_constraints[0],
         cadmpeg_ir::sketches::SpatialSketchConstraint {
             sketch: actual_sketch,
-            definition: SpatialSketchConstraintDefinition::PointDistance {
-                first,
-                second,
-                parameter: actual_parameter,
-            },
+            definition,
             ..
-        } if actual_sketch == &spatial_sketch.id
+        } if matches!(definition.kind(), SpatialSketchConstraintDefinitionInput::PointDistance { first, second, parameter: actual_parameter } if actual_sketch == &spatial_sketch.id
             && actual_parameter == &neutral_parameter_id_parts(stream, 20)
             && first == spatial_entities[0].id()
-            && second == spatial_entities[1].id()
+            && second == spatial_entities[1].id())
     ));
 
     let axis_record = SketchCurveIdentity {
@@ -975,17 +1021,21 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
-        primary_id: 42,
+        primary_id: std::num::NonZeroU64::new(42).unwrap(),
         secondary_id: 0,
         geometry: None,
     };
     let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
-        cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
+        cadmpeg_ir::sketches::SpatialSketchEntityId::mint("synthetic:test:id#spatial-axis")
+            .unwrap(),
         spatial_sketch.id.clone(),
-        cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
-            start: Point3::new(-1.0, 1.0, 0.0),
-            end: Point3::new(1.0, 1.0, 0.0),
-        },
+        cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+            cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(-1.0, 1.0, 0.0),
+                end: Point3::new(1.0, 1.0, 0.0),
+            },
+        )
+        .unwrap(),
     )
     .with_construction(true)
     .with_native_ref(Some(axis_record.id.clone()));
@@ -1039,12 +1089,16 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_byte_offset: 0,
     };
     let mut symmetry_parameter = parameter.clone();
-    symmetry_parameter.source = crate::records::DesignParameterSource::new(
-        "Linear Dimension-6".into(),
-        symmetry_parameter.owner_record_index(),
-        symmetry_parameter.family_discriminator(),
-    )
-    .unwrap();
+    symmetry_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                "Linear Dimension-6".into(),
+                symmetry_parameter.owner_record_index(),
+                symmetry_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let mut symmetry_entities = spatial_entities.clone();
     symmetry_entities.push(axis_entity.clone());
     let symmetry_constraints = project_spatial_dimension_constraints(
@@ -1067,8 +1121,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     );
     assert_eq!(symmetry_constraints.len(), 2, "{symmetry_constraints:#?}");
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
-        &constraint.definition,
-        SpatialSketchConstraintDefinition::Symmetric {
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
@@ -1077,15 +1131,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             && axis == axis_entity.id()
     )));
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
-        constraint.definition,
-        SpatialSketchConstraintDefinition::Native {
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native {
             parameter: Some(_),
             ..
         }
     )));
 
     let mut zero_parameter = parameter;
-    zero_parameter.evaluated_value = 0.0;
+    zero_parameter.try_set_evaluated_value(0.0).unwrap();
     let mut duplicate_pair = pair.clone();
     duplicate_pair.loci[1].geometry_record_index = duplicate_pair.loci[0].geometry_record_index;
     let duplicate = project_dimension_constraints(
@@ -1107,8 +1161,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     );
     assert_eq!(duplicate.len(), 1);
     assert!(matches!(
-        duplicate[0].definition,
-        SketchConstraintDefinition::Native { ref operands, .. }
+        duplicate[0].definition.kind(),
+        SketchConstraintDefinitionInput::Native { ref operands, .. }
             if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
                 == [
                     (Some("first_locus"), Some(7), 40),
@@ -1117,11 +1171,31 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     ));
 
     let mut group_owner = owner.clone();
-    group_owner.companion_record_index = group.companion_record_index;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(group_owner.clone());
+        wire.companion_record_index = group.companion_record_index;
+        wire.record_index = group.companion_record_index - 1;
+        wire.parameter_record_index = group.companion_record_index - 2;
+        wire.id = format!("{stream}:design-parameter-owner#{}", wire.record_index);
+        group_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
+    let mut group_parameter = zero_parameter.clone();
+    group_parameter.record_index = group_owner.parameter_record_index();
+    group_parameter.id = format!("{stream}:design-parameter#{}", group_parameter.record_index);
+    group_parameter
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                zero_parameter.source_kind().into(),
+                Some(group_owner.record_index()),
+                zero_parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let combined = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: &[zero_parameter, group_parameter.clone()],
             owners: &[owner, group_owner.clone()],
             pairs: std::slice::from_ref(&pair),
             groups: std::slice::from_ref(&group),
@@ -1140,7 +1214,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let grouped = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: std::slice::from_ref(&group_parameter),
             owners: std::slice::from_ref(&group_owner),
             pairs: &[],
             groups: std::slice::from_ref(&group),
@@ -1157,27 +1231,27 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     assert!(matches!(
         grouped.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native {
+            definition,
+            ..
+        }] if matches!(definition.kind(), SketchConstraintDefinitionInput::Native {
                 native_state: Some(0),
                 native_flags: None,
                 operands,
                 ..
-            },
-            ..
-        }] if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
+            } if operands.iter().map(|operand| (operand.field.as_ref().map(|field| field.name.as_str()), operand.field.as_ref().and_then(|field| field.role), operand.object_index)).collect::<Vec<_>>()
             == [
                 (Some("locus"), Some(0), 40),
                 (Some("owner"), Some(0), 100),
                 (Some("return"), None, 40),
             ]
-    ));
+    )));
 
     let mut indirect_group = group;
     indirect_group.owner_reference = 999;
     let indirect = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&zero_parameter),
+            parameters: std::slice::from_ref(&group_parameter),
             owners: std::slice::from_ref(&group_owner),
             pairs: &[],
             groups: std::slice::from_ref(&indirect_group),
@@ -1199,12 +1273,14 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchEntityId, SketchLocus,
     };
 
-    let entity = |name: &str| SketchEntityId(format!("generated:{name}"));
-    let parameter = ParameterId::mint("generated:distance").expect("identity grammar");
+    let entity =
+        |name: &str| SketchEntityId::mint(format!("generated:test:entity#{name}")).unwrap();
+    let parameter =
+        ParameterId::mint("synthetic:test:id#generated:distance").expect("identity grammar");
     let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {
         first: SketchLocus::Entity(entity(first)),
         second: SketchLocus::Entity(entity(second)),

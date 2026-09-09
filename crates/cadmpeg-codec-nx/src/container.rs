@@ -47,8 +47,22 @@ pub struct DirEntry {
     pub name: String,
     /// Which region the entry was read from.
     pub region: Region,
-    /// An in-bounds byte offset and length, or `None` for non-file entries.
-    pub file_span: Option<(u64, u64)>,
+    /// Directory or file payload.
+    pub body: DirEntryBody,
+}
+
+/// Payload of a directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirEntryBody {
+    /// A directory without a file payload.
+    Directory,
+    /// A file payload at an offset and length.
+    File {
+        /// Payload byte offset.
+        offset: u64,
+        /// Payload byte length.
+        len: u64,
+    },
 }
 
 /// Directory region containing an entry.
@@ -116,25 +130,32 @@ impl EntryContent {
 }
 
 impl DirEntry {
+    pub(crate) fn file_span(&self) -> Option<(u64, u64)> {
+        match self.body {
+            DirEntryBody::Directory => None,
+            DirEntryBody::File { offset, len } => Some((offset, len)),
+        }
+    }
+
     /// Classify this entry by its canonical storage path.
     pub(crate) fn content(&self) -> EntryContent {
-        if self.file_span.is_none() {
-            return EntryContent::Directory;
-        }
-        match self.name.as_str() {
-            "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
-            "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
-            "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
-            "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
-            "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
-            "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
-            "/Root/images/preview" => EntryContent::PreviewImage,
-            "/Root/part/arrangements" => EntryContent::Arrangements,
-            "/Root/part/attrs" => EntryContent::PartAttributes,
-            "/Root/qafmetadata" => EntryContent::AssetCatalog,
-            name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
-            name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
-            _ => EntryContent::NamedOpaqueStream,
+        match self.body {
+            DirEntryBody::Directory => EntryContent::Directory,
+            DirEntryBody::File { .. } => match self.name.as_str() {
+                "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
+                "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
+                "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
+                "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
+                "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
+                "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
+                "/Root/images/preview" => EntryContent::PreviewImage,
+                "/Root/part/arrangements" => EntryContent::Arrangements,
+                "/Root/part/attrs" => EntryContent::PartAttributes,
+                "/Root/qafmetadata" => EntryContent::AssetCatalog,
+                name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
+                name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
+                _ => EntryContent::NamedOpaqueStream,
+            },
         }
     }
 }
@@ -157,8 +178,6 @@ pub struct SegmentIndex<'a> {
     pub rows: Vec<SegmentIndexRow>,
     /// Zero to eleven trailing bytes after the last complete row.
     pub padding: &'a [u8],
-    /// Declared payload-relative end of the index.
-    pub byte_len: usize,
 }
 
 /// One segment-index word whose target frames a compressed stream.
@@ -176,15 +195,6 @@ pub(crate) struct SegmentStreamWrapper {
     pub zlib_offset: usize,
 }
 
-/// One fixed-width member of the `RMFastLoad` object-id table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RmFastLoadObjectId {
-    /// Decoded little-endian object identifier.
-    pub value: u32,
-    /// Payload-relative offset of the four-byte table word.
-    pub offset: usize,
-}
-
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RmFastLoadObjectIdTable {
@@ -193,7 +203,13 @@ pub struct RmFastLoadObjectIdTable {
     /// Payload-relative offset of the four-byte count word.
     pub count_offset: usize,
     /// Ordered fixed-width object-id members.
-    pub object_ids: ObjectIdMembers<RmFastLoadObjectId>,
+    pub object_ids: ObjectIdMembers<u32>,
+}
+
+impl RmFastLoadObjectIdTable {
+    pub(crate) fn member_offset(&self, ordinal: usize) -> usize {
+        self.count_offset + 4 + ordinal * 4
+    }
 }
 
 impl Region {
@@ -207,6 +223,14 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
+    /// Number of directory entries in a region.
+    pub(crate) fn entry_count(&self, region: Region) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| entry.region == region)
+            .count()
+    }
+
     /// Return an absolute source span only when it is wholly owned by one
     /// catalogued directory entry.
     pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
@@ -217,7 +241,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .filter_map(|entry| {
-                let (start, entry_byte_len) = entry.file_span?;
+                let (start, entry_byte_len) = entry.file_span()?;
                 let start = usize::try_from(start).ok()?;
                 let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
                 let entry_end = start.checked_add(entry_byte_len)?;
@@ -237,7 +261,7 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .filter_map(|entry| {
-                let (start, byte_len) = entry.file_span?;
+                let (start, byte_len) = entry.file_span()?;
                 let start = usize::try_from(start).ok()?;
                 let byte_len = usize::try_from(byte_len).ok()?;
                 let end = start.checked_add(byte_len)?;
@@ -252,8 +276,8 @@ impl<'a> Container<'a> {
         let entry = self
             .entries
             .iter()
-            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
+        let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
         let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
@@ -269,20 +293,20 @@ impl<'a> Container<'a> {
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = payload[..complete_len]
             .chunks_exact(index_row::LEN)
-            .map(|row| SegmentIndexRow {
-                type_code: View::u32_le_at(row, index_row::TYPE_CODE)
-                    .expect("complete segment-index row"),
-                subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)
-                    .expect("complete segment-index row"),
-                value: View::u32_le_at(row, index_row::VALUE).expect("complete segment-index row"),
+            .map(|row| {
+                let row: &[u8; index_row::LEN] = row.try_into().ok()?;
+                Some(SegmentIndexRow {
+                    type_code: View::u32_le_at(row, index_row::TYPE_CODE)?,
+                    subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)?,
+                    value: View::u32_le_at(row, index_row::VALUE)?,
+                })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()?;
         Some((
             entry,
             SegmentIndex {
                 rows,
                 padding: &payload[complete_len..byte_len],
-                byte_len,
             },
         ))
     }
@@ -293,7 +317,7 @@ impl<'a> Container<'a> {
         let Some((entry, index)) = self.segment_index() else {
             return Vec::new();
         };
-        let Some((entry_offset, entry_size)) = entry.file_span else {
+        let Some((entry_offset, entry_size)) = entry.file_span() else {
             return Vec::new();
         };
         let (Ok(entry_start), Ok(entry_size)) =
@@ -394,7 +418,7 @@ impl<'a> Container<'a> {
                         let entry_offset = self
                             .entries
                             .get(*entry_index)
-                            .and_then(|entry| entry.file_span)
+                            .and_then(crate::container::DirEntry::file_span)
                             .map_or(0, |(offset, _)| offset);
                         blocks.insert(
                             format!("nx:om-data-blocks-{section_ordinal}:block#0"),
@@ -462,7 +486,7 @@ impl<'a> Container<'a> {
         self.entries
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
-            .filter_map(|entry| entry.file_span.map(|span| (entry, span)))
+            .filter_map(|entry| entry.file_span().map(|span| (entry, span)))
             .flat_map(|(entry, (offset, size))| {
                 let Ok(offset) = usize::try_from(offset) else {
                     return Vec::new();
@@ -490,7 +514,7 @@ impl<'a> Container<'a> {
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
             .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
+                let (offset, size) = entry.file_span()?;
                 let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
                 let payload = self.data.get(offset..offset.checked_add(size)?)?;
                 Some(
@@ -511,7 +535,7 @@ impl<'a> Container<'a> {
             .iter()
             .filter(|entry| entry.name.contains("ExternalReferences"))
             .filter_map(|entry| {
-                let (offset, size) = entry.file_span?;
+                let (offset, size) = entry.file_span()?;
                 let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
                 let payload = self.data.get(offset..offset.checked_add(size)?)?;
                 Some(
@@ -531,8 +555,8 @@ impl<'a> Container<'a> {
             .entries
             .iter()
             .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(|entry| entry.file_span.is_some())?;
-        let (offset, size) = entry.file_span?;
+            .filter(|entry| entry.file_span().is_some())?;
+        let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
         let registry_offset = find(bytes, REGISTRY_MARKER)?;
@@ -555,10 +579,7 @@ impl<'a> Container<'a> {
         let object_ids = (0..count)
             .map(|ordinal| {
                 let offset = ids_start + ordinal * 4;
-                Some(RmFastLoadObjectId {
-                    value: View::u32_le_at(bytes, offset)?,
-                    offset,
-                })
+                View::u32_le_at(bytes, offset)
             })
             .collect::<Option<Vec<_>>>()?;
         let object_ids = ObjectIdMembers::new(object_ids).ok()?;
@@ -748,14 +769,10 @@ pub enum ContainerLayout {
     Modern {
         /// Version byte at file offset 8.
         version: u8,
-        /// Declared HEADER directory entry count.
-        header_entry_count: u32,
         /// File-specific 24-bit little-endian value at offset 9.
         file_tag: u32,
         /// `FOOTER` region offset.
         footer_offset: u64,
-        /// Declared FOOTER directory entry count.
-        footer_entry_count: u32,
         /// Exact four-byte value following the counted FOOTER directory.
         footer_fingerprint: [u8; 4],
     },
@@ -763,8 +780,6 @@ pub enum ContainerLayout {
     LegacyCfb {
         /// Version byte in the UGII payload.
         version: u8,
-        /// Number of entries in the CFB directory.
-        entry_count: u32,
     },
 }
 
@@ -778,13 +793,11 @@ impl ContainerLayout {
 }
 
 #[cfg(test)]
-pub(crate) fn test_modern_layout(version: u8, header_entry_count: u32) -> ContainerLayout {
+pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
     ContainerLayout::Modern {
         version,
-        header_entry_count,
         file_tag: 0,
         footer_offset: 0,
-        footer_entry_count: 0,
         footer_fingerprint: [0; 4],
     }
 }
@@ -844,7 +857,7 @@ fn parse_framed_section_cache<'bytes>(
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
@@ -884,7 +897,7 @@ fn parse_indexed_section_cache<'bytes>(
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else {
+        let Some((offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
@@ -979,14 +992,14 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .checked_sub(4)
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let (header_entry_count, mut entries, header_end) = directory_region(
+    let (mut entries, header_end) = directory_region(
         &data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
-    let (footer_entry_count, footer_entries, footer_end) =
+    let (footer_entries, footer_end) =
         directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
     if header_end > fo {
@@ -996,7 +1009,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     }
     if entries
         .iter()
-        .filter_map(|entry| entry.file_span)
+        .filter_map(crate::container::DirEntry::file_span)
         .any(|(offset, size)| {
             offset
                 .checked_add(size)
@@ -1025,10 +1038,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         physical_size,
         layout: ContainerLayout::Modern {
             version,
-            header_entry_count,
             file_tag,
             footer_offset,
-            footer_entry_count,
             footer_fingerprint,
         },
         entries,
@@ -1089,31 +1100,26 @@ pub fn scan_legacy<'a>(
             .checked_add(entry.path().len())
             .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
             .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
-        ctx.charge_retained(
-            retained as u64,
-            "retain legacy NX directory entry",
-            Some(root.location()),
-        )?;
-        let file_span = match entry {
-            CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
-            CompoundEntry::Storage(_) => None,
+        ctx.charge_retained(retained as u64, "retain legacy NX directory entry")?;
+        let body = match entry {
+            CompoundEntry::Stream(stream) => stream_spans
+                .get(&stream.id())
+                .map_or(DirEntryBody::Directory, |&(offset, len)| {
+                    DirEntryBody::File { offset, len }
+                }),
+            CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
         entries.push(DirEntry {
             name: format!("/Root/{}", entry.path()),
             region: Region::Header,
-            file_span,
+            body,
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
-    let header_entry_count = u32::try_from(entries.len())
-        .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
     let container = Container {
         data: Cow::Borrowed(logical_data.window()),
         physical_size: root.window().len() as u64,
-        layout: ContainerLayout::LegacyCfb {
-            version,
-            entry_count: header_entry_count,
-        },
+        layout: ContainerLayout::LegacyCfb { version },
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
@@ -1127,7 +1133,7 @@ fn directory_region(
     marker: [u8; 6],
     region: Region,
     region_end: usize,
-) -> Result<(u32, Vec<DirEntry>, usize), CodecError> {
+) -> Result<(Vec<DirEntry>, usize), CodecError> {
     let count_offset = marker_offset
         .checked_add(marker.len())
         .ok_or_else(|| CodecError::Malformed("directory marker offset overflow".to_string()))?;
@@ -1168,7 +1174,7 @@ fn directory_region(
         entries.push(entry);
         at = next;
     }
-    Ok((count, entries, at))
+    Ok((entries, at))
 }
 
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes
@@ -1188,27 +1194,23 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
     // Interpret the 16-byte payload as a file span when it lands within the file.
-    let file_span = match (
+    let body = match (
         View::u64_le_at(data, payload),
         View::u64_le_at(data, payload + file_payload::SIZE),
     ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
-                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => Some((off, size)),
-                _ => None,
+                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => DirEntryBody::File {
+                    offset: off,
+                    len: size,
+                },
+                _ => DirEntryBody::Directory,
             }
         }
-        _ => None,
+        _ => DirEntryBody::Directory,
     };
-    Some((
-        DirEntry {
-            name,
-            region,
-            file_span,
-        },
-        payload + file_payload::LEN,
-    ))
+    Some((DirEntry { name, region, body }, payload + file_payload::LEN))
 }
 
 #[cfg(test)]

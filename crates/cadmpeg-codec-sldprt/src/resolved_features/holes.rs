@@ -10,7 +10,9 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::{is_class_token, CLASS_MARKER};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{classify, FeatureClass};
+use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
@@ -22,8 +24,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchGeometry,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use std::collections::{HashMap, HashSet};
@@ -635,6 +637,37 @@ fn profiled_hole_construction(
     profiled_hole_construction_with_evidence(profile, sketch, entities, ProfileEvidence::Dimensions)
 }
 
+#[derive(Clone, Copy)]
+struct DimensionOnlyHole {
+    diameter: cadmpeg_ir::features::PositiveLength,
+    depth: cadmpeg_ir::features::NonZeroLength,
+    drill_point_angle: Option<cadmpeg_ir::features::InteriorAngle>,
+}
+
+impl DimensionOnlyHole {
+    fn into_construction(self) -> ProfiledHoleConstruction {
+        let (kind, bottom) = match self.drill_point_angle {
+            Some(angle) => (
+                HoleKind::SimpleDrilled {
+                    drill_point_angle: angle,
+                },
+                HoleBottom::Angled {
+                    included_angle: angle,
+                    depth_to_tip: false,
+                },
+            ),
+            None => (HoleKind::Simple, HoleBottom::Flat),
+        };
+        ProfiledHoleConstruction {
+            diameter: self.diameter,
+            extent: LinearTermination::Blind { length: self.depth },
+            kind,
+            bottom: Some(bottom),
+            taper_angle: None,
+        }
+    }
+}
+
 fn profiled_hole_construction_with_evidence(
     profile: &crate::records::Feature,
     sketch: &SketchId,
@@ -691,30 +724,17 @@ fn profiled_hole_construction_with_evidence(
     lengths.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only = if crate::history::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
-            ([diameter], [depth], []) => Some(ProfiledHoleConstruction {
+            ([diameter], [depth], []) => Some(DimensionOnlyHole {
                 diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
-                extent: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
-                },
-                kind: HoleKind::Simple,
-                bottom: Some(HoleBottom::Flat),
-                taper_angle: None,
+                depth: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                drill_point_angle: None,
             }),
-            ([diameter], [depth], [drill_point_angle]) => Some(ProfiledHoleConstruction {
+            ([diameter], [depth], [drill_point_angle]) => Some(DimensionOnlyHole {
                 diameter: cadmpeg_ir::features::PositiveLength::new(*diameter)?,
-                extent: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
-                },
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: cadmpeg_ir::features::InteriorAngle::new(
-                        *drill_point_angle,
-                    )?,
-                },
-                bottom: Some(HoleBottom::Angled {
-                    included_angle: cadmpeg_ir::features::InteriorAngle::new(*drill_point_angle)?,
-                    depth_to_tip: false,
-                }),
-                taper_angle: None,
+                depth: cadmpeg_ir::features::NonZeroLength::new(*depth)?,
+                drill_point_angle: Some(cadmpeg_ir::features::InteriorAngle::new(
+                    *drill_point_angle,
+                )?),
             }),
             _ => None,
         }
@@ -722,23 +742,23 @@ fn profiled_hole_construction_with_evidence(
         None
     };
     if evidence == ProfileEvidence::Dimensions {
-        if let Some(construction) = dimension_only.clone() {
-            return Some(construction);
+        if let Some(construction) = dimension_only {
+            return Some(construction.into_construction());
         }
     }
     let lines = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Line { start, end } => Some((start, end)),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => Some((start, end)),
             _ => None,
         })
         .collect::<Vec<_>>();
     let points = entities
         .iter()
         .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some(position),
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { position } => Some(position),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -791,9 +811,7 @@ fn profiled_hole_construction_with_evidence(
         })
     };
     if let Some(construction) = dimension_only {
-        let LinearTermination::Blind { length } = construction.extent else {
-            unreachable!("dimension-only hole profiles are blind");
-        };
+        let length = construction.depth;
         let radius = construction.diameter.get() / 2.0;
         for swap in [false, true] {
             for axial_sign in [-1.0, 1.0] {
@@ -818,7 +836,7 @@ fn profiled_hole_construction_with_evidence(
                         (axis_end, axis_entry),
                     ];
                     if profile_translation(&edges, 2).is_some() {
-                        return Some(construction);
+                        return Some(construction.into_construction());
                     }
                 }
             }
@@ -1567,7 +1585,10 @@ pub(crate) fn project_hole_position_sketches(
                 let mut entities = sketch_entities.iter().filter(|entity| {
                     entity.sketch == *sketch_id
                         && entity.native_ref.as_deref() == Some(marker.id.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                        && matches!(
+                            entity.geometry.definition(),
+                            SketchGeometryDefinition::Point { .. }
+                        )
                 });
                 let entity = entities.next();
                 if entities.next().is_some() {
@@ -1576,7 +1597,9 @@ pub(crate) fn project_hole_position_sketches(
                 }
                 let position = match entity {
                     Some(entity) => {
-                        let SketchGeometry::Point { position } = entity.geometry else {
+                        let SketchGeometryDefinition::Point { position } =
+                            *entity.geometry.definition()
+                        else {
                             unreachable!("point geometry was filtered above");
                         };
                         position
@@ -1803,8 +1826,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                             (entity.sketch == *sketch_id
                                 && entity.native_ref.as_deref() == Some(marker.id.as_str()))
                             .then_some(&entity.geometry)
-                            .and_then(|geometry| match geometry {
-                                SpatialSketchGeometry::Point { position } => Some(*position),
+                            .and_then(|geometry| match geometry.definition() {
+                                SpatialSketchGeometryDefinition::Point { position } => {
+                                    Some(*position)
+                                }
                                 _ => None,
                             })
                         });
@@ -1861,8 +1886,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         let points = spatial_entities
                             .iter()
                             .filter(|entity| entity.sketch == *sketch_id)
-                            .filter_map(|entity| match entity.geometry {
-                                SpatialSketchGeometry::Point { position } => Some(position),
+                            .filter_map(|entity| match entity.geometry.definition() {
+                                SpatialSketchGeometryDefinition::Point { position } => {
+                                    Some(*position)
+                                }
                                 _ => None,
                             })
                             .collect::<Vec<_>>();
@@ -1965,17 +1992,15 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
             axis.z
         },
     );
-    Some(
-        points
-            .into_iter()
-            .map(|origin| {
-                Some(HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
-                })
+    points
+        .into_iter()
+        .map(|origin| {
+            Some(HolePlacement::Axis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+                axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
             })
-            .collect::<Option<Vec<_>>>()?,
-    )
+        })
+        .collect::<Option<Vec<_>>>()
 }
 
 /// Resolve hole axes from persistent identities of faces generated by the
@@ -2022,7 +2047,7 @@ pub(crate) fn project_generated_hole_axes(
                     };
                     let diameter = diameter.get();
 
-                    if placements.is_some() || !diameter.is_finite() || diameter <= 0.0 {
+                    if placements.is_some() {
                         return;
                     }
                     let Some(source) = feature
@@ -2031,6 +2056,7 @@ pub(crate) fn project_generated_hole_axes(
                         .and_then(|native| native_features.get(native))
                         .and_then(|native| native.source_id.as_deref())
                         .and_then(|source| source.parse::<u32>().ok())
+                        .and_then(|source| FeatureSourceId::try_from(source).ok())
                     else {
                         return;
                     };
@@ -2042,7 +2068,7 @@ pub(crate) fn project_generated_hole_axes(
                         let local_identities = lane
                             .generated_surface_identities
                             .iter()
-                            .filter(|identity| identity.feature_source_id == source)
+                            .filter(|identity| identity.feature_source_id == source.value())
                             .map(|identity| identity.local_identity)
                             .collect::<HashSet<_>>();
                         if local_identities.is_empty() {
@@ -2159,7 +2185,7 @@ pub(crate) fn project_hole_topology_axes(
         .filter(|feature| feature.suppressed != Some(true))
         .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Hole { shape, .. } => match (&shape.diameter(),) {
-                (Some(diameter),) if diameter.get().is_finite() && diameter.get() > 0.0 => {
+                (Some(diameter),) => {
                     let diameter = diameter.get();
                     Some(diameter.to_bits())
                 }
@@ -2179,15 +2205,7 @@ pub(crate) fn project_hole_topology_axes(
             FeatureDefinition::Hole {
                 placements, shape, ..
             } => match (&shape.diameter(),) {
-                (Some(diameter),)
-                    if placements.is_none()
-                        && diameter.get().is_finite()
-                        && diameter.get() > 0.0 =>
-                {
-                    let diameter = diameter.get();
-
-                    Some((index, Length::new(diameter)?))
-                }
+                (Some(diameter),) if placements.is_none() => Some((index, *diameter)),
                 _ => None,
             },
             _ => None,
@@ -2309,12 +2327,7 @@ fn project_flat_blind_topology_axes(
                         ..
                     },
                     Some(diameter),
-                ) if hole_placements.is_none()
-                    && diameter.get().is_finite()
-                    && diameter.get() > 0.0
-                    && length.get().is_finite()
-                    && length.get() > 0.0 =>
-                {
+                ) if hole_placements.is_none() && length.get() > 0.0 => {
                     let diameter = diameter.get();
                     let length = length.get();
 
@@ -2378,12 +2391,7 @@ fn project_drilled_hole_topology_axes(
                     },
                     Some(diameter),
                 ) if hole_placements.is_none()
-                    && diameter.get().is_finite()
-                    && diameter.get() > 0.0
-                    && length.get().is_finite()
                     && length.get() > 0.0
-                    && drill_point_angle.get().is_finite()
-                    && drill_point_angle.get() > 0.0
                     && (bottom_angle.get() - drill_point_angle.get()).abs()
                         <= EPS_HOLE_GEOMETRY =>
                 {
@@ -3036,7 +3044,7 @@ pub(crate) fn project_hole_axes(
         .filter(|feature| feature.suppressed != Some(true))
         .filter_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Hole { shape, .. } => match (&shape.diameter(),) {
-                (Some(diameter),) if diameter.get().is_finite() && diameter.get() > 0.0 => {
+                (Some(diameter),) => {
                     let diameter = diameter.get();
                     Some(diameter.to_bits())
                 }
@@ -3242,25 +3250,28 @@ fn plane_owned_bore_placements(
                 plane_origin.z - origin.z,
             )
             .dot(axis);
-            Some(HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            Some((
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                     origin.x + station * axis.x,
                     origin.y + station * axis.y,
                     origin.z + station * axis.z,
                 ))?,
-                axis: cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
-            })
+                cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
+            ))
         })
         .try_fold(
-            HashMap::<[i64; 3], HolePlacement>::new(),
+            HashMap::<
+                [i64; 3],
+                (
+                    cadmpeg_ir::features::FinitePoint3,
+                    cadmpeg_ir::features::FeatureDirection3,
+                ),
+            >::new(),
             |mut placements, placement| {
-                let placement = placement?;
-                let HolePlacement::Axis { origin, .. } = placement else {
-                    unreachable!("bore carriers always produce axis placements");
-                };
+                let (origin, axis) = placement?;
                 placements
                     .entry([quantize(origin.x), quantize(origin.y), quantize(origin.z)])
-                    .or_insert(placement);
+                    .or_insert((origin, axis));
                 Some(placements)
             },
         )?
@@ -3269,7 +3280,7 @@ fn plane_owned_bore_placements(
     placements.sort_by_key(|(key, _)| *key);
     let placements = placements
         .into_iter()
-        .map(|(_, placement)| placement)
+        .map(|(_, (origin, axis))| HolePlacement::Axis { origin, axis })
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
 }
@@ -3655,26 +3666,33 @@ pub(crate) fn project_bore_backed_position_sketches(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let sketch_id = SketchId(format!(
+        let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#bore:{lane_key}:{}",
             position.ordinal
-        ));
+        )) else {
+            continue;
+        };
         let v_axis = normal.cross(*u_axis);
-        let projected_entities = axes
+        let Some(projected_entities) = axes
             .iter()
             .enumerate()
             .map(|(ordinal, (point, _))| {
                 let delta =
                     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-                SketchEntity::new(
-                    SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
+                Some(SketchEntity::new(
+                    SketchEntityId::mint(format!("{}:entity:{ordinal}", sketch_id.as_str()))
+                        .ok()?,
                     sketch_id.clone(),
-                    SketchGeometry::Point {
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
                         position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
-                    },
-                )
+                    })
+                    .ok()?,
+                ))
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
         projections.push(Projection {
             feature: position_feature.clone(),
             sketch: Sketch {
@@ -3682,12 +3700,13 @@ pub(crate) fn project_bore_backed_position_sketches(
                 name: model_position.name.clone(),
                 configuration: lane.configuration.clone(),
                 visible: None,
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
+                placement: match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                    *origin, *normal, *u_axis,
+                ) {
+                    Ok(placement) => placement,
+                    Err(_) => continue,
                 },
-                profiles: Vec::new(),
+                profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
             },
             entities: projected_entities,
@@ -4337,8 +4356,8 @@ fn compact_position_relations(
             let [first, second] = relation.operands.as_slice() else {
                 return None;
             };
-            if first.kind != FeatureInputOperandKind::Native(0x8152)
-                || second.kind != FeatureInputOperandKind::Native(0x8152)
+            if first.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
+                || second.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
             {
                 return None;
             }
@@ -4411,22 +4430,20 @@ fn constrained_bore_axes(
         bore_loci.insert(index);
     }
     let indices = compact_position_loci(&loci, &bore_loci, relations)?;
-    Some(
-        indices
-            .into_iter()
-            .map(|index| {
-                let point = loci[index];
-                Some(HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                        origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                        origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                        origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                    ))?,
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(normal)?,
-                })
+    indices
+        .into_iter()
+        .map(|index| {
+            let point = loci[index];
+            Some(HolePlacement::Axis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                    origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                    origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                ))?,
+                axis: cadmpeg_ir::features::FeatureDirection3::new(normal)?,
             })
-            .collect::<Option<Vec<_>>>()?,
-    )
+        })
+        .collect::<Option<Vec<_>>>()
 }
 
 fn compact_position_loci(

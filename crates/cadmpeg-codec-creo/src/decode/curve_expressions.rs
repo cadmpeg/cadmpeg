@@ -573,7 +573,7 @@ pub(crate) fn transfer_curve_expression_features(
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("crv_fr_eqn".to_string()),
             source_text: Some(

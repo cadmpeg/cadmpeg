@@ -244,19 +244,17 @@ pub(crate) fn neutral_feature_id_parts(
 pub(crate) fn neutral_combine_external_body_id(
     identity: &DesignCombineExternalBodyIdentity,
 ) -> String {
-    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
-    let selector_context = identity_key_component(identity.selector_context_id.as_str());
-    let external_asset = identity_key_component(identity.external_asset_id.as_str());
-    let link_name = identity_key_component(&identity.external_link_name);
+    let selector_asset = identity_key_component(identity.selector_asset_id().as_str());
+    let selector_context = identity_key_component(identity.selector_context_id().as_str());
+    let external_asset = identity_key_component(identity.external_asset_id().as_str());
+    let link_name = identity_key_component(identity.external_link_name());
     let property_key = identity
-        .external_version
-        .as_ref()
+        .external_version()
         .map(|version| version.property_key.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     let version_urn = identity
-        .external_version
-        .as_ref()
+        .external_version()
         .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
@@ -266,17 +264,17 @@ pub(crate) fn neutral_combine_external_body_id(
         selector_asset,
         selector_context.len(),
         selector_context,
-        identity.occurrence_reference,
-        identity.external_body_reference,
-        identity.external_segment,
+        identity.occurrence_reference(),
+        identity.external_body_reference(),
+        identity.external_segment(),
         external_asset.len(),
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_version.is_some()),
+        u8::from(identity.external_version().is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version.is_some()),
+        u8::from(identity.external_version().is_some()),
         version_urn.len(),
         version_urn,
     )
@@ -383,15 +381,16 @@ pub(crate) fn neutral_parameter_id_parts(
 /// The neutral planar-sketch key for a sketch `placement`.
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
-) -> cadmpeg_ir::sketches::SketchId {
-    cadmpeg_ir::sketches::SketchId(sketch_placement_id("sketch", placement))
+) -> Option<cadmpeg_ir::sketches::SketchId> {
+    cadmpeg_ir::sketches::SketchId::mint(sketch_placement_id("sketch", placement)).ok()
 }
 
 /// The neutral spatial-sketch key for a sketch `placement`.
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
-) -> cadmpeg_ir::sketches::SpatialSketchId {
-    cadmpeg_ir::sketches::SpatialSketchId(sketch_placement_id("spatial-sketch", placement))
+) -> Option<cadmpeg_ir::sketches::SpatialSketchId> {
+    cadmpeg_ir::sketches::SpatialSketchId::mint(sketch_placement_id("spatial-sketch", placement))
+        .ok()
 }
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
@@ -410,13 +409,14 @@ fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> Stri
 pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         'p',
         persistent_id,
     ))
+    .ok()
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
@@ -424,26 +424,28 @@ pub(crate) fn neutral_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     primary_id: u64,
     secondary_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_curve(
+) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_curve(
         "sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         primary_id,
         secondary_id,
     ))
+    .ok()
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
 pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         't',
         persistent_id,
     ))
+    .ok()
 }
 
 /// The source-local neutral key for a planar sketch record that has no
@@ -451,13 +453,14 @@ pub(crate) fn neutral_sketch_text_id(
 pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
-) -> cadmpeg_ir::sketches::SketchEntityId {
-    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    cadmpeg_ir::sketches::SketchEntityId::mint(sketch_entity_tagged(
         "sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         'x',
         u64::from(record_index),
     ))
+    .ok()
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
@@ -465,26 +468,28 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_id: u64,
     secondary_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    cadmpeg_ir::sketches::SpatialSketchEntityId(sketch_entity_curve(
+) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_curve(
         "spatial-sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         primary_id,
         secondary_id,
     ))
+    .ok()
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    cadmpeg_ir::sketches::SpatialSketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
         "spatial-sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         'p',
         persistent_id,
     ))
+    .ok()
 }
 
 /// The source-local neutral key for a spatial-sketch record that has no
@@ -492,26 +497,28 @@ pub(crate) fn neutral_spatial_sketch_point_id(
 pub(crate) fn neutral_spatial_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     record_index: u32,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    cadmpeg_ir::sketches::SpatialSketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
         "spatial-sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         'x',
         u64::from(record_index),
     ))
+    .ok()
 }
 
 /// The neutral spatial-sketch surface-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_surface_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
-) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    cadmpeg_ir::sketches::SpatialSketchEntityId(sketch_entity_tagged(
+) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
         "spatial-sketch-entity",
-        &sketch.0,
+        sketch.as_str(),
         's',
         persistent_id,
     ))
+    .ok()
 }
 
 /// A single-tag sketch-entity key: the escaped owning-sketch key, length-
@@ -545,11 +552,12 @@ fn sketch_entity_curve(
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
-) -> cadmpeg_ir::sketches::SketchConstraintId {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintId> {
     let stream = identity_key_component(native_stream(native_ref).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::sketches::SketchConstraintId(format!(
+    cadmpeg_ir::sketches::SketchConstraintId::mint(format!(
         "f3d:model:sketch-constraint#{stream}@{record_index}"
     ))
+    .ok()
 }
 
 /// The neutral dimension-constraint key derived from a `parameter` key and a
@@ -557,19 +565,20 @@ pub(crate) fn neutral_sketch_constraint_id(
 pub(crate) fn neutral_dimension_constraint_id(
     parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
-) -> cadmpeg_ir::sketches::SketchConstraintId {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintId> {
     let parameter_key = parameter
         .as_str()
         .split_once('#')
         .map_or(parameter.as_str(), |(_, key)| key);
     let form = identity_key_component(form);
-    cadmpeg_ir::sketches::SketchConstraintId(format!(
+    cadmpeg_ir::sketches::SketchConstraintId::mint(format!(
         "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
         parameter_key.len(),
         parameter_key,
         form.len(),
         form,
     ))
+    .ok()
 }
 
 // --- history-input topology keys -------------------------------------------
@@ -700,6 +709,7 @@ native_record_id!(
 
 /// The native ordered Design feature-timeline key in an already encoded
 /// `f3d:` stream scope.
+#[cfg(test)]
 pub(crate) fn native_design_feature_timeline_id_in_stream(
     stream: &str,
     offset: impl std::fmt::Display,
@@ -977,12 +987,18 @@ mod tests {
 
     #[test]
     fn identityless_sketch_geometry_uses_a_disjoint_source_record_namespace() {
-        let sketch = cadmpeg_ir::sketches::SketchId("f3d:model:sketch#example".into());
-        let persistent = neutral_sketch_text_id(&sketch, 42);
-        let source_record = neutral_sketch_record_id(&sketch, 42);
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("f3d:model:sketch#example").unwrap();
+        let persistent = neutral_sketch_text_id(&sketch, 42).unwrap();
+        let source_record = neutral_sketch_record_id(&sketch, 42).unwrap();
         assert_ne!(persistent, source_record);
-        assert_eq!(source_record, neutral_sketch_record_id(&sketch, 42));
-        assert_ne!(source_record, neutral_sketch_record_id(&sketch, 43));
+        assert_eq!(
+            source_record,
+            neutral_sketch_record_id(&sketch, 42).unwrap()
+        );
+        assert_ne!(
+            source_record,
+            neutral_sketch_record_id(&sketch, 43).unwrap()
+        );
     }
 
     #[test]

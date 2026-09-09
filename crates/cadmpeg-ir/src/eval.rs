@@ -2000,13 +2000,15 @@ pub fn fitted_nurbs_offset_frame_distance(
     result: &crate::sketches::SketchGeometry,
     linear_tolerance: f64,
 ) -> Option<f64> {
-    use crate::sketches::SketchGeometry;
+    use crate::sketches::SketchGeometryDefinition;
 
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
         return None;
     }
-    let (SketchGeometry::Nurbs { curve: source }, SketchGeometry::Nurbs { curve: result }) =
-        (source, result)
+    let (
+        SketchGeometryDefinition::Nurbs { curve: source },
+        SketchGeometryDefinition::Nurbs { curve: result },
+    ) = (source.definition(), result.definition())
     else {
         return None;
     };
@@ -3796,7 +3798,7 @@ pub fn model_curve_parameter_near_point_in_index(
         curve_id,
         point,
         seed,
-        index.ir().tolerances.linear,
+        index.ir().tolerances.linear.get(),
     )
 }
 
@@ -6022,6 +6024,7 @@ fn cacheless_circular_variable_blend_section(
         .ir()
         .tolerances
         .linear
+        .get()
         .max(256.0 * f64::EPSILON * scale.max(1.0));
 
     let mut best = None;
@@ -6148,7 +6151,7 @@ fn cacheless_constant_rolling_ball_section(
     let center = model_curve_point_by_id(index, &native.slice, v)?;
     let center_tangent = model_curve_differential_by_id(index, &native.slice, v)
         .map(|differential| differential.tangent);
-    let tolerance = index.ir().tolerances.linear.max(
+    let tolerance = index.ir().tolerances.linear.get().max(
         256.0
             * f64::EPSILON
             * radius

@@ -89,7 +89,7 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline");
+    let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline").ok()?;
     if !same_graph(ir, &native) {
         return None;
     }
@@ -381,7 +381,7 @@ fn patch_points(
         let offset = raw_annotation_offset(annotations, &old.id).ok()?;
         let tables = crate::brep::topology::scan(payload.get(body_start..)?);
         let point = tables
-            .points
+            .points()
             .values()
             .find(|point| point.offset == offset)?;
         let values = body_start.checked_add(point.xyz_offset)?;

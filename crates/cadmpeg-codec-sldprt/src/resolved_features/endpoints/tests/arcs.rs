@@ -138,18 +138,18 @@ fn extended_geometry_locus_construction_line_uses_direct_point_object_ids() {
     );
     assert!(marker_is_selected_construction_line(&payload, 0));
 
-    let entity = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: Some(object_index),
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = Some(object_index);
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, 8, SketchInputKind::LineOrCircle, None);
     let first = entity("first", 100, 13, SketchInputKind::Point, Some([0.0, 0.0]));
@@ -650,18 +650,18 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
         super::extended_compact_indexed_curve_endpoint_indices(&extended_code_one_104, 0),
         Some([5, 9])
     );
-    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::LineOrCircle);
     let start = entity(
@@ -689,18 +689,23 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
         &normalized_payload,
         0
     ));
-    let entity = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind: SketchInputKind::LineOrCircle,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(
+            marker_id,
+            marker_parent,
+            0,
+            offset,
+            SketchInputKind::LineOrCircle,
+        );
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -805,18 +810,18 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
     payload[92..96].copy_from_slice(&1u32.to_le_bytes());
     payload[96..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: String, offset, kind, coordinates_m| SketchInputEntity {
-        id,
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: String, offset, kind, coordinates_m| {
+        let marker_id: String = id;
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut entities = vec![entity(
         "curve".into(),
@@ -894,18 +899,18 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
                   offset: u64,
                   object_index: Option<u32>,
                   coordinates_m: Option<[f64; 2]>,
-                  kind: SketchInputKind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+                  kind: SketchInputKind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -1106,18 +1111,17 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
     payload[84..88].copy_from_slice(&4u32.to_le_bytes());
     payload[88..92].copy_from_slice(&3u32.to_le_bytes());
     payload[92..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, object_index, coordinates_m, kind: SketchInputKind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m, kind: SketchInputKind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("curve", Some(2), None, SketchInputKind::Arc),
@@ -1163,18 +1167,17 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
     payload[68..72].copy_from_slice(&1u32.to_le_bytes());
     payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[92..].copy_from_slice(SKETCH_MARKER);
-    let entity = |id: &str, object_index, coordinates_m, kind: SketchInputKind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m, kind: SketchInputKind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("curve", Some(6), None, SketchInputKind::LineOrCircle),
@@ -1235,18 +1238,18 @@ fn extended_marker104_arc_prefers_point_roster_endpoints() {
     payload[96..100].copy_from_slice(&2u32.to_le_bytes());
     payload[100..104].copy_from_slice(&2u32.to_le_bytes());
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
     let object_indices = [1, 2, 4, 5, 6, 7, 8];
@@ -1297,18 +1300,18 @@ fn extended_geometry_104_arc_uses_zero_based_roster_and_center_index() {
     payload[94..96].fill(0);
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let center = entity("center", 10, Some([0.0, 0.0]), SketchInputKind::Point);
@@ -1364,18 +1367,18 @@ fn extended_compact_104_arc_uses_geometry_roster_for_center_index() {
     }
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let relation = entity(
@@ -1417,18 +1420,18 @@ fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
         payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
     }
 
-    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
     let center = entity(
@@ -1495,18 +1498,18 @@ fn coordinate_roster_arc_center_requires_matching_indexed_endpoints() {
     }
     payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, kind, coordinates_m| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, SketchInputKind::Arc, None);
     let relation = entity(
@@ -1552,18 +1555,18 @@ fn extended_geometry_116_arc_uses_relation_tail_and_center_index() {
     payload[112..116].copy_from_slice(&3u32.to_le_bytes());
     payload[116..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let curve = entity("curve", 0, None, SketchInputKind::Arc);
     let first = entity("first", 10, Some([9.0, 9.0]), SketchInputKind::Point);
@@ -1614,18 +1617,18 @@ fn extended_geometry_terminal_circle_uses_dimension_tail() {
     payload[148..156].copy_from_slice(&2.0f64.to_le_bytes());
     payload[156..160].fill(0xff);
 
-    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("sketch".into()),
-        ordinal: 0,
-        offset,
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, offset, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
+        constructed_marker.feature_ref = Some("sketch".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let circle = entity("circle", 0, None, SketchInputKind::Arc);
     let witness = entity("witness", 5, Some([9.0, 9.0]), SketchInputKind::Arc);
@@ -1707,18 +1710,17 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     payload[60..64].copy_from_slice(&1u32.to_le_bytes());
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("profile".into()),
-        ordinal: 0,
-        offset: 0,
-        object_index,
-        local_id: None,
-        kind,
-        state_value: Some(1.0),
-        coordinates_m,
-        links: None,
+    let entity = |id: &str, object_index, coordinates_m, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
+        constructed_marker.feature_ref = Some("profile".into());
+        constructed_marker.object_index = object_index;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = Some(1.0);
+        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let entities = [
         entity("curve", Some(1), None, SketchInputKind::Arc),

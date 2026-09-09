@@ -12,12 +12,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    HolePlacement, Length, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TrimRegion,
-    UnresolvedFamily,
+    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
+    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
+    FeatureDefinition, FeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
+    HoleForm, HoleKind, HolePlacement, Length, LinearTermination, ParameterId, ParameterValue,
+    PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension,
+    ThickenSide, TreeChildren, TrimRegion, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -32,7 +32,8 @@ use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
 };
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchPlacement,
 };
 use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -56,7 +57,7 @@ use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
-use super::has_complete_saved_toggle_stream;
+use super::{has_complete_saved_toggle_stream, TypedNative};
 use cadmpeg_ir::native::catalogue::NotePhase;
 
 pub(crate) fn attach_container_layer(
@@ -65,9 +66,9 @@ pub(crate) fn attach_container_layer(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-    typed_native_available: bool,
+    typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    attach_container_payloads(ctx, ir, scan, annotations, unknowns, typed_native_available)?;
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, typed_native)?;
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     Ok(())
 }
@@ -78,19 +79,19 @@ fn attach_container_payloads(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-    typed_native_available: bool,
+    typed_native: TypedNative,
 ) -> Result<(), CodecError> {
     let annotation_stream = annotations.stream("nx:container");
     for (ordinal, entry) in scan.container.entries.iter().enumerate() {
         let content = entry.content();
         if !content.retains_opaque_payload()
-            || (typed_native_available
+            || (typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
                 && has_complete_saved_toggle_stream(&scan.container))
         {
             continue;
         }
-        let Some((offset, byte_len)) = entry.file_span else {
+        let Some((offset, byte_len)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(byte_len_usize)) = (usize::try_from(offset), usize::try_from(byte_len))
@@ -106,13 +107,13 @@ fn attach_container_payloads(
         let id = UnknownId::mint(format!("nx:container-entry:opaque#{ordinal}"))
             .expect("identity grammar");
         annotations
-            .note(&id, annotation_stream, offset)
+            .note(&id, &annotation_stream, offset)
             .tag(content.label());
         annotations.exactness(&id, Exactness::ByteExact);
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            ctx.copy_retained(bytes, "retain NX opaque container payload", None)?,
+            ctx.copy_retained(bytes, "retain NX opaque container payload")?,
             Vec::new(),
         ));
     }
@@ -129,7 +130,7 @@ fn attach_indexed_om_unknowns(
     let annotation_stream = annotations.stream("nx:container");
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
@@ -139,17 +140,13 @@ fn attach_indexed_om_unknowns(
                     .expect("identity grammar");
                     let offset = entry_offset + record.offset as u64;
                     annotations
-                        .note(&id, annotation_stream, offset)
+                        .note(&id, &annotation_stream, offset)
                         .tag("OM_ENTITY_RECORD");
                     annotations.exactness(&id, Exactness::ByteExact);
                     unknowns.push(UnknownRecord::retained(
                         id,
                         offset,
-                        ctx.copy_retained(
-                            record.bytes,
-                            "retain NX indexed object-model record",
-                            None,
-                        )?,
+                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
                     ));
                 }
@@ -166,17 +163,13 @@ fn attach_indexed_om_unknowns(
                     .expect("identity grammar");
                     let offset = entry_offset + record.offset as u64;
                     annotations
-                        .note(&id, annotation_stream, offset)
+                        .note(&id, &annotation_stream, offset)
                         .tag("OM_DATA_BLOCK");
                     annotations.exactness(&id, Exactness::ByteExact);
                     unknowns.push(UnknownRecord::retained(
                         id,
                         offset,
-                        ctx.copy_retained(
-                            record.bytes,
-                            "retain NX indexed object-model record",
-                            None,
-                        )?,
+                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
                     ));
                 }
@@ -194,14 +187,14 @@ pub(crate) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    attach_container_payloads(ctx, ir, scan, annotations, unknowns, true)?;
+    attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = annotations.stream("nx:container");
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations);
-    attach_rm_appearances(ir, model, scan, annotations);
+    attach_rm_face_colors(ir, model, scan, annotations)?;
+    attach_rm_appearances(ir, model, scan, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -224,25 +217,31 @@ pub(crate) fn attach(
     .unwrap_or_default();
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
-            .note(&tessellation.id, annotation_stream, source_offset)
+            .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
-        annotations.exactness(&tessellation.id, Exactness::Derived);
+        annotations.exactness(tessellation.id.as_str(), Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
     attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
     for attribute in &model.om.part_attributes {
         annotations
-            .note(&attribute.id, annotation_stream, attribute.source_offset)
+            .note(&attribute.id, &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
         let id = AttributeId::mint(format!("{}:neutral", attribute.id)).expect("identity grammar");
         annotations
-            .note(id.as_str(), annotation_stream, attribute.source_offset)
+            .note(id.as_str(), &annotation_stream, attribute.source_offset)
             .tag("Attribute");
-        annotations.derived(id.as_str(), "target");
-        annotations.derived(id.as_str(), "name");
-        annotations.derived(id.as_str(), "values");
+        annotations
+            .derived(id.as_str(), "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "values")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
@@ -266,7 +265,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     attach_parasolid_topology_numeric_attributes(
         ir,
         &ParasolidNumericAttributeSources {
@@ -276,7 +275,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     attach_parasolid_topology_structured_attributes(
         ir,
         &ParasolidStructuredAttributeSources {
@@ -288,7 +287,7 @@ pub(crate) fn attach(
         },
         &topology_attribute_index,
         annotations,
-    );
+    )?;
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
@@ -314,17 +313,29 @@ pub(crate) fn attach(
                 ConfigurationBodies::Unresolved
             };
             annotations
-                .note(id.as_str(), annotation_stream, configuration.source_offset)
+                .note(id.as_str(), &annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
-            annotations.derived(id.as_str(), "ordinal");
+            annotations
+                .derived(id.as_str(), "ordinal")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if active_attribute_use.is_some() {
-                annotations.derived(id.as_str(), "active");
+                annotations
+                    .derived(id.as_str(), "active")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            annotations.derived(id.as_str(), "source_index");
-            annotations.derived(id.as_str(), "name");
-            annotations.derived(id.as_str(), "native_ref");
+            annotations
+                .derived(id.as_str(), "source_index")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "native_ref")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if bodies.resolved().is_some_and(|bodies| !bodies.is_empty()) {
-                annotations.derived(id.as_str(), "bodies");
+                annotations
+                    .derived(id.as_str(), "bodies")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.configurations.push(DesignConfiguration {
                 id,
@@ -353,7 +364,7 @@ pub(crate) fn attach(
         &model.features.feature_parameter_uses,
         annotations,
     )?;
-    attach_active_configuration_parameter_values(ir, annotations);
+    attach_active_configuration_parameter_values(ir, annotations)?;
     attach_feature_operations(
         ir,
         &model.features,
@@ -367,9 +378,9 @@ pub(crate) fn attach(
         ir,
         &model.features.feature_block_dimensions,
         annotations,
-    );
-    attach_current_feature_states(ir, annotations);
-    attach_active_configuration_feature_states(ir, annotations);
+    )?;
+    attach_current_feature_states(ir, annotations)?;
+    attach_active_configuration_feature_states(ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -385,7 +396,7 @@ fn attach_rm_face_colors(
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let face_indices = ir
         .model
         .faces
@@ -400,7 +411,7 @@ fn attach_rm_face_colors(
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
         &super::substrate::paired_delta_streams(scan),
-    );
+    )?;
     for (face_id, color) in bindings {
         let Some(index) = face_indices.get(&face_id).copied() else {
             continue;
@@ -408,9 +419,12 @@ fn attach_rm_face_colors(
         let face = &mut ir.model.faces[index];
         if face.color.is_none() || face.color == Some(color) {
             face.color = Some(color);
-            annotations.derived(&face.id, "color");
+            annotations
+                .derived(&face.id, "color")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -432,7 +446,7 @@ fn attach_rm_appearances(
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
     let face_ids = ir
         .model
@@ -448,7 +462,7 @@ fn attach_rm_appearances(
         &super::substrate::paired_delta_streams(scan),
     );
     if source_bindings.is_empty() && face_bindings.is_empty() {
-        return;
+        return Ok(());
     }
     let definitions = model
         .om
@@ -467,17 +481,21 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream,
-        );
+            &annotation_stream,
+        )?;
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-color#{}",
             native_entity_key(&binding.source_id)
         );
         annotations
-            .note(&binding_id, annotation_stream, binding.source_offset)
+            .note(&binding_id, &annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
-        annotations.derived(&binding_id, "target");
-        annotations.derived(&binding_id, "appearance");
+        annotations
+            .derived(&binding_id, "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&binding_id, "appearance")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Source {
@@ -503,12 +521,13 @@ fn attach_rm_appearances(
         else {
             continue;
         };
-        let color = Color {
-            r: definition.components[0].0.value(),
-            g: definition.components[1].0.value(),
-            b: definition.components[2].0.value(),
-            a: 1.0,
-        };
+        let color = Color::new(
+            definition.components[0].0.value(),
+            definition.components[1].0.value(),
+            definition.components[2].0.value(),
+            1.0,
+        )
+        .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
@@ -517,17 +536,21 @@ fn attach_rm_appearances(
             annotations,
             &mut appearances,
             definition,
-            annotation_stream,
-        );
+            &annotation_stream,
+        )?;
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-face-color#{}",
             native_entity_key(&binding.face_id)
         );
         annotations
-            .note(&binding_id, annotation_stream, binding.source_offset)
+            .note(&binding_id, &annotation_stream, binding.source_offset)
             .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
-        annotations.derived(&binding_id, "target");
-        annotations.derived(&binding_id, "appearance");
+        annotations
+            .derived(&binding_id, "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(&binding_id, "appearance")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Face(
@@ -540,6 +563,7 @@ fn attach_rm_appearances(
             channels: BTreeMap::new(),
         });
     }
+    Ok(())
 }
 
 fn ensure_rm_color_appearance(
@@ -547,43 +571,50 @@ fn ensure_rm_color_appearance(
     annotations: &mut AnnotationBuilder,
     appearances: &mut BTreeMap<String, AppearanceId>,
     definition: &crate::native::om::PartColorDefinition,
-    annotation_stream: cadmpeg_ir::annotations::StreamHandle,
-) -> AppearanceId {
-    appearances
-        .entry(definition.id.clone())
-        .or_insert_with(|| {
-            let id = AppearanceId::mint(format!(
-                "nx:appearance:rmfastload-color#{}",
-                native_entity_key(&definition.id)
-            ))
-            .expect("identity grammar");
-            annotations
-                .note(id.as_str(), annotation_stream, definition.source_offset)
-                .tag("RMFASTLOAD_COLOR_APPEARANCE");
-            annotations.derived(id.as_str(), "name");
-            annotations.derived(id.as_str(), "schema");
-            annotations.derived(id.as_str(), "base_color");
-            ir.model.appearances.push(Appearance {
-                id: id.clone(),
-                name: Some(definition.name.clone()),
-                asset_guid: None,
-                library_id: None,
-                visual_guid: None,
-                physical_token: None,
-                schema: Some("UGS::COLOR_table".into()),
-                category: None,
-                base_color: Some(Color {
-                    r: definition.components[0].0.value(),
-                    g: definition.components[1].0.value(),
-                    b: definition.components[2].0.value(),
-                    a: 1.0,
-                }),
-                properties: BTreeMap::new(),
-                textures: Vec::new(),
-            });
-            id
-        })
-        .clone()
+    annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
+) -> Result<AppearanceId, CodecError> {
+    let color = Color::new(
+        definition.components[0].0.value(),
+        definition.components[1].0.value(),
+        definition.components[2].0.value(),
+        1.0,
+    )
+    .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+    if let Some(id) = appearances.get(&definition.id) {
+        return Ok(id.clone());
+    }
+    let id = AppearanceId::mint(format!(
+        "nx:appearance:rmfastload-color#{}",
+        native_entity_key(&definition.id)
+    ))
+    .expect("identity grammar");
+    annotations
+        .note(id.as_str(), annotation_stream, definition.source_offset)
+        .tag("RMFASTLOAD_COLOR_APPEARANCE");
+    annotations
+        .derived(id.as_str(), "name")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    annotations
+        .derived(id.as_str(), "schema")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    annotations
+        .derived(id.as_str(), "base_color")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        name: Some(definition.name.clone()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("UGS::COLOR_table".into()),
+        category: None,
+        base_color: Some(color),
+        properties: BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    appearances.insert(definition.id.clone(), id.clone());
+    Ok(id)
 }
 
 fn native_entity_key(id: &str) -> String {
@@ -660,7 +691,7 @@ fn resolve_rm_face_colors(
     definitions: &[super::om::PartColorDefinition],
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Vec<(String, Color)> {
+) -> Result<Vec<(String, Color)>, CodecError> {
     let definitions_by_id = definitions
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
@@ -671,14 +702,18 @@ fn resolve_rm_face_colors(
             let definition = definitions_by_id.get(binding.color_definition.as_str())?;
             Some((
                 binding.face_id,
-                Color {
-                    r: definition.components[0].0.value(),
-                    g: definition.components[1].0.value(),
-                    b: definition.components[2].0.value(),
-                    a: 1.0,
-                },
+                Color::new(
+                    definition.components[0].0.value(),
+                    definition.components[1].0.value(),
+                    definition.components[2].0.value(),
+                    1.0,
+                )
+                .ok_or_else(|| {
+                    CodecError::Malformed("RM color components must be in [0, 1]".into())
+                }),
             ))
         })
+        .map(|(id, color)| color.map(|color| (id, color)))
         .collect()
 }
 
@@ -782,7 +817,7 @@ fn attach_jpeg_preview_assets(
         .filter(|entry| entry.content() == EntryContent::PreviewImage)
         .enumerate()
     {
-        let Some((source_offset, source_byte_len)) = entry.file_span else {
+        let Some((source_offset, source_byte_len)) = entry.file_span() else {
             continue;
         };
         let (Ok(start), Ok(byte_len)) = (
@@ -800,39 +835,53 @@ fn attach_jpeg_preview_assets(
         let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
-                .note(&native_ref, stream, source_offset)
+                .note(&native_ref, &stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(&native_ref, Exactness::ByteExact);
             unknowns.push(UnknownRecord::retained(
                 UnknownId::mint(native_ref).expect("identity grammar"),
                 source_offset,
-                ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?,
+                ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
                 Vec::new(),
             ));
             continue;
         }
         let id = AssetId::mint(format!("{native_ref}:asset")).expect("identity grammar");
         annotations
-            .note(id.as_str(), stream, source_offset)
+            .note(id.as_str(), &stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
         annotations.exactness(id.as_str(), Exactness::ByteExact);
-        annotations.derived(id.as_str(), "id");
-        annotations.derived(id.as_str(), "name");
-        annotations.derived(id.as_str(), "media_type");
-        annotations.derived(id.as_str(), "native_ref");
-        ir.model.assets.push(Asset {
-            id,
-            name: Some(if ordinal == 0 {
-                "preview.jpg".to_string()
-            } else {
-                format!("preview-{ordinal}.jpg")
-            }),
-            media_type: Some("image/jpeg".to_string()),
-            content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX JPEG preview asset", None)?,
-            },
-            native_ref: Some(native_ref),
-        });
+        annotations
+            .derived(id.as_str(), "id")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "media_type")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "native_ref")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        ir.model.assets.push(
+            Asset::try_new(
+                id,
+                Some(if ordinal == 0 {
+                    "preview.jpg".to_string()
+                } else {
+                    format!("preview-{ordinal}.jpg")
+                }),
+                Some("image/jpeg".to_string()),
+                AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(
+                        ctx.copy_retained(bytes, "retain NX JPEG preview asset")?,
+                    )
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                },
+                Some(native_ref),
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(())
 }
@@ -867,25 +916,37 @@ fn attach_material_texture_assets(
 
     let mut assets = Vec::with_capacity(sources.len());
     for (texture, bytes) in sources {
-        assets.push(Asset {
-            id: AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
-            name: Some(texture.name().to_owned()),
-            media_type: Some("image/tiff".to_string()),
-            content: AssetContent::Embedded {
-                data: ctx.copy_retained(bytes, "retain NX TIFF material asset", None)?,
-            },
-            native_ref: Some(texture.id.clone()),
-        });
+        assets.push(
+            Asset::try_new(
+                AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
+                Some(texture.name().to_owned()),
+                Some("image/tiff".to_string()),
+                AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(
+                        ctx.copy_retained(bytes, "retain NX TIFF material asset")?,
+                    )
+                    .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
+                },
+                Some(texture.id.clone()),
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
-            .note(asset.id.as_str(), stream, texture.source_offset)
+            .note(asset.id.as_str(), &stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
         annotations.exactness(asset.id.as_str(), Exactness::ByteExact);
-        annotations.derived(asset.id.as_str(), "id");
-        annotations.derived(asset.id.as_str(), "media_type");
-        annotations.derived(asset.id.as_str(), "native_ref");
+        annotations
+            .derived(asset.id.as_str(), "id")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(asset.id.as_str(), "media_type")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(asset.id.as_str(), "native_ref")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     ir.model.assets.extend(assets);
     Ok(())
@@ -894,17 +955,17 @@ fn attach_material_texture_assets(
 fn attach_active_configuration_parameter_values(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
     else {
-        return;
+        return Ok(());
     };
     let configuration = &ir.model.configurations[configuration_index];
     if configuration.bodies.is_unresolved()
         || !configuration.parameter_values.is_empty()
         || ir.model.parameters.is_empty()
     {
-        return;
+        return Ok(());
     }
     let parameters_by_id = ir
         .model
@@ -923,7 +984,7 @@ fn attach_active_configuration_parameter_values(
                 })
         })
     {
-        return;
+        return Ok(());
     }
     let values = ir
         .model
@@ -941,10 +1002,16 @@ fn attach_active_configuration_parameter_values(
         .collect();
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = values;
-    annotations.derived(configuration.id.as_str(), "parameter_values");
+    annotations
+        .derived(configuration.id.as_str(), "parameter_values")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
-fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn attach_current_feature_states(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
     let current_bodies = ir
         .model
         .bodies
@@ -952,60 +1019,46 @@ fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBui
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
-        return;
+        return Ok(());
     };
-    let feature_indices = ir
-        .model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    for id in active_features {
-        let feature = feature_indices
-            .get(&id)
-            .and_then(|index| ir.model.features.get_mut(*index))
-            .expect("active feature closure has validated every feature identity");
+    for index in active_features.into_values() {
+        let feature = &mut ir.model.features[index];
         feature.suppressed = Some(false);
-        annotations.derived(&feature.id, "suppressed");
+        annotations
+            .derived(&feature.id, "suppressed")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+    Ok(())
 }
 
-fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn attach_active_configuration_feature_states(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(configuration_index) = unique_active_configuration_index(&ir.model.configurations)
     else {
-        return;
+        return Ok(());
     };
     let Some(configuration_bodies) = ir.model.configurations[configuration_index]
         .bodies
         .resolved()
         .map(<[BodyId]>::to_vec)
     else {
-        return;
+        return Ok(());
     };
     if !ir.model.configurations[configuration_index]
         .feature_states
         .is_empty()
     {
-        return;
+        return Ok(());
     }
     let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
-        return;
+        return Ok(());
     };
-    let feature_indices = ir
-        .model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
     let states = active_features
         .iter()
-        .map(|id| {
-            let feature = feature_indices
-                .get(id)
-                .and_then(|index| ir.model.features.get(*index))
-                .expect("active feature has a validated index");
+        .map(|(id, &index)| {
+            let feature = &ir.model.features[index];
             (
                 id.clone(),
                 ConfigurationFeatureState {
@@ -1018,19 +1071,21 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
             )
         })
         .collect::<BTreeMap<_, _>>();
-    for id in &active_features {
-        let feature = feature_indices
-            .get(id)
-            .and_then(|index| ir.model.features.get_mut(*index))
-            .expect("active feature closure has validated every feature identity");
+    for index in active_features.into_values() {
+        let feature = &mut ir.model.features[index];
         if feature.suppressed != Some(false) {
             feature.suppressed = Some(false);
-            annotations.derived(&feature.id, "suppressed");
+            annotations
+                .derived(&feature.id, "suppressed")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
-    annotations.derived(configuration.id.as_str(), "feature_states");
+    annotations
+        .derived(configuration.id.as_str(), "feature_states")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    Ok(())
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
@@ -1050,7 +1105,7 @@ fn attach_initial_segment_bodies(
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<FeatureId> {
     let bindings_by_body = ir
         .model
@@ -1085,17 +1140,17 @@ fn attach_initial_segment_bodies(
     annotations
         .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
-    annotations.derived(&id, "definition");
+    annotations.derived(&id, "definition").ok()?;
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: ir.model.features.len() as u64,
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: DistinctMembers::default(),
         source_properties,
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::BaseFeature {
@@ -1274,7 +1329,7 @@ fn attach_feature_operations(
         data_blocks,
     );
     let stream = annotations.stream("nx:container");
-    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -1927,7 +1982,7 @@ fn attach_feature_operations(
             continue;
         };
         annotations
-            .note(annotation.id.as_str(), stream, label.source_offset)
+            .note(annotation.id.as_str(), &stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
         annotations.exactness(annotation.id.as_str(), Exactness::Derived);
         ir.model.semantic_annotations.push(annotation);
@@ -2931,7 +2986,7 @@ fn attach_feature_operations(
             );
             source_properties.insert(
                 "point_construction_mode".to_string(),
-                format!("{:02x}", header.mode),
+                format!("{:02x}", u8::from(header.mode)),
             );
         }
         if let Some(lane) = point_construction_scalar_lanes_by_operation.get(label.id.as_str()) {
@@ -3516,113 +3571,96 @@ fn attach_feature_operations(
                             .map_or([].as_slice(), Vec::as_slice),
                     },
                     annotations,
-                    stream,
+                    &stream,
                 )
             })
             .flatten();
-        let definition = boolean_definition
-            .map(Ok::<_, CodecError>)
-            .unwrap_or_else(|| {
-                trim_body_projection
-                    .or(delete_projection)
-                    .or(extract_body_projection)
-                    .or(sew_projection)
-                    .or(extrude_projection)
-                    .or_else(|| blend_projection.map(|(definition, _)| definition))
-                    .or_else(|| thicken_projection.map(|(definition, _)| definition))
-                    .or_else(|| offset_projection.map(|(definition, _)| definition))
-                    .or(sphere_definition)
-                    .or_else(|| {
-                        (label.value == "BREP")
-                            .then(|| brep_feature_definition(&outputs))
-                            .flatten()
-                    })
-                    .map(Ok)
-                    .unwrap_or_else(|| {
-                        if let Some(sketch) = sketch {
-                            return Ok(FeatureDefinition::Sketch {
-                                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                    sketch,
-                                )),
-                            });
-                        }
-                        let mut definition = non_modeling_history_definition(
-                            &label.value,
-                            &label.objects.values(),
-                            &outputs,
-                            body_reference_occurrences_by_operation
-                                .get(label.id.as_str())
-                                .map_or(0, Vec::len),
-                            operation_body_operands_by_operation
-                                .get(label.id.as_str())
-                                .map_or(0, Vec::len),
-                            operation_payload_string_records.len(),
-                            &source_properties,
-                        )
-                        .map(Ok)
-                        .unwrap_or_else(|| {
-                            if let Some(definition) = body_writing_unresolved_feature_definition(
-                                &label.value,
-                                &source_properties,
-                            ) {
-                                return Ok(definition);
-                            }
-                            non_boolean_feature_definition_with_parameters(
-                                &label.value,
-                                &operation_payload_strings,
-                                block_dimension_values,
-                                block_placement,
-                                HoleProjection {
-                                    placements: simple_hole_placements
-                                        .get(label.id.as_str())
-                                        .cloned()
-                                        .into_iter()
-                                        .chain(
-                                            counterbore_hole_placements
-                                                .get(label.id.as_str())
-                                                .cloned(),
-                                        )
-                                        .chain(
-                                            blind_hole_placements.get(label.id.as_str()).cloned(),
-                                        )
-                                        .chain(
-                                            hole_packages
-                                                .placements
-                                                .get(label.id.as_str())
-                                                .cloned()
-                                                .unwrap_or_default(),
-                                        )
-                                        .collect(),
-                                    diameter: simple_hole_diameters
-                                        .get(label.id.as_str())
-                                        .or_else(|| hole_packages.diameters.get(label.id.as_str()))
-                                        .copied(),
-                                    extent: blind_hole_depths
-                                        .get(label.id.as_str())
-                                        .copied()
-                                        .map(|length| LinearTermination::Blind { length }),
-                                    counterbore: counterbore_dimensions
-                                        .get(label.id.as_str())
-                                        .copied(),
-                                    chamfer: simple_hole_chamfers
-                                        .get(label.id.as_str())
-                                        .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                                        .copied(),
-                                    grouped_simple_through: hole_packages
-                                        .outputs
-                                        .contains_key(label.id.as_str()),
-                                },
-                                native_parameters,
+        let definition = if let Some(definition) = boolean_definition
+            .or(trim_body_projection)
+            .or(delete_projection)
+            .or(extract_body_projection)
+            .or(sew_projection)
+            .or(extrude_projection)
+            .or_else(|| blend_projection.map(|(definition, _)| definition))
+            .or_else(|| thicken_projection.map(|(definition, _)| definition))
+            .or_else(|| offset_projection.map(|(definition, _)| definition))
+            .or(sphere_definition)
+            .or_else(|| {
+                (label.value == "BREP")
+                    .then(|| brep_feature_definition(&outputs))
+                    .flatten()
+            }) {
+            definition
+        } else if let Some(sketch) = sketch {
+            FeatureDefinition::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }
+        } else {
+            let mut definition = if let Some(definition) = non_modeling_history_definition(
+                &label.value,
+                &label.objects.values(),
+                &outputs,
+                body_reference_occurrences_by_operation
+                    .get(label.id.as_str())
+                    .map_or(0, Vec::len),
+                operation_body_operands_by_operation
+                    .get(label.id.as_str())
+                    .map_or(0, Vec::len),
+                operation_payload_string_records.len(),
+                &source_properties,
+            )
+            .or_else(|| {
+                body_writing_unresolved_feature_definition(&label.value, &source_properties)
+            }) {
+                definition
+            } else {
+                non_boolean_feature_definition_with_parameters(
+                    &label.value,
+                    &operation_payload_strings,
+                    block_dimension_values,
+                    block_placement,
+                    HoleProjection {
+                        placements: simple_hole_placements
+                            .get(label.id.as_str())
+                            .cloned()
+                            .into_iter()
+                            .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
+                            .chain(blind_hole_placements.get(label.id.as_str()).cloned())
+                            .chain(
+                                hole_packages
+                                    .placements
+                                    .get(label.id.as_str())
+                                    .cloned()
+                                    .unwrap_or_default(),
                             )
-                        })?;
-                        if let FeatureDefinition::Block { op, .. } = &mut definition {
-                            *op = block_op;
-                        }
-                        Ok(definition)
-                    })
-            })?;
+                            .collect(),
+                        diameter: simple_hole_diameters
+                            .get(label.id.as_str())
+                            .or_else(|| hole_packages.diameters.get(label.id.as_str()))
+                            .copied(),
+                        extent: blind_hole_depths
+                            .get(label.id.as_str())
+                            .copied()
+                            .map(|length| LinearTermination::Blind { length }),
+                        counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
+                        chamfer: simple_hole_chamfers
+                            .get(label.id.as_str())
+                            .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                            .copied(),
+                        grouped_simple_through: hole_packages
+                            .outputs
+                            .contains_key(label.id.as_str()),
+                    },
+                    native_parameters,
+                )?
+            };
+            if let FeatureDefinition::Block { op, .. } = &mut definition {
+                *op = block_op;
+            }
+            definition
+        };
         annotations
-            .note(&id, stream, label.source_offset)
+            .note(&id, &stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
         let source_content = feature_source_content(operation_payload_string_records);
@@ -3644,7 +3682,9 @@ fn attach_feature_operations(
             }
         }
         if !source_content.is_empty() {
-            annotations.derived(&id, "source_content");
+            annotations
+                .derived(&id, "source_content")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
         let offset_store_output = (!deletes_body)
@@ -3763,7 +3803,9 @@ fn attach_feature_operations(
                     NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.to_string(),
                     "primary-body-relations".to_string(),
                 );
-                annotations.derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
+                annotations
+                    .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
         }
     }
@@ -3775,7 +3817,9 @@ fn attach_feature_operations(
             .find(|feature| feature.id == initial_body_id)
             .is_some_and(|feature| !feature.evaluation.outputs().is_empty());
         if has_outputs {
-            annotations.derived(&initial_body_id, "outputs");
+            annotations
+                .derived(&initial_body_id, "outputs")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
@@ -3926,7 +3970,7 @@ fn attach_sketch_graph(
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
-    stream: cadmpeg_ir::annotations::StreamHandle,
+    stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
     let operation_groups = sources
         .point_groups
@@ -3937,7 +3981,7 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
+    let sketch_id = SketchId::mint(format!("nx:feature-history:sketch#{operation_key}")).ok()?;
     let operation_fixed_points = sources
         .fixed_points
         .iter()
@@ -3978,13 +4022,14 @@ fn attach_sketch_graph(
             entities.push((
                 pair.source_offset,
                 SketchEntity::new(
-                    SketchEntityId(format!(
+                    SketchEntityId::mint(format!(
                         "nx:feature-history:sketch-entity#coordinate-pair-{pair_key}"
-                    )),
+                    ))
+                    .ok()?,
                     sketch_id.clone(),
-                    SketchGeometry::Native {
-                        native_kind: "nx-coordinate-pair".into(),
-                    },
+                    SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
+                        "nx-coordinate-pair",
+                    )?),
                 )
                 .with_native_ref(Some(pair.id.clone())),
             ));
@@ -4000,24 +4045,28 @@ fn attach_sketch_graph(
                 .then_with(|| first.id().cmp(second.id()))
         });
         for (source_offset, entity) in &entities {
-            let tag = match &entity.geometry {
-                SketchGeometry::Native { native_kind } if native_kind == "nx-coordinate-pair" => {
+            let tag = match entity.geometry.definition() {
+                SketchGeometryDefinition::Native { native_kind }
+                    if native_kind == "nx-coordinate-pair" =>
+                {
                     "SKETCH_NATIVE_COORDINATE_PAIR"
                 }
-                SketchGeometry::Native { native_kind } if native_kind == "nx-fixed-point" => {
+                SketchGeometryDefinition::Native { native_kind }
+                    if native_kind == "nx-fixed-point" =>
+                {
                     "SKETCH_NATIVE_FIXED_POINT"
                 }
                 _ => "SKETCH_NATIVE",
             };
             annotations
-                .note(entity.id().0.as_str(), stream, *source_offset)
+                .note(entity.id().as_str(), stream, *source_offset)
                 .tag(tag);
-            annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
+            annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
         }
         annotations
-            .note(&sketch_id.0, stream, label.source_offset)
+            .note(sketch_id.as_str(), stream, label.source_offset)
             .tag("SKETCH");
-        annotations.exactness(&sketch_id.0, Exactness::Derived);
+        annotations.exactness(sketch_id.as_str(), Exactness::Derived);
         ir.model
             .sketch_entities
             .extend(entities.into_iter().map(|(_, entity)| entity));
@@ -4027,7 +4076,7 @@ fn attach_sketch_graph(
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved,
-            profiles: Vec::new(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(label.id.clone()),
         });
         return Some(sketch_id);
@@ -4144,13 +4193,15 @@ fn attach_sketch_graph(
         entities.push((
             source_offset,
             SketchEntity::new(
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "nx:feature-history:sketch-entity#point-{entity_key}"
-                )),
+                ))
+                .ok()?,
                 sketch_id.clone(),
-                SketchGeometry::Point {
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(group.coordinates[0], group.coordinates[1]),
-                },
+                })
+                .ok()?,
             )
             .with_native_ref(Some(native_ref)),
         ));
@@ -4169,31 +4220,31 @@ fn attach_sketch_graph(
         return None;
     }
     for (source_offset, entity) in &entities {
-        match &entity.geometry {
-            SketchGeometry::Point { .. } => {
+        match entity.geometry.definition() {
+            SketchGeometryDefinition::Point { .. } => {
                 annotations
-                    .note(entity.id().0.as_str(), stream, *source_offset)
+                    .note(entity.id().as_str(), stream, *source_offset)
                     .tag("SKETCH_POINT");
-                annotations.exactness(entity.id().0.as_str(), Exactness::Derived);
+                annotations.exactness(entity.id().as_str(), Exactness::Derived);
             }
-            SketchGeometry::Native { native_kind } => {
+            SketchGeometryDefinition::Native { native_kind } => {
                 let tag = if native_kind == "nx-fixed-point" {
                     "SKETCH_NATIVE_FIXED_POINT"
                 } else {
                     "SKETCH_NATIVE"
                 };
                 annotations
-                    .note(entity.id().0.as_str(), stream, *source_offset)
+                    .note(entity.id().as_str(), stream, *source_offset)
                     .tag(tag);
-                annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
+                annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
             }
             _ => return None,
         }
     }
     annotations
-        .note(&sketch_id.0, stream, label.source_offset)
+        .note(sketch_id.as_str(), stream, label.source_offset)
         .tag("SKETCH");
-    annotations.exactness(&sketch_id.0, Exactness::Derived);
+    annotations.exactness(sketch_id.as_str(), Exactness::Derived);
     ir.model
         .sketch_entities
         .extend(entities.into_iter().map(|(_, entity)| entity));
@@ -4203,7 +4254,7 @@ fn attach_sketch_graph(
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some(label.id.clone()),
     });
     Some(sketch_id)
@@ -4246,13 +4297,14 @@ fn native_fixed_point_entities(
         entities.push((
             point.source_offset,
             SketchEntity::new(
-                SketchEntityId(format!(
+                SketchEntityId::mint(format!(
                     "nx:feature-history:sketch-entity#fixed-point-{point_key}"
-                )),
+                ))
+                .ok()?,
                 sketch_id.clone(),
-                SketchGeometry::Native {
-                    native_kind: "nx-fixed-point".into(),
-                },
+                SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
+                    "nx-fixed-point",
+                )?),
             )
             .with_native_ref(Some(point.id.clone())),
         ));
@@ -4330,7 +4382,7 @@ fn attach_parasolid_topology_string_attributes(
     sources: &ParasolidStringAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let strings_by_id = sources
         .strings
         .iter()
@@ -4362,10 +4414,14 @@ fn attach_parasolid_topology_string_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, string.inflated_offset)
+                .note(id.as_str(), &source_stream, string.inflated_offset)
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_84_reference_{}",
                 string_use.position.reference_ordinal()
@@ -4391,6 +4447,7 @@ fn attach_parasolid_topology_string_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 struct ParasolidNumericAttributeSources<'a> {
@@ -4711,7 +4768,7 @@ fn attach_parasolid_topology_numeric_attributes(
     sources: &ParasolidNumericAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let integers_by_id = sources
         .integers
         .iter()
@@ -4780,10 +4837,14 @@ fn attach_parasolid_topology_numeric_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, source_offset)
+                .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_{lane}_reference_{}",
                 numeric_use.position.reference_ordinal()
@@ -4809,6 +4870,7 @@ fn attach_parasolid_topology_numeric_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 struct ParasolidStructuredAttributeSources<'a> {
@@ -4824,7 +4886,7 @@ fn attach_parasolid_topology_structured_attributes(
     sources: &ParasolidStructuredAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let vectors_by_id = sources
         .vectors
         .iter()
@@ -4945,10 +5007,14 @@ fn attach_parasolid_topology_structured_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(id.as_str(), source_stream, source_offset)
+                .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(id.as_str(), "target");
-            annotations.derived(id.as_str(), "name");
+            annotations
+                .derived(id.as_str(), "target")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "name")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let generic_name = format!(
                 "parasolid_type_{family}_reference_{}",
                 structured_use.position.reference_ordinal()
@@ -4974,6 +5040,7 @@ fn attach_parasolid_topology_structured_attributes(
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
+    Ok(())
 }
 
 fn preceding_operation_dependency(
@@ -5695,8 +5762,8 @@ fn block_placement(
         Some(normal)
     }
 
-    let linear_tolerance = ir.tolerances.linear;
-    let angular_tolerance = ir.tolerances.angular;
+    let linear_tolerance = ir.tolerances.linear.get();
+    let angular_tolerance = ir.tolerances.angular.get();
     if dimensions
         .iter()
         .any(|dimension| !dimension.is_finite() || *dimension <= linear_tolerance)
@@ -6050,7 +6117,7 @@ fn non_modeling_history_definition(
         && operation_identity_only)
         .then_some(FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: Default::default(),
+            children: TreeChildren::default(),
         })
 }
 
@@ -7101,7 +7168,7 @@ fn blind_hole_axis_placements_for_operations(
             operation.clone(),
             HolePlacement::Directed {
                 position: point,
-                direction: direction,
+                direction,
             },
         );
     }
@@ -7115,7 +7182,7 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
     let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
         return Vec::new();
     };
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
         let Some(mut axis) = unit_vector(axis) else {
@@ -7292,8 +7359,8 @@ fn cylindrical_face_witnesses(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let linear_tolerance = ir.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut witnesses = Vec::new();
     for face in body_faces
         .iter()
@@ -7414,8 +7481,8 @@ fn plane_annulus_witness(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let linear_tolerance = ir.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut matches = 0;
     for face in body_faces {
         if face.loops.len() != 2 {
@@ -7513,8 +7580,8 @@ fn counterbore_cylinders(
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
         return None;
     }
-    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let linear_tolerance = ir.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut candidates = alloc_filled(
         cylinders.len(),
         Vec::<(usize, CounterboreCylinderWitness)>::new(),
@@ -7642,8 +7709,8 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let linear_tolerance = ir.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut cap_stations = Vec::new();
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
@@ -7839,8 +7906,8 @@ fn simple_hole_chamfers(
             .push(coedge);
     }
 
-    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
-    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
+    let linear_tolerance = ir.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.get().max(MIN_ANGULAR_TOLERANCE);
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
@@ -8838,14 +8905,7 @@ pub(crate) fn attach_expression_parameters(
         .collect::<BTreeMap<_, _>>();
     let mut tables = BTreeMap::<String, Vec<&crate::native::om::Expression>>::new();
     for expression in expressions {
-        let table = if expression.source_table.is_empty() {
-            let Some((section, _)) = expression.id.split_once(":expression#") else {
-                continue;
-            };
-            section
-        } else {
-            expression.source_table.as_str()
-        };
+        let table = expression.source_table.as_str();
         tables
             .entry(table.to_string())
             .or_default()
@@ -8908,7 +8968,7 @@ pub(crate) fn attach_expression_parameters(
             .min()
             .unwrap_or(0);
         annotations
-            .note(&feature_id, stream, first_offset)
+            .note(&feature_id, &stream, first_offset)
             .tag("hostglobalvariables");
         annotations.exactness(&feature_id, Exactness::Derived);
         let source_content = expressions
@@ -8920,14 +8980,16 @@ pub(crate) fn attach_expression_parameters(
         let source_content = cadmpeg_ir::features::FeatureContent::try_from(source_content)
             .map_err(|message| CodecError::Malformed(message.into()))?;
         if !source_content.is_empty() {
-            annotations.derived(&feature_id, "source_content");
+            annotations
+                .derived(&feature_id, "source_content")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.features.push(Feature {
             id: feature_id.clone(),
             ordinal: base_ordinal + table_ordinal as u64,
             name: Some("NX expressions".to_string()),
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hostglobalvariables".to_string()),
             source_text: None,
@@ -8936,7 +8998,7 @@ pub(crate) fn attach_expression_parameters(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::Equations,
-                    children: Default::default(),
+                    children: TreeChildren::default(),
                 },
             ),
             native_ref: None,
@@ -8956,12 +9018,20 @@ pub(crate) fn attach_expression_parameters(
             let id = expression_parameter_id(&expression.id)
                 .expect("sectioned expressions have parameter identities");
             annotations
-                .note(id.as_str(), stream, expression.source_offset)
+                .note(id.as_str(), &stream, expression.source_offset)
                 .tag("Number");
-            annotations.derived(id.as_str(), "owner");
-            annotations.derived(id.as_str(), "ordinal");
-            annotations.derived(id.as_str(), "value");
-            annotations.derived(id.as_str(), "native_ref");
+            annotations
+                .derived(id.as_str(), "owner")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "ordinal")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "value")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            annotations
+                .derived(id.as_str(), "native_ref")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
                 let mut seen_dependencies = BTreeSet::new();
                 crate::native::om::expression_parameter_names(&expression.expression)
@@ -8976,23 +9046,27 @@ pub(crate) fn attach_expression_parameters(
                 Vec::new()
             };
             if !dependencies.is_empty() {
-                annotations.derived(id.as_str(), "dependencies");
+                annotations
+                    .derived(id.as_str(), "dependencies")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
-                    crate::native::expression_length_in_millimeters(&expression.unit, value)
+                    crate::native::expression_length_in_millimeters(&expression.unit, value.get())
                         .and_then(Length::new)
                         .map(ParameterValue::Length)
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle::new(value.to_radians())?))
+                    Some(ParameterValue::Angle(Angle::new(value.get().to_radians())?))
                 }
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
             let mut properties = BTreeMap::new();
             properties.insert("unit".to_string(), expression.unit.property_name());
-            annotations.derived(id.as_str(), "properties");
+            annotations
+                .derived(id.as_str(), "properties")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
@@ -9003,7 +9077,9 @@ pub(crate) fn attach_expression_parameters(
                     "declaration_object_id".to_string(),
                     declaration.object_id.to_string(),
                 );
-                annotations.derived(id.as_str(), "properties");
+                annotations
+                    .derived(id.as_str(), "properties")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
                 .get(expression.id.as_str())
@@ -9021,7 +9097,9 @@ pub(crate) fn attach_expression_parameters(
                     format!("parameter_use.{consumer_ordinal}"),
                     parameter_use.id.clone(),
                 );
-                annotations.derived(id.as_str(), "properties");
+                annotations
+                    .derived(id.as_str(), "properties")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.parameters.push(DesignParameter {
                 id,
@@ -9099,7 +9177,7 @@ fn attach_block_dimension_parameter_consumers(
     ir: &mut CadIr,
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut parameters = ir
         .model
         .parameters
@@ -9137,9 +9215,12 @@ fn attach_block_dimension_parameter_consumers(
                     .properties
                     .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
             }
-            annotations.derived(parameter.id.as_str(), "properties");
+            annotations
+                .derived(parameter.id.as_str(), "properties")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
+    Ok(())
 }
 
 fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {

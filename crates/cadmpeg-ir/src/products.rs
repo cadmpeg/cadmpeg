@@ -11,7 +11,7 @@ use crate::features::FiniteReal;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
-crate::ids::reference_id_type!(
+crate::ids::id_type!(
     /// Stable assembly-joint identity.
     JointId
 );
@@ -432,11 +432,11 @@ fn deserialize_occurrence_scale<'de, D: serde::Deserializer<'de>>(
 
 impl Occurrence {
     /// Placement after applying the linked prototype contribution, when present.
-    #[must_use]
-    pub fn effective_transform(&self) -> Transform {
-        self.linked_prototype.map_or(self.transform, |prototype| {
-            self.transform.compose(prototype)
-        })
+    pub fn effective_transform(&self) -> Result<Transform, crate::transform::TransformError> {
+        self.linked_prototype
+            .map_or(Ok(self.transform), |prototype| {
+                self.transform.compose(prototype)
+            })
     }
 }
 
@@ -586,6 +586,13 @@ pub enum AssemblyGraphError {
     },
     /// Parent links contain a cycle.
     ParentCycle(OccurrenceId),
+    /// An occurrence placement cannot be composed into a finite transform.
+    Transform {
+        /// The occurrence whose placement failed.
+        occurrence: OccurrenceId,
+        /// The transform arithmetic failure.
+        source: crate::transform::TransformError,
+    },
 }
 
 impl std::fmt::Display for AssemblyGraphError {
@@ -599,11 +606,21 @@ impl std::fmt::Display for AssemblyGraphError {
                 )
             }
             Self::ParentCycle(id) => write!(formatter, "occurrence parent cycle at {id}"),
+            Self::Transform { occurrence, source } => {
+                write!(formatter, "occurrence {occurrence}: {source}")
+            }
         }
     }
 }
 
-impl std::error::Error for AssemblyGraphError {}
+impl std::error::Error for AssemblyGraphError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transform { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 /// Validated, memoized view over a canonical occurrence tree.
 pub struct AssemblyGraph<'a> {
@@ -925,7 +942,13 @@ fn resolve_occurrence<'a>(
             resolve_occurrence(parent_occurrence, occurrences, resolved, active)?
         }
     };
-    let transform = parent.compose(occurrence.effective_transform());
+    let transform = occurrence
+        .effective_transform()
+        .and_then(|local| parent.compose(local))
+        .map_err(|source| AssemblyGraphError::Transform {
+            occurrence: occurrence.id.clone(),
+            source,
+        })?;
     active.remove(occurrence.id.as_str());
     resolved.insert(occurrence.id.as_str(), transform);
     Ok(transform)

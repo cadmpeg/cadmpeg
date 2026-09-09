@@ -195,10 +195,14 @@ fn build_result(
         attributes,
     ));
     if let Some(linear) = header.linear {
-        ir.tolerances.linear = linear;
+        ir.tolerances.linear = cadmpeg_ir::units::PositiveScalar::new(linear)
+            .ok_or_else(|| CodecError::malformed("linear tolerance must be positive and finite"))?;
     }
     if let Some(angular) = header.angular {
-        ir.tolerances.angular = angular;
+        ir.tolerances.angular =
+            cadmpeg_ir::units::PositiveScalar::new(angular).ok_or_else(|| {
+                CodecError::malformed("angular tolerance must be positive and finite")
+            })?;
     }
 
     let AsmTransferRemainder {
@@ -235,7 +239,9 @@ fn build_result(
     let body = DecodeBody {
         coverage,
         losses,
-        ..DecodeBody::new(geometry_transferred)
+        ..DecodeBody::new(cadmpeg_ir::report::DecodeTransfer::full(
+            geometry_transferred,
+        ))
     };
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();

@@ -31,13 +31,13 @@ fn feature(id: &str, ordinal: u64) -> Feature {
 fn component_feature_history_follows_the_parent_without_losing_relative_order() {
     let mut parent = Model::default();
     parent.features = vec![
-        feature("f3d:feature#parent-0", 4),
-        feature("f3d:feature#parent-1", 8),
+        feature("f3d:test:feature#parent-0", 4),
+        feature("f3d:test:feature#parent-1", 8),
     ];
     let mut component = Model::default();
     component.features = vec![
-        feature("f3d:feature#component-0", 10),
-        feature("f3d:feature#component-1", 12),
+        feature("f3d:test:feature#component-0", 10),
+        feature("f3d:test:feature#component-1", 12),
     ];
 
     append_feature_history(&parent, &mut component).unwrap();
@@ -55,9 +55,9 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
 #[test]
 fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut parent = Model::default();
-    parent.features = vec![feature("f3d:feature#parent", u64::MAX)];
+    parent.features = vec![feature("f3d:test:feature#parent", u64::MAX)];
     let mut component = Model::default();
-    component.features = vec![feature("f3d:feature#component", 0)];
+    component.features = vec![feature("f3d:test:feature#component", 0)];
 
     let error = append_feature_history(&parent, &mut component).unwrap_err();
 

@@ -147,8 +147,8 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
         display.ir().model.tessellations[0].body.as_ref(),
         Some(&display.ir().model.bodies[0].id)
     );
-    let tessellation_exactness =
-        &display.source_fidelity().annotations.exactness()[&display.ir().model.tessellations[0].id];
+    let tessellation_exactness = &display.source_fidelity().annotations.exactness()
+        [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
         tessellation_exactness.fields()["body"],
         cadmpeg_ir::Exactness::Derived
@@ -188,7 +188,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     decoded.ir_mut().model.shells[0].add_face(coincident.id.clone());
     decoded.ir_mut().model.faces.push(coincident);
 
-    let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model);
+    let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model).unwrap();
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());

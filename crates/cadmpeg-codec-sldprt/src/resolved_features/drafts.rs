@@ -639,15 +639,15 @@ mod tests {
             features: vec![feature],
         };
         let mut projected = vec![cadmpeg_ir::features::Feature {
-            id: FeatureId::mint("draft").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
             ordinal: 0,
             name: Some("Draft1".into()),
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Draft".into()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Draft {

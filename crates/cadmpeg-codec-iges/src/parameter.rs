@@ -71,11 +71,13 @@ pub(crate) struct TrailingPointerGroups {
 }
 
 impl TrailingPointerGroups {
-    pub(crate) fn fully_valid(&self) -> bool {
-        self.association_pointers
+    pub(crate) fn fully_valid(self) -> Option<ResolvedGroups> {
+        let valid = self
+            .association_pointers
             .iter()
             .chain(&self.property_pointers)
-            .all(|pointer| pointer.resolved.is_some())
+            .all(|pointer| pointer.resolved.is_some());
+        valid.then_some(ResolvedGroups(self))
     }
 
     pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
@@ -91,28 +93,34 @@ impl TrailingPointerGroups {
     }
 }
 
+/// Fully resolved trailing pointer groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedGroups(TrailingPointerGroups);
+
+impl ResolvedGroups {
+    /// The retained trailing pointer evidence.
+    pub(crate) fn as_groups(&self) -> &TrailingPointerGroups {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TrailingPointerAnalysis {
     Macro,
-    Unambiguous {
-        groups: TrailingPointerGroups,
-        candidates: usize,
-    },
+    Unambiguous(ResolvedGroups),
     SingleInvalid(TrailingPointerGroups),
-    Ambiguous {
-        candidates: usize,
-        valid: usize,
-    },
+    Ambiguous { candidates: usize, valid: usize },
 }
 
 #[cfg(test)]
 impl TrailingPointerAnalysis {
-    fn candidate_count(&self) -> usize {
+    fn candidate_count(&self, record: &ParameterRecord, primary_end: Option<usize>) -> usize {
         match self {
             Self::Macro => 0,
-            Self::Unambiguous { candidates, .. } | Self::Ambiguous { candidates, .. } => {
-                *candidates
+            Self::Unambiguous(_) => {
+                primary_end.map_or_else(|| structural_pointer_group_candidates(record).len(), |_| 1)
             }
+            Self::Ambiguous { candidates, .. } => *candidates,
             Self::SingleInvalid(_) => 1,
         }
     }
@@ -120,14 +128,15 @@ impl TrailingPointerAnalysis {
     fn valid_candidate_count(&self) -> usize {
         match self {
             Self::Macro | Self::SingleInvalid(_) => 0,
-            Self::Unambiguous { .. } => 1,
+            Self::Unambiguous(_) => 1,
             Self::Ambiguous { valid, .. } => *valid,
         }
     }
 
     fn groups(&self) -> Option<TrailingPointerGroups> {
         match self {
-            Self::Unambiguous { groups, .. } | Self::SingleInvalid(groups) => Some(groups.clone()),
+            Self::Unambiguous(groups) => Some(groups.as_groups().clone()),
+            Self::SingleInvalid(groups) => Some(groups.clone()),
             Self::Macro | Self::Ambiguous { .. } => None,
         }
     }
@@ -536,14 +545,11 @@ fn analyze_trailing_pointer_groups_from_end(
     let valid_groups = candidates
         .iter()
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
-        .filter(TrailingPointerGroups::fully_valid);
+        .filter_map(TrailingPointerGroups::fully_valid);
     let valid_groups = valid_groups.collect::<Vec<_>>();
     let valid = valid_groups.len();
     match valid_groups.into_iter().next() {
-        Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous {
-            groups,
-            candidates: candidates.len(),
-        },
+        Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous(groups),
         None if candidates.len() == 1 => {
             match groups_for_candidate(record, directory, candidates[0]) {
                 Some(groups) => TrailingPointerAnalysis::SingleInvalid(groups),
@@ -3782,7 +3788,7 @@ pub(crate) fn assemble_with_context(
         record.parameter_end = trailing_pointer_analysis
             .get(&record.directory_sequence)
             .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous { groups, .. } => Some(groups),
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups.as_groups()),
                 _ => None,
             })
             .map_or(record.tokens.len(), |groups| groups.token_start);

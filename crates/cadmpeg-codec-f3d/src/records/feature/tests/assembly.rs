@@ -39,11 +39,12 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                         "external_asset_id",
                         "occurrence_role",
                     ],
+                    |_, _| {},
                 );
                 if mask == 15 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::DesignAssemblyAxialSelectorIdentity,
-                    >(&value, &["external_property_key"]);
+                    >(&value, &["external_property_key"], |_, _| {});
                 }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
@@ -59,16 +60,16 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
         }
     }
     {
-        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_body_reference":0,"external_body_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
-        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[0,0]}"#;
+        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":44,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":120,"occurrence_reference":1,"occurrence_reference_offset":205,"external_body_reference":2,"external_body_reference_offset":220,"external_segment":0,"external_segment_offset":229,"external_asset_id":"00000004-1111-4111-8111-111111111111","external_asset_id_offset":237,"external_link_name":"identity","external_link_name_offset":314"#;
+        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[337,349]}"#;
         let fields = [
             (
                 "external_property_key",
                 "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
             ),
-            ("external_property_key_offset", "100"),
+            ("external_property_key_offset", "335"),
             ("external_version_urn", "\"urn\""),
-            ("external_version_urn_offset", "110"),
+            ("external_version_urn_offset", "411"),
         ];
         for mask in 0..16 {
             let mut wire = prefix.to_owned();
@@ -77,7 +78,11 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     wire.push_str(&format!(",\"{field}\":{value}"));
                 }
             }
-            wire.push_str(suffix);
+            wire.push_str(&if mask == 15 {
+                suffix.replace("[337,349]", "[423,435]")
+            } else {
+                suffix.to_owned()
+            });
             let result = serde_json::from_str::<
                 crate::records::feature::DesignCombineExternalBodyIdentity,
             >(&wire);
@@ -92,11 +97,16 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                         "selector_context_id",
                         "external_asset_id",
                     ],
+                    complete_combine_field_edit,
                 );
                 if mask == 15 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::DesignCombineExternalBodyIdentity,
-                    >(&value, &["external_property_key"]);
+                    >(
+                        &value,
+                        &["external_property_key"],
+                        complete_combine_field_edit,
+                    );
                 }
                 assert_eq!(
                     serde_json::to_string(&result.expect("complete version form"))
@@ -123,6 +133,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     assert_relaxed_guid_fields::<crate::records::feature::DesignComponentOccurrence>(
         &base,
         &["component_guid", "occurrence_guid"],
+        |_, _| {},
     );
     let transform = serde_json::json!([
         [1.0, 0.0, 0.0, 0.0],
@@ -165,11 +176,13 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
+        ]
+        .try_into()
+        .unwrap(),
         transform_offset: 22,
     };
-    let path = crate::records::feature::DesignAssemblyOperandPath {
-        link: crate::records::feature::DesignAssemblyOperandPathLink {
+    let path = crate::records::feature::DesignAssemblyOperandPath::try_new(
+        crate::records::feature::DesignAssemblyOperandPathLink {
             locator_reference_offset: 11,
             locator_record_index: 10,
             locator_class_tag: crate::records::DesignClassTag::try_from("363".to_owned()).unwrap(),
@@ -181,31 +194,35 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             wrapper_byte_offset: 200,
             path_reference_offset: 211,
         },
-        record_index: 30,
-        class_tag: crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
-        byte_offset: 300,
-        occurrence_guids: vec![crate::records::Located {
+        30,
+        crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
+        300,
+        vec![crate::records::Located {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 311,
         }],
-        identity_guids: vec![crate::records::Located {
+        vec![crate::records::Located {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 322,
         }],
-    };
-    let limits = crate::records::feature::DesignAssemblyLimits {
-        kind: crate::records::feature::DesignAssemblyLimitKind::Angular,
-        minimum: -1.0,
-        maximum: 1.0,
-        owner_record_indices: [40, 50],
-        value_offsets: [411, 511],
-    };
+    )
+    .unwrap();
+    let limits: crate::records::feature::DesignAssemblyLimits =
+        crate::records::feature::DesignAssemblyLimitsWire {
+            kind: crate::records::feature::DesignAssemblyLimitKind::Angular,
+            minimum: -1.0,
+            maximum: 1.0,
+            owner_record_indices: [40, 50],
+            value_offsets: [411, 511],
+        }
+        .try_into()
+        .unwrap();
     let joint_origin = crate::records::feature::DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: 60,
         class_tag: crate::records::DesignClassTag::try_from("307".to_owned()).unwrap(),
@@ -273,10 +290,10 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             ),
         ),
     ] {
-        let alignment = crate::records::feature::DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: vec![
+        let alignment = crate::records::feature::DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            vec![
                 crate::records::Located {
                     value: 10,
                     offset: 11,
@@ -287,7 +304,8 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
                 },
             ],
             form,
-        };
+        )
+        .unwrap();
         let wire = serde_json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
@@ -333,8 +351,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         recipe_references: Vec::new(),
         next_byte_offset: 600,
     };
-    let carriers = crate::records::feature::DesignAssemblyLegacyOperands {
-        point: crate::records::feature::DesignAssemblyLegacyOperand {
+    let carriers = crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+        crate::records::feature::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
             reference_offset: 11,
@@ -354,7 +372,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             }),
             selection: selection(40),
         },
-        hole: crate::records::feature::DesignAssemblyLegacyOperand {
+        crate::records::feature::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
                 .unwrap(),
             reference_offset: 22,
@@ -375,21 +393,42 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             }),
             selection: selection(41),
         },
-    };
+    )
+    .unwrap();
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut point = carriers.point.clone();
+        point.construction.position[0] = value;
+        assert!(
+            crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+                point,
+                carriers.hole.clone()
+            )
+            .is_err()
+        );
+        let mut hole = carriers.hole.clone();
+        hole.construction.position[2] = value;
+        assert!(
+            crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+                carriers.point.clone(),
+                hole
+            )
+            .is_err()
+        );
+    }
     let solved_frame = crate::records::feature::DesignAssemblySolvedFrame {
         reference_record_index: 30,
         reference_offset: 33,
         record_byte_offset: 300,
         class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-        transform: identity,
+        transform: identity.try_into().unwrap(),
         transform_offset: 325,
     };
     for frames_field_present in [false, true] {
-        let alignment = crate::records::feature::DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owners: Vec::new(),
-            form: Some(
+        let alignment = crate::records::feature::DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            Vec::new(),
+            Some(
                 crate::records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                     carriers: carriers.clone(),
                     solved_frame: solved_frame.clone(),
@@ -397,7 +436,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                     frames_field_present,
                 },
             ),
-        };
+        )
+        .unwrap();
         let frames = alignment.operand_frames().unwrap();
         assert_eq!(frames[0].reference_record_index, 10);
         assert_eq!(frames[1].reference_record_index, 20);
@@ -410,6 +450,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 [0.0, 0.0, 1.0, 3.0],
                 [0.0, 0.0, 0.0, 1.0]
             ]
+            .try_into()
+            .unwrap()
         );
         assert_eq!(frames[1].transform[2][3], 6.0);
         let wire = serde_json::to_string(&alignment).unwrap();
@@ -458,11 +500,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
 
 #[test]
 fn assembly_path_wire_pairs_guid_locations() {
-    for count in [0, 1, 3] {
+    for count in [1, 3] {
         let values: Vec<_> = (0..count)
             .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
             .collect();
-        let offsets: Vec<_> = (0..count).map(|index| 300 + index * 80).collect();
+        let offsets: Vec<_> = (0..count).map(|index| 400 + index * 80).collect();
         let wire = serde_json::json!({
             "link": {
                 "locator_reference_offset": 11, "locator_record_index": 10,
@@ -471,18 +513,18 @@ fn assembly_path_wire_pairs_guid_locations() {
                 "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
                 "wrapper_byte_offset": 200, "path_reference_offset": 211
             },
-            "record_index": 30, "class_tag": "386", "byte_offset": 300,
+            "record_index": 30, "class_tag": "329", "byte_offset": 300,
             "occurrence_guids": values, "occurrence_guid_offsets": offsets
         });
         for identities in [false, true] {
             let mut wire = wire.clone();
-            if identities && count != 0 {
-                wire["identity_guids"] = wire["occurrence_guids"].clone();
-                wire["identity_guid_offsets"] = wire["occurrence_guid_offsets"].clone();
+            if identities {
+                wire["identity_guids"] = serde_json::json!(vec![values[0].clone(); 4]);
+                wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::DesignAssemblyOperandPath =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(path.occurrence_guids.len(), count);
+            assert_eq!(path.occurrence_guids().len(), count);
             assert_eq!(serde_json::to_value(&path).unwrap(), wire);
             for (value_field, offset_field) in [
                 ("occurrence_guids", "occurrence_guid_offsets"),
@@ -572,11 +614,13 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
 fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>(
     wire: &serde_json::Value,
     fields: &[&str],
+    complete_edit: impl Fn(&mut serde_json::Value, &str),
 ) {
     for field in fields {
         for guid in ["g".repeat(36), "_".repeat(38), "invalid".into()] {
             let mut changed = wire.clone();
             changed[field] = serde_json::json!(guid);
+            complete_edit(&mut changed, field);
             let decoded = serde_json::from_value::<T>(changed.clone());
             if guid == "invalid" {
                 assert!(decoded.is_err(), "{field}");
@@ -586,4 +630,165 @@ fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>
             }
         }
     }
+}
+
+#[test]
+fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds() {
+    use crate::records::feature::{
+        DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyLimits,
+        DesignAssemblyLimitsWire,
+    };
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(DesignAssemblyAlignment::try_new(invalid, [0.0; 3], Vec::new(), None).is_err());
+        for lane in 0..3 {
+            let mut offset = [0.0; 3];
+            offset[lane] = invalid;
+            assert!(DesignAssemblyAlignment::try_new(0.0, offset, Vec::new(), None).is_err());
+        }
+    }
+    let alignment =
+        DesignAssemblyAlignment::try_new(-1.0, [-2.0, -0.0, 3.0], Vec::new(), None).unwrap();
+    let json = serde_json::to_value(&alignment).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignAssemblyAlignment>(json).unwrap(),
+        alignment
+    );
+    for (minimum, maximum, valid) in [
+        (-1.0, 2.0, true),
+        (0.0, 0.0, true),
+        (2.0, 1.0, false),
+        (f64::NAN, 1.0, false),
+        (0.0, f64::INFINITY, false),
+        (f64::NEG_INFINITY, 0.0, false),
+    ] {
+        let wire = DesignAssemblyLimitsWire {
+            kind: DesignAssemblyLimitKind::Angular,
+            minimum,
+            maximum,
+            owner_record_indices: [1, 2],
+            value_offsets: [10, 20],
+        };
+        assert_eq!(DesignAssemblyLimits::try_from(wire.clone()).is_ok(), valid);
+        if minimum.is_finite() && maximum.is_finite() {
+            let json = serde_json::to_value(wire).unwrap();
+            let result = serde_json::from_value::<DesignAssemblyLimits>(json.clone());
+            assert_eq!(result.is_ok(), valid);
+            if let Ok(limits) = result {
+                assert_eq!(serde_json::to_value(limits).unwrap(), json);
+            }
+        }
+    }
+}
+
+#[test]
+fn assembly_path_admission_checks_class_arity_and_guid_order() {
+    use crate::records::feature::{DesignAssemblyOperandPath, DesignAssemblyOperandPathLink};
+    let link: DesignAssemblyOperandPathLink = serde_json::from_value(serde_json::json!({
+        "locator_reference_offset": 11, "locator_record_index": 10,
+        "locator_class_tag": "451", "locator_byte_offset": 100,
+        "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+        "wrapper_reference_offset": 122, "wrapper_class_tag": "369",
+        "wrapper_byte_offset": 200, "path_reference_offset": 211
+    }))
+    .unwrap();
+    let guids = |offsets: &[u64]| {
+        offsets
+            .iter()
+            .map(|offset| crate::records::Located {
+                value: "11111111-1111-4111-8111-111111111111"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                offset: *offset,
+            })
+            .collect()
+    };
+    for tag in ["294", "299", "307", "329", "330", "386", "390"] {
+        for count in [0, 1, 3, 4, 8] {
+            let offsets: Vec<_> = (0..count).map(|index| 500 + index * 80).collect();
+            let valid = match tag {
+                "329" => count == 0 || count == 4,
+                "330" => count == 4 || count == 8,
+                _ => count == 4,
+            };
+            let result = DesignAssemblyOperandPath::try_new(
+                link.clone(),
+                30,
+                tag.to_owned().try_into().unwrap(),
+                300,
+                guids(&[400]),
+                guids(&offsets),
+            );
+            assert_eq!(result.is_ok(), valid);
+        }
+    }
+    let path = DesignAssemblyOperandPath::try_new(
+        link,
+        30,
+        "390".to_owned().try_into().unwrap(),
+        300,
+        guids(&[400, 480]),
+        guids(&[560, 640, 720, 800]),
+    )
+    .unwrap();
+    let wire = serde_json::to_value(path).unwrap();
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
+    for (field, offsets) in [
+        ("occurrence_guid_offsets", vec![300, 480]),
+        ("occurrence_guid_offsets", vec![480, 400]),
+        ("identity_guid_offsets", vec![560, 560, 720, 800]),
+        ("identity_guid_offsets", vec![299, 640, 720, 800]),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = serde_json::json!(offsets);
+        assert!(serde_json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
+    }
+    let mut empty = wire.clone();
+    empty["occurrence_guids"] = serde_json::json!([]);
+    empty["occurrence_guid_offsets"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
+    let mut wrong_class = wire;
+    wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
+    wrong_class["class_tag"] = serde_json::json!("386");
+    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wrong_class).is_err());
+}
+
+fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
+    if field == "external_asset_id" {
+        wire["selector_asset_id"] = wire[field].clone();
+    }
+    if field == "selector_asset_id" {
+        wire["external_asset_id"] = wire[field].clone();
+    }
+    let end = |wire: &serde_json::Value, value: &str, offset: &str| {
+        wire[offset].as_u64().unwrap()
+            + 2 * wire[value].as_str().unwrap().encode_utf16().count() as u64
+    };
+    wire["selector_context_id_offset"] =
+        serde_json::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);
+    wire["occurrence_reference_offset"] =
+        serde_json::json!(end(wire, "selector_context_id", "selector_context_id_offset") + 13);
+    wire["external_body_reference_offset"] =
+        serde_json::json!(wire["occurrence_reference_offset"].as_u64().unwrap() + 15);
+    wire["external_segment_offset"] =
+        serde_json::json!(wire["external_body_reference_offset"].as_u64().unwrap() + 9);
+    wire["external_asset_id_offset"] =
+        serde_json::json!(wire["external_segment_offset"].as_u64().unwrap() + 8);
+    wire["external_link_name_offset"] =
+        serde_json::json!(end(wire, "external_asset_id", "external_asset_id_offset") + 5);
+    let link_end = end(wire, "external_link_name", "external_link_name_offset");
+    let tail = if wire.get("external_property_key").is_some() {
+        wire["external_property_key_offset"] = serde_json::json!(link_end + 5);
+        wire["external_version_urn_offset"] = serde_json::json!(
+            end(
+                wire,
+                "external_property_key",
+                "external_property_key_offset"
+            ) + 4
+        );
+        end(wire, "external_version_urn", "external_version_urn_offset") + 6
+    } else {
+        link_end + 7
+    };
+    wire["tail_value_offsets"] = serde_json::json!([tail, tail + 12]);
 }

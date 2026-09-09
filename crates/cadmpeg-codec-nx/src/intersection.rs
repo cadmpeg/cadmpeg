@@ -21,7 +21,7 @@ use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAME
 
 use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
-use crate::framing::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
@@ -190,10 +190,10 @@ pub struct SupportUvRecord {
 /// A decoded surface-intersection construction and its solved chart cache.
 #[derive(Debug, Clone)]
 pub struct IntersectionCurve {
+    /// Six ordered construction references.
+    pub references: [Option<XmtTarget>; 6],
     /// Cross-reference index of the construction record.
     pub xmt: u32,
-    /// Six ordered construction references.
-    pub references: [u32; 6],
     /// Resolved primary support-surface reference.
     pub primary_support: NonNullXmt,
     /// Resolved secondary support-surface reference.
@@ -210,13 +210,27 @@ pub struct IntersectionCurve {
     pub ext_support_uv: SupportUv,
 }
 
+/// Two distinct non-null support-surface references.
+#[derive(Debug, Clone, Copy)]
+pub struct DistinctSupports([NonNullXmt; 2]);
+
+impl DistinctSupports {
+    fn new(first: NonNullXmt, second: NonNullXmt) -> Option<Self> {
+        (first != second).then_some(Self([first, second]))
+    }
+
+    pub(crate) fn references(self) -> [NonNullXmt; 2] {
+        self.0
+    }
+}
+
 /// A bounded intersection relation without a solved chart cache.
 #[derive(Debug, Clone, Copy)]
 pub struct UnchartedIntersection {
     /// Cross-reference index of the construction record.
     pub xmt: u32,
     /// Two exact, distinct support-surface references.
-    pub supports: [u32; 2],
+    pub supports: DistinctSupports,
     /// Ordered endpoints of the unique topology edge in millimetres.
     pub endpoints: [Point3; 2],
     /// Edge tolerance in Parasolid metres.
@@ -444,9 +458,7 @@ fn scan_with_auxiliaries(
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
-                            |(primary, secondary)| {
-                                Some([u32::from(primary), u32::from(secondary?)])
-                            },
+                            |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
@@ -484,13 +496,17 @@ fn enrich(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
-    let chart = charts
-        .get(&construction.references[2])
+    let chart = construction.references[2]
+        .and_then(|target| charts.get(&u32::from(target)))
         .ok_or(Rejection::MissingChart)?;
     let chart_endpoints = chart.samples.endpoints();
     let serialized_terms = [
-        terms.get(&construction.references[3]).copied(),
-        terms.get(&construction.references[4]).copied(),
+        construction.references[3]
+            .and_then(|target| terms.get(&u32::from(target)))
+            .copied(),
+        construction.references[4]
+            .and_then(|target| terms.get(&u32::from(target)))
+            .copied(),
     ];
     if serialized_terms
         .iter()
@@ -531,14 +547,14 @@ fn enrich(
     }
     let (primary_support, secondary_support) =
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
-    let support_uv = uv
-        .get(&construction.references[5])
+    let support_uv = construction.references[5]
+        .and_then(|target| uv.get(&u32::from(target)))
         .map_or([None, None], |values| {
             values.support_uv(chart.samples.points().len())
         });
     Ok(IntersectionCurve {
-        xmt: construction.xmt,
         references: construction.references,
+        xmt: construction.xmt,
         primary_support,
         secondary_support,
         pos: construction.pos,
@@ -561,8 +577,8 @@ fn construction_supports(
         // A present marker-3 values array explicitly reverses the serialized
         // support order. Without that array, retain the type-38 references'
         // order; no alternate order was serialized.
-        match uv
-            .get(&construction.references[5])
+        match construction.references[5]
+            .and_then(|target| uv.get(&u32::from(target)))
             .map(SupportUvValues::packing)
         {
             Some(SupportUvPacking::Form3) => {
@@ -573,11 +589,16 @@ fn construction_supports(
             }
         }
     };
+    let primary = u32::from(primary?);
     is_surface(graph, primary).then_some(())?;
-    let secondary = bridges
-        .get(&bridge)
-        .copied()
-        .or_else(|| is_surface(graph, bridge).then_some(bridge))
+    let secondary = bridge
+        .map(u32::from)
+        .and_then(|bridge| {
+            bridges
+                .get(&bridge)
+                .copied()
+                .or_else(|| is_surface(graph, bridge).then_some(bridge))
+        })
         .filter(|secondary| *secondary != primary)
         .and_then(|secondary| NonNullXmt::try_from(secondary).ok());
     Some((NonNullXmt::try_from(primary).ok()?, secondary))
@@ -588,12 +609,10 @@ fn construction_has_endpoint_witnesses(
     terms: &BTreeMap<u32, Point3>,
     graph: &topology::Graph,
 ) -> bool {
-    construction.references[2..=4]
-        .iter()
-        .all(|reference| *reference == 1)
+    construction.references[2..=4].iter().all(Option::is_none)
         || construction.references[3..=4]
             .iter()
-            .all(|reference| terms.contains_key(reference))
+            .all(|reference| reference.is_some_and(|target| terms.contains_key(&u32::from(target))))
         || graph.unique_curve_edge_witness(construction.xmt).is_some()
 }
 

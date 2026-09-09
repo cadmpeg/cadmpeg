@@ -31,7 +31,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-    SpatialSketchId,
+    SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -93,42 +93,41 @@ pub(crate) fn spatial_sketches(
                     })
                 })
                 .collect::<Vec<_>>();
-            let points = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                // A spatial sketch stores an indexed geometry marker and an
-                // unindexed zero-valued anchor for the same point. Only the
-                // indexed marker is a model-space locus.
-                .filter(|marker| marker.object_index.is_some())
-                .filter_map(|marker| {
-                    let offset = usize::try_from(marker.offset).ok()?;
-                    if !relation_ranges.is_empty()
-                        && (!relation_ranges
-                            .iter()
-                            .any(|(start, end)| marker.offset > *start && marker.offset < *end)
-                            || marker.object_index.is_none()
-                            || !matches!(
-                                marker_native_code(&lane.native_payload, offset),
-                                Some(1..=85)
-                            ))
-                    {
-                        return None;
-                    }
-                    marker_spatial_coordinates(&lane.native_payload, offset)
-                        .or_else(|| {
-                            declared_spatial
-                                .then(|| {
-                                    current_indexed_spatial_relation_coordinates(
-                                        &lane.native_payload,
-                                        offset,
-                                    )
-                                })
-                                .flatten()
-                        })
-                        .map(|point| (marker.id.clone(), point, offset))
-                })
-                .collect::<Vec<_>>();
+            let points =
+                lane.sketch_entities
+                    .iter()
+                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                    // A spatial sketch stores an indexed geometry marker and an
+                    // unindexed zero-valued anchor for the same point. Only the
+                    // indexed marker is a model-space locus.
+                    .filter(|marker| marker.object_index.is_some())
+                    .filter_map(|marker| {
+                        let offset = usize::try_from(marker.offset()).ok()?;
+                        if !relation_ranges.is_empty()
+                            && (!relation_ranges.iter().any(|(start, end)| {
+                                marker.offset() > *start && marker.offset() < *end
+                            }) || marker.object_index.is_none()
+                                || !matches!(
+                                    marker_native_code(&lane.native_payload, offset),
+                                    Some(1..=85)
+                                ))
+                        {
+                            return None;
+                        }
+                        marker_spatial_coordinates(&lane.native_payload, offset)
+                            .or_else(|| {
+                                declared_spatial
+                                    .then(|| {
+                                        current_indexed_spatial_relation_coordinates(
+                                            &lane.native_payload,
+                                            offset,
+                                        )
+                                    })
+                                    .flatten()
+                            })
+                            .map(|point| (marker.id.clone(), point, offset))
+                    })
+                    .collect::<Vec<_>>();
             if !points.is_empty() {
                 point_candidates.push((lane, points));
             }
@@ -141,21 +140,29 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+            let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
-            ));
-            let mut projected = points
+            )) else {
+                continue;
+            };
+            let Some(mut projected) = points
                 .iter()
                 .map(|(native_ref, point, offset)| {
-                    (
+                    Some((
                         *offset,
                         Some(native_ref.clone()),
-                        SpatialSketchGeometry::Point { position: *point },
-                    )
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                            position: *point,
+                        })
+                        .ok()?,
+                    ))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
             let lines = feature_object_name(record, lane)
                 .and_then(|name| {
                     let start = usize::try_from(name.offset).ok()?;
@@ -179,18 +186,26 @@ pub(crate) fn spatial_sketches(
                     .then_some((start, offsets, vertices))
                 })
                 .unwrap_or_default();
-            projected.extend(lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)).map(
-                |(offsets, vertices)| {
-                    (
+            let Some(projected_lines) = lines
+                .1
+                .chunks_exact(2)
+                .zip(lines.2.chunks_exact(2))
+                .map(|(offsets, vertices)| {
+                    Some((
                         lines.0 + offsets[0],
                         None,
-                        SpatialSketchGeometry::Line {
+                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                             start: vertices[0],
                             end: vertices[1],
-                        },
-                    )
-                },
-            ));
+                        })
+                        .ok()?,
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            projected.extend(projected_lines);
             projected.sort_unstable_by_key(|(offset, ..)| *offset);
             sketches.push(SpatialSketch {
                 id: sketch_id.clone(),
@@ -204,14 +219,20 @@ pub(crate) fn spatial_sketches(
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
-            entities.extend(projected.into_iter().enumerate().map(
+            entities.extend(projected.into_iter().enumerate().filter_map(
                 |(index, (_, native_ref, geometry))| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                        sketch_id.clone(),
-                        geometry,
+                    Some(
+                        SpatialSketchEntity::new(
+                            SpatialSketchEntityId::mint(format!(
+                                "{}:entity:{index}",
+                                sketch_id.as_str()
+                            ))
+                            .ok()?,
+                            sketch_id.clone(),
+                            geometry,
+                        )
+                        .with_native_ref(native_ref),
                     )
-                    .with_native_ref(native_ref)
                 },
             ));
             feature
@@ -259,11 +280,33 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
+        let Ok(sketch_id) = SpatialSketchId::mint(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,
-        ));
+        )) else {
+            continue;
+        };
+        let Some(projected) = vertices
+            .chunks_exact(2)
+            .enumerate()
+            .map(|(index, vertices)| {
+                Some(SpatialSketchEntity::new(
+                    SpatialSketchEntityId::mint(format!("{}:entity:{index}", sketch_id.as_str()))
+                        .ok()?,
+                    sketch_id.clone(),
+                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                        start: vertices[0],
+                        end: vertices[1],
+                    })
+                    .ok()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+
         sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: feature.name.clone(),
@@ -272,21 +315,7 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(lane.id.clone()),
         });
-        entities.extend(
-            vertices
-                .chunks_exact(2)
-                .enumerate()
-                .map(|(index, vertices)| {
-                    SpatialSketchEntity::new(
-                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                        sketch_id.clone(),
-                        SpatialSketchGeometry::Line {
-                            start: vertices[0],
-                            end: vertices[1],
-                        },
-                    )
-                }),
-        );
+        entities.extend(projected);
         feature
             .evaluation
             .set_definition(FeatureDefinition::SpatialSketch {
@@ -714,7 +743,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
             Some((offset, code))
         })
         .enumerate()
-        .map(|(ordinal, (offset, code))| {
+        .filter_map(|(ordinal, (offset, code))| {
             let linked_point = linked_profile_point(payload, offset);
             let legacy_alternate_profile_point =
                 legacy_geometry_locus_alternate_profile_point_coordinates(payload, offset);
@@ -849,19 +878,18 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
-            SketchInputEntity {
-                id: format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                feature_ref: None,
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                object_index: marker_object_index(payload, offset),
-                local_id: marker_local_id(payload, offset),
+            let mut entity = SketchInputEntity::try_new(
+                format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
+                parent.to_string(),
+                u32::try_from(ordinal).ok()?,
+                offset as u64,
                 kind,
-                state_value: marker_state_value(payload, offset),
-                coordinates_m,
-                links: None,
-            }
+                payload,
+            )
+            .ok()?;
+            entity.state_value = marker_state_value(payload, offset);
+            entity.coordinates_m = coordinates_m;
+            Some(entity)
         })
         .collect()
 }
@@ -873,7 +901,7 @@ fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32)
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
-pub(super) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
+pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
     if !sketch_marker_prefix_at(payload, offset) {
         return false;
     }
@@ -3075,7 +3103,7 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Option<[u64; 2]> {
-    let offset = usize::try_from(curve.offset).ok()?;
+    let offset = usize::try_from(curve.offset()).ok()?;
     let curve_index = u16::try_from(curve.object_index?).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(1)
@@ -3090,13 +3118,16 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
     {
-        let marker_offset = usize::try_from(marker.offset).ok()?;
+        let marker_offset = usize::try_from(marker.offset()).ok()?;
         let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
             continue;
         };
         for (selector, linked_curve) in links {
             if linked_curve == curve_index {
-                by_selector.entry(selector).or_default().push(marker.offset);
+                by_selector
+                    .entry(selector)
+                    .or_default()
+                    .push(marker.offset());
             }
         }
     }

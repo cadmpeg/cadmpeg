@@ -18,7 +18,7 @@ fn boundary_parameter_ranges_reject_invalid_values_and_preserve_direction() {
     for endpoints in [[0.0, 1.0], [5.0, 2.0]] {
         for reversed in [false, true] {
             let boundary = SketchProfileBoundaryUse {
-                entity: SketchEntityId("test:sketch-entity#one".into()),
+                entity: SketchEntityId::mint("test:test:sketch-entity#one").unwrap(),
                 parameter_range: DirectedParameterRange::new(endpoints).unwrap(),
                 reversed,
             };
@@ -82,7 +82,7 @@ fn region_loops_reject_repeated_and_outer_holes() {
 #[test]
 fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     let boundary = SketchProfileBoundaryUse {
-        entity: SketchEntityId("test:sketch-entity#one".into()),
+        entity: SketchEntityId::mint("test:test:sketch-entity#one").unwrap(),
         parameter_range: DirectedParameterRange::new([5.0, 2.0]).unwrap(),
         reversed: false,
     };
@@ -107,7 +107,7 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     )
     .unwrap();
     let loops = SketchProfileRegion::loops(2, vec![]).unwrap();
-    let sketch = SketchId("test:sketch#one".into());
+    let sketch = SketchId::mint("test:test:sketch#one").unwrap();
     for regions in [
         vec![],
         vec![trimmed.clone(), trimmed.clone()],

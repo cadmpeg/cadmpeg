@@ -432,7 +432,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         FORMAT,
         DecodePurpose::Model,
     )
-    .unwrap();
+    .expect("valid BREP tolerances");
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
@@ -590,10 +590,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     );
     assert_eq!(
         (
-            decoded.color.r,
-            decoded.color.g,
-            decoded.color.b,
-            decoded.color.a,
+            decoded.color.r(),
+            decoded.color.g(),
+            decoded.color.b(),
+            decoded.color.a(),
         ),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
@@ -727,18 +727,19 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         record(3, "shell", vec![Token::Ref(1)]),
         record(4, "loop", vec![Token::Ref(2)]),
     ];
+    let face_id = FaceId::mint("test:model:face#0").expect("identity grammar");
     let mut brep = AsmBrep {
         shells: vec![Shell::new(
             ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
             RegionId::mint("test:model:region#0").expect("identity grammar"),
-            Vec::new(),
+            vec![face_id.clone()],
             Vec::new(),
             Vec::new(),
         )
         .unwrap()],
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
-            face: FaceId::mint("test:model:face#0").expect("identity grammar"),
+            face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
                     vec![cadmpeg_ir::ids::CoedgeId::mint("test:model:coedge#0")
@@ -1025,7 +1026,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         &HashSet::new(),
         &HashSet::new(),
         FORMAT,
-    );
+    )
+    .expect("valid edge tolerance");
 
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.edges[0].curve, None);

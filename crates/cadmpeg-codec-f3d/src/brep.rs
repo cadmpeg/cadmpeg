@@ -3,8 +3,7 @@
 //! blob-scoped id qualification, and Design body-map selector resolution.
 
 use crate::records::{
-    sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
-    PersistentSubentityTag, SketchCurveLink,
+    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
 };
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
@@ -260,7 +259,13 @@ pub fn decode(
     stream: &str,
     format: IdFormat<'_>,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    decode_with_purpose(records, bytes, stream, format, DecodePurpose::Model).map(Brep::from_asm)
+    Ok(Brep::from_asm(decode_with_purpose(
+        records,
+        bytes,
+        stream,
+        format,
+        DecodePurpose::Model,
+    )?))
 }
 
 /// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
@@ -275,15 +280,14 @@ pub fn decode_text(
     entry: &str,
     format: IdFormat<'_>,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    decode_with_header(
+    Ok(Brep::from_asm(decode_with_header(
         &stream.records,
         bytes,
         Some(stream.header.as_kernel_header()),
         entry,
         format,
         DecodePurpose::Model,
-    )
-    .map(Brep::from_asm)
+    )?))
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
@@ -294,8 +298,13 @@ pub(crate) fn decode_history_topology(
     bytes: &[u8],
     format: IdFormat<'_>,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    decode_with_purpose(records, bytes, "history", format, DecodePurpose::History)
-        .map(Brep::from_asm)
+    Ok(Brep::from_asm(decode_with_purpose(
+        records,
+        bytes,
+        "history",
+        format,
+        DecodePurpose::History,
+    )?))
 }
 
 /// Resolve one Design body selector within one BREP blob. Exact native keys
@@ -401,7 +410,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
         target: attribute.target.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
-        sense: (!sketch_link_sense_is_unconstrained(payload.sense)).then_some(payload.sense),
+        sense: crate::records::SketchLinkSense::try_from(payload.sense).ok(),
         role: payload.role,
         closure: payload.closure,
     })

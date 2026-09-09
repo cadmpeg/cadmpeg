@@ -29,12 +29,14 @@ impl UnionFind {
     }
 
     /// Returns the representative of `node`, compressing the path to it.
-    pub(crate) fn find(&mut self, node: usize) -> usize {
-        let parent = self.parents[node];
-        if parent != node {
-            self.parents[node] = self.find(parent);
+    pub(crate) fn find(&mut self, mut node: usize) -> usize {
+        let root = self.root(node);
+        while node != root {
+            let parent = self.parents[node];
+            self.parents[node] = root;
+            node = parent;
         }
-        self.parents[node]
+        root
     }
 
     /// Returns the representative of `node` without mutating the forest.
@@ -52,5 +54,29 @@ impl UnionFind {
         if left != right {
             self.parents[right] = left;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UnionFind;
+
+    #[test]
+    fn long_chain_compression_preserves_left_root_selection() {
+        const LAST: usize = 100_000;
+        let mut union = UnionFind::new(LAST + 1);
+        for node in 0..LAST {
+            union.union(node + 1, node);
+        }
+        assert_eq!(union.root(0), LAST);
+        assert_eq!(union.find(0), LAST);
+        assert!(union.parents.iter().all(|parent| *parent == LAST));
+        let separate = union.push();
+        assert_eq!(union.find(separate), separate);
+        assert_ne!(union.find(0), separate);
+        union.union(separate, 0);
+        assert_eq!(union.find(0), separate);
+        assert_eq!(union.find(LAST), separate);
+        assert_eq!(union.root(separate), separate);
     }
 }

@@ -3,15 +3,41 @@
 
 use crate::{psb, scalar};
 
+/// Named scalar-array field in a primitive record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimitiveArrayField {
+    /// First primitive point.
+    P1,
+    /// Second primitive point.
+    P2,
+    /// Primitive points.
+    Points,
+    /// Consecutive vertex positions.
+    VertexPositions,
+    /// Interleaved vertex normals and positions.
+    VertexNormalsAndPositions,
+}
+
+impl PrimitiveArrayField {
+    /// Stored field spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::P1 => "p1",
+            Self::P2 => "p2",
+            Self::Points => "pts",
+            Self::VertexPositions => "mv_p_xyz",
+            Self::VertexNormalsAndPositions => "mv_p_NxNyNzxyz",
+        }
+    }
+}
+
 /// One bounded, named scalar array in a primitive record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrimitiveScalarArray {
     /// Named field containing the array.
-    pub field: String,
+    pub field: PrimitiveArrayField,
     /// Byte offset of the named-record header in the expanded section.
     pub offset: usize,
-    /// Declared scalar count.
-    pub count: u32,
     /// Completely decoded scalar values.
     pub values: Vec<f64>,
 }
@@ -60,13 +86,15 @@ fn triangle_strip_geometry(
     let mut positions = None::<Vec<[f64; 3]>>;
     let mut normals = None::<Vec<[f64; 3]>>;
     for array in arrays {
-        let (candidate_positions, candidate_normals) = match array.field.as_str() {
-            "mv_p_xyz"
+        let (candidate_positions, candidate_normals) = match array.field {
+            PrimitiveArrayField::VertexPositions => {
                 if array.values.len()
-                    == vertex_count
+                    != vertex_count
                         .checked_mul(3)
-                        .ok_or(TriangleStripGeometryError::Missing)? =>
-            {
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
+                }
                 (
                     array
                         .values
@@ -76,12 +104,14 @@ fn triangle_strip_geometry(
                     None,
                 )
             }
-            "mv_p_NxNyNzxyz"
+            PrimitiveArrayField::VertexNormalsAndPositions => {
                 if array.values.len()
-                    == vertex_count
+                    != vertex_count
                         .checked_mul(6)
-                        .ok_or(TriangleStripGeometryError::Missing)? =>
-            {
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
+                }
                 (
                     array
                         .values
@@ -97,7 +127,9 @@ fn triangle_strip_geometry(
                     ),
                 )
             }
-            _ => continue,
+            PrimitiveArrayField::P1 | PrimitiveArrayField::P2 | PrimitiveArrayField::Points => {
+                continue
+            }
         };
         if positions
             .as_ref()
@@ -205,11 +237,17 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
 /// high byte with a compact exponent byte. Only complete arrays whose declared
 /// count is satisfied are returned.
 pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
-    const FIELDS: &[&str] = &["p1", "p2", "pts", "mv_p_xyz", "mv_p_NxNyNzxyz"];
+    const FIELDS: [PrimitiveArrayField; 5] = [
+        PrimitiveArrayField::P1,
+        PrimitiveArrayField::P2,
+        PrimitiveArrayField::Points,
+        PrimitiveArrayField::VertexPositions,
+        PrimitiveArrayField::VertexNormalsAndPositions,
+    ];
     let mut arrays = Vec::new();
     for field in FIELDS {
         let mut marker = vec![psb::token::NAMED_RECORD, 0x06];
-        marker.extend_from_slice(field.as_bytes());
+        marker.extend_from_slice(field.as_str().as_bytes());
         marker.push(0);
         for (offset, _) in data
             .windows(marker.len())
@@ -241,9 +279,8 @@ pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
             }
             if values.len() == capacity && values.iter().all(|value| value.is_finite()) {
                 arrays.push(PrimitiveScalarArray {
-                    field: (*field).to_string(),
+                    field,
                     offset,
-                    count,
                     values,
                 });
             }
@@ -312,7 +349,7 @@ mod tests {
         let bytes = named("mv_p_NxNyNzxyz", &tuple, 6);
         let arrays = scalar_arrays(&bytes);
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].count, 6);
+        assert_eq!(arrays[0].values.len(), 6);
     }
 
     #[test]
@@ -326,7 +363,7 @@ mod tests {
         );
         let arrays = scalar_arrays(&bytes);
         assert_eq!(arrays.len(), 1);
-        assert_eq!(arrays[0].field, "mv_p_xyz");
+        assert_eq!(arrays[0].field.as_str(), "mv_p_xyz");
         assert_eq!(arrays[0].values.len(), 3);
     }
 
@@ -376,15 +413,13 @@ mod tests {
     #[test]
     fn agreeing_triangle_strip_representations_select_normals_independent_of_order() {
         let xyz = PrimitiveScalarArray {
-            field: "mv_p_xyz".to_string(),
+            field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            count: 9,
             values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         };
         let normal_xyz = PrimitiveScalarArray {
-            field: "mv_p_NxNyNzxyz".to_string(),
+            field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            count: 18,
             values: vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,
@@ -405,15 +440,13 @@ mod tests {
     #[test]
     fn conflicting_triangle_strip_representations_are_withheld() {
         let xyz = PrimitiveScalarArray {
-            field: "mv_p_xyz".to_string(),
+            field: PrimitiveArrayField::VertexPositions,
             offset: 10,
-            count: 9,
             values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
         };
         let conflicting_xyz = PrimitiveScalarArray {
-            field: "mv_p_NxNyNzxyz".to_string(),
+            field: PrimitiveArrayField::VertexNormalsAndPositions,
             offset: 20,
-            count: 18,
             values: vec![
                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                 1.0, 0.0,

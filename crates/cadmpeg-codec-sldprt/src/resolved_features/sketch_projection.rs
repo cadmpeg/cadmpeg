@@ -7,7 +7,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchId,
+    SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
@@ -16,11 +16,18 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use super::sketch_edges::{circle_contains_point, ellipse_contains_point};
 
+/// Sketches and their projected entities and constraints.
+pub(crate) struct ProjectedSketches {
+    pub(crate) sketches: Vec<Sketch>,
+    pub(crate) entities: Vec<SketchEntity>,
+    pub(crate) constraints: Vec<SketchConstraint>,
+}
+
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
-pub fn sketches(
+pub(crate) fn sketches(
     scan: &ContainerScan,
     annotations: &mut Annotations,
-) -> (Vec<Sketch>, Vec<SketchEntity>, Vec<SketchConstraint>) {
+) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
@@ -36,7 +43,7 @@ pub fn sketches(
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep = crate::brep::decode(&stream.payload, &stream.header, section);
+            let brep = crate::brep::decode(&stream.payload, &stream.header, section)?;
             project_brep(
                 &brep,
                 source.ordinal(),
@@ -53,7 +60,11 @@ pub fn sketches(
             );
         }
     }
-    (sketches, entities, constraints)
+    Ok(ProjectedSketches {
+        sketches,
+        entities,
+        constraints,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -116,9 +127,16 @@ fn project_brep(
         else {
             continue;
         };
-        let sketch_id = SketchId(format!(
+        let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        ));
+        )) else {
+            continue;
+        };
+        let Ok(placement) =
+            cadmpeg_ir::sketches::SketchPlacement::try_resolved(*origin, *normal, *u_axis)
+        else {
+            continue;
+        };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
@@ -141,10 +159,10 @@ fn project_brep(
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
                     id.clone()
                 } else {
-                    let id = SketchEntityId(format!(
+                    let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
-                    ));
+                    )) else { continue };
                     let Some(geometry) =
                         project_edge(edge, &vertices, &points, &curves, *origin, *u_axis, v_axis)
                     else {
@@ -158,7 +176,7 @@ fn project_brep(
                     };
                     crate::annotations::note(
                         annotations,
-                        id.0.clone(),
+                        id.as_str().to_owned(),
                         section,
                         0,
                         "feature_input_profile_edge",
@@ -199,40 +217,47 @@ fn project_brep(
             let Some(position) = points.get(&vertex.point) else {
                 continue;
             };
-            let id = SketchEntityId(format!(
+            let Ok(id) = SketchEntityId::mint(format!(
                 "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                 edge_entities.len()
                     + entities
                         .iter()
                         .filter(|entity| entity.sketch == sketch_id)
                         .count()
-            ));
+            )) else {
+                continue;
+            };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: project_point(*position, *origin, *u_axis, v_axis),
+            }) else {
+                continue;
+            };
             crate::annotations::note(
                 annotations,
-                id.0.clone(),
+                id.as_str().to_owned(),
                 section,
                 0,
                 "feature_input_profile_point",
                 Exactness::Derived,
             );
             entities.push(
-                SketchEntity::new(
-                    id,
-                    sketch_id.clone(),
-                    SketchGeometry::Point {
-                        position: project_point(*position, *origin, *u_axis, v_axis),
-                    },
-                )
-                .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
-                .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.as_str())]),
+                SketchEntity::new(id, sketch_id.clone(), geometry)
+                    .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
+                    .with_endpoint_refs(vec![format!(
+                        "{stream_ordinal}:{}",
+                        vertex.point.as_str()
+                    )]),
             );
         }
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
+            continue;
+        };
         if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
             continue;
         }
         crate::annotations::note(
             annotations,
-            sketch_id.0.clone(),
+            sketch_id.as_str().to_owned(),
             section,
             stream_offset as u64,
             "feature_input_profile",
@@ -253,11 +278,7 @@ fn project_brep(
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: *origin,
-                normal: *normal,
-                u_axis: *u_axis,
-            },
+            placement,
             profiles,
             native_ref: Some(native_ref.to_string()),
         });
@@ -311,17 +332,21 @@ mod projected_profile_orientation_tests {
     use super::{circle_contains_point, ellipse_contains_point, orient_closed_profile_by_topology};
     use cadmpeg_ir::{
         math::Point2,
-        sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId},
+        sketches::{
+            SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+            SketchGeometryDefinition, SketchId,
+        },
     };
 
     fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
-            SketchGeometry::Line {
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
     }
@@ -329,9 +354,9 @@ mod projected_profile_orientation_tests {
     #[test]
     fn orients_each_closed_profile_edge_toward_its_topological_successor() {
         let entities = [
-            line("a", "p0", "p1"),
-            line("b", "p1", "p2"),
-            line("c", "p0", "p2"),
+            line("synthetic:test:id#a", "p0", "p1"),
+            line("synthetic:test:id#b", "p1", "p2"),
+            line("synthetic:test:id#c", "p0", "p2"),
         ];
         let mut profile = entities
             .iter()
@@ -352,9 +377,9 @@ mod projected_profile_orientation_tests {
     #[test]
     fn preserves_all_orientations_when_endpoint_incidence_is_ambiguous() {
         let entities = [
-            line("a", "p0", "p1"),
-            line("b", "p1", "p2"),
-            line("c", "p3", "p4"),
+            line("synthetic:test:id#a", "p0", "p1"),
+            line("synthetic:test:id#b", "p1", "p2"),
+            line("synthetic:test:id#c", "p3", "p4"),
         ];
         let mut profile = entities
             .iter()

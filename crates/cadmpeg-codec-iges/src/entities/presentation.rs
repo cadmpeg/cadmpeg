@@ -42,7 +42,7 @@ fn standard_color(number: i64) -> Option<Color> {
         8 => (1.0, 1.0, 1.0),
         _ => return None,
     };
-    Some(Color { r, g, b, a: 1.0 })
+    Color::new(r, g, b, 1.0)
 }
 
 fn text_font_definition_pointer_valid(
@@ -106,9 +106,9 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
-fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
+fn line_font_definition_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.status.subordinate() == Some(Subordinate::Independent)
-        && entry.status.use_flag() == Some(UseFlag::Definition)
+        && entry.status.use_flag(global_table) == Some(UseFlag::Definition)
         && (1..=5).contains(&entry.line_font)
 }
 
@@ -116,12 +116,12 @@ fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
     match global_table {
         GlobalTable::V4_0 | GlobalTable::V5_0 => {
             entry.status.subordinate() != Some(Subordinate::Independent)
-                && entry.status.use_flag() == Some(UseFlag::Annotation)
+                && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
                 && entry.line_font != 0
         }
         GlobalTable::Legacy | GlobalTable::V5Later => {
             entry.status.subordinate() == Some(Subordinate::Independent)
-                && entry.status.use_flag() == Some(UseFlag::Definition)
+                && entry.status.use_flag(global_table) == Some(UseFlag::Definition)
                 && entry.structure == 0
                 && entry.line_font == 0
                 && entry.view == 0
@@ -169,10 +169,11 @@ fn text_font_definition(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    global_table: GlobalTable,
 ) -> Option<TextFontDefinition> {
     let parameter_end = record.parameter_end();
     let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
-        && entry.status.use_flag() == Some(UseFlag::Definition);
+        && entry.status.use_flag(global_table) == Some(UseFlag::Definition);
     if !directory_valid
         || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
@@ -247,7 +248,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
         .filter_map(|entry| {
             let record = records.get(&entry.sequence).copied()?;
-            text_font_definition(entry, record, &entries).map(|font| (entry.sequence, font))
+            text_font_definition(entry, record, &entries, global.global_table())
+                .map(|font| (entry.sequence, font))
         })
         .collect::<BTreeMap<_, _>>();
     let mut visited_fonts = BTreeSet::new();
@@ -352,7 +354,7 @@ pub(super) fn project(
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if !line_font_definition_directory_valid(entry) {
+        if !line_font_definition_directory_valid(entry, global.global_table()) {
             losses.push(loss(
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
@@ -439,17 +441,23 @@ pub(super) fn project(
             }
         };
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
-            && entry.status.use_flag() == Some(UseFlag::Definition)
+            && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition)
             && matches!(entry.color, 0..=8);
         if !directory_valid {
             losses.push(loss(entry, "color definition Directory fields are invalid"));
             continue;
         }
-        let color = Color {
-            r: (components[0] / 100.0) as f32,
-            g: (components[1] / 100.0) as f32,
-            b: (components[2] / 100.0) as f32,
-            a: 1.0,
+        let Some(color) = Color::new(
+            (components[0] / 100.0) as f32,
+            (components[1] / 100.0) as f32,
+            (components[2] / 100.0) as f32,
+            1.0,
+        ) else {
+            losses.push(loss(
+                entry,
+                "color definition components are outside [0, 100]",
+            ));
+            continue;
         };
         defined.insert(entry.sequence, color);
         names.insert(entry.sequence, name.clone());
@@ -523,7 +531,7 @@ pub(super) fn project(
 
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);
@@ -531,7 +539,7 @@ pub(super) fn project(
     }
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
-            source.color = source_sequence(&source.object_id)
+            source.color = source_sequence(source.object_id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve(entry.color))
                 .map(|(_, color)| color);

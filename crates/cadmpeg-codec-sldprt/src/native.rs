@@ -207,17 +207,19 @@ const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeN
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct SldprtNative {
+pub(crate) struct SldprtNative {
     /// Parametric construction-history timelines decoded from the source part.
-    pub feature_histories: Vec<FeatureHistory>,
+    pub(crate) feature_histories: Vec<FeatureHistory>,
     /// Native feature-input byte streams retained for parametric replay and rewrite.
-    pub feature_input_lanes: Vec<FeatureInputLane>,
+    pub(crate) feature_input_lanes: Vec<FeatureInputLane>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
-    pub pmi_dimensions: Vec<PmiDimension>,
+    pub(crate) pmi_dimensions: Vec<PmiDimension>,
 }
 
+pub(crate) mod lanes;
+
 impl SldprtNative {
-    pub fn load(
+    pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut native = Self {
@@ -498,7 +500,7 @@ impl SldprtNative {
                     .find(|class| class.id == record.class_ref)
                     .is_none_or(|class| {
                         !matches!(
-                            crate::classification::native_object_class(&class.name).kind,
+                            crate::classification::native_object_class(&class.name),
                             crate::classification::NativeClassKind::SketchRelation(family)
                                 if family == record.family
                         )
@@ -555,12 +557,32 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             history.configurations.sort_by_key(|record| record.ordinal);
+            if let Some(pair) = history
+                .configurations
+                .windows(2)
+                .find(|pair| pair[0].ordinal == pair[1].ordinal)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks history {} repeats configuration ordinal {}",
+                    history.id, pair[1].ordinal
+                )));
+            }
             history.features = features
                 .iter()
                 .filter(|record| record.parent == history.id)
                 .cloned()
                 .collect();
             history.features.sort_by_key(|record| record.ordinal);
+            if let Some(pair) = history
+                .features
+                .windows(2)
+                .find(|pair| pair[0].ordinal == pair[1].ordinal)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks history {} repeats feature ordinal {}",
+                    history.id, pair[1].ordinal
+                )));
+            }
         }
         for lane in &mut native.feature_input_lanes {
             lane.classes = classes
@@ -689,12 +711,65 @@ impl SldprtNative {
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
-            lane.sketch_entities.sort_by_key(|record| record.ordinal);
+            lane.sketch_entities
+                .sort_by_key(crate::records::SketchInputEntity::ordinal);
+            for (index, entity) in lane.sketch_entities.iter().enumerate() {
+                if usize::try_from(entity.ordinal()).ok() != Some(index) {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
+                        entity.ordinal()
+                    )));
+                }
+                if index.checked_sub(1).is_some_and(|previous| {
+                    lane.sketch_entities[previous].offset() >= entity.offset()
+                }) {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "SolidWorks feature-input entity offsets are not strictly increasing"
+                            .into(),
+                    ));
+                }
+                let position = usize::try_from(entity.offset())
+                    .ok()
+                    .filter(|&offset| {
+                        offset < lane.native_payload.len()
+                            && crate::resolved_features::markers::sketch_marker_at(
+                                &lane.native_payload,
+                                offset,
+                            )
+                    })
+                    .ok_or_else(|| {
+                        cadmpeg_ir::NativeConvertError::InvalidOwner(
+                            "SolidWorks sketch entity offset is outside its native payload".into(),
+                        )
+                    })?;
+                if entity.object_index
+                    != crate::resolved_features::markers::marker_object_index(
+                        &lane.native_payload,
+                        position,
+                    )
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "SolidWorks feature-input object index does not match its native payload"
+                            .into(),
+                    ));
+                }
+                if entity.local_id
+                    != crate::resolved_features::markers::marker_local_id(
+                        &lane.native_payload,
+                        position,
+                    )
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "SolidWorks feature-input local object id does not match its native payload".into()
+                    ));
+                }
+            }
         }
+        lanes::admit(&native)?;
         Ok(native)
     }
 
-    pub fn store(
+    pub(crate) fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -1131,7 +1206,7 @@ fn relation_instance_shape_valid(
         return false;
     };
     if !matches!(
-        crate::classification::native_object_class(&class.name).kind,
+        crate::classification::native_object_class(&class.name),
         crate::classification::NativeClassKind::SketchRelation(family)
             if family == record.family
     ) {

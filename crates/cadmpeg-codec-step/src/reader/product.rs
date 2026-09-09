@@ -11,7 +11,7 @@ use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, TransformError};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -345,7 +345,7 @@ pub(super) fn decode(
         &mut warnings,
         &mut ambiguous_placements,
         &mut competing_placements,
-    );
+    )?;
     for (&usage_id, source_ids) in &ambiguous_placements {
         if competing_placements.contains_key(&usage_id) {
             continue;
@@ -477,7 +477,7 @@ pub(super) fn decode(
         &mut warnings,
         &mut losses,
         ctx,
-    );
+    )?;
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -564,7 +564,7 @@ fn apply_body_placements(
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
-) {
+) -> Result<(), CodecError> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
@@ -624,7 +624,10 @@ fn apply_body_placements(
         if bodies.is_empty() {
             continue;
         }
-        let Some(transform) = mapped_item_transform(origin, target, geometry) else {
+        let Some(transform) = mapped_item_transform(origin, target, geometry)
+            .transpose()
+            .map_err(placement_error)?
+        else {
             warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
             continue;
         };
@@ -661,6 +664,7 @@ fn apply_body_placements(
             }
         }
     }
+    Ok(())
 }
 
 fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
@@ -835,7 +839,7 @@ fn occurrence_placements(
     warnings: &mut Vec<String>,
     ambiguous: &mut BTreeMap<u64, Vec<u64>>,
     competing: &mut BTreeMap<u64, Vec<u64>>,
-) -> BTreeMap<u64, Transform> {
+) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let pds = exchange
         .records
         .iter()
@@ -867,7 +871,10 @@ fn occurrence_placements(
             &pds,
             usages,
             &definition_representations,
-        ) {
+        )
+        .transpose()
+        .map_err(placement_error)?
+        {
             if usages.contains_key(&usage) {
                 context_candidates.entry(usage).or_default().push(record_id);
                 result.insert(usage, transform);
@@ -929,6 +936,8 @@ fn occurrence_placements(
                 }
                 let Some((mapped_representation, transform)) =
                     mapped_item_placement(item, exchange, geometry)
+                        .transpose()
+                        .map_err(placement_error)?
                 else {
                     continue;
                 };
@@ -997,6 +1006,8 @@ fn occurrence_placements(
                 }
                 let Some((mapped_representation, transform)) =
                     mapped_item_placement(item, exchange, geometry)
+                        .transpose()
+                        .map_err(placement_error)?
                 else {
                     continue;
                 };
@@ -1023,25 +1034,37 @@ fn occurrence_placements(
             ));
         }
     }
-    result
+    Ok(result)
+}
+
+fn placement_error(error: TransformError) -> CodecError {
+    CodecError::malformed(format_args!("invalid STEP placement: {error}"))
 }
 
 fn mapped_item_placement(
     item: &RawRecord,
     exchange: &Exchange,
     geometry: &GeometryData,
-) -> Option<(u64, Transform)> {
+) -> Option<Result<(u64, Transform), TransformError>> {
     let (representation, origin, target) = mapped_item_definition(item, exchange)?;
-    Some((
-        representation,
-        mapped_item_transform(origin, target, geometry)?,
-    ))
+    Some(
+        mapped_item_transform(origin, target, geometry)?
+            .map(|transform| (representation, transform)),
+    )
 }
 
-fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryData) -> Option<Transform> {
+fn mapped_item_transform(
+    origin: u64,
+    target: u64,
+    geometry: &GeometryData,
+) -> Option<Result<Transform, TransformError>> {
     let from = transformation_item(origin, geometry)?;
     let to = transformation_item(target, geometry)?;
-    Some(to.compose(from.try_inverse_affine()?))
+    match from.try_inverse_affine() {
+        Ok(inverse) => Some(to.compose(inverse)),
+        Err(TransformError::Singular) => None,
+        Err(error) => Some(Err(error)),
+    }
 }
 
 fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
@@ -1073,7 +1096,7 @@ fn occurrence_placement(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-) -> Option<(u64, Transform)> {
+) -> Option<Result<(u64, Transform), TransformError>> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
             .and_then(ValueExt::reference)?,
@@ -1107,7 +1130,11 @@ fn occurrence_placement(
     };
     let from = transformation_item(from_id, geometry)?;
     let to = transformation_item(to_id, geometry)?;
-    Some((usage, to.compose(from.try_inverse_affine()?)))
+    match from.try_inverse_affine() {
+        Ok(inverse) => Some(to.compose(inverse).map(|transform| (usage, transform))),
+        Err(TransformError::Singular) => None,
+        Err(error) => Some(Err(error)),
+    }
 }
 
 fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {

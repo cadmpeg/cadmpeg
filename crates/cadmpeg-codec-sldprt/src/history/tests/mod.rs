@@ -62,14 +62,14 @@ fn design_configuration(
     native_ref: Option<&str>,
 ) -> DesignConfiguration {
     DesignConfiguration {
-        id: ConfigurationId::mint(id).expect("identity grammar"),
+        id: ConfigurationId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         ordinal,
         active: false,
         source_index,
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),

@@ -20,7 +20,7 @@ use crate::application::refusal::ApplicationError;
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
-/// because the flag is this crate's. Ambiguity is the only resolution error.
+/// because the flag is this crate's.
 pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
     anyhow!("{error}; pass --input-format")
 }

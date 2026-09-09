@@ -60,18 +60,20 @@ fn generated_side_table() -> crate::feature::FeatureEntityTable {
 }
 
 fn sketch() -> Sketch {
-    let sketch_id = SketchId("creo:model:sketch#7".to_string());
-    let entity = SketchEntityId("creo:featdefs:sketch_entity#7:11".to_string());
+    let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).expect("valid test fixture");
+    let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#7:11".to_string())
+        .expect("valid test fixture");
     Sketch {
         id: sketch_id,
         name: None,
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: vec![vec![SketchEntityUse {
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity,
             reversed: false,
-        }]],
+        }]])
+        .expect("valid test fixture"),
         native_ref: None,
     }
 }
@@ -95,7 +97,10 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
 
     let mut duplicate_profile = sketch.clone();
     let repeated_use = duplicate_profile.profiles[0][0].clone();
-    duplicate_profile.profiles[0].push(repeated_use);
+    duplicate_profile
+        .profiles
+        .edit(|profiles| profiles[0].push(repeated_use))
+        .expect("valid test fixture");
     assert!(!sketch_profiles_cover_generated_extrusion_sides(
         &scan,
         &definition,
@@ -157,10 +162,16 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         .rows
         .extend([surface_row(32, 7, crate::surface::SurfaceKind::Plane)]);
     let mut sketch = sketch();
-    sketch.profiles[0].push(SketchEntityUse {
-        entity: SketchEntityId("creo:featdefs:sketch_entity#7:13".to_string()),
-        reversed: false,
-    });
+    sketch
+        .profiles
+        .edit(|profiles| {
+            profiles[0].push(SketchEntityUse {
+                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#7:13".to_string())
+                    .expect("valid test fixture"),
+                reversed: false,
+            });
+        })
+        .expect("valid test fixture");
 
     assert!(sketch_profiles_cover_generated_extrusion_sides(
         &scan,
