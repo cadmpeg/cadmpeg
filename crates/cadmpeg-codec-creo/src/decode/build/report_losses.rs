@@ -134,6 +134,11 @@ pub(super) fn push_brep_transfer_note(
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
 ) {
+    for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
+        losses.push(CreoLossCode::ExtrusionBodyRejected.note(format!(
+            "Extrusion body {body_id} was not transferred: {reason}"
+        )));
+    }
     let rejected_face_count = diagnostics.face_rejection_diagnostics.len();
     let rejection_details = FaceAdmissionRejection::ALL
         .into_iter()

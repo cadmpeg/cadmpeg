@@ -197,6 +197,7 @@ impl FaceAdmissionDetail {
 
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
+    pub(in super::super) rejected_extrusion_bodies: Vec<(BodyId, String)>,
     pub(in super::super) candidate_face_count: usize,
     pub(in super::super) admitted_face_count: usize,
     pub(in super::super) emitted_face_count: usize,

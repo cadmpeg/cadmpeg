@@ -141,7 +141,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations)?;
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations)?;
-    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations)?;
+    let feature_extrusion_brep_count =
+        transfer_resolved_extrusion_breps(scan, ir, annotations, brep_diagnostics)?;
     retain_unresolved_surface_carriers(scan, ir, annotations)?;
     let transferred_part_product = transfer_part_product(scan, ir, annotations);
     let decoded_feature_skamp_count = scan

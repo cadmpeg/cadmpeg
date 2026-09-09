@@ -68,6 +68,8 @@ pub enum CreoLossCode {
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
     BrepTransferIncomplete,
+    /// A resolved extrusion body failed shell admission.
+    ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
     GeometryInstanceCarriersGated,
     /// Unique `VisibGeom` surface rows were not transferred as carriers.
@@ -191,6 +193,7 @@ impl CreoLossCode {
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
+            Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
@@ -275,7 +278,8 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => Severity::Info,
             Self::BrepTransferIncomplete
             | Self::GeometryInstanceCarriersGated
-            | Self::TopologyIncompleteComponents => Severity::Blocking,
+            | Self::TopologyIncompleteComponents
+            | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -362,7 +366,9 @@ impl CreoLossCode {
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved => LossTaxonomy::GeometryNotTransferred,
-            Self::TopologyIncompleteComponents => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyIncompleteComponents | Self::ExtrusionBodyRejected => {
+                LossTaxonomy::TopologyNotTransferred
+            }
             Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
             | Self::FeatureSurfaceOperationIncomplete
@@ -441,6 +447,7 @@ mod tests {
                 "legacy.string-encoding-retained",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
+                "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
                 "geometry.visibgeom-curve-untransferred",
