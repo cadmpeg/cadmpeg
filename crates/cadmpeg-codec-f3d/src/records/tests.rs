@@ -40,6 +40,12 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
     for prefix in ["{", "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,"] {
         for identities in ["", ",\"secondary_identity\":249,\"secondary_identity_offset\":217", ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201"] {
             let wire = format!("{prefix}{fields}{identities}{suffix}");
+            let wire = if identities.is_empty() {
+                wire.replace("\"primary_identity_offset\":209", "\"primary_identity_offset\":201")
+                    .replace("\"next_byte_offset\":225", "\"next_byte_offset\":209")
+            } else {
+                wire
+            };
             let encoded = if prefix == "{" {
                 let value: crate::records::feature::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
                 serde_json::to_string(&value).expect("hole selection wire")
