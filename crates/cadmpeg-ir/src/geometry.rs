@@ -4821,7 +4821,10 @@ impl ProceduralSurfaceDefinition {
                                 crate::geometry::LoftBridgeToken::Double(value) => {
                                     value.is_finite()
                                 }
-                                _ => true,
+                                crate::geometry::LoftBridgeToken::Boolean(_)
+                                | crate::geometry::LoftBridgeToken::Integer(_)
+                                | crate::geometry::LoftBridgeToken::Text(_)
+                                | crate::geometry::LoftBridgeToken::Enum(_) => true,
                             })
                     }
                 };
