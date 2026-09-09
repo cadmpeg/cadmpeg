@@ -195,15 +195,19 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         6.0,
     ))
     .unwrap();
-    parameter.id = "f3d:native:parameter#45".into();
+    parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
     parameter.record_index = 45;
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
-    owner.id = "f3d:native:parameter-owner#44".into();
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
+        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let scope = DesignParameterScope {
-        id: "f3d:native:parameter-scope#12".into(),
+        id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
         byte_offset: 100,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
@@ -302,7 +306,11 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         .unwrap()
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
-    owner.id = "f3d:native:parameter-owner#44".into();
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        wire.id = "f3d:native:parameter-owner#44".into();
+        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
 
     let (features, parameters) =
         project_parameter_design(&[parameter], &[owner], &[], &[], &[], &[], &[], &[]);
@@ -343,20 +351,23 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         parameter.source_ordinal = record_index;
         parameter
     };
-    let owner = |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
-        id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index,
-        scope_record_index,
-        local_ordinal: parameter_record_index,
-        evaluated_value: 1.0,
-        evaluated_value_offset: 0,
-        parameter_record_index,
-        owned_ordinal: parameter_record_index,
-        variant: Some(0),
-        companion_record_index: record_index + 1,
+    let owner = |record_index, parameter_record_index, scope_record_index| {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index,
+            scope_record_index,
+            local_ordinal: parameter_record_index,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index,
+            owned_ordinal: parameter_record_index,
+            variant: Some(0),
+            companion_record_index: record_index + 1,
+        })
+        .unwrap()
     };
     let scope = |record_index| DesignParameterScope {
         id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
@@ -385,18 +396,18 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     };
 
     let document_width = parameter(None, 20, "60 mm", "Width");
-    let local_width = parameter(Some(101), 21, "20 mm", "Width");
-    let local_half = parameter(Some(102), 22, "Width / 2", "Half");
-    let remote_half = parameter(Some(103), 23, "Width / 2", "Half");
-    let owned_depth = parameter(Some(104), 24, "10 mm", "OwnedDepth");
+    let local_width = parameter(Some(22), 21, "20 mm", "Width");
+    let local_half = parameter(Some(23), 22, "Width / 2", "Half");
+    let remote_half = parameter(Some(24), 23, "Width / 2", "Half");
+    let owned_depth = parameter(Some(25), 24, "10 mm", "OwnedDepth");
     let document_half = parameter(None, 25, "OwnedDepth / 2", "DocumentHalf");
     let document_forward = parameter(None, 26, "Later / 2", "DocumentForward");
     let document_later = parameter(None, 27, "10 mm", "Later");
     let cycle_a = parameter(None, 28, "CycleB / 2", "CycleA");
     let cycle_b = parameter(None, 29, "CycleA / 2", "CycleB");
-    let preceding_shared = parameter(Some(105), 30, "10 mm", "Shared");
-    let shared_consumer = parameter(Some(106), 31, "Shared / 2", "SharedHalf");
-    let later_shared = parameter(Some(107), 32, "20 mm", "Shared");
+    let preceding_shared = parameter(Some(31), 30, "10 mm", "Shared");
+    let shared_consumer = parameter(Some(32), 31, "Shared / 2", "SharedHalf");
+    let later_shared = parameter(Some(33), 32, "20 mm", "Shared");
     let (_, parameters) = project_parameter_design(
         &[
             document_width,
@@ -414,13 +425,13 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
             later_shared,
         ],
         &[
-            owner(101, 21, 201),
-            owner(102, 22, 201),
-            owner(103, 23, 202),
-            owner(104, 24, 201),
-            owner(105, 30, 201),
-            owner(106, 31, 202),
-            owner(107, 32, 203),
+            owner(22, 21, 201),
+            owner(23, 22, 201),
+            owner(24, 23, 202),
+            owner(25, 24, 201),
+            owner(31, 30, 201),
+            owner(32, 31, 202),
+            owner(33, 32, 203),
         ],
         &[scope(201), scope(202), scope(203)],
         &[],
@@ -484,7 +495,7 @@ fn parameter_expressions_project_feature_dependencies() {
             1.0,
         ))
         .expect("generated owned parameter is canonical");
-        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.id = format!("f3d:native/BulkStream.dat:parameter#{record_index}");
         parameter.record_index = record_index;
         parameter.source_ordinal = record_index;
         parameter
@@ -494,15 +505,19 @@ fn parameter_expressions_project_feature_dependencies() {
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
-        owner.id = format!("f3d:native:owner#{record_index}");
-        owner.record_index = record_index;
-        owner.scope_record_index = scope_record_index;
-        owner.parameter_record_index = parameter_record_index;
-        owner.companion_record_index = parameter_record_index + 1;
+        {
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
+            wire.record_index = record_index;
+            wire.scope_record_index = scope_record_index;
+            wire.parameter_record_index = parameter_record_index;
+            wire.companion_record_index = parameter_record_index + 1;
+            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        }
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
-        id: format!("f3d:native:scope#{record_index}"),
+        id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
         byte_offset,
         class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,

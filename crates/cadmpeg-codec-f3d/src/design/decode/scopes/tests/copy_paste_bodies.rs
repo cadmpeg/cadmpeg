@@ -38,7 +38,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     assert_eq!(operation.relation_record_index, 1_700);
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.source.value)
             .collect::<Vec<_>>(),
@@ -46,7 +46,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     );
     assert_eq!(
         operation
-            .bodies
+            .bodies()
             .iter()
             .map(|body| body.copied.value)
             .collect::<Vec<_>>(),

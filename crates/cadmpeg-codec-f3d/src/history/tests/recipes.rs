@@ -222,8 +222,9 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             transition: None,
         }],
     };
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -236,12 +237,12 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
@@ -1508,17 +1509,15 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
-            designation: "M4x0.7".into(),
+            designation: cadmpeg_ir::NonEmptyString::new("M4x0.7").unwrap(),
             nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
             )
             .expect("nominal size"),
-            profile: "ISO Metric profile".into(),
-            major_diameter: 0.4,
-            minor_diameter: 0.2,
-            pitch: 0.07,
-            pitch_diameter: 0.3,
+            profile: cadmpeg_ir::NonEmptyString::new("ISO Metric profile").unwrap(),
+            pitch: crate::records::feature::DesignPositiveScalar::new(0.07).unwrap(),
             face_group_record_indices: vec![100],
+            diameters: crate::records::feature::DesignThreadDiameters::new(0.4, 0.2, 0.3).unwrap(),
         });
     }
     let mut cylinder_operand = operand.clone();

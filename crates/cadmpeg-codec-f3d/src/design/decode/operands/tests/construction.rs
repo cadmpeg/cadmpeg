@@ -496,24 +496,32 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         601,
     );
     first_plane.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    first_plane.with_work_plane_transform([
-        [1.0, 0.0, 0.0, -0.8],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    first_plane.with_work_plane_transform(
+        [
+            [1.0, 0.0, 0.0, -0.8],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+    );
     let mut second_plane = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#701",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         701,
     );
     second_plane.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
-    second_plane.with_work_plane_transform([
-        [1.0, 0.0, 0.0, -1.4],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    second_plane.with_work_plane_transform(
+        [
+            [1.0, 0.0, 0.0, -1.4],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+    );
     compact_split_scope.feature_ordinal = std::num::NonZeroU32::new(3).expect("nonzero ordinal");
     let plane_selection = |record_index, group_member_ordinal, primary_identity| {
         crate::records::topology::DesignEntitySelectionOperand {
@@ -552,8 +560,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::ids::neutral_feature_id(&second_plane),
     ];
     let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
-    let plane_timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let plane_timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             plane_scopes
                 .iter()
@@ -563,12 +572,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 })
                 .collect(),
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let (plane_features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -1175,7 +1184,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &mut stitch_scope.payload
     {
         *slot = Some(DesignSurfaceStitchOperation {
-            gap_tolerance: 0.01,
+            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 40,
             tolerance_record_index: 300,
             settings_record_index: 301,
@@ -1459,7 +1468,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
 
     let parsed = parse_construction_operand_transform(&bytes, &header)
         .expect("exact construction-operand transform");
-    assert_eq!(parsed.transform, transform);
+    assert_eq!(parsed.transform, transform.try_into().unwrap());
     assert_eq!(parsed.transform_offset, 22);
     assert_eq!(parsed.following_record_index, 301);
     assert_eq!(parsed.following_byte_offset, following_at as u64);
@@ -1488,9 +1497,9 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     dual.extend_from_slice(&(record_index + 1).to_le_bytes());
     let parsed = parse_construction_operand_dual_transform(&dual, &header)
         .expect("exact dual construction-operand transform");
-    assert_eq!(parsed.first_transform, transform);
+    assert_eq!(parsed.first_transform, transform.try_into().unwrap());
     assert_eq!(parsed.first_transform_offset, 21);
-    assert_eq!(parsed.second_transform, secondary);
+    assert_eq!(parsed.second_transform, secondary.try_into().unwrap());
     assert_eq!(parsed.second_transform_offset, 149);
     assert_eq!(dual_following_at, 278);
 }
@@ -1568,7 +1577,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         expanded.placement,
         crate::records::topology::DesignConstructionPathPlacement::Transform(
             crate::records::Located {
-                value: transform,
+                value: transform.try_into().unwrap(),
                 offset: 33
             }
         )

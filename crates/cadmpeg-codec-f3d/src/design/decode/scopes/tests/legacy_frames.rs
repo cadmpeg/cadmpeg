@@ -120,7 +120,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-322/261 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
         work_plane_class_322_332::MATRIX as u64
@@ -207,7 +207,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-400 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
 }
@@ -232,7 +232,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         frame[4..7].copy_from_slice(class_tag.as_bytes());
         frame[7..11].copy_from_slice(&record_index.to_le_bytes());
         frame[43..47].copy_from_slice(&form.to_le_bytes());
-        let mut transform = identity_matrix();
+        let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
         transform[0][3] = f64::from(ordinal as u32);
         for (cell, value) in transform.into_iter().flatten().enumerate() {
             let at = 48 + cell * 8;
@@ -260,7 +260,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         )
         .expect("legacy Move transform frame");
 
-        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
         assert_eq!(u32::from(decoded.form), form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
@@ -340,7 +340,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         bytes.extend_from_slice(&support_record_index.to_le_bytes());
 
         let mut scope = DesignParameterScope::empty(
-            "f3d:test:work-axis#1",
+            "f3d:test/BulkStream.dat:work-axis#1",
             crate::records::feature::DesignFeatureKind::WorkAxis,
             1,
         );
@@ -439,16 +439,26 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         .expect("taper owner")
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
-    taper_owner.id = "generated:owner#80".into();
-    taper_owner.record_index = 80;
-    taper_owner.scope_record_index = scope_record_index;
-    taper_owner.local_ordinal = 0;
-    taper_owner.parameter_record_index = 81;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(taper_owner.clone());
+        wire.id = "generated:owner#80".into();
+        wire.record_index = 80;
+        wire.scope_record_index = scope_record_index;
+        wire.local_ordinal = 0;
+        wire.parameter_record_index = 81;
+        wire.companion_record_index = 82;
+        taper_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let mut along_owner = taper_owner.clone();
-    along_owner.id = "generated:owner#82".into();
-    along_owner.record_index = 82;
-    along_owner.local_ordinal = 1;
-    along_owner.parameter_record_index = 83;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(along_owner.clone());
+        wire.id = "generated:owner#82".into();
+        wire.record_index = 82;
+        wire.local_ordinal = 1;
+        wire.parameter_record_index = 83;
+        wire.companion_record_index = 84;
+        along_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
 
     let mut scope = DesignParameterScope::empty(
         "generated:scope#12",

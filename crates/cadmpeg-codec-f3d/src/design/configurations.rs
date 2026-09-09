@@ -116,12 +116,12 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     let mut names = HashSet::new();
     let mut ids = HashSet::new();
     for configuration in &configurations {
-        if !names.insert(configuration.entry_name.as_str())
-            || !ids.insert(configuration.id.as_str())
+        if !names.insert(configuration.entry_name().as_str())
+            || !ids.insert(configuration.id().as_str())
         {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D configuration identity: {}",
-                configuration.entry_name
+                configuration.entry_name()
             )));
         }
     }
@@ -222,7 +222,7 @@ pub(crate) fn validate_configuration_variant_order(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D configuration rule carries a variant order: {}",
-                    configuration.entry_name
+                    configuration.entry_name()
                 ))
             });
     }
@@ -245,7 +245,7 @@ pub(crate) fn validate_configuration_variant_order(
     valid.then_some(()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3D configuration variant order does not match its table: {}",
-            configuration.entry_name
+            configuration.entry_name()
         ))
     })
 }
@@ -337,7 +337,7 @@ pub(crate) fn encode_configuration_payload(
     serde_json::to_vec(&OrderedConfigurationPayload(configuration)).map_err(|error| {
         CodecError::malformed(format_args!(
             "cannot encode F3D configuration JSON {}: {error}",
-            configuration.entry_name
+            configuration.entry_name()
         ))
     })
 }
@@ -405,7 +405,7 @@ pub fn project_configurations(
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
             projected.push(NeutralConfiguration {
-                id: neutral_configuration_id(&table.entry_name, name),
+                id: neutral_configuration_id(table.entry_name(), name),
                 ordinal,
                 active: active == Some(name.as_str()),
                 source_index: None,
@@ -416,7 +416,7 @@ pub fn project_configurations(
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
-                native_ref: Some(table.id.clone()),
+                native_ref: Some(table.id().clone()),
             });
         }
     }
@@ -448,7 +448,7 @@ pub fn project_configurations(
             continue;
         }
         configuration.properties.insert(
-            format!("activation_rule:{}", rule.entry_name),
+            format!("activation_rule:{}", rule.entry_name()),
             condition.to_owned(),
         );
     }
@@ -558,7 +558,7 @@ pub(crate) fn unresolved_configuration_rule_count(
             !projected.iter().any(|configuration| {
                 configuration
                     .properties
-                    .contains_key(&format!("activation_rule:{}", rule.entry_name))
+                    .contains_key(&format!("activation_rule:{}", rule.entry_name()))
             })
         })
         .count()

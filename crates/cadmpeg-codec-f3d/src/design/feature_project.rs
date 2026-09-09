@@ -179,7 +179,7 @@ fn authored_scope_ordinals_for_stream<'a>(
 
     let mut stream_timelines = timelines
         .iter()
-        .filter(|timeline| native_stream(&timeline.id).unwrap_or(ids::DEFAULT_STREAM) == stream)
+        .filter(|timeline| native_stream(timeline.id()).unwrap_or(ids::DEFAULT_STREAM) == stream)
         .collect::<Vec<_>>();
     stream_timelines.sort_by_key(|timeline| timeline.source_ordinal);
     if stream_timelines.is_empty() {
@@ -235,7 +235,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     if stream_timelines
         .iter()
-        .filter(|timeline| !timeline.frame.items().is_empty())
+        .filter(|timeline| !timeline.frame().items().is_empty())
         .count()
         > 1
     {
@@ -246,7 +246,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
     for timeline in stream_timelines {
-        for item in timeline.frame.items().iter().map(|item| item.value) {
+        for item in timeline.frame().items().iter().map(|item| item.value) {
             if item_ordinals.insert(item, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
@@ -551,13 +551,16 @@ pub fn project_parameter_design(
     }
     let timelines = streams
         .into_iter()
-        .map(|(stream, items)| DesignFeatureTimeline {
-            frame: crate::records::DesignTimelineFrame::test_items(0, items),
-            id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
-            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-            record_index: std::num::NonZeroU64::new(1).unwrap(),
-            source_ordinal: 0,
-            context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+        .map(|(stream, items)| {
+            DesignFeatureTimeline::try_new(
+                ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                crate::records::DesignTimelineFrame::test_items(0, items),
+                crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(1).unwrap(),
+                0,
+                std::num::NonZeroU64::new(1).unwrap(),
+            )
+            .unwrap()
         })
         .collect::<Vec<_>>();
     project_parameter_design_with_edge_identities(&ProjectInputs {
@@ -633,7 +636,7 @@ pub fn project_parameter_design_with_edge_identities(
         .collect::<HashMap<_, _>>();
     let owners_by_index = owners
         .iter()
-        .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
+        .filter_map(|owner| Some(((native_stream(owner.id())?, owner.record_index()), owner)))
         .collect::<HashMap<_, _>>();
     let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
         scope_properties(scope, native_scope, placements)
@@ -649,17 +652,17 @@ pub fn project_parameter_design_with_edge_identities(
             let parameters = owners
                 .iter()
                 .filter(|owner| {
-                    native_stream(&owner.id) == Some(native_scope)
-                        && owner.scope_record_index == scope.record_index
+                    native_stream(owner.id()) == Some(native_scope)
+                        && owner.scope_record_index() == scope.record_index
                 })
                 .filter_map(|owner| {
                     native
                         .iter()
                         .find(|parameter| {
                             native_stream(&parameter.id) == Some(native_scope)
-                                && parameter.record_index == owner.parameter_record_index
+                                && parameter.record_index == owner.parameter_record_index()
                         })
-                        .map(|parameter| (owner.local_ordinal, parameter))
+                        .map(|parameter| (owner.local_ordinal(), parameter))
                 })
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind());
@@ -1074,8 +1077,8 @@ pub fn project_parameter_design_with_edge_identities(
                                 face_operands,
                             );
                             let has_parameter_owners = owners.iter().any(|owner| {
-                                native_stream(&owner.id) == Some(native_scope)
-                                    && owner.scope_record_index == scope.record_index
+                                native_stream(owner.id()) == Some(native_scope)
+                                    && owner.scope_record_index() == scope.record_index
                             });
                             let face_reference_count = construction
                                 .face_group_record_indices
@@ -1203,7 +1206,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     })
                                     .collect(),
                             },
-                            |transform| project_work_plane(scope, transform),
+                            |transform| project_work_plane(scope, transform.into()),
                         )
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkAxis {
                         scope
@@ -1316,7 +1319,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 bodies: design_body_selection(
                                     scope,
                                     operation
-                                        .bodies
+                                        .bodies()
                                         .iter()
                                         .map(|body| u64::from(body.copied.value)),
                                     body_bindings,
@@ -1536,7 +1539,7 @@ pub fn project_parameter_design_with_edge_identities(
                 .owner_record_index()
                 .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
             let owner =
-                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
+                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index())));
             let mut properties = BTreeMap::new();
             if parameter.kind() != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind().to_owned());
@@ -1566,7 +1569,7 @@ pub fn project_parameter_design_with_edge_identities(
                 owner: owner.cloned(),
                 ordinal: owner
                     .zip(native_owner)
-                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
+                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
                 name: parameter.name().to_owned(),
                 expression: parameter.expression().to_owned(),
                 display: if parameter.source_kind().contains("Diameter Dimension") {
@@ -2395,7 +2398,8 @@ fn project_full_round_fillet(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     let stream = native_stream(&scope.id)?;
     if owners.iter().any(|owner| {
-        native_stream(&owner.id) == Some(stream) && owner.scope_record_index == scope.record_index
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
     }) || fillet_radius_groups.iter().any(|assignment| {
         native_stream(&assignment.id) == Some(stream)
             && assignment.scope_record_index == scope.record_index
@@ -2919,8 +2923,8 @@ fn project_draft(
                             plane: Some(neutral_feature_id(neutral_plane)),
                         }),
                     },
-                    angle: Some(Angle(construction.angle)),
-                    outward: Some(draft_outward(construction.angle)),
+                    angle: Some(Angle(construction.angle.get())),
+                    outward: Some(draft_outward(construction.angle.get())),
                 });
             }
             let neutral_plane = selected_historical_face_selection(
@@ -2935,8 +2939,8 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(Angle(construction.angle)),
-                outward: Some(draft_outward(construction.angle)),
+                angle: Some(Angle(construction.angle.get())),
+                outward: Some(draft_outward(construction.angle.get())),
             })
         }
         [neutral_plane] if member_of_scope(neutral_plane) => Some(FeatureDefinition::Draft {
@@ -2945,8 +2949,8 @@ fn project_draft(
                 plane: project_draft_face_selection(scope, neutral_plane, face_operands, histories),
                 pull: None,
             },
-            angle: Some(Angle(construction.angle)),
-            outward: Some(draft_outward(construction.angle)),
+            angle: Some(Angle(construction.angle.get())),
+            outward: Some(draft_outward(construction.angle.get())),
         }),
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
@@ -2982,8 +2986,8 @@ fn project_draft(
                         plane: Some(neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(Angle(construction.angle)),
-                outward: Some(draft_outward(construction.angle)),
+                angle: Some(Angle(construction.angle.get())),
+                outward: Some(draft_outward(construction.angle.get())),
             })
         }
         _ => None,
@@ -3400,7 +3404,7 @@ fn project_move(
             operation.transform[1][3] * 10.0,
             operation.transform[2][3] * 10.0,
         ),
-        rotation: matrix_axis_angle(&operation.transform),
+        rotation: matrix_axis_angle(operation.transform.as_ref()),
         copies: 0,
     })
 }
@@ -3459,7 +3463,7 @@ fn project_base_flange(
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
         profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
-        thickness: Length(operation.thickness * 10.0),
+        thickness: Length(operation.thickness.get() * 10.0),
         side: SheetMetalThicknessSide::Forward,
     })
 }
@@ -3498,9 +3502,9 @@ pub(crate) fn project_edge_flange(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching.next()?;
         if matching.next().is_some() {
@@ -3508,12 +3512,12 @@ pub(crate) fn project_edge_flange(
         }
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         })
     };
 
-    let height = match &operation.shape.height() {
+    let height = match &operation.selection.shape().height() {
         DesignEdgeFlangeHeightExtent::Distance => SheetMetalFlangeHeight::Distance(design_length(
             parameter(operation.height_owner_record_index, "FlangeHeight")?,
         )?),
@@ -3584,7 +3588,7 @@ pub(crate) fn project_edge_flange(
         "FlangeAngle",
     )?)?;
 
-    let width = match &operation.shape {
+    let width = match &operation.selection.shape() {
         crate::records::feature::DesignEdgeFlangeShape::FullEdge { .. } => {
             SheetMetalFlangeWidth::FullEdge
         }
@@ -3657,9 +3661,10 @@ pub(crate) fn project_edge_flange(
 
     // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    operation.shape.edges().next()?;
+    operation.selection.shape().edges().next()?;
     let selections = operation
-        .shape
+        .selection
+        .shape()
         .edges()
         .map(|edge| {
             let mut matching = groups.iter().filter(|group| {
@@ -3729,9 +3734,9 @@ pub(crate) fn project_hem(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index: u32, source_kind: &str| {
         let mut matching_owners = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching_owners.next()?;
         if matching_owners.next().is_some() {
@@ -3739,7 +3744,7 @@ pub(crate) fn project_hem(
         }
         let mut matching_parameters = parameters.iter().filter(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         });
         let parameter = matching_parameters.next()?;
@@ -3784,7 +3789,7 @@ pub(crate) fn project_hem(
         .members()
         .iter()
         .map(|member| member.value)
-        .eq([operation.edge_operand_record_index]);
+        .eq([operation.edge_operand_record_index()]);
     if edge_has_extra || !edge_role_ok || !edge_members_ok {
         return None;
     }
@@ -3801,7 +3806,7 @@ pub(crate) fn project_hem(
         .members()
         .iter()
         .map(|member| member.value)
-        .eq([operation.aggregate_operand_record_index]);
+        .eq([operation.aggregate_operand_record_index()]);
     if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
         return None;
     }
@@ -3820,7 +3825,7 @@ pub(crate) fn project_hem(
         .filter(|operand| {
             native_stream(&operand.id) == native_stream(&edge_group.id)
                 && operand.scope_record_index == edge_group.scope_record_index
-                && operand.record_index == operation.edge_operand_record_index
+                && operand.record_index == operation.edge_operand_record_index()
         })
         .collect::<Vec<_>>();
     let edge_slot = match edge_slot.as_slice() {
@@ -3902,7 +3907,7 @@ pub(crate) fn project_surface_stitch(
         faces: FaceSelection::Native(scope.id.clone()),
         merge_entities: Some(true),
         create_solid: Some(true),
-        gap_tolerance: Some(Length(operation.gap_tolerance * 10.0)),
+        gap_tolerance: Some(Length(operation.gap_tolerance.get() * 10.0)),
     })
 }
 
@@ -3923,9 +3928,9 @@ pub(crate) fn project_ruled_surface(
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
-            native_stream(&owner.id) == Some(stream)
-                && owner.scope_record_index == scope.record_index
-                && owner.record_index == owner_record_index
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.record_index() == owner_record_index
         });
         let owner = matching.next()?;
         if matching.next().is_some() {
@@ -3933,7 +3938,7 @@ pub(crate) fn project_ruled_surface(
         }
         parameters.iter().find(|parameter| {
             native_stream(&parameter.id) == Some(stream)
-                && parameter.record_index == owner.parameter_record_index
+                && parameter.record_index == owner.parameter_record_index()
                 && parameter.source_kind() == source_kind
         })
     };
@@ -5712,7 +5717,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
             axis,
             Some(RevolveExtent::OneSided {
                 termination: AngularTermination::Angle {
-                    angle: Angle(*angle),
+                    angle: Angle(angle.get()),
                 },
             }),
             None,

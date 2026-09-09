@@ -603,15 +603,6 @@ pub(crate) fn parse_sketch_placement_candidates(
     out
 }
 
-pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
 /// Decode the persistent u64 point and curve identity references
 /// (`pt_tag`, `crv_primary_id`, `crv_secondary_id`, each typed
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,

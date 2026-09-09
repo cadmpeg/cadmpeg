@@ -508,10 +508,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("generated parameter owner is canonical")
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
-    owner.id = "f3d:Design/BulkStream.dat:owner#44".into();
-    owner.record_index = 44;
-    owner.scope_record_index = scope.record_index;
-    owner.parameter_record_index = owned_along.record_index;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        wire.id = "f3d:Design/BulkStream.dat:owner#44".into();
+        wire.record_index = 44;
+        wire.scope_record_index = scope.record_index;
+        wire.parameter_record_index = owned_along.record_index;
+        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let mut sketch_scope = scope.clone();
     sketch_scope.id = "f3d:Design/BulkStream.dat:scope#11".into();
     sketch_scope.record_index = placement

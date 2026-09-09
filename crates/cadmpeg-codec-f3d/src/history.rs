@@ -2797,7 +2797,10 @@ pub(crate) fn bind_vertex_recipe_history(
         if first.0 == second.0
             || first.0 == third.0
             || second.0 == third.0
-            || !three_point_plane_matches(transform, [first.1, second.1, third.1])
+            || !three_point_plane_matches(
+                transform.map(crate::records::SketchPlacementMatrix::rows),
+                [first.1, second.1, third.1],
+            )
         {
             continue;
         }
@@ -4326,13 +4329,9 @@ fn resolve_thread_face_by_transition(
     if source_candidates.next().is_some() {
         return None;
     }
-    let minimum_radius = construction.minor_diameter * 5.0;
-    let maximum_radius = construction.major_diameter * 5.0;
-    if !minimum_radius.is_finite()
-        || !maximum_radius.is_finite()
-        || minimum_radius <= 0.0
-        || maximum_radius < minimum_radius
-    {
+    let minimum_radius = construction.diameters.minor() * 5.0;
+    let maximum_radius = construction.diameters.major() * 5.0;
+    if !minimum_radius.is_finite() || !maximum_radius.is_finite() {
         return None;
     }
     let tolerance = EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9 * (1.0 + maximum_radius.abs());

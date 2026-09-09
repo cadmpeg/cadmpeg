@@ -16,9 +16,9 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         local_ordinal: u32,
         value: f64,
     ) -> DesignParameterOwner {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
+            byte_offset: u64::from(record_index) + 60,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
             record_index,
@@ -28,9 +28,10 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
             evaluated_value_offset: u64::from(record_index) + 100,
             parameter_record_index: record_index + 1,
             owned_ordinal: local_ordinal,
-            variant: None,
+            variant: Some(0),
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     }
 
     let mut bytes = vec![0; 100];
@@ -112,7 +113,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         value: f64,
         stream: &str,
     ) -> DesignParameterOwner {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:{stream}:owner#{record_index}"),
             byte_offset: u64::from(record_index),
             frame_length: 103,
@@ -126,7 +127,8 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             owned_ordinal: local_ordinal,
             variant: None,
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     }
 
     fn scope(

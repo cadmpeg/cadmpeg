@@ -581,8 +581,8 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
         serde_json::to_string(&operation).expect("copy body wire"),
         wire
     );
-    assert_eq!(operation.bodies[1].source.value, 13);
-    assert_eq!(operation.bodies[1].copied.value, 14);
+    assert_eq!(operation.bodies()[1].source.value, 13);
+    assert_eq!(operation.bodies()[1].copied.value, 14);
     let value: serde_json::Value = serde_json::from_str(wire).expect("copy JSON");
     for field in [
         "body_operand_record_indices",
@@ -760,7 +760,7 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         let expected = serde_json::to_string(&wire).unwrap();
         let native: crate::records::feature::DesignEdgeFlangeOperation =
             serde_json::from_str(&expected).unwrap();
-        assert_eq!(native.shape.edges().count(), count as usize);
+        assert_eq!(native.selection.shape().edges().count(), count as usize);
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
         for radius in [0.0, -1.0, f64::INFINITY, f64::NAN] {
             let mut invalid = wire.clone();
@@ -982,8 +982,11 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
             }
             let group: crate::records::feature::DesignFixedFilletGroup =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(group.law.radii().count(), radius_count as usize);
-            assert_eq!(group.law.intermediate().len(), intermediate_count as usize);
+            assert_eq!(group.law().radii().count(), radius_count as usize);
+            assert_eq!(
+                group.law().intermediate().len(),
+                intermediate_count as usize
+            );
             assert_eq!(serde_json::to_value(&group).unwrap(), wire);
             for field in [
                 "radii",
@@ -1375,13 +1378,14 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
     }
     let mut external_target = base;
     external_target["target"]["external_identity"] = serde_json::json!({
-        "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 0,
-        "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 0,
-        "occurrence_reference": 1, "occurrence_reference_offset": 0,
-        "external_body_reference": 2, "external_body_reference_offset": 0,
-        "external_segment": 1, "external_segment_offset": 0,
-        "external_asset_id": "00000006-1111-4111-8111-111111111111", "external_asset_id_offset": 0,
-        "external_link_name": "link", "external_link_name_offset": 0
+        "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 44,
+        "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 120,
+        "occurrence_reference": 1, "occurrence_reference_offset": 205,
+        "external_body_reference": 2, "external_body_reference_offset": 220,
+        "external_segment": 1, "external_segment_offset": 229,
+        "external_asset_id": "00000004-1111-4111-8111-111111111111", "external_asset_id_offset": 237,
+        "external_link_name": "link", "external_link_name_offset": 314,
+        "tail_values": [0, 0], "tail_value_offsets": [329, 341]
     });
     let error =
         serde_json::from_value::<crate::records::feature::DesignCombineOperation>(external_target)
@@ -1626,11 +1630,11 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
 #[test]
 fn bend_radius_requires_a_positive_finite_value() {
     for value in [0.0, -0.0, -1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
-        assert!(crate::records::feature::DesignBendRadius::new(value).is_none());
+        assert!(crate::records::feature::DesignPositiveScalar::new(value).is_none());
     }
     for radius in [f64::MIN_POSITIVE, 0.25, f64::MAX] {
-        let value =
-            crate::records::feature::DesignBendRadius::new(radius).expect("positive finite radius");
+        let value = crate::records::feature::DesignPositiveScalar::new(radius)
+            .expect("positive finite radius");
         assert_eq!(value.get(), radius);
         let wire = serde_json::json!({
             "edge_wrapper_record_index": 1, "edge_group_record_index": 2,
@@ -1727,3 +1731,15 @@ fn surface_trim_sidecar_requires_nonempty_matching_cell_count() {
     wire["cell_entries"] = serde_json::json!([]);
     assert!(serde_json::from_value::<super::DesignSurfaceTrimOperation>(wire).is_err());
 }
+
+mod scalars;
+
+mod fillet_law;
+
+mod thread;
+
+mod combine;
+
+mod copied_bodies;
+
+mod sheet_metal_indices;

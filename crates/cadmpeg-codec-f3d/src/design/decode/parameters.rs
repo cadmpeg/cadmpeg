@@ -478,21 +478,23 @@ pub fn decode_parameter_owners(
                 .into_record(&entry.name, header.byte_offset)
                 .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?
         } else {
-            let mut owner = parse_legacy_parameter_owner_68(frame, evaluated)
+            let owner = parse_legacy_parameter_owner_68(frame, evaluated)
                 .or_else(|| parse_legacy_parameter_owner_88(frame, evaluated))
                 .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
-            owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
-            owner.byte_offset = header.byte_offset;
-            owner
+            let mut wire = crate::records::DesignParameterOwnerWire::from(owner);
+            wire.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
+            wire.byte_offset = header.byte_offset;
+            DesignParameterOwner::try_from(wire)
+                .map_err(|_| malformed("invalid legacy owner location"))?
         };
-        if owner.record_index != owner_index
-            || owner.parameter_record_index != parameter.record_index
+        if owner.record_index() != owner_index
+            || owner.parameter_record_index() != parameter.record_index
         {
             return Err(malformed("does not link back to its referencing parameter"));
         }
         out.push(owner);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
 }
 
@@ -529,7 +531,7 @@ impl ParsedParameterOwner {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        Some(DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: ids::native_design_parameter_owner_id(stream, frame_start),
             byte_offset: frame_start,
             frame_length: self.frame_length,
@@ -544,6 +546,7 @@ impl ParsedParameterOwner {
             variant: self.variant,
             companion_record_index: self.companion_record_index,
         })
+        .ok()
     }
 }
 
@@ -697,7 +700,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
     {
         return None;
     }
-    Some(DesignParameterOwner {
+    crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
@@ -712,6 +715,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
         variant: None,
         companion_record_index,
     })
+    .ok()
 }
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
@@ -760,7 +764,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
     {
         return None;
     }
-    Some(DesignParameterOwner {
+    crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
@@ -775,6 +779,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
         variant: None,
         companion_record_index,
     })
+    .ok()
 }
 
 /// Decode the fixed prefix of every indexed record paired with a parameter
@@ -790,15 +795,17 @@ pub fn decode_parameter_companions(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     for owner in owners {
-        let Some(scope) = native_stream(&owner.id) else {
+        let Some(scope) = native_stream(owner.id()) else {
             continue;
         };
-        let Some(header) = headers.get(&(scope, owner.companion_record_index)) else {
+        let Some(header) = headers.get(&(scope, owner.companion_record_index())) else {
             continue;
         };
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && owner.id.starts_with(&ids::native_scope_prefix(&entry.name))
+                && owner
+                    .id()
+                    .starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
             continue;
@@ -809,8 +816,8 @@ pub fn decode_parameter_companions(
         let Some(mut companion) = prefix.and_then(parse_parameter_companion) else {
             continue;
         };
-        if companion.record_index != owner.companion_record_index
-            || companion.owner_record_index != owner.record_index
+        if companion.record_index != owner.companion_record_index()
+            || companion.owner_record_index != owner.record_index()
         {
             continue;
         }

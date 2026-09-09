@@ -36,7 +36,7 @@ pub(crate) fn project_local_components(
                     continue;
                 };
                 let Some(root) = path
-                    .occurrence_guids
+                    .occurrence_guids()
                     .first()
                     .and_then(|guid| native_by_guid.get(&guid.value.as_str().to_ascii_lowercase()))
                     .copied()
@@ -57,7 +57,7 @@ pub(crate) fn project_local_components(
                             [0.0, 0.0, 1.0, 0.0],
                             [0.0, 0.0, 0.0, 1.0],
                         ],
-                        |frame| frame.value,
+                        |frame| frame.value.into(),
                     ),
                 )?;
             }

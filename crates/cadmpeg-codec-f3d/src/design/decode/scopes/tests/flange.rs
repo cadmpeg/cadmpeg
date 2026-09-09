@@ -56,7 +56,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
             &[256, 259, 263, 266],
         )
         .expect("fixed BaseFlange operation");
-    assert_eq!(operation.thickness, 0.25);
+    assert_eq!(operation.thickness.get(), 0.25);
     assert_eq!(operation.thickness_offset, 123);
     assert_eq!(operation.profile_group_record_index, 256);
     assert_eq!(operation.profile_record_index, 259);
@@ -107,7 +107,8 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
         .expect("fixed EdgeFlange operation");
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.wrapper_record_index)
             .collect::<Vec<_>>(),
@@ -115,7 +116,8 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.group_record_index)
             .collect::<Vec<_>>(),
@@ -123,16 +125,18 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
-            .map(|edge| edge.operand_record_index)
+            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [254]
     );
-    assert_eq!(operation.aggregate_group_record_index, 240);
+    assert_eq!(operation.selection.aggregate_group_record_index(), 240);
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.aggregate_operand_record_index)
             .collect::<Vec<_>>(),
@@ -154,11 +158,16 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     // The one table entry no slot claims is the width-distance owner, which
     // makes this the symmetric edge-width mode.
     assert_eq!(
-        operation.shape.owner_indices().copied().collect::<Vec<_>>(),
+        operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![221]
     );
     assert_eq!(
-        operation.shape.mode(),
+        operation.selection.shape().mode(),
         crate::records::feature::DesignEdgeWidthMode::Symmetric
     );
 }
@@ -202,11 +211,12 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
             crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
-            operation.shape.mode(),
+            operation.selection.shape().mode(),
             crate::records::feature::DesignEdgeWidthMode::FullEdge
         );
         assert!(operation
-            .shape
+            .selection
+            .shape()
             .owner_indices()
             .copied()
             .collect::<Vec<_>>()
@@ -231,7 +241,8 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
             .expect("legacy classed EdgeFlange operation");
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.wrapper_record_index)
                 .collect::<Vec<_>>(),
@@ -239,7 +250,8 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect::<Vec<_>>(),
@@ -247,16 +259,18 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [254]
         );
-        assert_eq!(operation.aggregate_group_record_index, 240);
+        assert_eq!(operation.selection.aggregate_group_record_index(), 240);
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.aggregate_operand_record_index)
                 .collect::<Vec<_>>(),
@@ -276,7 +290,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
             crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
-            operation.shape.mode(),
+            operation.selection.shape().mode(),
             crate::records::feature::DesignEdgeWidthMode::FullEdge
         );
     }
@@ -299,7 +313,8 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
             .expect("legacy classed multi-edge EdgeFlange operation");
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.wrapper_record_index)
                 .collect::<Vec<_>>(),
@@ -307,7 +322,8 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect::<Vec<_>>(),
@@ -315,16 +331,18 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [207, 216]
         );
-        assert_eq!(operation.aggregate_group_record_index, 225);
+        assert_eq!(operation.selection.aggregate_group_record_index(), 225);
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.aggregate_operand_record_index)
                 .collect::<Vec<_>>(),
@@ -344,7 +362,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
             crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
-            operation.shape.mode(),
+            operation.selection.shape().mode(),
             crate::records::feature::DesignEdgeWidthMode::FullEdge
         );
     }
@@ -368,7 +386,8 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
         .expect("legacy class-364 per-edge width EdgeFlange operation");
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.wrapper_record_index)
             .collect::<Vec<_>>(),
@@ -376,7 +395,8 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.group_record_index)
             .collect::<Vec<_>>(),
@@ -384,16 +404,18 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
-            .map(|edge| edge.operand_record_index)
+            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [207, 219]
     );
-    assert_eq!(operation.aggregate_group_record_index, 231);
+    assert_eq!(operation.selection.aggregate_group_record_index(), 231);
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.aggregate_operand_record_index)
             .collect::<Vec<_>>(),
@@ -402,12 +424,17 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
     assert_eq!(
-        operation.shape.owner_indices().copied().collect::<Vec<_>>(),
+        operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![210, 222]
     );
     assert_eq!(operation.settings_record_index, 240);
     assert_eq!(
-        operation.shape.mode(),
+        operation.selection.shape().mode(),
         crate::records::feature::DesignEdgeWidthMode::SymmetricPerEdge
     );
     assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
@@ -433,7 +460,8 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
             .expect("legacy two-sided per-edge EdgeFlange operation");
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.wrapper_record_index)
                 .collect::<Vec<_>>(),
@@ -441,7 +469,8 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect::<Vec<_>>(),
@@ -449,27 +478,34 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [207, 219]
         );
-        assert_eq!(operation.aggregate_group_record_index, 231);
+        assert_eq!(operation.selection.aggregate_group_record_index(), 231);
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.aggregate_operand_record_index)
                 .collect::<Vec<_>>(),
             [243, 246]
         );
         assert_eq!(
-            operation.shape.owner_indices().copied().collect::<Vec<_>>(),
+            operation
+                .selection
+                .shape()
+                .owner_indices()
+                .copied()
+                .collect::<Vec<_>>(),
             vec![210, 222, 234, 237]
         );
         assert_eq!(
-            match &operation.shape {
+            match &operation.selection.shape() {
                 crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge {
                     edges, ..
                 } => edges.iter().map(|row| row.owners).collect::<Vec<_>>(),
@@ -481,7 +517,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         assert_eq!(operation.angle_owner_record_index, 228);
         assert_eq!(operation.settings_record_index, 240);
         assert_eq!(
-            operation.shape.mode(),
+            operation.selection.shape().mode(),
             crate::records::feature::DesignEdgeWidthMode::TwoSidesPerEdge
         );
         assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
@@ -505,7 +541,8 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
         .expect("legacy class-286 EdgeFlange operation");
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.wrapper_record_index)
             .collect::<Vec<_>>(),
@@ -513,7 +550,8 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.group_record_index)
             .collect::<Vec<_>>(),
@@ -521,16 +559,18 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
-            .map(|edge| edge.operand_record_index)
+            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [254]
     );
-    assert_eq!(operation.aggregate_group_record_index, 240);
+    assert_eq!(operation.selection.aggregate_group_record_index(), 240);
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.aggregate_operand_record_index)
             .collect::<Vec<_>>(),
@@ -550,11 +590,12 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
         crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
     );
     assert_eq!(
-        operation.shape.mode(),
+        operation.selection.shape().mode(),
         crate::records::feature::DesignEdgeWidthMode::FullEdge
     );
     assert!(operation
-        .shape
+        .selection
+        .shape()
         .owner_indices()
         .copied()
         .collect::<Vec<_>>()
@@ -580,7 +621,8 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
         .expect("legacy extended class-286 EdgeFlange operation");
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.wrapper_record_index)
             .collect::<Vec<_>>(),
@@ -588,7 +630,8 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.group_record_index)
             .collect::<Vec<_>>(),
@@ -596,27 +639,34 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     );
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
-            .map(|edge| edge.operand_record_index)
+            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [207, 219]
     );
-    assert_eq!(operation.aggregate_group_record_index, 231);
+    assert_eq!(operation.selection.aggregate_group_record_index(), 231);
     assert_eq!(
         operation
-            .shape
+            .selection
+            .shape()
             .edges()
             .map(|edge| edge.aggregate_operand_record_index)
             .collect::<Vec<_>>(),
         [279, 282]
     );
     assert_eq!(
-        operation.shape.owner_indices().copied().collect::<Vec<_>>(),
+        operation
+            .selection
+            .shape()
+            .owner_indices()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![210, 222, 234, 237]
     );
     assert_eq!(
-        match &operation.shape {
+        match &operation.selection.shape() {
             crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } =>
                 edges.iter().map(|row| row.owners).collect::<Vec<_>>(),
             _ => Vec::new(),
@@ -628,11 +678,11 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
         [243, 246, 249, 252, 255, 258, 261, 264, 267, 270, 273, 276]
     );
     assert_eq!(
-        operation.shape.source(),
+        operation.selection.shape().source(),
         crate::records::feature::DesignEdgeFlangeWidthParameterSource::EdgeOffset
     );
     assert_eq!(
-        operation.shape.mode(),
+        operation.selection.shape().mode(),
         crate::records::feature::DesignEdgeWidthMode::TwoSidesPerEdge
     );
     assert_eq!(operation.settings_record_index, 240);
@@ -692,12 +742,18 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
             )
             .expect("fixed to-object EdgeFlange operation");
         assert_eq!(
-            operation.shape.owner_indices().copied().collect::<Vec<_>>(),
+            operation
+                .selection
+                .shape()
+                .owner_indices()
+                .copied()
+                .collect::<Vec<_>>(),
             Vec::<u32>::new()
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
                 .map(|edge| edge.group_record_index)
                 .collect::<Vec<_>>(),
@@ -705,14 +761,15 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
         );
         assert_eq!(
             operation
-                .shape
+                .selection
+                .shape()
                 .edges()
-                .map(|edge| edge.operand_record_index)
+                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [254]
         );
         assert_eq!(
-            operation.shape.height(),
+            operation.selection.shape().height(),
             DesignEdgeFlangeHeightExtent::ToObject {
                 target_group_record_index: 221,
                 target_operand_record_index: 224,

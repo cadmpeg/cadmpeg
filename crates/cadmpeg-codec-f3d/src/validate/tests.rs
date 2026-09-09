@@ -307,8 +307,9 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                 vec![17, 101],
             ),
         ],
-        design_feature_timelines: vec![crate::records::DesignFeatureTimeline {
-            frame: crate::records::DesignTimelineFrame::new(
+        design_feature_timelines: vec![crate::records::DesignFeatureTimeline::try_new(
+            crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+            crate::records::DesignTimelineFrame::new(
                 200,
                 60,
                 220,
@@ -319,12 +320,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                 }],
             )
             .unwrap(),
-            id: crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
-            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-            record_index: std::num::NonZeroU64::new(35).unwrap(),
-            source_ordinal: 0,
-            context_record_index: std::num::NonZeroU64::new(17).unwrap(),
-        }],
+            crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            std::num::NonZeroU64::new(35).unwrap(),
+            0,
+            std::num::NonZeroU64::new(17).unwrap(),
+        )
+        .unwrap()],
         ..crate::native::F3dNative::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -354,24 +355,36 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref()
-            == Some(duplicate_type_owner.design_feature_timelines[0].id.as_str())
+            == Some(
+                duplicate_type_owner.design_feature_timelines[0]
+                    .id()
+                    .as_str(),
+            )
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
 
-    native.design_feature_timelines[0].frame = crate::records::DesignTimelineFrame::new(
-        200,
-        60,
-        220,
-        240,
-        vec![crate::records::Located {
-            value: 102,
-            offset: 245,
-        }],
+    native.design_feature_timelines[0] = crate::records::DesignFeatureTimeline::try_new(
+        native.design_feature_timelines[0].id().clone(),
+        crate::records::DesignTimelineFrame::new(
+            200,
+            60,
+            220,
+            240,
+            vec![crate::records::Located {
+                value: 102,
+                offset: 245,
+            }],
+        )
+        .unwrap(),
+        native.design_feature_timelines[0].class_tag.clone(),
+        native.design_feature_timelines[0].record_index,
+        native.design_feature_timelines[0].source_ordinal,
+        native.design_feature_timelines[0].context_record_index,
     )
     .unwrap();
     native.store(ir.native.namespace_mut("f3d")).unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.entity.as_deref() == Some(native.design_feature_timelines[0].id.as_str())
+        finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
 }
@@ -1085,7 +1098,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             evaluated_value_offset: 1_140,
         })
         .unwrap();
-    let owner = DesignParameterOwner {
+    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
         id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
         byte_offset: 1_000,
         frame_length: 68,
@@ -1099,7 +1112,8 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         owned_ordinal: 0,
         variant: None,
         companion_record_index: 102,
-    };
+    })
+    .unwrap();
     let companion = DesignParameterCompanion {
         id: crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
         byte_offset: 1_200,

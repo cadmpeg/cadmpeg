@@ -52,7 +52,10 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
     let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 185);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length(), 201);
-    assert_eq!(*compact[0].transform(), identity_matrix());
+    assert_eq!(
+        *compact[0].transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY.rows()
+    );
     assert_eq!(compact[0].transform_offset(), None);
 
     let transform = [
@@ -132,7 +135,10 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 214);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length(), 213);
-    assert_eq!(*compact[0].transform(), identity_matrix());
+    assert_eq!(
+        *compact[0].transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY.rows()
+    );
     assert_eq!(compact[0].transform_offset(), None);
 
     let transform = [
@@ -304,7 +310,11 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(b"283");
     bytes.extend_from_slice(&200u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 11]);
-    for value in identity_matrix().into_iter().flatten() {
+    for value in crate::records::SketchPlacementMatrix::IDENTITY
+        .rows()
+        .into_iter()
+        .flatten()
+    {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&[0, 1]);
@@ -339,7 +349,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset(), head_at as u64);
     assert_eq!(placement.paired_byte_offset(), paired_at as u64);
-    assert_eq!(*placement.transform(), identity_matrix());
+    assert_eq!(
+        *placement.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY.rows()
+    );
     assert!(placement.member_run_head());
     assert_eq!(placement.scope_record_index, None);
     assert_eq!(
@@ -369,7 +382,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     )
     .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
-    assert_eq!(*compact.transform(), identity_matrix());
+    assert_eq!(
+        *compact.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY.rows()
+    );
     assert_eq!(compact.transform_offset(), None);
 }
 

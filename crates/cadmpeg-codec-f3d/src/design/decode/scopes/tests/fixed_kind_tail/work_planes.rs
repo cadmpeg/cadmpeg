@@ -8,7 +8,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"380");
     bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
-    let transform = identity_matrix();
+    let transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = 49 + ordinal * 8;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -26,7 +26,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-380 WorkPlane frame");
-    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
 }
@@ -63,7 +63,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         scope.reference_members = crate::records::ReferenceRun::unlocated(vec![71]);
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("class-256 WorkPlane frame");
-        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(
             decoded.transform_offset,
             work_plane_class_256::MATRIX as u64
@@ -151,7 +151,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         scope.reference_members = crate::records::ReferenceRun::unlocated(vec![record_index]);
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("opaque-prefix WorkPlane frame");
-        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_offset, matrix as u64);
         assert_eq!(decoded.reference, None);
     }
