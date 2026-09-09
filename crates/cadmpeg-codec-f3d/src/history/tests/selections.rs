@@ -1462,7 +1462,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             draft.previous_history_state_id = Some(1);
             draft.reference_members = {
                 let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
-                let reference_offsets = vec![0; reference_values.len()];
+                let reference_offsets = (0..reference_values.len())
+                    .map(|ordinal| 14 + 11 * ordinal as u64)
+                    .collect();
                 crate::records::ReferenceRun::from_columns(
                     reference_values,
                     reference_offsets,

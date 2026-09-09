@@ -292,6 +292,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     let legacy_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             byte_offset: legacy_scope_at as u64,
+            reference_count_offset: (legacy_scope_at + 33) as u64,
             frame_length: 381,
             paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: (legacy_scope_at + 381) as u64,

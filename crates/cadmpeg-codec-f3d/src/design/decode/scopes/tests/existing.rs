@@ -111,7 +111,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             .try_into()
             .expect("three-byte class tag");
         indexed_header(&mut bytes, class_tag_bytes, 20);
-        bytes.resize(64, 0);
+        bytes.resize(128, 0);
         bytes[21..25].fill(1);
         bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
         bytes[30..34].fill(0xff);
@@ -124,7 +124,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope
             .try_edit(|draft| {
-                draft.frame_length = 64;
+                draft.frame_length = 128;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.layout_fixture_tail();
             })

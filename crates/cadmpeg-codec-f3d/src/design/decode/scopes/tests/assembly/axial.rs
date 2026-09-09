@@ -9,7 +9,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     second_transform[2][3] = 4.25;
     let first_role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let second_role = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
-    let mut bytes = Vec::new();
+    let mut bytes = vec![0; 772];
     let first_members = append_axial_test_component_operand(
         &mut bytes,
         70,
@@ -157,7 +157,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let mut second_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     second_transform[1][3] = 2.5;
     let role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-    let mut bytes = Vec::new();
+    let mut bytes = vec![0; 705];
     let members = append_axial_test_component_operand(
         &mut bytes,
         70,

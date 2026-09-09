@@ -207,6 +207,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         scope
             .try_edit(|draft| {
                 draft.reference_count_offset = reference_count;
+                draft.locate_fixture_references();
 
                 draft.kind_offset = kind;
                 draft.feature_ordinal_offset = feature_ordinal;

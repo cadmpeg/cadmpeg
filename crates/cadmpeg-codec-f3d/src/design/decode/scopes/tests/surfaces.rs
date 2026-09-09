@@ -153,7 +153,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
 
             previous_history_state_id: Some(2),
             previous_history_state_id_offset: None,
-            reference_count_offset: (0) + 9,
+            reference_count_offset: 250,
             reference_members: crate::records::ReferenceRun::from_columns(
                 vec![301],
                 vec![0],
@@ -603,7 +603,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         scope
             .try_edit(|draft| {
                 draft.frame_length = frame_length as u64;
-                draft.kind_offset = (frame_length + 102) as u64;
+                draft.kind_offset = (frame_length - 102) as u64;
                 draft.paired_byte_offset = frame_length as u64;
                 draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
@@ -779,7 +779,7 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     scope
         .try_edit(|draft| {
             draft.frame_length = frame_length as u64;
-            draft.kind_offset = (frame_length + 102) as u64;
+            draft.kind_offset = (frame_length - 102) as u64;
             draft.paired_byte_offset = frame_length as u64;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
             draft.reference_count_offset =
@@ -871,7 +871,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         scope
             .try_edit(|draft| {
                 draft.frame_length = frame_length as u64;
-                draft.kind_offset = (frame_length + 102) as u64;
+                draft.kind_offset = (frame_length - 102) as u64;
                 draft.paired_byte_offset = frame_length as u64;
                 draft.reference_members = crate::records::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
@@ -1301,7 +1301,17 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
                 draft.history_state_id = Some(i64::from(current_state));
 
                 draft.previous_history_state_id = Some(i64::from(previous_state));
-                draft.previous_history_state_id_offset = None;
+                draft.frame_length = bytes.len() as u64;
+                draft.paired_byte_offset = bytes.len() as u64;
+                draft.feature_ordinal_offset = feature_ordinal as u64;
+                draft.previous_history_state_id_offset = Some(
+                    (feature_ordinal
+                        + crate::design::decode::scopes::parameter_scope_previous_history_offset(
+                            "Base Feature",
+                            bytes.len() - feature_ordinal,
+                        )
+                        .unwrap()) as u64,
+                );
                 draft.kind_offset = kind as u64;
             })
             .unwrap();
@@ -1365,6 +1375,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope
         .try_edit(|draft| {
             draft.frame_length = compact::LEN as u64;
+            draft.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
             draft.paired_byte_offset = compact::LEN as u64;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![196]);
             draft.reference_count_offset = compact::REFERENCE_COUNT as u64;
