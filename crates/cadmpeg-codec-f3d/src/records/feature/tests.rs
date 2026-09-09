@@ -1835,7 +1835,7 @@ fn parameter_scope_located_absent_history_states_remain_legal() {
         .try_edit(|draft| {
             draft.frame_length = 125;
             draft.paired_byte_offset = 125;
-            draft.previous_history_state_id_offset = Some(79);
+            draft.previous_history_state_id_offset = Some(79);;
         })
         .unwrap();
     let wire = serde_json::to_value(&scope).unwrap();

@@ -740,7 +740,7 @@ pub(super) fn continue_fixed_kind_operations(
         let value = revolve_construction;
         revolve_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -772,7 +772,7 @@ pub(super) fn continue_fixed_kind_operations(
         let value = indexed_revolve_construction;
         indexed_revolve_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1176,7 +1176,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         loft_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1248,7 +1248,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         loft_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1340,7 +1340,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         loft_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1515,7 +1515,7 @@ pub(super) fn continue_fixed_kind_operations(
         );
         sweep_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1565,7 +1565,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         sweep_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1609,7 +1609,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         sweep_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
@@ -1761,7 +1761,7 @@ pub(super) fn continue_fixed_kind_operations(
         ));
         sweep_scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }
