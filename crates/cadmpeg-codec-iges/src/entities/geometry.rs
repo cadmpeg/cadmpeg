@@ -1177,6 +1177,17 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
         .with_provenance(entry.loss_provenance())
 }
 
+/// Records an entity loss when geometry admission fails.
+pub(super) fn admit<T>(
+    result: Result<T, &str>,
+    entry: &DirectoryEntry,
+    losses: &mut Vec<LossNote>,
+) -> Option<T> {
+    result
+        .map_err(|message| losses.push(entity_loss(entry, message)))
+        .ok()
+}
+
 pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {

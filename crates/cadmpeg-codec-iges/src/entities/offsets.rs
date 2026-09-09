@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    admit, declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
     WireProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
@@ -417,64 +417,63 @@ pub(super) fn project(
                     continue;
                 };
                 let distance = distance * factor;
-                let geometry =
-                    match &offset_source_geometry {
-                        CurveGeometry::Line(line_curve)
-                            if {
-                                let (_, direction) = line_curve.parts();
-                                normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
-                            } =>
-                        {
-                            let (origin, direction) = line_curve.parts();
-                            CurveGeometry::Line(
-                                match cadmpeg_ir::geometry::LineCurve::try_new(
-                                    origin.translated(normal.cross(*direction), distance),
-                                    *direction,
-                                ) {
-                                    Ok(payload) => payload,
-                                    Err(message) => {
-                                        losses.push(entity_loss(entry, message));
-                                        continue;
-                                    }
-                                },
-                            )
+                let geometry = match &offset_source_geometry {
+                    CurveGeometry::Line(line_curve)
+                        if {
+                            let (_, direction) = line_curve.parts();
+                            normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
+                        } =>
+                    {
+                        let (origin, direction) = line_curve.parts();
+                        let Some(payload) = admit(
+                            cadmpeg_ir::geometry::LineCurve::try_new(
+                                origin.translated(normal.cross(*direction), distance),
+                                *direction,
+                            ),
+                            entry,
+                            &mut losses,
+                        ) else {
+                            continue;
+                        };
+                        CurveGeometry::Line(payload)
+                    }
+                    CurveGeometry::Circle(circle_curve)
+                        if {
+                            let (_, axis, _, _) = circle_curve.parts();
+                            normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
+                        } =>
+                    {
+                        let (center, axis, ref_direction, radius) = circle_curve.parts();
+                        let offset_radius = radius - distance * normal.dot(*axis).signum();
+                        if offset_radius <= 0.0 {
+                            losses.push(entity_loss(
+                                entry,
+                                "offset collapses or reverses the circle",
+                            ));
+                            continue;
                         }
-                        CurveGeometry::Circle(circle_curve)
-                            if {
-                                let (_, axis, _, _) = circle_curve.parts();
-                                normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
-                            } =>
-                        {
-                            let (center, axis, ref_direction, radius) = circle_curve.parts();
-                            let offset_radius = radius - distance * normal.dot(*axis).signum();
-                            if offset_radius <= 0.0 {
-                                losses.push(entity_loss(
-                                    entry,
-                                    "offset collapses or reverses the circle",
-                                ));
-                                continue;
-                            }
-                            CurveGeometry::Circle(match cadmpeg_ir::geometry::CircleCurve::try_new(
+                        let Some(payload) = admit(
+                            cadmpeg_ir::geometry::CircleCurve::try_new(
                                 *center,
                                 *axis,
                                 *ref_direction,
                                 offset_radius,
-                            ) {
-                                Ok(payload) => payload,
-                                Err(message) => {
-                                    losses.push(entity_loss(entry, message));
-                                    continue;
-                                }
-                            })
-                        }
-                        _ => {
-                            losses.push(entity_loss(
-                                entry,
-                                "source curve has no exact uniform offset carrier",
-                            ));
+                            ),
+                            entry,
+                            &mut losses,
+                        ) else {
                             continue;
-                        }
-                    };
+                        };
+                        CurveGeometry::Circle(payload)
+                    }
+                    _ => {
+                        losses.push(entity_loss(
+                            entry,
+                            "source curve has no exact uniform offset carrier",
+                        ));
+                        continue;
+                    }
+                };
                 (distance, None, geometry)
             }
             2 => {
