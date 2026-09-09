@@ -63,33 +63,40 @@ fn surface_law_admission_preserves_the_depth_boundary() {
             operands: vec![expression],
         };
     }
-    let law = |expression| ProceduralSurfaceDefinition::Law {
-        construction: Box::new(LawSurfaceConstruction {
-            parameter_ranges: None,
-            primary: LawFormula::Named {
-                name: LawFormulaName::new("test").unwrap(),
-                variables: vec![expression],
-            },
-            additional: Vec::new(),
-            tail: LawSurfaceTail::Historical,
-            discontinuities: std::array::from_fn(|_| Vec::new()),
-        }),
+    let construction = |expression| LawSurfaceConstruction {
+        parameter_ranges: None,
+        primary: LawFormula::Named {
+            name: LawFormulaName::new("test").unwrap(),
+            variables: vec![expression],
+        },
+        additional: Vec::new(),
+        tail: LawSurfaceTail::Historical,
+        discontinuities: std::array::from_fn(|_| Vec::new()),
     };
-    assert!(ProceduralSurface::new(id(), law(expression.clone()), None).is_ok());
+    let law = |expression| {
+        crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(construction(
+            expression,
+        )))
+        .map(ProceduralSurfaceDefinition::Law)
+    };
+    assert!(ProceduralSurface::new(id(), law(expression.clone()).unwrap(), None).is_ok());
     expression = LawExpression::Algebraic {
         operator: "+".into(),
         operands: vec![expression],
     };
-    assert!(ProceduralSurface::new(id(), law(expression), None).is_err());
-    let invalid = law(LawExpression::Text {
+    assert!(law(expression).is_err());
+    let invalid = LawExpression::Text {
         value: String::new(),
-    });
-    assert!(ProceduralSurface::new(id(), invalid.clone(), None).is_err());
-    let wire = serde_json::to_value(invalid).unwrap();
+    };
+    assert!(law(invalid.clone()).is_err());
+    let wire = serde_json::json!({"kind": "law", "construction": construction(invalid)});
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
-    assert!(
-        ProceduralSurface::new(id(), law(LawExpression::Text { value: " ".into() }), None).is_ok()
-    );
+    assert!(ProceduralSurface::new(
+        id(),
+        law(LawExpression::Text { value: " ".into() }).unwrap(),
+        None
+    )
+    .is_ok());
 }
 
 #[test]
@@ -128,4 +135,38 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
         .is_err());
         assert!(serde_json::from_value::<ProceduralSurface>(invalid).is_err());
     }
+}
+
+#[test]
+fn rejected_surface_definition_changes_preserve_serialized_owner() {
+    let mut surface = ProceduralSurface::try_new(
+        id(),
+        subset([[0.0, 1.0], [0.0, 1.0]]).unwrap(),
+        Some(0.5),
+        None,
+    )
+    .unwrap();
+    let before = serde_json::to_vec(&surface).unwrap();
+    for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
+        assert!(surface
+            .try_replace_definition(subset([[2.0, 3.0], [4.0, 5.0]]).unwrap(), Some(tolerance),)
+            .is_err());
+        assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
+    }
+    let incompatible = ProceduralSurfaceDefinition::Law(
+        crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
+            LawSurfaceConstruction {
+                parameter_ranges: None,
+                primary: LawFormula::Null,
+                additional: Vec::new(),
+                tail: LawSurfaceTail::Historical,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+        ))
+        .unwrap(),
+    );
+    assert!(surface
+        .edit_definition(|definition| *definition = incompatible)
+        .is_err());
+    assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
 }

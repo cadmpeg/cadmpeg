@@ -640,11 +640,14 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("cache-first spring decode");
-    let ProceduralCurveDefinition::Spring { layout, direction } =
+    let ProceduralCurveDefinition::Spring(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
+    let layout = definition_payload.layout();
+    let direction = definition_payload.direction();
+
     let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
         panic!("expected cache-first spring layout")
     };
@@ -1061,11 +1064,13 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) =
         procedural.definition()
     else {
         panic!("expected a loft construction")
     };
+    let revision_form = definition_payload.revision_form();
+
     let form = revision_form.as_ref().expect("revision form");
     assert_parameterized_tail(&form.cache);
 }

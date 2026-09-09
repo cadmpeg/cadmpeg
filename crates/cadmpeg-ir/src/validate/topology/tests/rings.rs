@@ -251,20 +251,23 @@ fn spring_support_reference_findings_name_the_construction() {
     ir.model.procedural_curves.push(
         ProceduralCurve::new(
             owner.clone(),
-            ProceduralCurveDefinition::Spring {
-                layout: SpringLayout::ContextFirst {
-                    supports: [
-                        SpringSupport::Surface(missing.clone()),
-                        SpringSupport::Ranges([[0.0, 1.0]; 2]),
-                    ],
-                    first_pcurve: SpringPcurve::Range([0.0, 1.0]),
-                    second_pcurve: None,
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                    discontinuity_flag: false,
-                },
-                direction: 1,
-            },
+            ProceduralCurveDefinition::Spring(
+                crate::geometry::curve_payloads::SpringCurvePayload::try_new(
+                    SpringLayout::ContextFirst {
+                        supports: [
+                            SpringSupport::Surface(missing.clone()),
+                            SpringSupport::Ranges([[0.0, 1.0]; 2]),
+                        ],
+                        first_pcurve: SpringPcurve::Range([0.0, 1.0]),
+                        second_pcurve: None,
+                        parameter_range: [0.0, 1.0],
+                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                        discontinuity_flag: false,
+                    },
+                    1,
+                )
+                .unwrap(),
+            ),
         )
         .unwrap(),
     );

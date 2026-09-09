@@ -145,11 +145,7 @@ pub(crate) fn push_revision_loft_body(
 pub(crate) fn decoded_revision_loft_member(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> &cadmpeg_ir::geometry::LoftProfileMember {
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft {
-        sections,
-        revision_form,
-        ..
-    } = &ir
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) = &ir
         .model
         .procedural_surfaces
         .first()
@@ -158,6 +154,9 @@ pub(crate) fn decoded_revision_loft_member(
     else {
         panic!("expected a loft construction")
     };
+    let sections = definition_payload.sections();
+    let revision_form = definition_payload.revision_form();
+
     assert!(revision_form.is_some());
     &sections[0].entries[0].profile[0]
 }

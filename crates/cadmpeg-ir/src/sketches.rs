@@ -1194,6 +1194,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
+        #[serde(deserialize_with = "deserialize_native_kind")]
         native_kind: NonEmptyString,
         /// Source relation state or subtype discriminator, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]

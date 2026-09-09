@@ -314,13 +314,15 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &HashSet::new(),
             IdFormat("f3d"),
         );
-        let ProceduralCurveDefinition::Spring {
-            layout: SpringLayout::CacheFirst { context, .. },
-            ..
-        } = out.procedural_curves[0].1.definition()
+        let ProceduralCurveDefinition::Spring(definition_payload) =
+            out.procedural_curves[0].1.definition()
         else {
             panic!("cache-first spring")
         };
+        let (SpringLayout::CacheFirst { context, .. },) = (definition_payload.layout(),) else {
+            panic!("cache-first spring")
+        };
+
         assert_eq!(context.parameter_range(), [2.0, 5.0]);
     }
 }

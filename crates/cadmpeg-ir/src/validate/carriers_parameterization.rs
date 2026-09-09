@@ -124,8 +124,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             surfaces.insert(surface.as_str());
         }
         match procedural.definition() {
-            ProceduralSurfaceDefinition::Exact { .. } => {}
-            ProceduralSurfaceDefinition::Compound { components, .. } => {
+            ProceduralSurfaceDefinition::Exact(..) => {}
+            ProceduralSurfaceDefinition::Compound(definition_payload) => {
+                let components = definition_payload.components();
+
                 surfaces.extend(
                     components
                         .iter()
@@ -146,7 +148,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.insert(reference.as_str());
                 }
             }
-            ProceduralSurfaceDefinition::Loft { sections, .. } => {
+            ProceduralSurfaceDefinition::Loft(definition_payload) => {
+                let sections = definition_payload.sections();
+
                 for entry in sections.iter().flat_map(|section| &section.entries) {
                     if let Some(curve) = &entry.path.curve {
                         curves.insert(curve.id.as_str());
@@ -166,7 +170,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::CompoundLoft { construction } => {
+            ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
@@ -203,7 +209,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
+            ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
                 match &construction.branch {
                     crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
@@ -245,7 +253,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Skin { construction } => {
+            ProceduralSurfaceDefinition::Skin(definition_payload) => {
                 fn collect_law_curves<'a>(
                     expression: &'a crate::geometry::LawExpression,
                     curves: &mut HashSet<&'a str>,
@@ -262,6 +270,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
                         curves.insert(path.as_str());
@@ -284,7 +293,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     collect_law_curves(variable, &mut curves);
                 }
             }
-            ProceduralSurfaceDefinition::Law { construction } => {
+            ProceduralSurfaceDefinition::Law(definition_payload) => {
                 fn collect_law_curves<'a>(
                     expression: &'a crate::geometry::LawExpression,
                     curves: &mut HashSet<&'a str>,
@@ -301,6 +310,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
@@ -309,7 +319,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Net { construction } => {
+            ProceduralSurfaceDefinition::Net(definition_payload) => {
                 fn collect_law_curves<'a>(
                     expression: &'a crate::geometry::LawExpression,
                     curves: &mut HashSet<&'a str>,
@@ -326,6 +336,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
+                let construction = definition_payload.construction();
                 for entry in construction
                     .sections
                     .iter()
@@ -354,7 +365,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralSurfaceDefinition::G2Blend { construction } => {
+            ProceduralSurfaceDefinition::G2Blend(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 for side in [&construction.first, &construction.second] {
                     surfaces.insert(side.surface.as_str());
                     curves.insert(side.curve.as_str());
@@ -368,7 +381,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     surfaces.insert(support.surface.as_str());
                 }
             }
-            ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.surface.as_str());
@@ -440,7 +455,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 curves.insert(construction.center.as_str());
             }
-            ProceduralSurfaceDefinition::VertexBlend { construction } => {
+            ProceduralSurfaceDefinition::VertexBlend(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
@@ -474,11 +491,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 curves.insert(definition_payload.directrix().as_str());
             }
-            ProceduralSurfaceDefinition::Sweep {
-                profile,
-                spine,
-                native,
-            } => {
+            ProceduralSurfaceDefinition::Sweep(definition_payload) => {
                 fn collect_law_curves<'a>(
                     expression: &'a crate::geometry::LawExpression,
                     curves: &mut HashSet<&'a str>,
@@ -495,6 +508,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         _ => {}
                     }
                 }
+                let profile = definition_payload.profile();
+                let spine = definition_payload.spine();
+                let native = definition_payload.native();
                 curves.extend([profile.as_str(), spine.as_str()]);
                 if let Some(native) = native {
                     let formulas: Vec<_> = match &native.layout {
@@ -573,12 +589,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     definition_payload.second().as_str(),
                 ]);
             }
-            ProceduralSurfaceDefinition::Blend {
-                supports,
-                spine,
-                native,
-                ..
-            } => {
+            ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                let supports = definition_payload.supports();
+                let spine = definition_payload.spine();
+                let native = definition_payload.native();
+
                 for support in supports.iter().flatten() {
                     surfaces.insert(support.surface.as_str());
                 }
@@ -614,7 +629,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 surfaces.insert(support.as_str());
                 curves.extend(boundaries.iter().map(super::super::ids::CurveId::as_str));
             }
-            ProceduralSurfaceDefinition::Deformable { construction } => {
+            ProceduralSurfaceDefinition::Deformable(definition_payload) => {
+                let construction = definition_payload.construction();
+
                 surfaces.insert(construction.support.as_str());
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
                     surface, curve, ..
@@ -691,7 +708,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
 
                 surfaces.extend(supports.iter().map(super::super::ids::SurfaceId::as_str));
             }
-            ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
+            ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) => {
+                let context = definition_payload.context();
+                let third = definition_payload.third();
+
                 for side in context.sides().iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
@@ -725,22 +745,25 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { layout, .. } => match layout {
-                crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
-                    for support in supports {
-                        if let crate::geometry::SpringSupport::Surface(surface) = support {
-                            surfaces.insert(surface.as_str());
+            ProceduralCurveDefinition::Spring(definition_payload) => {
+                let layout = definition_payload.layout();
+                match layout {
+                    crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
+                        for support in supports {
+                            if let crate::geometry::SpringSupport::Surface(surface) = support {
+                                surfaces.insert(surface.as_str());
+                            }
+                        }
+                    }
+                    crate::geometry::SpringLayout::CacheFirst { context, .. } => {
+                        for side in context.sides() {
+                            if let Some(surface) = &side.surface {
+                                surfaces.insert(surface.as_str());
+                            }
                         }
                     }
                 }
-                crate::geometry::SpringLayout::CacheFirst { context, .. } => {
-                    for side in context.sides() {
-                        if let Some(surface) = &side.surface {
-                            surfaces.insert(surface.as_str());
-                        }
-                    }
-                }
-            },
+            }
             ProceduralCurveDefinition::Deformable(definition_payload) => {
                 let context = definition_payload.context();
                 let source = definition_payload.source();
@@ -755,9 +778,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Projection {
-                context, source, ..
-            } => {
+            ProceduralCurveDefinition::Projection(definition_payload) => {
+                let context = definition_payload.context();
+                let source = definition_payload.source();
+
                 curves.insert(source.as_str());
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {

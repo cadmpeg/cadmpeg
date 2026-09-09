@@ -2396,12 +2396,15 @@ pub(super) fn project(
                     entry.sequence
                 ))
                 .expect("identity grammar"),
-                ProceduralSurfaceDefinition::Exact {
-                    spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                        ranges: [u_range, v_range],
-                        extension: 0,
-                    },
-                },
+                ProceduralSurfaceDefinition::Exact(
+                    cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                        cadmpeg_ir::geometry::ExactSpline::Legacy {
+                            ranges: [u_range, v_range],
+                            extension: 0,
+                        },
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 Some([
                     Some(u_range[0]),
                     Some(u_range[1]),

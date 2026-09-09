@@ -3425,26 +3425,14 @@ pub(crate) fn validate_procedural_surface_edits(
                 }
             }
             (
-                ProceduralSurfaceDefinition::Blend {
-                    supports: before_supports,
-                    spine: before_spine,
-                    radius: before_radius,
-                    cross_section: before_cross_section,
-                    native: before_native,
-                },
-                ProceduralSurfaceDefinition::Blend {
-                    supports: after_supports,
-                    spine: after_spine,
-                    radius: after_radius,
-                    cross_section: after_cross_section,
-                    native: after_native,
-                },
-            ) if before_supports == after_supports
-                && before_spine == after_spine
-                && before_cross_section == after_cross_section
-                && before_native == after_native =>
+                ProceduralSurfaceDefinition::Blend(before_payload),
+                ProceduralSurfaceDefinition::Blend(after_payload),
+            ) if before_payload.supports() == after_payload.supports()
+                && before_payload.spine() == after_payload.spine()
+                && before_payload.cross_section() == after_payload.cross_section()
+                && before_payload.native() == after_payload.native() =>
             {
-                let values = match after_radius {
+                let values = match after_payload.radius() {
                     BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],
                     BlendRadiusLaw::Linear { start, end } => [*start, *end],
                     BlendRadiusLaw::Law { .. } => {
@@ -3458,7 +3446,8 @@ pub(crate) fn validate_procedural_surface_edits(
                         "F3D rolling-ball radii must be finite and nonzero: {id}"
                     )));
                 }
-                (before_radius != after_radius).then_some(ProceduralSurfaceEdit::BlendRadii(values))
+                (before_payload.radius() != after_payload.radius())
+                    .then_some(ProceduralSurfaceEdit::BlendRadii(values))
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -3596,41 +3585,30 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    layout: before_layout,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    layout: after_layout,
-                    ..
-                },
-            ) if spring_patch_shape_agrees(before_layout, after_layout)
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(after_payload),
+            ) if spring_patch_shape_agrees(before_payload.layout(), after_payload.layout())
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                    context: before_context,
-                    source: before_source,
-                    tail: before_tail,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                    context: after_context,
-                    source: after_source,
-                    tail: after_tail,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(before_payload),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(after_payload),
+            ) if before_payload.context().sides() == after_payload.context().sides()
+                && before_payload
+                    .context()
                     .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
-                && before_source == after_source
+                    .eq(after_payload
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_payload.source() == after_payload.source()
                 && matches!(
-                    (before_tail, after_tail),
+                    (before_payload.tail(), after_payload.tail()),
                     (
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
@@ -3663,23 +3641,24 @@ pub(crate) fn validate_procedural_curve_edits(
                 Some(after.definition().clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                    context: before_context,
-                    third: before_third,
-                    ..
-                },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                    context: after_context,
-                    third: after_third,
-                    ..
-                },
-            ) if before_context.sides() == after_context.sides()
-                && before_context
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                    before_payload,
+                ),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                    after_payload,
+                ),
+            ) if before_payload.context().sides() == after_payload.context().sides()
+                && before_payload
+                    .context()
                     .discontinuities()
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities().iter().map(Vec::len))
-                && before_third == after_third
+                    .eq(after_payload
+                        .context()
+                        .discontinuities()
+                        .iter()
+                        .map(Vec::len))
+                && before_payload.third() == after_payload.third()
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
