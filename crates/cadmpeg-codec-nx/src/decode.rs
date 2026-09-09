@@ -263,7 +263,7 @@ fn build_metadata_ir(
             &scan.streams,
             &mut parsed,
             None,
-        );
+        )?;
         crate::native::attach_annotations(
             ctx,
             &mut ir,

@@ -124,6 +124,21 @@ pub struct NxCodec;
 impl CodecBackend for NxCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
+    fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
+        let Some(namespace) = ir.native.namespace("nx") else {
+            return Vec::new();
+        };
+        match namespace.admit::<native::display_jt::admission::DisplayJtGraph>() {
+            Ok(_) => Vec::new(),
+            Err(error) => vec![cadmpeg_ir::Finding {
+                check: cadmpeg_ir::Check::NativeLinks,
+                severity: cadmpeg_ir::Severity::Error,
+                message: error.to_string(),
+                entity: None,
+            }],
+        }
+    }
+
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
             Confidence::High

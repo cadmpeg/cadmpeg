@@ -257,6 +257,14 @@ pub struct NativeNamespace {
 }
 
 impl NativeNamespace {
+    /// Admit codec-owned aggregate state from this raw namespace.
+    pub fn admit<'a, T>(&'a self) -> Result<T, NativeConvertError>
+    where
+        T: TryFrom<&'a Self, Error = NativeConvertError>,
+    {
+        T::try_from(self)
+    }
+
     /// Return the record arenas keyed by stable arena name.
     #[must_use]
     pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {

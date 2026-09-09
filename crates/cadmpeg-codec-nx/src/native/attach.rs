@@ -204,7 +204,7 @@ pub(crate) fn attach(
         vertex_flags: &model.display_jt.display_jt_vertex_flags,
         vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
         coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
-        shape_elements: &model.display_jt.display_jt_shape_lod_elements,
+        shape_elements: model.display_jt.graph.shape_lod_elements(),
         bindings: &model.display_jt.display_jt_shape_lod_bindings,
         shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
         base_nodes: &model.display_jt.display_jt_base_node_data,
@@ -212,7 +212,7 @@ pub(crate) fn attach(
         instance_nodes: &model.display_jt.display_jt_instance_nodes,
         transforms: &model.display_jt.display_jt_geometric_transform_attributes,
         materials: &model.display_jt.display_jt_material_attributes,
-        compressed_elements: &model.display_jt.display_jt_compressed_elements,
+        compressed_elements: model.display_jt.graph.compressed_elements(),
     })
     .unwrap_or_default();
     for (tessellation, source_offset) in display_jt_tessellations {
