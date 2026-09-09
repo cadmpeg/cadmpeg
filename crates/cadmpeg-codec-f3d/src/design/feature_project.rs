@@ -4364,8 +4364,8 @@ pub(crate) fn bind_form_cages(
             let serializers = form_cage_serializers(bytes, &records);
             let mut resolved = Vec::with_capacity(serializers.ordered.len());
             let mut valid = true;
-            for (_, entry_name) in &serializers.ordered {
-                let FormCageEntry::Unique(entry_name) = entry_name else {
+            for surface in &serializers.ordered {
+                let Some(entry_name) = serializers.entry_name(*surface) else {
                     valid = false;
                     break;
                 };
@@ -4373,7 +4373,7 @@ pub(crate) fn bind_form_cages(
                     cage.source_object
                         .as_ref()
                         .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                        == Some(entry_name.as_str())
+                        == Some(entry_name)
                 });
                 let Some(cage) = matches.next() else {
                     continue;
@@ -5093,7 +5093,8 @@ fn form_cage_surface(
 }
 
 struct FormCageSerializers {
-    ordered: Vec<(u32, FormCageEntry)>,
+    ordered: Vec<u32>,
+    entries: HashMap<u32, FormCageEntry>,
 }
 
 enum FormCageEntry {
@@ -5103,7 +5104,7 @@ enum FormCageEntry {
 
 impl FormCageSerializers {
     fn entry_name(&self, surface: u32) -> Option<&str> {
-        match &self.ordered.iter().find(|(key, _)| *key == surface)?.1 {
+        match self.entries.get(&surface)? {
             FormCageEntry::Unique(name) => Some(name),
             FormCageEntry::Duplicate => None,
         }
@@ -5116,7 +5117,8 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         .flat_map(|(_, offsets)| offsets.iter().copied())
         .collect::<Vec<_>>();
     offsets.sort_unstable();
-    let mut ordered = Vec::<(u32, FormCageEntry)>::new();
+    let mut ordered = Vec::new();
+    let mut entries = HashMap::new();
     for offset in offsets {
         let is_class_335 = bytes.get(offset + 4..offset + 7) == Some(b"335");
         if !matches!(
@@ -5168,13 +5170,17 @@ fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCa
         if !is_class_335 && after_name + 11 != offset + form_serializer::LEN {
             continue;
         }
-        if let Some((_, entry)) = ordered.iter_mut().find(|(key, _)| *key == surface) {
-            *entry = FormCageEntry::Duplicate;
-        } else {
-            ordered.push((surface, FormCageEntry::Unique(entry_name)));
+        match entries.entry(surface) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(FormCageEntry::Duplicate);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(FormCageEntry::Unique(entry_name));
+                ordered.push(surface);
+            }
         }
     }
-    FormCageSerializers { ordered }
+    FormCageSerializers { ordered, entries }
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
