@@ -225,8 +225,8 @@ struct DeformableCurveConstructionWire {
 impl DeformableCurveConstruction {
     pub(super) fn revision_cache_mut(
         &mut self,
-    ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
-        Some(&mut self.cache_first.cache)
+    ) -> &mut super::RevisionCacheForm<super::CacheFirstCurveParameterization> {
+        &mut self.cache_first.cache
     }
     /// Admit the construction parameters.
     pub fn try_new(
