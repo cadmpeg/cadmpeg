@@ -1469,7 +1469,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
             "typed_status_framed_records".to_string(),
         );
         attributes.insert(
-            format!("deltas.{index}.bytes_decoded()"),
+            format!("deltas.{index}.bytes_decoded"),
             census.bytes_decoded().to_string(),
         );
         if !census.body_revisions.is_empty() {
