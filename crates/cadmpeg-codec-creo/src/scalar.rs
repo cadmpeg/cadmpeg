@@ -182,6 +182,7 @@ impl ScalarCache {
                     *paired_byte_1 = None;
                 }
             }
+            // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }
         Self {
@@ -231,6 +232,7 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
             raw[0] = if data[offset] == 0x9e { 0x40 } else { 0xc0 };
             raw[1] = byte_1;
             raw[2..].copy_from_slice(tail);
+            // endian-exception: reconstructed-scalar
             Some((f64::from_be_bytes(raw), offset + 7))
         }
         0x76 | 0xb3 => {
@@ -242,6 +244,7 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
                 &[0xbf, 0xe0]
             });
             raw[2..].copy_from_slice(tail);
+            // endian-exception: reconstructed-scalar
             Some((f64::from_be_bytes(raw), offset + 7))
         }
         0xe8 if data.get(offset + 1) == Some(&0) => Some((1.0, offset + 2)),
@@ -296,10 +299,12 @@ pub fn decode_in_surface_row_lane(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&[0xc0, 0x15]);
         raw[2..].copy_from_slice(tail);
+        // endian-exception: reconstructed-scalar
         return Some((f64::from_be_bytes(raw), offset + 7));
     }
     if matches!(data.get(offset), Some(0x92 | 0xda)) {
         let payload: [u8; 6] = data.get(offset + 1..offset + 7)?.try_into().ok()?;
+        // endian-exception: reconstructed-scalar
         let signed = i64::from_be_bytes([
             if payload[0] & 0x80 == 0 { 0 } else { 0xff },
             if payload[0] & 0x80 == 0 { 0 } else { 0xff },
@@ -354,6 +359,7 @@ pub fn decode_in_torus_row_lane(
         let mut raw = [0; 8];
         raw[0] = 0xc0;
         raw[1..7].copy_from_slice(tail);
+        // endian-exception: reconstructed-scalar
         return Some((f64::from_be_bytes(raw), offset + 7));
     }
     decode_in_surface_row_lane(data, offset, cache)
@@ -1917,12 +1923,7 @@ pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> 
     } else {
         return None;
     };
-    let tail = data.get(offset + 1..offset + 7)?;
-    let mut raw = [0; 8];
-    raw[0] = byte_0;
-    raw[1] = byte_1;
-    raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    ieee7_with_prefix(data, offset, byte_0, byte_1)
 }
 
 /// Decode one scalar with a defined byte-to-IEEE mapping.
@@ -1949,36 +1950,41 @@ pub fn decode(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     }
 }
 
-fn ieee8(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
+pub(crate) fn ieee8(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let tail = data.get(offset + 1..offset + 8)?;
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..].copy_from_slice(tail);
+    // endian-exception: reconstructed-scalar
     Some((f64::from_be_bytes(raw), offset + 8))
 }
-fn ieee7(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
+pub(crate) fn ieee7(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let tail = data.get(offset + 1..offset + 7)?;
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..7].copy_from_slice(tail);
+    // endian-exception: reconstructed-scalar
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
-fn ieee7_with_prefix(data: &[u8], offset: usize, first: u8, second: u8) -> Option<(f64, usize)> {
+pub(crate) fn ieee7_with_prefix(
+    data: &[u8],
+    offset: usize,
+    first: u8,
+    second: u8,
+) -> Option<(f64, usize)> {
     let tail = data.get(offset + 1..offset + 7)?;
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1] = second;
     raw[2..].copy_from_slice(tail);
+    // endian-exception: reconstructed-scalar
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
 fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
-    let tail = data.get(offset + 1..offset + 7)?;
-    let mut raw = [0; 8];
-    raw[..2].copy_from_slice(&high.to_be_bytes());
-    raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    let [first, second] = high.to_be_bytes();
+    ieee7_with_prefix(data, offset, first, second)
 }
 
 #[cfg(test)]

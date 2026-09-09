@@ -97,6 +97,8 @@ cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
 See [`crates/cadmpeg-fuzz/README.md`](crates/cadmpeg-fuzz/README.md) for seed regeneration and local fuzz-run commands.
 
+To compare a crate's public API between Git refs, install Rust nightly and `cargo-public-api`, then run `cargo +nightly public-api -p CRATE -sss diff OLD_REF..NEW_REF` in a clean worktree. The command checks out each ref in place and restores the original ref.
+
 ---
 
 ## Pull request checklist

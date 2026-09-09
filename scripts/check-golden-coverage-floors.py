@@ -21,16 +21,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs" / "golden-coverage-floors.toml"
-
-FILTER_DESCRIPTION = (
-    "regular files under crates/cadmpeg-codec-*/tests/golden; exclude dotfiles"
-)
 
 
 def codec_ids() -> list[str]:
@@ -62,43 +58,7 @@ def measure() -> dict[str, int]:
     return {codec_id: count_golden(codec_id) for codec_id in codec_ids()}
 
 
-def parse_ledger(path: Path) -> dict[str, object]:
-    """Minimal TOML reader for the golden-floors shape used here."""
-    text = path.read_text(encoding="utf-8")
-    data: dict[str, object] = {"floors": {}, "notes": {}}
-    section: str | None = None
-    for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            section = line[1:-1].strip()
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
-            parsed: object = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-        else:
-            parsed = int(value)
-        if section is None:
-            data[key] = parsed
-        elif section == "floors":
-            cast = data["floors"]
-            assert isinstance(cast, dict)
-            cast[key] = parsed
-        elif section == "notes":
-            cast = data["notes"]
-            assert isinstance(cast, dict)
-            cast[key] = parsed
-    return data
-
-
 def render_ledger(
-    measured_at: str,
-    filter_description: str,
     floors: dict[str, int],
     notes: dict[str, str],
 ) -> str:
@@ -107,8 +67,6 @@ def render_ledger(
         "# Count: regular files under crates/cadmpeg-codec-<id>/tests/golden (recursive).",
         "# These are mesh-size floors, not branch-coverage measurements.",
         "# Floors may only rise when fixtures are added; they must never silently fall.",
-        f'measured_at = "{measured_at}"',
-        f'filter = "{filter_description}"',
         "",
         "[floors]",
     ]
@@ -122,14 +80,6 @@ def render_ledger(
             lines.append(f'{key} = "{escaped}"')
     lines.append("")
     return "\n".join(lines)
-
-
-def git_head() -> str:
-    return (
-        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT)
-        .decode()
-        .strip()
-    )
 
 
 def check(counts: dict[str, int], floors: dict[str, int]) -> list[str]:
@@ -162,7 +112,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: missing ledger {LEDGER}", file=sys.stderr)
         return 2
 
-    ledger = parse_ledger(LEDGER)
+    try:
+        with LEDGER.open("rb") as handle:
+            ledger = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        print(f"error: {LEDGER}: {error}", file=sys.stderr)
+        return 2
     floors_raw = ledger.get("floors")
     if not isinstance(floors_raw, dict):
         print("error: ledger has no [floors] table", file=sys.stderr)
@@ -190,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         kept_notes = {key: notes[key] for key in notes if key in counts}
         LEDGER.write_text(
-            render_ledger(git_head(), FILTER_DESCRIPTION, counts, kept_notes),
+            render_ledger(counts, kept_notes),
             encoding="utf-8",
         )
         if args.json:

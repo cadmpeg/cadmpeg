@@ -1,8 +1,0 @@
-# generated at 7a344d53f
-pub mod cadmpeg_codec_catia
-pub struct cadmpeg_codec_catia::CatiaCodec
-impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_catia::CatiaCodec
-pub const cadmpeg_codec_catia::CatiaCodec::FORMAT: cadmpeg_ir::codec::FormatId
-pub fn cadmpeg_codec_catia::CatiaCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_codec_catia::CatiaCodec::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_codec_catia::CatiaCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
