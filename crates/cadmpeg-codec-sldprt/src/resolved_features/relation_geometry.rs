@@ -309,9 +309,14 @@ pub(crate) fn project_spatial_relation_bindings(
                     })
                 })
                 .flatten();
+            let Some(native_kind) =
+                cadmpeg_ir::products::NonEmptyString::new(relation_native_kind(relation.family))
+            else {
+                continue;
+            };
             let definition = typed_definition.unwrap_or_else(|| {
                 SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: relation_native_kind(relation.family).into(),
+                    native_kind,
                     native_state: None,
                     parameter: parameter_id.clone(),
                     operands: relation
