@@ -3,7 +3,7 @@
 
 use crate::pmdc::unique_by;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -72,10 +72,31 @@ pub(crate) struct AssemblyPlacement<'a> {
     pub(crate) suffix: View<'a>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum UnresolvedCause {
+    ExternalReference,
+    OccurrenceRecord,
+    DuplicateOccurrence,
+    InvalidTransform,
+    Placement,
+}
+
+impl UnresolvedCause {
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::ExternalReference => "external reference is missing or ambiguous",
+            Self::OccurrenceRecord => "AmDc occurrence is missing or ambiguous",
+            Self::DuplicateOccurrence => "occurrence ID is duplicated",
+            Self::InvalidTransform => "placement transform is not affine after unit conversion",
+            Self::Placement => "AmGraphics placement is missing or ambiguous",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AssemblyProjection {
     pub(crate) occurrences: Vec<Occurrence>,
-    pub(crate) unresolved_placements: usize,
+    pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, usize>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -95,17 +116,25 @@ pub(crate) fn project_occurrences(
     let placements = unique_by(assembly_placements, |record| record.occurrence_id);
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
-    let mut unresolved_placements = 0;
+    let mut unresolved_placements = BTreeMap::new();
 
     for source in ufrx_occurrences {
         let Some(reference) = references.get(&source.file_reference_id) else {
-            unresolved_placements += 1;
+            *unresolved_placements
+                .entry(UnresolvedCause::ExternalReference)
+                .or_default() += 1;
             continue;
         };
-        if !occurrence_records.contains_key(&source.occurrence_id)
-            || !emitted_ids.insert(source.occurrence_id)
-        {
-            unresolved_placements += 1;
+        if !occurrence_records.contains_key(&source.occurrence_id) {
+            *unresolved_placements
+                .entry(UnresolvedCause::OccurrenceRecord)
+                .or_default() += 1;
+            continue;
+        }
+        if !emitted_ids.insert(source.occurrence_id) {
+            *unresolved_placements
+                .entry(UnresolvedCause::DuplicateOccurrence)
+                .or_default() += 1;
             continue;
         }
 
@@ -117,14 +146,18 @@ pub(crate) fn project_occurrences(
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
                 let Some(transform) = Transform::from_rows(rows) else {
-                    unresolved_placements += 1;
+                    *unresolved_placements
+                        .entry(UnresolvedCause::InvalidTransform)
+                        .or_default() += 1;
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                unresolved_placements += 1;
+                *unresolved_placements
+                    .entry(UnresolvedCause::Placement)
+                    .or_default() += 1;
                 continue;
             }
         };
@@ -513,7 +546,7 @@ mod tests {
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one occurrence must be projected");
         };
@@ -547,7 +580,7 @@ mod tests {
 
         let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         assert_eq!(projection.occurrences.len(), 2);
         assert_ne!(projection.occurrences[0].id, projection.occurrences[1].id);
         assert_ne!(
@@ -595,7 +628,7 @@ mod tests {
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
 
-        assert_eq!(projection.unresolved_placements, 0);
+        assert!(projection.unresolved_placements.is_empty());
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one suppressed occurrence must be projected");
         };
@@ -621,7 +654,10 @@ mod tests {
         );
 
         assert!(projection.occurrences.is_empty());
-        assert_eq!(projection.unresolved_placements, 1);
+        assert_eq!(
+            projection.unresolved_placements,
+            BTreeMap::from([(super::UnresolvedCause::Placement, 1)])
+        );
     }
 
     fn ufrx_occurrence(
