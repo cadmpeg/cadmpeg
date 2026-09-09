@@ -47,7 +47,7 @@ impl Annotations {
     }
 
     /// The inserted annotation index for a STEP record.
-    pub(super) fn get(&self, id: &u64) -> Option<AnnotationIndex> {
-        self.indices.get(id).copied()
+    pub(super) fn get(&self, id: u64) -> Option<AnnotationIndex> {
+        self.indices.get(&id).copied()
     }
 }

@@ -292,7 +292,9 @@ pub(super) fn decode(
             .iter()
             .flat_map(references)
             .collect::<Vec<_>>();
-        let dimension = refs.iter().find_map(|reference| annotations.get(reference));
+        let dimension = refs
+            .iter()
+            .find_map(|reference| annotations.get(*reference));
         let limits = refs.iter().find_map(|reference| {
             exchange
                 .records
@@ -504,7 +506,7 @@ pub(super) fn decode(
             .flat_map(|partial| partial.parameters.iter())
             .flat_map(references)
             .find_map(|id| {
-                let annotation = &ir.model.pmi[annotations.get(&id)?.get()];
+                let annotation = &ir.model.pmi[annotations.get(id)?.get()];
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then(|| annotation.id.clone())
             });
@@ -563,7 +565,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if annotations.get(&definition).is_some() {
+        if annotations.get(definition).is_some() {
             for item in named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
                 .into_iter()
                 .flat_map(references)
@@ -623,7 +625,7 @@ pub(super) fn decode(
         let mut semantics = parameters
             .iter()
             .flat_map(|value| references(value))
-            .filter(|reference| annotations.get(reference).is_some())
+            .filter(|reference| annotations.get(*reference).is_some())
             .map(pmi_id)
             .collect::<Vec<_>>();
         semantics.extend(
@@ -745,7 +747,7 @@ fn mark_characteristic_representations(
             .collect::<Vec<_>>();
         if !record_references
             .iter()
-            .any(|reference| annotations.get(reference).is_some())
+            .any(|reference| annotations.get(*reference).is_some())
         {
             continue;
         }
@@ -789,7 +791,7 @@ fn resolve_feature_for_datum_target_relationships(
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
-        let Some(annotation_index) = annotations.get(&related) else {
+        let Some(annotation_index) = annotations.get(related) else {
             continue;
         };
         let annotation = &mut ir.model.pmi[annotation_index.get()];
@@ -817,7 +819,7 @@ fn resolve_geometric_item_usages(
 ) {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, record) in &exchange.records {
-        let Some(annotation_index) = annotations.get(&annotation_id) else {
+        let Some(annotation_index) = annotations.get(annotation_id) else {
             continue;
         };
         if shape_aspects.contains(&annotation_id) {
@@ -1051,9 +1053,7 @@ fn datum_references(
                     return None;
                 }
                 let datum = datum_base(element).and_then(ValueExt::reference)?;
-                if annotations.get(&datum).is_none() {
-                    return None;
-                }
+                annotations.get(datum)?;
                 let mut modifiers = compartment_modifiers.clone();
                 modifiers.extend(
                     datum_modifiers(element)
@@ -1076,7 +1076,7 @@ fn datum_references(
     }
     datum_ids(base)
         .into_iter()
-        .filter(|datum| annotations.get(datum).is_some())
+        .filter(|datum| annotations.get(*datum).is_some())
         .map(|datum| {
             typed.insert(datum);
             DatumReference {
