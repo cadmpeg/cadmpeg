@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use crate::decode::Scan;
-use crate::deltas::Census;
+use crate::deltas::census::Census;
 use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
@@ -36,7 +36,6 @@ fn prepare_topology_streams<'a>(
     scan: &'a Scan<'_>,
     mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Vec<TopologyStream<'a>> {
-    let collect_unmatched_tombstones = unmatched_tombstone_counts.is_some();
     let mut semantic = scan
         .streams
         .iter()
@@ -47,40 +46,33 @@ fn prepare_topology_streams<'a>(
         .collect::<Vec<_>>();
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
+    let mut merge = |partition: &[u8], deltas: &[u8], census: &Census| {
         if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
-            for (family, count) in counts {
+            let result =
+                crate::deltas::merge_full_records_with_tombstone_census(partition, deltas, census);
+            for (family, count) in result.unmatched_tombstones {
                 *totals.entry(family).or_default() += count;
             }
+            result.merged
+        } else {
+            crate::deltas::merge_full_records_with_census(partition, deltas, census)
         }
     };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            let census = crate::deltas::walk(&stream.inflated);
+            let census = crate::deltas::census::walk(&stream.inflated);
             if !census.records.is_empty() || !census.tombstones.is_empty() {
-                let merged = crate::deltas::merge_full_records_with_census(
-                    &[],
-                    &stream.inflated,
-                    &census,
-                    collect_unmatched_tombstones,
-                );
-                add_counts(merged.unmatched_tombstones);
-                semantic[delta].bytes = Cow::Owned(merged.merged);
+                let merged = merge(&[], &stream.inflated, &census);
+                semantic[delta].bytes = Cow::Owned(merged);
             }
             semantic[delta].delta_census = Some(census);
         }
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            let census = crate::deltas::walk(&semantic[delta].bytes);
-            let merged = crate::deltas::merge_full_records_with_census(
-                &semantic[partition].bytes,
-                &semantic[delta].bytes,
-                &census,
-                collect_unmatched_tombstones,
-            );
-            add_counts(merged.unmatched_tombstones);
-            semantic[partition].bytes = Cow::Owned(merged.merged);
+            let census = crate::deltas::census::walk(&semantic[delta].bytes);
+            let merged = merge(&semantic[partition].bytes, &semantic[delta].bytes, &census);
+            semantic[partition].bytes = Cow::Owned(merged);
             semantic[delta].bytes = Cow::Borrowed(&[]);
             semantic[delta].delta_census = Some(census);
         }

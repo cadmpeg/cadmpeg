@@ -38,7 +38,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8129),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8129).unwrap()),
             entity_index: 1,
             entity_ref: None,
         }],
@@ -111,7 +111,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         operands: vec![FeatureInputOperand {
             offset: 0,
             reference_ref: "reference".into(),
-            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8207),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x8207).unwrap()),
             entity_index: 0,
             entity_ref: None,
         }],

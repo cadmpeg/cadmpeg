@@ -21,7 +21,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     let mut owner = marker("owner", Some([1.0, 2.0]));
     owner.kind = SketchInputKind::LineOrCircle;
-    owner.object_index = Some(7);
+    owner = owner.with_test_identity(Some(7), owner.local_id());
     owner = owner.with_test_position(owner.ordinal(), 1);
     owner.links = crate::records::SketchInputLinks::new(
         0,
@@ -31,7 +31,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
         }],
     );
     let mut point = marker("point", Some([1.0, 2.0]));
-    point.object_index = Some(8);
+    point = point.with_test_identity(Some(8), point.local_id());
     point = point.with_test_position(point.ordinal(), 2);
     point.links = owner.links.clone();
     let markers = HashMap::from([
@@ -94,11 +94,11 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
 
     let mut collision = marker("collision", Some([1.0, 0.0]));
-    collision.local_id = Some(7);
+    collision = collision.with_test_identity(collision.object_index(), Some(7));
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Tangent);
-    relation.local_id = Some(7);
-    relation.object_index = Some(8);
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(8), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -129,8 +129,8 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(7);
-    relation.object_index = Some(8);
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(8), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -195,8 +195,8 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
 fn object_index_collision_remains_a_forward_curve_operand() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(2);
-    relation.object_index = Some(1);
+    relation = relation.with_test_identity(relation.object_index(), Some(2));
+    relation = relation.with_test_identity(Some(1), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -206,7 +206,7 @@ fn object_index_collision_remains_a_forward_curve_operand() {
     );
     let mut line = marker("line", None);
     line.kind = SketchInputKind::LineOrCircle;
-    line.local_id = Some(1);
+    line = line.with_test_identity(line.object_index(), Some(1));
     let markers = HashMap::from([(relation.id.as_str(), &relation), (line.id.as_str(), &line)]);
     let loci = HashMap::from([(
         line.id.clone(),
@@ -227,8 +227,8 @@ fn object_index_collision_remains_a_forward_curve_operand() {
 fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
-    relation.local_id = Some(7);
-    relation.object_index = Some(7);
+    relation = relation.with_test_identity(relation.object_index(), Some(7));
+    relation = relation.with_test_identity(Some(7), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -279,8 +279,8 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
-    relation.local_id = Some(1);
-    relation.object_index = Some(1);
+    relation = relation.with_test_identity(relation.object_index(), Some(1));
+    relation = relation.with_test_identity(Some(1), relation.local_id());
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![SketchInputLink {
@@ -342,7 +342,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
 fn native_fallback_entities_exclude_self_identity_collisions() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    relation.local_id = Some(3);
+    relation = relation.with_test_identity(relation.object_index(), Some(3));
     relation.links = crate::records::SketchInputLinks::new(
         0,
         vec![
@@ -856,10 +856,10 @@ fn terminal_profile_curve_resolves_point_identity_endpoints() {
     let mut curve = marker("curve", None);
     curve.kind = SketchInputKind::LineOrCircle;
     let mut first = marker("first", Some([1.0, 0.0]));
-    first.local_id = Some(15);
-    first.object_index = Some(14);
+    first = first.with_test_identity(first.object_index(), Some(15));
+    first = first.with_test_identity(Some(14), first.local_id());
     let mut second = marker("second", Some([2.0, 0.0]));
-    second.object_index = Some(15);
+    second = second.with_test_identity(Some(15), second.local_id());
 
     assert_eq!(
         legacy_terminal_profile_indexed_endpoints(&payload, &curve, &[&curve, &first, &second])

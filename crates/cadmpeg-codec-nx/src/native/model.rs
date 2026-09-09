@@ -586,7 +586,7 @@ impl NativeModel {
         let audit_trail_rows = audit_trail_rows(container);
         let operation_state_journal_groups = operation_state_journal_groups(container);
         let operation_state_counters = operation_state_counters(container);
-        let operation_state_groups = operation_state_groups(container);
+        let operation_state_groups = operation_state_groups(container)?;
         let operation_state_messages = operation_state_messages(container);
         let operation_state_statuses = operation_state_statuses(container);
         let operation_state_slot_lanes = operation_state_slot_lanes(container);
@@ -727,7 +727,7 @@ impl NativeModel {
             &display_jt_coordinate_array_headers,
         );
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-            display_jt_compressed_element_sequences(budget, container, &display_jt_segments);
+            display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
             display_jt_string_property_atoms(budget, container, &display_jt_segments);
         let display_jt_shape_lod_bindings =

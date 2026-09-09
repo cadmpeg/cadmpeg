@@ -261,3 +261,20 @@ fn a_non_stream_input_is_refused() {
         cadmpeg_ir::DecodeFailure::Codec(CodecError::WrongFormat(_))
     ));
 }
+
+#[test]
+fn zero_header_resabs_preserves_default_and_records_loss() {
+    let source = String::from_utf8(text_sphere_stream(1.0)).unwrap();
+    let source = source.replacen("9.999999999999999547e-07", "0", 1);
+    let result = decode_bytes(source.as_bytes());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(
+        result.ir().tolerances.linear,
+        cadmpeg_ir::units::Tolerances::default().linear
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.to_string() == "sat/header.tolerance-unresolved" }));
+}

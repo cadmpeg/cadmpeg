@@ -685,7 +685,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
         .expect("resolved diameter marker");
     assert_eq!(marker.kind, crate::records::SketchInputKind::LineOrCircle);
-    assert_ne!(marker.local_id, Some(u32::from(operand.entity_index)));
+    assert_ne!(marker.local_id(), Some(u32::from(operand.entity_index)));
     assert!(native.feature_input_lanes[0]
         .relation_instances
         .iter()
@@ -710,7 +710,7 @@ fn encoder_writes_source_less_curved_sketches() {
                 .sketch_entities
                 .iter()
                 .find(|marker| Some(marker.id.as_str()) == operand.entity_ref.as_deref())
-                .is_some_and(|marker| marker.local_id != Some(u32::from(operand.entity_index)))
+                .is_some_and(|marker| marker.local_id() != Some(u32::from(operand.entity_index)))
         }));
     assert!(decoded
         .ir()

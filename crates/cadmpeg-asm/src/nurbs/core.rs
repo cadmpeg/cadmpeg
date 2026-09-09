@@ -265,8 +265,6 @@ pub struct SurfacePatchLayout {
     pub periodic_value_offsets: [usize; 2],
     /// Payload offsets for the U/V degree integers.
     pub degree_value_offsets: [usize; 2],
-    /// Payload width of integer and enum fields.
-    pub int_width: RefWidth,
 }
 
 impl SurfacePatchLayout {
@@ -371,7 +369,6 @@ pub(crate) fn decode_surface_block(
         v_knots: v_knot_layout,
         periodic_value_offsets: [enum_value_offsets[0], enum_value_offsets[1]],
         degree_value_offsets: [degree_u_offset, degree_v_offset],
-        int_width,
     })
 }
 
@@ -412,8 +409,6 @@ pub struct CurvePatchLayout {
     pub periodic_value_offset: usize,
     /// Payload offset for the degree integer.
     pub degree_value_offset: usize,
-    /// Payload width of integer and enum fields.
-    pub int_width: RefWidth,
 }
 
 impl CurvePatchLayout {
@@ -468,7 +463,6 @@ pub(crate) fn decode_curve_block(
         knots: knot_layout,
         periodic_value_offset,
         degree_value_offset,
-        int_width,
     })
 }
 

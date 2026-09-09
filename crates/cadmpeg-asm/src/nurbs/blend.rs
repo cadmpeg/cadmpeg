@@ -1448,6 +1448,19 @@ pub(crate) fn vertex_blend_spl_sur(
     ))
 }
 
+fn blend_radius_law(offsets: [f64; 2]) -> BlendRadiusLaw {
+    if offsets[0] == offsets[1] {
+        BlendRadiusLaw::Constant {
+            signed_radius: offsets[0],
+        }
+    } else {
+        BlendRadiusLaw::Linear {
+            start: offsets[0],
+            end: offsets[1],
+        }
+    }
+}
+
 pub(crate) fn full_rb_blend_spl_sur(
     toks: &[Token],
     table: &SubtypeTable,
@@ -1504,16 +1517,7 @@ pub(crate) fn full_rb_blend_spl_sur(
     };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     cur.at_scope_end().then_some(())?;
-    let radius = if offsets[0] == offsets[1] {
-        BlendRadiusLaw::Constant {
-            signed_radius: offsets[0],
-        }
-    } else {
-        BlendRadiusLaw::Linear {
-            start: offsets[0],
-            end: offsets[1],
-        }
-    };
+    let radius = blend_radius_law(offsets);
     Some(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
@@ -1593,16 +1597,7 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
     };
     cur.at_scope_end().then_some(())?;
 
-    let radius = if offsets[0] == offsets[1] {
-        BlendRadiusLaw::Constant {
-            signed_radius: offsets[0],
-        }
-    } else {
-        BlendRadiusLaw::Linear {
-            start: offsets[0],
-            end: offsets[1],
-        }
-    };
+    let radius = blend_radius_law(offsets);
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),

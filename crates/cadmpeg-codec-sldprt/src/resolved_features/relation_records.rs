@@ -485,7 +485,7 @@ mod relation_records_tests {
             operands: vec![FeatureInputOperand {
                 offset: offset + 1,
                 reference_ref: format!("reference-{offset}"),
-                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_1234),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x1234).unwrap()),
                 entity_index: 0,
                 entity_ref: entity_ref.map(str::to_owned),
             }],
@@ -902,7 +902,7 @@ mod relation_records_tests {
     fn unclaimed_relation_binding_scalar_becomes_an_instance() {
         let dynamic = dynamic_scalar(
             20,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[1, 2],
             2.0,
         );
@@ -1140,7 +1140,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+                FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 &[0, 1],
                 2.0,
             )],
@@ -1163,7 +1163,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+                FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 &[1, 2],
                 2.0,
             )],
@@ -1188,7 +1188,7 @@ mod relation_records_tests {
     fn dynamic_point_relation_preserves_explicit_driving_operand_reference() {
         let mut driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[1, 2],
             2.0,
         );
@@ -1214,7 +1214,7 @@ mod relation_records_tests {
     fn dynamic_point_relation_falls_back_to_unique_geometry_after_address_miss() {
         let mut driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[3, 1],
             1.0,
         );
@@ -1271,7 +1271,7 @@ mod relation_records_tests {
     fn relation_instance_keeps_first_scalar_operands_when_grouping_display_and_driver() {
         let mut display = dynamic_scalar(
             20,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[1, 2],
             2.0,
         );
@@ -1279,7 +1279,7 @@ mod relation_records_tests {
         display.operands[0].entity_ref = Some("p1".into());
         let mut driving = dynamic_scalar(
             30,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[1, 2],
             2.0,
         );
@@ -1312,7 +1312,7 @@ mod relation_records_tests {
     fn dynamic_display_relation_uses_display_value_without_driver() {
         let mut display = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[1, 2],
             2.0,
         );
@@ -1341,7 +1341,7 @@ mod relation_records_tests {
             vec![class(10, "sgPntPntDist")],
             vec![dynamic_scalar(
                 40,
-                FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+                FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
                 &[1, 2],
                 1.0,
             )],
@@ -1363,7 +1363,7 @@ mod relation_records_tests {
     fn dynamic_point_line_relation_resolves_solver_line_by_exact_distance() {
         let mut driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[0, 1],
             1.0,
         );
@@ -1421,7 +1421,7 @@ mod relation_records_tests {
     fn dynamic_line_relation_validates_solver_line_pair() {
         let mut driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[0, 1],
             1.0,
         );
@@ -1472,7 +1472,7 @@ mod relation_records_tests {
     fn dynamic_angle_accepts_reversed_solver_line_direction() {
         let driving = dynamic_scalar(
             40,
-            FeatureInputOperandKind::Native(NativeOperandTag::TAG_812A),
+            FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812a).unwrap()),
             &[0, 1],
             std::f64::consts::FRAC_PI_4,
         );
@@ -1997,8 +1997,8 @@ fn dynamic_point_candidates<'a>(
         coordinate_points.get(address).copied(),
     );
     for entity in entities.iter().copied().filter(|entity| {
-        entity.object_index == Some(u32::from(operand.entity_index))
-            || entity.local_id == Some(u32::from(operand.entity_index))
+        entity.object_index() == Some(u32::from(operand.entity_index))
+            || entity.local_id() == Some(u32::from(operand.entity_index))
     }) {
         push_point_candidate(&mut candidates, &mut seen, Some(entity));
     }

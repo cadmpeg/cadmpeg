@@ -44,7 +44,7 @@ pub fn simple_hole_geometry<'a>(
                 surface_id: id,
                 origin,
                 normal,
-                corners: Some(plane_envelope_corners(&envelope.envelope)?),
+                corners: plane_envelope_corners(&envelope.envelope)?,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -245,8 +245,11 @@ pub fn compact_simple_hole_geometry<'a>(
     })
 }
 
-pub fn circular_sweep_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
-    let (_, axis, _) = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
+pub fn circular_sweep_cylinder_from_cap_outlines(
+    planes: [FeatureOutlinePlane; 2],
+    outlines: impl IntoIterator<Item = CapOutline>,
+) -> Option<HoleCylinder> {
+    let (_, axis, _) = hole_placement(planes)?;
     let axis_index = (0..3).find(|index| {
         axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_ALIGNMENT)
@@ -254,9 +257,9 @@ pub fn circular_sweep_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Optio
     let radial = (0..3)
         .filter(|index| *index != axis_index)
         .collect::<Vec<_>>();
-    let circles = caps
-        .iter()
-        .filter_map(|cap| cap_square_center_radius(cap.corners?, axis_index))
+    let circles = outlines
+        .into_iter()
+        .filter_map(|cap| cap_square_center_radius(cap.corners, axis_index))
         .collect::<Vec<_>>();
     let (center, radius) = circles.first().copied()?;
     let scale = center
@@ -355,7 +358,7 @@ pub fn single_cap_circular_sweep_geometry<'a>(
         surface_id: plane.0,
         origin: plane.1,
         normal: plane.2,
-        corners: plane_envelope_corners(&envelope.envelope),
+        corners: plane_envelope_corners(&envelope.envelope)?,
     };
     let transforms = scan
         .features
@@ -482,12 +485,12 @@ pub fn two_cap_circular_sweep_geometry<'a>(
             [envelope] => plane_envelope_corners(&envelope.envelope),
             _ => None,
         };
-        CapOutline {
+        Some(CapOutline {
             surface_id: plane.0,
             origin: plane.1,
             normal: plane.2,
-            corners,
-        }
+            corners: corners?,
+        })
     };
     let cylinder_row =
         crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id).filter(
@@ -504,7 +507,10 @@ pub fn two_cap_circular_sweep_geometry<'a>(
                 draft: None,
             },
         },
-        geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
+        geometry: circular_sweep_cylinder_from_cap_outlines(
+            [first, second],
+            [cap(first), cap(second)].into_iter().flatten(),
+        )?,
     })
 }
 

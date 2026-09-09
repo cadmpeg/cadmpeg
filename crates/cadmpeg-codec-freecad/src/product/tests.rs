@@ -2,9 +2,13 @@
 //! Product-structure transfer unit tests.
 
 use crate::native;
-use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
+use crate::product::{
+    list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
+    RealWidth,
+};
 use crate::test_support::*;
 use crate::FcstdCodec;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -82,12 +86,23 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         occurrence.prototype(),
         Some("fcstd:native:object#Prototype")
     );
-    assert_eq!(occurrence.local_transform().expect("placement")[0][3], 4.0);
+    assert_eq!(
+        occurrence.local_transform().expect("placement").rows()[0][3],
+        4.0
+    );
     assert_eq!(occurrence.element_count(), Some(2));
     assert_eq!(occurrence.link_transform(), Some(true));
     assert_eq!(occurrence.element_transforms().len(), 2);
-    assert_eq!(occurrence.element_transforms()[1][0][3], 4.0);
-    assert_eq!(occurrence.element_scales(), &[[1.0; 3], [2.0; 3]]);
+    assert_eq!(occurrence.element_transforms()[1].rows()[0][3], 4.0);
+    assert_eq!(
+        occurrence
+            .element_scales()
+            .iter()
+            .copied()
+            .map(crate::native::frame::FiniteVec3::values)
+            .collect::<Vec<_>>(),
+        &[[1.0; 3], [2.0; 3]]
+    );
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -359,7 +374,7 @@ fn selects_the_active_link_placement_carrier() {
             .iter()
             .find(|node| node.object.ends_with(name))
             .and_then(native::ProductNodeRecord::local_transform)
-            .map(|matrix| matrix[0][3])
+            .map(|matrix| matrix.rows()[0][3])
             .expect("link placement")
     };
     assert_eq!(x("Propagating"), 2.0);
@@ -399,7 +414,7 @@ fn accepts_axis_angle_placement_values() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -442,7 +457,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -485,7 +500,7 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
@@ -525,7 +540,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform().expect("placement");
+    let matrix = occurrence.local_transform().expect("placement").rows();
     assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
@@ -1068,7 +1083,7 @@ fn restores_shadowed_link_subelement_name() {
         .iter()
         .find(|property| property.name == "Support")
         .expect("support");
-    assert_eq!(support.links()[0].subelements, ["Face7"]);
+    assert_eq!(support.links()[0].subelements(), ["Face7"]);
 }
 
 #[test]
@@ -1121,4 +1136,37 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .map(|record| (record.object.as_str(), record))
         .collect();
     assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
+}
+
+#[test]
+fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
+    for width in [RealWidth::Single, RealWidth::Double] {
+        let mut bytes = vec![0xff; 9];
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        for value in [2.0_f32, -3.0, 4.0] {
+            match width {
+                RealWidth::Single => bytes.extend_from_slice(&value.to_le_bytes()),
+                RealWidth::Double => bytes.extend_from_slice(&f64::from(value).to_le_bytes()),
+            }
+        }
+        let end = bytes.len();
+        bytes.push(0xff);
+        let view = View::over_retained(&bytes).child(9, end).unwrap();
+        let rows = list_layout::<3>(view, "ScaleList")
+            .unwrap()
+            .map(|row| {
+                row.into_iter()
+                    .map(read_real)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows, [[2.0, -3.0, 4.0]]);
+        assert!(list_layout::<3>(
+            View::over_retained(&bytes).child(9, end - 1).unwrap(),
+            "ScaleList"
+        )
+        .is_err());
+    }
+    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
 }

@@ -100,13 +100,13 @@ pub(crate) fn spatial_sketches(
                     // A spatial sketch stores an indexed geometry marker and an
                     // unindexed zero-valued anchor for the same point. Only the
                     // indexed marker is a model-space locus.
-                    .filter(|marker| marker.object_index.is_some())
+                    .filter(|marker| marker.object_index().is_some())
                     .filter_map(|marker| {
                         let offset = usize::try_from(marker.offset()).ok()?;
                         if !relation_ranges.is_empty()
                             && (!relation_ranges.iter().any(|(start, end)| {
                                 marker.offset() > *start && marker.offset() < *end
-                            }) || marker.object_index.is_none()
+                            }) || marker.object_index().is_none()
                                 || !matches!(
                                     marker_native_code(&lane.native_payload, offset),
                                     Some(1..=85)
@@ -3104,7 +3104,7 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     markers: &[&SketchInputEntity],
 ) -> Option<[u64; 2]> {
     let offset = usize::try_from(curve.offset()).ok()?;
-    let curve_index = u16::try_from(curve.object_index?).ok()?;
+    let curve_index = u16::try_from(curve.object_index()?).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(1)
         || marker_profile_curve_role(payload, offset) != Some(1)

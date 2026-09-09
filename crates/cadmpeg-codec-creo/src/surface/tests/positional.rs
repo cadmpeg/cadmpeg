@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::EPS_FRAME_COMPONENT;
+
 use super::super::*;
 
 const EPS_ROUND_RADIUS: f64 = 1.0e-12;
@@ -85,47 +87,47 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
 
     assert!(PositionalTorusFrame::new(
         {
-            let mut value = valid.center;
+            let mut value = valid.center();
             value[1] = f64::INFINITY;
             value
         },
-        valid.axis,
-        valid.ref_direction,
+        valid.axis(),
+        valid.ref_direction(),
         valid.major_radius,
         valid.minor_radius
     )
     .is_none());
 
     assert!(PositionalTorusFrame::new(
-        valid.center,
-        valid.axis,
-        valid.ref_direction,
+        valid.center(),
+        valid.axis(),
+        valid.ref_direction(),
         0.0,
         valid.minor_radius
     )
     .is_some());
 
     assert!(PositionalTorusFrame::new(
-        valid.center,
-        valid.axis,
-        valid.ref_direction,
+        valid.center(),
+        valid.axis(),
+        valid.ref_direction(),
         -0.1,
         valid.minor_radius
     )
     .is_none());
 
     assert!(PositionalTorusFrame::new(
-        valid.center,
+        valid.center(),
         [0.0, 0.0, 2.0],
-        valid.ref_direction,
+        valid.ref_direction(),
         valid.major_radius,
         valid.minor_radius
     )
     .is_none());
 
     assert!(PositionalTorusFrame::new(
-        valid.center,
-        valid.axis,
+        valid.center(),
+        valid.axis(),
         [0.0, 0.0, 1.0],
         valid.major_radius,
         valid.minor_radius
@@ -133,9 +135,9 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
     .is_none());
 
     assert!(PositionalTorusFrame::new(
-        valid.center,
-        valid.axis,
-        valid.ref_direction,
+        valid.center(),
+        valid.axis(),
+        valid.ref_direction(),
         valid.major_radius,
         f64::NAN
     )
@@ -155,38 +157,38 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
 
     assert!(PositionalCylinderFrame::new(
         {
-            let mut value = valid.origin;
+            let mut value = valid.origin();
             value[1] = f64::NAN;
             value
         },
-        valid.axis,
-        valid.ref_direction,
+        valid.axis(),
+        valid.ref_direction(),
         valid.radius,
         valid.length
     )
     .is_none());
 
     assert!(PositionalCylinderFrame::new(
-        valid.origin,
-        valid.axis,
-        valid.ref_direction,
+        valid.origin(),
+        valid.axis(),
+        valid.ref_direction(),
         f64::INFINITY,
         valid.length
     )
     .is_none());
 
     assert!(PositionalCylinderFrame::new(
-        valid.origin,
+        valid.origin(),
         [0.0, 0.0, 2.0],
-        valid.ref_direction,
+        valid.ref_direction(),
         valid.radius,
         valid.length
     )
     .is_none());
 
     assert!(PositionalCylinderFrame::new(
-        valid.origin,
-        valid.axis,
+        valid.origin(),
+        valid.axis(),
         [0.0, 1.0, 1.0],
         valid.radius,
         valid.length
@@ -194,9 +196,9 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
     .is_none());
 
     assert!(PositionalCylinderFrame::new(
-        valid.origin,
-        valid.axis,
-        valid.ref_direction,
+        valid.origin(),
+        valid.axis(),
+        valid.ref_direction(),
         valid.radius,
         Some(0.0)
     )
@@ -242,11 +244,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&negative_x, &scalar::ScalarCache::default())
         .expect("complete positional cylinder");
-    assert!((frame.origin[0] + 2.4).abs() < 1.0e-12);
-    assert!((frame.origin[1] - 21.8).abs() < 1.0e-12);
-    assert_eq!(frame.origin[2], 0.0);
-    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+    assert!((frame.origin()[0] + 2.4).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.origin()[1] - 21.8).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[2], 0.0);
+    assert_eq!(frame.axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 1.0, 0.0]);
     assert!((frame.radius - 0.75).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 0.4).abs() < 1.0e-12);
 
@@ -257,8 +259,8 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&positive_x, &scalar::ScalarCache::default())
         .expect("oppositely oriented positional cylinder");
-    assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
+    assert_eq!(frame.axis(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, -1.0, 0.0]);
 
     let compact = [
         17, 24, 19, 41, 251, 51, 67, 248, 0, 47, 49, 128, 66, 235, 51, 42, 248, 0, 47, 51, 0, 41,
@@ -266,9 +268,9 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&compact, &scalar::ScalarCache::default())
         .expect("complete compact axis-aligned cylinder");
-    assert_eq!(frame.origin, [0.0, 19.0, 0.85]);
-    assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [0.0, 19.0, 0.85]);
+    assert_eq!(frame.axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
     assert!((frame.radius - 1.5).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 1.7).abs() < 1.0e-12);
 
@@ -279,9 +281,9 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&directrix_lane, &scalar::ScalarCache::default())
         .expect("complete directrix-lane axis-aligned cylinder");
-    assert_eq!(frame.origin, [0.0, 16.64, 1.73]);
-    assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [0.0, 16.64, 1.73]);
+    assert_eq!(frame.axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
     assert!((frame.radius - 2.1).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 1.68).abs() < 1.0e-12);
 
@@ -292,11 +294,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&forward_trailer, &scalar::ScalarCache::default())
         .expect("complete forward-oriented directrix-lane cylinder");
-    assert!((frame.origin[0] - 0.82).abs() < 1.0e-12);
-    assert!((frame.origin[1] + 13.769_563_324_412_964).abs() < 1.0e-12);
-    assert!((frame.origin[2] - 2.41).abs() < 1.0e-12);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((frame.origin()[0] - 0.82).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.origin()[1] + 13.769_563_324_412_964).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.origin()[2] - 2.41).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 2.11).abs() < 1.0e-12);
 
     let compound_close_trailer = [
@@ -306,11 +308,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     let frame =
         decode_positional_cylinder_frame(&compound_close_trailer, &scalar::ScalarCache::default())
             .expect("complete compound-close directrix-lane cylinder");
-    assert_eq!(frame.origin[0], 15.0);
-    assert_eq!(frame.origin[1], 24.0);
-    assert!((frame.origin[2] + 6.0).abs() < 1.0e-12);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin()[0], 15.0);
+    assert_eq!(frame.origin()[1], 24.0);
+    assert!((frame.origin()[2] + 6.0).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 3.5);
     assert_eq!(frame.length, Some(8.5));
 
@@ -321,9 +323,9 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&zero_support, &scalar::ScalarCache::default())
         .expect("complete zero-support positional cylinder");
-    assert_eq!(frame.origin, [-12.5, 4.0, 0.0]);
-    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [-12.5, 4.0, 0.0]);
+    assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 0.75);
     assert_eq!(frame.length, Some(8.0));
 
@@ -335,9 +337,9 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     let frame =
         decode_positional_cylinder_frame(&signed_zero_support, &scalar::ScalarCache::default())
             .expect("complete signed zero-support positional cylinder");
-    assert_eq!(frame.origin, [12.5, 4.0, 0.0]);
-    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [12.5, 4.0, 0.0]);
+    assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 0.75);
     assert_eq!(frame.length, Some(8.0));
 
@@ -366,9 +368,9 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
         &scalar::ScalarCache::default(),
     )
     .expect("complete referenced planar-envelope cylinder");
-    assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
-    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [0.0, 0.0, 0.0]);
+    assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 4.45).abs() < 1.0e-12);
     assert_eq!(frame.length, Some(16.0));
 
@@ -381,11 +383,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
         &scalar::ScalarCache::default(),
     )
     .expect("complete reversed referenced planar-envelope cylinder");
-    assert!((frame.origin[0]).abs() < 1.0e-12);
-    assert!((frame.origin[1] + 12.24).abs() < 1.0e-12);
-    assert_eq!(frame.origin[2], 0.0);
-    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert!((frame.origin()[0]).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.origin()[1] + 12.24).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[2], 0.0);
+    assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
     assert!((frame.radius - 4.95).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 4.5).abs() < 1.0e-12);
 
@@ -395,11 +397,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     ];
     let frame = decode_positional_cylinder_frame(&held_axis, &scalar::ScalarCache::default())
         .expect("complete held-axis cylinder");
-    assert!((frame.origin[0] + 40.3).abs() < 1.0e-12);
-    assert_eq!(frame.origin[1], 0.0);
-    assert!((frame.origin[2] + 0.5).abs() < 1.0e-12);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((frame.origin()[0] + 40.3).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[1], 0.0);
+    assert!((frame.origin()[2] + 0.5).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 1.0).abs() < 1.0e-12);
     assert_eq!(frame.length, None);
 
@@ -412,10 +414,10 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
         &scalar::ScalarCache::default(),
     )
     .expect("complete first-endpoint axial/radial cylinder");
-    assert!((frame.origin[0] - 29.8).abs() < 1.0e-12);
-    assert_eq!(frame.origin[1..], [0.0, 0.0]);
-    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+    assert!((frame.origin()[0] - 29.8).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[1..], [0.0, 0.0]);
+    assert_eq!(frame.axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, -1.0]);
     assert!((frame.radius - 1.0).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 6.528_189_135_889_739).abs() < 1.0e-12);
 
@@ -428,10 +430,10 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
         &scalar::ScalarCache::default(),
     )
     .expect("complete second-endpoint axial/radial cylinder");
-    assert!((frame.origin[0] + 29.8).abs() < 1.0e-12);
-    assert_eq!(frame.origin[1..], [0.0, 0.0]);
-    assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert!((frame.origin()[0] + 29.8).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[1..], [0.0, 0.0]);
+    assert_eq!(frame.axis(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert!((frame.radius - 1.0).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent") - 6.527_254_503_477_945).abs() < 1.0e-12);
 
@@ -633,8 +635,8 @@ fn positional_cylinder_frame_decodes_xz_axis_y_radial_envelopes() {
         let frame = decode_positional_cylinder_frame(body, &cache)
             .expect("complete XZ-axis cylinder frame");
         assert!((frame.radius - 0.25).abs() < 1.0e-12);
-        assert!(frame.axis[1].abs() < 1.0e-12);
-        assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
+        assert!(frame.axis()[1].abs() < EPS_FRAME_COMPONENT);
+        assert_eq!(frame.ref_direction(), [0.0, -1.0, 0.0]);
         assert!(frame.length.is_some_and(|length| length > 17.0));
     }
 
@@ -659,9 +661,9 @@ fn positional_cylinder_frame_decodes_symmetric_revolution_envelopes() {
     for body in [direct.as_slice(), replay.as_slice()] {
         let frame = decode_positional_cylinder_frame(body, &cache)
             .expect("complete symmetric-revolution cylinder");
-        assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
-        assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-        assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+        assert_eq!(frame.origin(), [0.0, 0.0, 0.0]);
+        assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
+        assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 6.9).abs() < 1.0e-12);
         assert!(frame
             .length
@@ -695,9 +697,9 @@ fn positional_cylinder_frame_decodes_axial_endpoint_radial_samples() {
     ] {
         let frame = decode_positional_cylinder_frame(body, &cache)
             .expect("complete axial-endpoint radial-sample cylinder");
-        assert_eq!(frame.origin, [0.0, 17.5, 0.0]);
-        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-        assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+        assert_eq!(frame.origin(), [0.0, 17.5, 0.0]);
+        assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
+        assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
         assert!((frame.radius - expected_radius).abs() < 1.0e-12);
         assert!(frame
             .length
@@ -767,11 +769,11 @@ fn positional_cylinder_frame_decodes_precise_center_edge_envelope() {
     ];
     let frame = decode_positional_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete precise center-edge envelope");
-    assert_eq!(frame.origin[0], -10.0);
-    assert!((frame.origin[1] - 7.986_629_6).abs() < 1.0e-12);
-    assert_eq!(frame.origin[2], 5.0);
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.origin()[0], -10.0);
+    assert!((frame.origin()[1] - 7.986_629_6).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[2], 5.0);
+    assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 1.0);
     assert!((frame.length.expect("axial extent") - 30.013_370_4).abs() < 1.0e-12);
 
@@ -802,10 +804,10 @@ fn positional_cylinder_frame_decodes_precise_held_center_envelope() {
     ];
     let frame = decode_positional_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete precise held-center envelope");
-    assert!((frame.origin[0] - 7.021_843_6).abs() < 1.0e-12);
-    assert_eq!(frame.origin[1..], [5.0, 5.0]);
-    assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert!((frame.origin()[0] - 7.021_843_6).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.origin()[1..], [5.0, 5.0]);
+    assert_eq!(frame.axis(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 1.0);
     assert!((frame.length.expect("axial extent") - 14.021_843_6).abs() < 1.0e-12);
 
@@ -837,12 +839,12 @@ fn positional_cylinder_frame_decodes_local_system_suffix() {
     ];
     let frame = decode_positional_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete local-system suffix");
-    assert_eq!(frame.origin[0..2], [12.0, 34.0]);
-    assert!((frame.origin[2] + 21.658_843_825_753_03).abs() < 1.0e-12);
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert!((frame.ref_direction[0] + 0.6).abs() < 1.0e-12);
-    assert!((frame.ref_direction[1] + 0.8).abs() < 1.0e-12);
-    assert_eq!(frame.ref_direction[2], 0.0);
+    assert_eq!(frame.origin()[0..2], [12.0, 34.0]);
+    assert!((frame.origin()[2] + 21.658_843_825_753_03).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert!((frame.ref_direction()[0] + 0.6).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.ref_direction()[1] + 0.8).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.ref_direction()[2], 0.0);
     assert_eq!(frame.radius, 5.0);
     assert_eq!(frame.length, None);
     let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
@@ -1128,17 +1130,17 @@ fn decodes_complete_positional_torus_frame() {
         .positional_torus_frame()
         .expect("complete positional torus frame");
     assert!(frame
-        .center
+        .center()
         .into_iter()
         .zip([1.0, 16.74, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert!(frame
-        .axis
+        .axis()
         .into_iter()
         .zip([0.0, 0.0, 1.0])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert!(frame
-        .ref_direction
+        .ref_direction()
         .into_iter()
         .zip([-0.999_899_554_583_406_1, 0.014_173_240_416_574_131, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
@@ -1187,12 +1189,18 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let frame = panel
         .positional_cylinder_frame()
         .expect("complete repeated-diameter carrier");
-    assert_eq!(frame.origin, [2.2, -22.35, -1.45]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.origin(), [2.2, -22.35, -1.45]);
+    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 0.2).abs() < 1.0e-12);
     assert!((frame.length.expect("required invariant") - 46.241_026_156_433_854).abs() < 1.0e-12);
-    assert!((frame.axis[1] - 46.15 / frame.length.expect("required invariant")).abs() < 1.0e-12);
-    assert!((frame.axis[2] - 2.9 / frame.length.expect("required invariant")).abs() < 1.0e-12);
+    assert!(
+        (frame.axis()[1] - 46.15 / frame.length.expect("required invariant")).abs()
+            < EPS_FRAME_COMPONENT
+    );
+    assert!(
+        (frame.axis()[2] - 2.9 / frame.length.expect("required invariant")).abs()
+            < EPS_FRAME_COMPONENT
+    );
     assert!(
         (record(&prefixed_panel)
             .type24_round_radius()
@@ -1264,13 +1272,14 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let selector_corner_frame = selector_corner_record
         .positional_cylinder_frame()
         .expect("selector-corner interval carrier");
-    assert!((selector_corner_frame.origin[0] + 161.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((selector_corner_frame.origin()[0] + 161.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert!(
-        (selector_corner_frame.origin[1] - 38.329_481_329_444_5).abs() < EPS_CYLINDER_GEOMETRY_MIN
+        (selector_corner_frame.origin()[1] - 38.329_481_329_444_5).abs()
+            < EPS_CYLINDER_GEOMETRY_MIN
     );
-    assert!((selector_corner_frame.origin[2] + 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
-    assert_eq!(selector_corner_frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(selector_corner_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((selector_corner_frame.origin()[2] + 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(selector_corner_frame.axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(selector_corner_frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((selector_corner_frame.radius - 9.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert!(selector_corner_frame.length.is_some_and(|length| {
         (length - 9.043_850_235_791_638).abs() < EPS_CYLINDER_GEOMETRY_MIN
@@ -1300,9 +1309,9 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .positional_cylinder_frame()
         .expect("selector-prefixed auxiliary repeated-diameter carrier");
     assert!((prefixed_frame.radius - 3.250_923_087_748_478).abs() < 1.0e-12);
-    assert_eq!(prefixed_frame.ref_direction, [0.0, -1.0, 0.0]);
+    assert_eq!(prefixed_frame.ref_direction(), [0.0, -1.0, 0.0]);
     assert!(prefixed_frame
-        .axis
+        .axis()
         .into_iter()
         .zip([
             std::f64::consts::FRAC_1_SQRT_2,
@@ -1329,11 +1338,11 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let split_frame = record(&split_controls)
         .positional_cylinder_frame()
         .expect("split selector-corner interval carrier");
-    assert!((split_frame.origin[0] + 99.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
-    assert!((split_frame.origin[1] - 38.329_481_329_444_49).abs() < EPS_CYLINDER_GEOMETRY_MIN);
-    assert!((split_frame.origin[2] - 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
-    assert_eq!(split_frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(split_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((split_frame.origin()[0] + 99.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin()[1] - 38.329_481_329_444_49).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin()[2] - 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(split_frame.axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(split_frame.ref_direction(), [1.0, 0.0, 0.0]);
     assert!((split_frame.radius - 7.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert!(split_frame.length.is_some_and(|length| {
         (length - 6.501_846_175_496_936_6).abs() < EPS_CYLINDER_GEOMETRY_MIN
@@ -1401,14 +1410,14 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let frame = first_coordinate
         .positional_cylinder_frame()
         .expect("complete first-coordinate round carrier");
-    assert_eq!(frame.origin, [9.0, 38.0, -2.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.origin(), [9.0, 38.0, -2.0]);
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 2.0);
     let length = frame.length.expect("bounded axial span");
     let expected_length = 9.308_504_271_834_785_f64.hypot(9.976_063_033_979_35);
     assert!((length - expected_length).abs() < 1.0e-12);
-    assert!((frame.axis[0] - 9.308_504_271_834_785 / length).abs() < 1.0e-12);
-    assert!((frame.axis[1] - 9.976_063_033_979_35 / length).abs() < 1.0e-12);
+    assert!((frame.axis()[0] - 9.308_504_271_834_785 / length).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.axis()[1] - 9.976_063_033_979_35 / length).abs() < EPS_FRAME_COMPONENT);
     assert_eq!(first_coordinate.type24_round_radius(), Some(2.0));
 
     let mut wrong_close = first_coordinate.body.clone();
@@ -1424,7 +1433,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let opposite = record(&opposite)
         .positional_cylinder_frame()
         .expect("opposite first-coordinate round carrier");
-    assert_eq!(opposite.origin, [-18.308_504_271_834_785, 38.0, -2.0]);
+    assert_eq!(opposite.origin(), [-18.308_504_271_834_785, 38.0, -2.0]);
     assert_eq!(opposite.radius, 2.0);
     assert!((opposite.length.expect("required invariant") - expected_length).abs() < 1.0e-12);
 
@@ -1439,8 +1448,11 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .positional_cylinder_frame()
         .expect("complete segmented first-coordinate round carrier");
     let diameter = 5.111_111_111_111_111;
-    assert_eq!(frame.origin, [-8.111_111_111_111_11, 34.0, 0.5 * diameter]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert_eq!(
+        frame.origin(),
+        [-8.111_111_111_111_11, 34.0, 0.5 * diameter]
+    );
+    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 0.5 * diameter);
     let expected_length = 1.111_111_111_111_110_7_f64.hypot(3.142_696_805_273_545);
     assert!((frame.length.expect("required invariant") - expected_length).abs() < 1.0e-12);
@@ -1459,12 +1471,12 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let split_frame = record(&split_coordinate)
         .positional_cylinder_frame()
         .expect("split first-coordinate round carrier");
-    assert_eq!(split_frame.origin, [2.0, 9.0, 2.0]);
+    assert_eq!(split_frame.origin(), [2.0, 9.0, 2.0]);
     assert_eq!(
-        split_frame.axis,
+        split_frame.axis(),
         [1.0 / 2.0_f64.sqrt(), 1.0 / 2.0_f64.sqrt(), 0.0]
     );
-    assert_eq!(split_frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert_eq!(split_frame.ref_direction(), [0.0, 0.0, 1.0]);
     assert!((split_frame.radius - 2.0).abs() < 1.0e-12);
     assert_eq!(split_frame.length, Some(50.0_f64.sqrt()));
     assert!(
@@ -1483,8 +1495,8 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let opposite_frame = record(&opposite_split)
         .positional_cylinder_frame()
         .expect("opposite split first-coordinate round carrier");
-    assert_eq!(opposite_frame.origin, [-7.0, 9.0, 2.0]);
-    assert_eq!(opposite_frame.axis, split_frame.axis);
+    assert_eq!(opposite_frame.origin(), [-7.0, 9.0, 2.0]);
+    assert_eq!(opposite_frame.axis(), split_frame.axis());
     assert!((opposite_frame.radius - 2.0).abs() < 1.0e-12);
 
     let mut incomplete_split = split_coordinate;
@@ -1492,493 +1504,6 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert!(record(&incomplete_split)
         .positional_cylinder_frame()
         .is_none());
-}
-
-#[test]
-fn decodes_structurally_delimited_type24_round_edge_envelope() {
-    let mut body = vec![0x34, 0xe0, 0x00];
-    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x00, 0x12, 0x68]);
-    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
-    body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
-    body.extend_from_slice(&[0xf7, 0x17]);
-
-    let record = SurfaceParameterRecord {
-        surface_id: 7,
-        body,
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cylinder,
-        ),
-        boundary: SurfaceBodyBoundary::CompoundClose,
-        offset: 0,
-        body_offset: 0,
-    };
-
-    assert_eq!(
-        record.type24_round_edge_envelope(),
-        Some(Type24RoundEdgeEnvelope {
-            parameter_interval: [
-                f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]),
-                f64::from_be_bytes([0x3f, 0xe0, 0, 0, 0, 0, 0, 0]),
-            ],
-            vertices: [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]],
-            generated_entity_reference: Some(0x17),
-        })
-    );
-    assert!(crate::surface::SurfaceParameterRecord {
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cone
-        ),
-        ..record.clone()
-    }
-    .type24_round_edge_envelope()
-    .is_none());
-}
-
-#[test]
-fn round_edge_envelope_accepts_model_reference_shell() {
-    let mut body = vec![0x32, 0xe4, 0, 0, 0, 0, 0, 0];
-    body.extend_from_slice(&[0x0f, 0x12, 0xe4]);
-    body.extend_from_slice(&[0x2d, 0x00, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    body.push(0x0f);
-    body.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
-    body.push(0xe4);
-
-    let parameter = SurfaceParameterRecord {
-        surface_id: 7,
-        body,
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cylinder,
-        ),
-        boundary: SurfaceBodyBoundary::CompoundClose,
-        offset: 0,
-        body_offset: 0,
-    };
-    let envelope = parameter
-        .type24_round_edge_envelope()
-        .expect("complete model-reference-shell round envelope");
-
-    assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
-    assert_eq!(envelope.vertices, [[2.0, -3.0, 0.0], [4.0, -5.0, 1.0]]);
-
-    let mut truncated = parameter;
-    truncated.body.remove(7);
-    assert!(truncated.type24_round_edge_envelope().is_none());
-}
-
-#[test]
-fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
-    let mut body = vec![0x18, 0x0f, 0x12, 0xe4];
-    body.extend_from_slice(&[0x2d, 0x00, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    body.push(0x0f);
-    body.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
-    body.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
-    body.push(0xe4);
-
-    let parameter = SurfaceParameterRecord {
-        surface_id: 7,
-        body,
-        scalar_tokens: Vec::new(),
-        opaque_spans: Vec::new(),
-        scalar_frames: Vec::new(),
-        terminal_scalar_frame: None,
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Cylinder,
-        ),
-        boundary: SurfaceBodyBoundary::CompoundClose,
-        offset: 0,
-        body_offset: 0,
-    };
-    let envelope = parameter
-        .type24_round_edge_envelope()
-        .expect("complete directrix-lane endpoint envelope");
-
-    assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
-    assert_eq!(envelope.vertices, [[2.0, -3.0, 0.0], [4.0, -5.0, 1.0]]);
-}
-
-#[test]
-fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
-    let build = |opener: &[u8], values: [f64; 7]| {
-        let mut body = opener.to_vec();
-        for value in values {
-            let raw = value.to_be_bytes();
-            assert_eq!(raw[0], 0x40, "test value uses the positive directrix form");
-            body.push(0x2d);
-            body.extend_from_slice(&raw[1..]);
-        }
-        body.extend_from_slice(&[0xf7, 0x17, 0xe3, 0x99]);
-        body
-    };
-    let values = [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 6.0];
-    let expected = PositionalCylinderFrame::new(
-        [4.0, 5.0, 2.0],
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
-        2.0,
-        Some(4.0),
-    )
-    .expect("valid positional cylinder frame");
-    for opener in [
-        &[0x18, 0xe4, 0x11][..],
-        &[0x18, 0xe4, 0x00, 0x11, 0x07],
-        &[0x00, 0x11, 0x07, 0x18, 0x13],
-    ] {
-        assert_eq!(
-            decode_complete_directrix_interval_cylinder_frame(
-                &build(opener, values),
-                &scalar::ScalarCache::default(),
-            ),
-            Some(expected)
-        );
-    }
-    let inconsistent_interval = build(&[0x18, 0xe4, 0x11], [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 7.0]);
-    assert!(decode_complete_directrix_interval_cylinder_frame(
-        &inconsistent_interval,
-        &scalar::ScalarCache::default(),
-    )
-    .is_none());
-}
-
-#[test]
-fn decodes_terminal_square_radial_type24_round_envelope() {
-    let body = [
-        0x32, 0x90, 0x32, 0x70, 0x63, 0x1c, 0x71, 0xa7, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad, 0x2a,
-        0x4c, 0x12, 0x2d, 0x4f, 0x30, 0xcb, 0xcd, 0xcc, 0x62, 0xc5, 0x48, 0x58, 0xc0, 0x2d, 0x57,
-        0x75, 0x9c, 0xe9, 0x32, 0x3b, 0xfa, 0x48, 0x28, 0x00, 0x48, 0x56, 0x80, 0x2d, 0x59, 0x2d,
-        0x7c, 0x1f, 0xc1, 0xd8, 0x36, 0x48, 0x08, 0x00, 0xf7, 0x40,
-    ];
-    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    payload.extend_from_slice(&body);
-    payload.push(0xe3);
-    let record = parameter_records(&payload).remove(0);
-
-    let frame = record
-        .positional_cylinder_frame()
-        .expect("complete square-radial carrier");
-    assert_eq!(frame.origin, [-94.5, -93.837_702_082_688_25, -7.5]);
-    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 4.5);
-    assert!((frame.length.expect("required invariant") - 6.872_998_848_194_527).abs() < 1.0e-12);
-
-    let control_terminated_body = [
-        24, 45, 53, 164, 168, 193, 84, 201, 135, 18, 45, 59, 164, 168, 193, 84, 201, 135, 72, 51,
-        0, 47, 67, 0, 72, 24, 0, 72, 34, 0, 47, 72, 0, 24,
-    ];
-    let mut control_terminated_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    control_terminated_payload.extend_from_slice(&control_terminated_body);
-    control_terminated_payload.push(0xe3);
-    let control_terminated = parameter_records(&control_terminated_payload).remove(0);
-    let frame = control_terminated
-        .positional_cylinder_frame()
-        .expect("control-terminated square-radial carrier");
-    assert!(frame
-        .origin
-        .into_iter()
-        .zip([-27.643_2, -14.0, 43.0])
-        .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
-    assert!((frame.radius - 5.0).abs() < 1.0e-12);
-    assert!((frame.length.expect("required invariant") - 21.643_2).abs() < 1.0e-12);
-
-    let mut ambiguous = record.clone();
-    ambiguous.scalar_frames[1].slots[6].value = Some(-102.837_702_082_688_25);
-    assert!(ambiguous.type24_square_radial_round_frame().is_none());
-
-    let mut unowned_tail = record;
-    unowned_tail.body.push(0x00);
-    assert!(unowned_tail.type24_square_radial_round_frame().is_none());
-
-    let six_slot_body = [
-        27, 244, 0, 86, 19, 73, 195, 99, 182, 160, 18, 45, 26, 98, 51, 231, 180, 183, 80, 72, 62,
-        0, 45, 29, 51, 51, 51, 51, 51, 153, 71, 9, 153, 71, 61, 204, 45, 30, 0, 0, 0, 0, 0, 101,
-        46, 9, 153, 247, 23,
-    ];
-    let mut six_slot_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    six_slot_payload.extend_from_slice(&six_slot_body);
-    six_slot_payload.push(0xe3);
-    let six_slot = parameter_records(&six_slot_payload).remove(0);
-    let frame = six_slot
-        .positional_cylinder_frame()
-        .expect("complete six-slot square-radial carrier");
-    assert!(frame
-        .origin
-        .into_iter()
-        .zip([-29.9, -7.4, -3.2])
-        .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert!((frame.radius - 0.1).abs() < 1.0e-12);
-    assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
-
-    let nine_slot_body = [
-        0x18, 0x18, 0x18, 0x48, 0x24, 0x00, 0x2e, 0x1f, 0xff, 0x2f, 0x14, 0x00, 0x48, 0x22, 0x00,
-        0x2f, 0x48, 0x00, 0x2f, 0x18, 0x00, 0xf7, 0x18,
-    ];
-    let mut nine_slot_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    nine_slot_payload.extend_from_slice(&nine_slot_body);
-    nine_slot_payload.push(0xe3);
-    let nine_slot = parameter_records(&nine_slot_payload).remove(0);
-    let frame = nine_slot
-        .positional_cylinder_frame()
-        .expect("complete nine-slot square-radial carrier");
-    assert!(frame
-        .origin
-        .into_iter()
-        .zip([-9.5, 8.0, 5.5])
-        .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 0.5);
-    assert_eq!(frame.length, Some(40.0));
-
-    let single_diameter_body = [
-        0x18, 0x2f, 0x00, 0x00, 0x48, 0x68, 0x10, 0x48, 0x14, 0x00, 0x2f, 0x3b, 0x80, 0x48, 0x64,
-        0xf0, 0x48, 0x08, 0x00, 0x2f, 0x44, 0x00, 0xf7, 0x16,
-    ];
-    let mut single_diameter_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    single_diameter_payload.extend_from_slice(&single_diameter_body);
-    single_diameter_payload.push(0xe3);
-    let single_diameter = parameter_records(&single_diameter_payload).remove(0);
-    let frame = single_diameter
-        .positional_cylinder_frame()
-        .expect("complete single-diameter carrier");
-    assert_eq!(frame.origin, [-192.5, -4.0, 27.5]);
-    assert_eq!(
-        frame.axis,
-        [2.0 / 5.0_f64.sqrt(), 0.0, 1.0 / 5.0_f64.sqrt()]
-    );
-    assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
-    assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1.0e-12);
-
-    let collision_body = [
-        0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x0f, 0x0f, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
-        0x2f, 0x10, 0x00,
-    ];
-    let mut collision_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    collision_payload.extend_from_slice(&collision_body);
-    collision_payload.push(0xe3);
-    let collision = parameter_records(&collision_payload).remove(0);
-    assert!(collision.type24_single_diameter_round_frame().is_some());
-    assert!(collision.type24_square_radial_round_frame().is_some());
-    assert!(collision.positional_cylinder_frame().is_none());
-
-    let unbounded_body = [
-        0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67, 0x06,
-        0x05, 0x68, 0x1e, 0xcd, 0x4a, 0x46, 0x3d, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xd0, 0x46, 0x16,
-        0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0x5c, 0x2e, 0x1f, 0x33, 0x2e, 0x3d, 0xcc, 0x46, 0x15, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0x8f, 0x2f, 0x20, 0x00,
-    ];
-    let mut unbounded_payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    unbounded_payload.extend_from_slice(&unbounded_body);
-    unbounded_payload.push(0xe3);
-    let unbounded = parameter_records(&unbounded_payload).remove(0);
-    let frame = unbounded
-        .positional_cylinder_frame()
-        .expect("complete zero-axial square-radial carrier");
-    assert!((frame.origin[0] - 29.8).abs() < 1.0e-12);
-    assert!((frame.origin[1] - 5.6).abs() < 1.0e-12);
-    assert!((frame.origin[2] - 7.9).abs() < 1.0e-12);
-    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
-    assert!((frame.radius - 0.1).abs() < 1.0e-12);
-    assert_eq!(frame.length, None);
-
-    let mut unequal_radials = unbounded;
-    unequal_radials.scalar_frames[1].slots[6].value = Some(8.1);
-    assert!(unequal_radials.type24_square_radial_round_frame().is_none());
-}
-
-#[test]
-fn decodes_negative_a7_repeated_diameter_round_envelope() {
-    let body = [
-        0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x2d, 0x45, 0x7d, 0x56, 0x6c,
-        0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66, 0x66, 0x66, 0x2a, 0xf4, 0x00, 0xa7,
-        0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x2a, 0xfc, 0x00, 0x5e, 0x33, 0x33,
-        0x33, 0x33, 0x33, 0x80,
-    ];
-    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-    payload.extend_from_slice(&body);
-    payload.push(0xe3);
-    let frame = parameter_records(&payload)[0]
-        .positional_cylinder_frame()
-        .expect("complete signed-DICT repeated-diameter carrier");
-
-    assert_eq!(frame.origin, [-42.3, 1.25, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.3).abs() < 1.0e-12);
-    let length = 85.1_f64.hypot(0.5);
-    assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
-    assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
-    assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
-    assert_eq!(frame.axis[2], 0.0);
-}
-
-#[test]
-fn decodes_prefixed_repeated_diameter_round_envelope() {
-    let body = [
-        0xeb, 0xba, 0xc2, 0x1d, 0x3a, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x2d,
-        0x45, 0x7d, 0x56, 0x6c, 0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66, 0x66, 0x66,
-        0x42, 0xfb, 0xff, 0xa7, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x42, 0xf3,
-        0xff, 0x5e, 0x33, 0x33, 0x33, 0x33, 0x33, 0x80,
-    ];
-    let record = |body: &[u8]| {
-        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-        payload.extend_from_slice(body);
-        payload.push(0xe3);
-        parameter_records(&payload).remove(0)
-    };
-    let frame = record(&body)
-        .positional_cylinder_frame()
-        .expect("complete prefixed repeated-diameter carrier");
-
-    assert_eq!(frame.origin[0], -42.3);
-    assert!((frame.origin[1] + 1.75).abs() < 1.0e-12);
-    assert_eq!(frame.origin[2], 0.0);
-    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.3).abs() < 1.0e-12);
-    let length = 85.1_f64.hypot(0.5);
-    assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
-    assert!((frame.axis[0] - 85.1 / length).abs() < 1.0e-12);
-    assert!((frame.axis[1] - 0.5 / length).abs() < 1.0e-12);
-    assert_eq!(frame.axis[2], 0.0);
-
-    let mut wrong_prefix = body;
-    wrong_prefix[1] = 0xbb;
-    assert!(record(&wrong_prefix).positional_cylinder_frame().is_none());
-    let mut wrong_separator = body;
-    wrong_separator[13] = 0x13;
-    assert!(record(&wrong_separator)
-        .positional_cylinder_frame()
-        .is_none());
-    assert!(record(&body[..body.len() - 7])
-        .positional_cylinder_frame()
-        .is_none());
-}
-
-#[test]
-fn decodes_held_coordinate_type24_round_envelope() {
-    let record = |body: &[u8]| {
-        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-        payload.extend_from_slice(body);
-        payload.push(0xe3);
-        parameter_records(&payload).remove(0)
-    };
-    let body = [
-        0x18, 0x2d, 0x4f, 0x12, 0x6e, 0x97, 0x8d, 0x4f, 0xe0, 0x78, 0xac, 0x67, 0x05, 0x61, 0xbb,
-        0x50, 0x2d, 0x54, 0x89, 0x37, 0x4b, 0xc6, 0xa7, 0xf0, 0x48, 0x24, 0x00, 0x2f, 0x41, 0x00,
-        0x2f, 0x10, 0x00, 0x2f, 0x24, 0x00, 0x2f, 0x43, 0x00, 0x2f, 0x18, 0x00,
-    ];
-    let base_record = record(&body);
-    let frame = base_record
-        .positional_cylinder_frame()
-        .expect("complete held-coordinate round carrier");
-
-    assert_eq!(frame.origin, [34.0, 5.0, 10.0]);
-    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(4.0));
-    assert_eq!(base_record.type24_round_radius(), Some(1.0));
-
-    let replay_body = [
-        24, 45, 79, 146, 110, 151, 141, 79, 224, 120, 172, 103, 5, 97, 187, 80, 45, 84, 73, 55, 75,
-        198, 167, 240, 72, 34, 0, 47, 65, 0, 47, 16, 0, 47, 34, 0, 47, 67, 0, 47, 24, 0, 247, 24,
-    ];
-    let replay = record(&replay_body);
-    assert_eq!(
-        replay.positional_cylinder_frame(),
-        Some(
-            PositionalCylinderFrame::new(
-                [34.0, 5.0, 9.0],
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                1.0,
-                Some(4.0)
-            )
-            .expect("valid positional cylinder frame")
-        )
-    );
-    assert_eq!(replay.type24_round_radius(), Some(1.0));
-    assert_eq!(
-        record(&replay_body[..replay_body.len() - 2]).positional_cylinder_frame(),
-        replay.positional_cylinder_frame(),
-    );
-
-    let mut broken_replay = replay_body;
-    broken_replay[43] = 0x19;
-    assert!(record(&broken_replay).positional_cylinder_frame().is_none());
-
-    let mut wrong_control = body;
-    wrong_control[25] = 0x25;
-    assert!(record(&wrong_control).positional_cylinder_frame().is_none());
-}
-
-#[test]
-fn decodes_terminal_type24_round_radius() {
-    let record = |body: &[u8]| {
-        let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
-        payload.extend_from_slice(body);
-        payload.push(0xe3);
-        parameter_records(&payload).remove(0)
-    };
-    let terminal = [
-        0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x2d, 0x45, 0x7d, 0x56, 0x6c,
-        0xf4, 0x1f, 0x22, 0x2d, 0x45, 0x26, 0x66, 0x66, 0x66, 0x66, 0x66, 0x2a, 0xf4, 0x00, 0xa7,
-        0x33, 0x33, 0x33, 0x33, 0x33, 0x80, 0x2e, 0x45, 0x66, 0x2a, 0xfc, 0x00, 0x5e, 0x33, 0x33,
-        0x33, 0x33, 0x33, 0x80,
-    ];
-    assert!(
-        (record(&terminal)
-            .type24_round_radius()
-            .expect("required invariant")
-            - 0.3)
-            .abs()
-            < 1.0e-12
-    );
-
-    let mut replay_terminated = terminal.to_vec();
-    replay_terminated.extend_from_slice(&[0xf7, 0x17]);
-    assert!(
-        (record(&replay_terminated)
-            .type24_round_radius()
-            .expect("required invariant")
-            - 0.3)
-            .abs()
-            < 1.0e-12
-    );
-
-    let mut trailing_payload = terminal.to_vec();
-    trailing_payload.push(0x18);
-    assert!(record(&trailing_payload).type24_round_radius().is_none());
-    let coordinate_terminal = [
-        0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x46, 0x16, 0xd9, 0xc0, 0xeb,
-        0x43, 0x76, 0xac,
-    ];
-    assert!(record(&coordinate_terminal).type24_round_radius().is_none());
-    assert!(crate::surface::SurfaceParameterRecord {
-        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
-            crate::surface::SurfaceKind::Plane
-        ),
-        ..record(&terminal)
-    }
-    .type24_round_radius()
-    .is_none());
 }
 
 #[test]

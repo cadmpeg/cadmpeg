@@ -120,15 +120,14 @@ pub(in super::super) fn transfer_sketches(
             let expected_rows = usize::try_from(table.declared_count)
                 .expect("u32 segment count fits usize")
                 .saturating_sub(usize::from(table.has_elided_prototype));
-            coverage.decoded_rows += decoded_rows;
-            coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
+            coverage.record_table_rows(decoded_rows, expected_rows);
             for segment in table.rows.ordinary() {
                 let family = match segment.kind {
                     crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
                     crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
                     crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
                 };
-                coverage.family_mut(family).0 += 1;
+                coverage.record_family_rows(family, 1);
             }
             for (family, count) in [
                 (SketchSegmentFamily::Circle, table.rows.circles().count()),
@@ -148,7 +147,7 @@ pub(in super::super) fn transfer_sketches(
                 (SketchSegmentFamily::Conic, table.rows.conics().count()),
                 (SketchSegmentFamily::Opaque, table.rows.opaque().count()),
             ] {
-                coverage.family_mut(family).0 += count;
+                coverage.record_family_rows(family, count);
             }
         }
         let variable_points = resolved_section_coordinates(definition);
@@ -299,7 +298,7 @@ pub(in super::super) fn transfer_sketches(
             .collect::<BTreeSet<_>>();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
-        coverage.resolved_geometry += resolved_segment_offsets.len();
+        coverage.record_resolved_geometry(resolved_segment_offsets.len());
         for segment in segments
             .iter()
             .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
@@ -309,7 +308,7 @@ pub(in super::super) fn transfer_sketches(
                 crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
                 crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
             };
-            coverage.family_mut(family).1 += 1;
+            coverage.record_family_resolution(family, 1);
         }
         let resolved_circles = definition
             .segments
@@ -321,8 +320,8 @@ pub(in super::super) fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += resolved_circles;
-        coverage.family_mut(SketchSegmentFamily::Circle).1 += resolved_circles;
+        coverage.record_resolved_geometry(resolved_circles);
+        coverage.record_family_resolution(SketchSegmentFamily::Circle, resolved_circles);
         let resolved_points = definition
             .segments
             .iter()
@@ -333,8 +332,8 @@ pub(in super::super) fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += resolved_points;
-        coverage.family_mut(SketchSegmentFamily::Point).1 += resolved_points;
+        coverage.record_resolved_geometry(resolved_points);
+        coverage.record_family_resolution(SketchSegmentFamily::Point, resolved_points);
         let resolved_centered_lines = definition
             .segments
             .iter()
@@ -345,16 +344,18 @@ pub(in super::super) fn transfer_sketches(
                         && materialized_saved_section_external_ids.contains(&segment.external_id))
             })
             .count();
-        coverage.resolved_geometry += resolved_centered_lines;
-        coverage.family_mut(SketchSegmentFamily::CenteredLine).1 += resolved_centered_lines;
+        coverage.record_resolved_geometry(resolved_centered_lines);
+        coverage
+            .record_family_resolution(SketchSegmentFamily::CenteredLine, resolved_centered_lines);
         let resolved_reference_lines = definition
             .segments
             .iter()
             .flat_map(|table| table.rows.reference_lines())
             .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
-        coverage.resolved_geometry += resolved_reference_lines;
-        coverage.family_mut(SketchSegmentFamily::ReferenceLine).1 += resolved_reference_lines;
+        coverage.record_resolved_geometry(resolved_reference_lines);
+        coverage
+            .record_family_resolution(SketchSegmentFamily::ReferenceLine, resolved_reference_lines);
         let resolved_bounded_curves = definition
             .segments
             .iter()
@@ -364,8 +365,9 @@ pub(in super::super) fn transfer_sketches(
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
-        coverage.resolved_geometry += resolved_bounded_curves;
-        coverage.family_mut(SketchSegmentFamily::BoundedCurve).1 += resolved_bounded_curves;
+        coverage.record_resolved_geometry(resolved_bounded_curves);
+        coverage
+            .record_family_resolution(SketchSegmentFamily::BoundedCurve, resolved_bounded_curves);
         let resolved_conics = definition
             .segments
             .iter()
@@ -375,8 +377,8 @@ pub(in super::super) fn transfer_sketches(
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
-        coverage.resolved_geometry += resolved_conics;
-        coverage.family_mut(SketchSegmentFamily::Conic).1 += resolved_conics;
+        coverage.record_resolved_geometry(resolved_conics);
+        coverage.record_family_resolution(SketchSegmentFamily::Conic, resolved_conics);
         let resolved_opaque = definition
             .segments
             .iter()
@@ -386,8 +388,8 @@ pub(in super::super) fn transfer_sketches(
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
             })
             .count();
-        coverage.resolved_geometry += resolved_opaque;
-        coverage.family_mut(SketchSegmentFamily::Opaque).1 += resolved_opaque;
+        coverage.record_resolved_geometry(resolved_opaque);
+        coverage.record_family_resolution(SketchSegmentFamily::Opaque, resolved_opaque);
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()

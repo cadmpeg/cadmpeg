@@ -572,8 +572,8 @@ fn body_tip(
     match property.links() {
         [] => BodyTipResolution::Valid(None),
         [link]
-            if link.subelements.is_empty()
-                && link.document.is_none()
+            if link.subelements().is_empty()
+                && link.document().is_none()
                 && link.document_attribute().is_none() =>
         {
             let Some(target) = link.object() else {
@@ -786,40 +786,13 @@ enum NamedProperty<'a> {
 }
 
 fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> NamedProperty<'a> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return NamedProperty::Absent;
-    };
-    if matches.next().is_some() {
-        return NamedProperty::Duplicate;
+    match crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == name
+    }) {
+        Ok(Some(property)) => NamedProperty::Present(property),
+        Ok(None) => NamedProperty::Absent,
+        Err(_) => NamedProperty::Duplicate,
     }
-    NamedProperty::Present(property)
-}
-
-fn unique_matching_property<'a, F>(
-    properties: &[&'a PropertyRecord],
-    predicate: F,
-    label: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError>
-where
-    F: Fn(&PropertyRecord) -> bool,
-{
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| predicate(property));
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(malformed(format!(
-            "spreadsheet has multiple {label} properties"
-        )));
-    }
-    Ok(Some(property))
 }
 
 fn direct_spreadsheet_value<'a, 'input: 'a>(
@@ -850,11 +823,10 @@ fn append_spreadsheet(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<Spreadsheet, CodecError> {
-    let property = unique_matching_property(
-        properties,
-        |property| property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet",
-        "cells",
-    )?
+    let property = crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet"
+    })
+    .map_err(|_| malformed("spreadsheet has multiple cells properties"))?
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
             "spreadsheet {} has no cells property",
@@ -987,11 +959,14 @@ fn spreadsheet_dimensions(
     element: &str,
     value_name: &str,
 ) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let Some(property) = unique_matching_property(
-        properties,
-        |property| property.name == property_name && property.type_name == type_name,
-        property_name,
-    )?
+    let Some(property) = crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == property_name && property.type_name == type_name
+    })
+    .map_err(|_| {
+        malformed(format!(
+            "spreadsheet has multiple {property_name} properties"
+        ))
+    })?
     else {
         return Ok(Vec::new());
     };
@@ -1355,7 +1330,7 @@ fn validate_external_geo_prefix(
 
 fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
     let object = crate::native::id_key(reference.object()?);
-    let subelement = reference.subelements.first()?;
+    let subelement = reference.subelements().first()?;
     Some(format!("{object}.{subelement}"))
 }
 
@@ -1520,7 +1495,7 @@ fn parse_sketch(
                         .and_then(|index| {
                             references.and_then(|property| property.links().get(index))
                         })
-                        .map(|reference| reference.subelements.clone())
+                        .map(|reference| reference.subelements().to_vec())
                         .unwrap_or_default(),
                 ),
             );
@@ -1557,14 +1532,14 @@ fn parse_sketch(
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed("object must not be empty")
                             })?,
-                        subelements: reference.subelements.clone(),
+                        subelements: reference.subelements().to_vec(),
                     })
                     .map_err(CodecError::malformed)?,
                 )
                 .with_construction(true)
                 .with_native_ref(Some(references.id.clone()))
                 .with_geometry_ref(Some(references.id.clone()))
-                .with_endpoint_refs(reference.subelements.clone()),
+                .with_endpoint_refs(reference.subelements().to_vec()),
             );
         }
     }
@@ -3981,7 +3956,7 @@ fn extrusion_definition(
     };
     let use_custom = bool_selector(properties, "UseCustomVector", false)?;
     let is_nonempty_link =
-        |link: &crate::native::LinkTarget| link.document.is_some() || link.object().is_some();
+        |link: &crate::native::LinkTarget| link.document().is_some() || link.object().is_some();
     let reference_axis = property(properties, "ReferenceAxis")
         .filter(|property| property.links().iter().any(is_nonempty_link));
     if reference_axis.is_some_and(|property| {
@@ -4484,7 +4459,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 }
 
 fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
-    link.document.is_some() || link.object().is_some_and(|object| !object.is_empty())
+    link.document().is_some() || link.object().is_some_and(|object| !object.is_empty())
 }
 
 fn singular_operand<'a>(
@@ -5355,7 +5330,7 @@ fn binder_definition(
             [property]
                 if property.type_name == "App::PropertyXLink"
                     && property.links().len() == 1
-                    && property.links()[0].subelements.is_empty() =>
+                    && property.links()[0].subelements().is_empty() =>
             {
                 property
                     .links()
@@ -5403,7 +5378,7 @@ fn binder_target(
     features: &HashMap<&str, FeatureId>,
 ) -> Option<BinderTarget> {
     let object = link.object()?;
-    if let Some(document) = link.document.as_ref() {
+    if let Some(document) = link.document() {
         return Some(BinderTarget::External {
             document: cadmpeg_ir::NonEmptyString::new(document.as_str())?,
             object: cadmpeg_ir::NonEmptyString::new(object)?,
@@ -5929,7 +5904,7 @@ fn plane_reference(
 }
 
 fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {
-    link.subelements
+    link.subelements()
         .iter()
         .flat_map(|selector| selector.split_ascii_whitespace())
         .filter(|selector| !selector.is_empty())

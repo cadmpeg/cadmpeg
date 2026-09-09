@@ -200,7 +200,7 @@ fn spatial_line(
     end: Point3,
 ) -> SpatialSketchEntity {
     SpatialSketchEntity::new(
-        neutral_spatial_sketch_curve_id(sketch, primary_id, 0).unwrap(),
+        neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
         sketch.clone(),
         SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
             .unwrap(),
@@ -218,7 +218,7 @@ fn spatial_profile(
         primary_ids
             .iter()
             .map(|primary_id| SpatialSketchEntityUse {
-                entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0).unwrap(),
+                entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0),
                 reversed: false,
             })
             .collect(),
@@ -558,7 +558,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             Point3::new(0.0, 0.0, 0.0),
         ),
     ];
-    let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0).unwrap();
+    let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0);
     entities.push(SpatialSketchEntity::new(
         arc_id.clone(),
         sketch_id.clone(),
@@ -615,9 +615,9 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
 #[test]
 fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let placement = placement();
-    let sketch_id = neutral_spatial_sketch_id(&placement).unwrap();
+    let sketch_id = neutral_spatial_sketch_id(&placement);
     let curves = [curve(30, 100, 0), curve(31, 200, 0), curve(32, 201, 0)];
-    let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0).unwrap();
+    let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0);
     let circle = |primary, radius, normal| {
         SpatialSketchEntity::new(
             entity_id(primary),
@@ -778,11 +778,11 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 #[test]
 fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_proof() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let sketch_entities = [
         SketchEntity::new(
-            neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
+            neutral_sketch_curve_id(&sketch, 100, 101),
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(0.0, 0.0),
@@ -791,7 +791,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
             .unwrap(),
         ),
         SketchEntity::new(
-            neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
+            neutral_sketch_curve_id(&sketch, 200, 201),
             sketch.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(1.0, 0.0),
@@ -825,8 +825,8 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
             PathRef::sketch_curves(
                 sketch.clone(),
                 vec![
-                    neutral_sketch_curve_id(&sketch, 100, 101).unwrap(),
-                    neutral_sketch_curve_id(&sketch, 200, 201).unwrap(),
+                    neutral_sketch_curve_id(&sketch, 100, 101),
+                    neutral_sketch_curve_id(&sketch, 200, 201),
                 ]
             )
             .unwrap()
@@ -857,7 +857,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
 #[test]
 fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     let placement = placement();
-    let spatial_sketch = neutral_spatial_sketch_id(&placement).unwrap();
+    let spatial_sketch = neutral_spatial_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let spatial_entities = curves
         .iter()
@@ -867,8 +867,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                     &spatial_sketch,
                     curve.primary_id.get(),
                     curve.secondary_id,
-                )
-                .unwrap(),
+                ),
                 spatial_sketch.clone(),
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
                     start: Point3::new(0.0, 0.0, 0.0),
@@ -913,7 +912,6 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
                             curve.primary_id.get(),
                             curve.secondary_id,
                         )
-                        .unwrap()
                     })
                     .collect()
             )
@@ -925,13 +923,11 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
 #[test]
 fn entity_selection_profile_requires_unique_profile_membership() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let curve_ids = curves
         .iter()
-        .map(|curve| {
-            neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id).unwrap()
-        })
+        .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id))
         .collect::<Vec<_>>();
     let unselected = SketchEntityId::mint("synthetic:test:sketch-entity#unselected").unwrap();
     let sketch_entities = [
@@ -1027,10 +1023,9 @@ fn entity_selection_profile_requires_unique_profile_membership() {
 #[test]
 fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let curve = curve(30, 100, 101);
-    let entity_id =
-        neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id).unwrap();
+    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id);
     let sketch_entities = [SketchEntity::new(
         entity_id.clone(),
         sketch.clone(),
@@ -1084,10 +1079,10 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
 #[test]
 fn planar_profile_regions_resolve_by_persistent_curve_members() {
     let placement = placement();
-    let sketch = neutral_sketch_id(&placement).unwrap();
+    let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
-    let first_entity = neutral_sketch_curve_id(&sketch, 100, 101).unwrap();
-    let second_entity = neutral_sketch_curve_id(&sketch, 200, 201).unwrap();
+    let first_entity = neutral_sketch_curve_id(&sketch, 100, 101);
+    let second_entity = neutral_sketch_curve_id(&sketch, 200, 201);
     let sketch_entities = [
         SketchEntity::new(
             first_entity.clone(),

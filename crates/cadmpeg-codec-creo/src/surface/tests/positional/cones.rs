@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
+
 use super::*;
 
 #[test]
@@ -14,35 +16,40 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
 
     assert!(PositionalConeFrame::new(
         {
-            let mut value = valid.apex;
+            let mut value = valid.apex();
             value[1] = f64::NAN;
             value
         },
-        valid.axis,
-        valid.ref_direction,
-        valid.half_angle
-    )
-    .is_none());
-
-    assert!(PositionalConeFrame::new(valid.apex, valid.axis, valid.ref_direction, 0.0).is_none());
-
-    assert!(PositionalConeFrame::new(
-        valid.apex,
-        [0.0, 2.0, 0.0],
-        valid.ref_direction,
+        valid.axis(),
+        valid.ref_direction(),
         valid.half_angle
     )
     .is_none());
 
     assert!(
-        PositionalConeFrame::new(valid.apex, valid.axis, [0.0, 1.0, 0.0], valid.half_angle)
-            .is_none()
+        PositionalConeFrame::new(valid.apex(), valid.axis(), valid.ref_direction(), 0.0).is_none()
     );
 
     assert!(PositionalConeFrame::new(
-        valid.apex,
-        valid.axis,
-        valid.ref_direction,
+        valid.apex(),
+        [0.0, 2.0, 0.0],
+        valid.ref_direction(),
+        valid.half_angle
+    )
+    .is_none());
+
+    assert!(PositionalConeFrame::new(
+        valid.apex(),
+        valid.axis(),
+        [0.0, 1.0, 0.0],
+        valid.half_angle
+    )
+    .is_none());
+
+    assert!(PositionalConeFrame::new(
+        valid.apex(),
+        valid.axis(),
+        valid.ref_direction(),
         std::f64::consts::FRAC_PI_2
     )
     .is_none());
@@ -60,9 +67,9 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
     ];
     let frame = decode_positional_cone_frame(&body, &scalar::ScalarCache::default())
         .expect("complete positional cone");
-    assert_eq!(frame.apex, [37.01, 0.0, 0.0]);
-    assert_eq!(frame.axis, [-1.0, -0.0, -0.0]);
-    assert_eq!(frame.ref_direction, [-0.0, -0.0, -1.0]);
+    assert_eq!(frame.apex(), [37.01, 0.0, 0.0]);
+    assert_eq!(frame.axis(), [-1.0, -0.0, -0.0]);
+    assert_eq!(frame.ref_direction(), [-0.0, -0.0, -1.0]);
     assert!((frame.half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
 
     let angle = terminal_cone_half_angle_layout(&body).expect("terminal half-angle");
@@ -110,11 +117,11 @@ fn positional_cone_frame_decodes_complete_planar_envelopes() {
     for body in [&unreferenced[..], &referenced[..]] {
         let frame = decode_positional_cone_frame(body, &scalar::ScalarCache::default())
             .expect("complete planar-envelope cone");
-        assert_eq!(frame.apex[0], 0.0);
-        assert!((frame.apex[1] + 19.389_817_409_565_175).abs() < 1.0e-12);
-        assert_eq!(frame.apex[2], 0.0);
-        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
-        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.apex()[0], 0.0);
+        assert!((frame.apex()[1] + 19.389_817_409_565_175).abs() < EPS_FRAME_COMPONENT);
+        assert_eq!(frame.apex()[2], 0.0);
+        assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
+        assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
         assert!((frame.half_angle - 0.636_540_466_818_335).abs() < 1.0e-12);
     }
 

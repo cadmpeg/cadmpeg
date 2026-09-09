@@ -33,7 +33,7 @@ use cadmpeg_ir::Exactness;
 use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
-use super::index::{scan_carriers, CarrierIndex};
+use super::index::{scan_carriers, CarrierIndex, IndexedCurve};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
@@ -528,8 +528,8 @@ fn resolve_sweep_surface(
 ) -> Option<(SurfaceGeometry, usize, &'static str, Option<Exactness>)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
-    let curve = sweep::profile_nurbs(&profile.geometry)?;
-    let profile_derived = carriers.curve_is_derived(construction.profile_attr);
+    let curve = sweep::profile_nurbs(&profile.carrier().geometry)?;
+    let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
             SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
@@ -1372,7 +1372,7 @@ fn decode_graph(
         let closed_circle_point = (!resolved_endpoints && start_v <= 1 && end_v <= 1)
             .then(|| carriers.curve(curve_attr))
             .flatten()
-            .and_then(|carrier| match &carrier.geometry {
+            .and_then(|carrier| match &carrier.carrier().geometry {
                 CurveGeometry::Circle(circle_curve) => {
                     let center = circle_curve.center();
                     let ref_direction = circle_curve.ref_direction();
@@ -1434,7 +1434,7 @@ fn decode_graph(
             }
         }
         let parameter_range = carriers.curve(curve_attr).and_then(|carrier| {
-            edge_parameter_range(carrier, edge_endpoint_positions.get(&e).copied())
+            edge_parameter_range(carrier.carrier(), edge_endpoint_positions.get(&e).copied())
         });
         if parameter_range.is_some_and(|(_, reversed)| reversed) {
             std::mem::swap(&mut start_id, &mut end_id);
@@ -1447,10 +1447,11 @@ fn decode_graph(
         let mut curve = None;
         if curve_attr != 0 {
             match carriers.curve(curve_attr) {
-                Some(carrier) => {
+                Some(indexed) => {
+                    let carrier = indexed.carrier();
                     if emitted_curves.insert(curve_attr) {
                         emit_curve(&mut out, carrier);
-                        if carriers.curve_is_derived(curve_attr) {
+                        if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations
                                 .note(id_curve(curve_attr), &source_stream, offset as u64)
@@ -1554,8 +1555,12 @@ fn decode_graph(
                 let pcurves = edge_ends
                     .get(&edge_attr)
                     .and_then(|(_, _, curve_attr)| {
-                        let support_data = carriers.intersection_support_data(*curve_attr)?;
-                        let curve_carrier = carriers.curve(*curve_attr)?;
+                        let IndexedCurve::Derived(intersection) = carriers.curve(*curve_attr)?
+                        else {
+                            return None;
+                        };
+                        let support_data = &intersection.support_data;
+                        let curve_carrier = &intersection.carrier;
                         let CurveGeometry::Nurbs(curve) = &curve_carrier.geometry else {
                             return None;
                         };
@@ -1849,7 +1854,8 @@ fn decode_graph(
                         offset,
                     );
                 } else if let Some((blend, first, second)) = resolved_blend {
-                    let spine = carriers.curve(blend.spine).map(|carrier| {
+                    let spine = carriers.curve(blend.spine).map(|indexed| {
+                        let carrier = indexed.carrier();
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(&mut out, carrier);
                             annotations
@@ -2180,7 +2186,8 @@ fn decode_graph(
         else {
             continue;
         };
-        if let Some(carrier) = carriers.curve(attr) {
+        if let Some(indexed) = carriers.curve(attr) {
+            let carrier = indexed.carrier();
             annotations
                 .note(&curve.id, &source_stream, carrier.offset as u64)
                 .tag("compact_curve");

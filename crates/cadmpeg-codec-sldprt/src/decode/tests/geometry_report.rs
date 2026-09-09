@@ -98,8 +98,6 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, ordinal, u64::from(ordinal), kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -243,8 +241,6 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                         SketchInputKind::Relation(SketchRelationKind::Horizontal),
                     );
                     constructed_marker.feature_ref = Some("feature".into());
-                    constructed_marker.object_index = None;
-                    constructed_marker.local_id = None;
                     constructed_marker.state_value = None;
                     constructed_marker.coordinates_m = None;
                     constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -267,8 +263,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                         SketchInputKind::from_native_code(99),
                     );
                     constructed_marker.feature_ref = Some("feature".into());
-                    constructed_marker.object_index = None;
-                    constructed_marker.local_id = Some(1);
+                    constructed_marker = constructed_marker.with_test_identity(None, Some(1));
                     constructed_marker.state_value = None;
                     constructed_marker.coordinates_m = None;
                     constructed_marker.links = None;

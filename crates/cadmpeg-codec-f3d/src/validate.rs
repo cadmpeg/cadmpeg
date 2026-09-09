@@ -10,10 +10,9 @@
 //! generic IR validation report.
 
 use crate::design::decode::scopes::extrude_sheet_metal::{
-    exact_extrude_extent, is_class_296_legacy_one_sided_distance_layout,
-    is_class_296_legacy_one_sided_to_face_layout, is_class_296_one_sided_to_face_layout,
-    is_class_296_symmetric_distance_layout, is_class_296_two_sided_to_faces_layout,
-    is_class_296_two_sided_to_faces_scope, ExtrudeExtentContext,
+    is_class_296_legacy_one_sided_distance_layout, is_class_296_legacy_one_sided_to_face_layout,
+    is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout,
+    is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
 };
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
@@ -3239,11 +3238,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             == [class_397::DIRECTION_VALUE, class_397::FACE_EXTEND_VALUE]
                         && extent.is_some()
                         && extent
-                            == exact_extrude_extent(
-                                ExtrudeExtentContext::Class397Symmetric(frame),
-                                direction_face_extend_values[0],
-                                side_extent_discriminators,
-                            )
+                            == frame
+                                .extent(direction_face_extend_values[0], side_extent_discriminators)
                 } else if compact_extent_offsets.is_some() {
                     matches!(
                         (

@@ -93,7 +93,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         .expect("first linked profile point");
     assert_eq!(first_entity.kind, SketchInputKind::Point);
     assert_eq!(first_entity.coordinates_m, Some([1.0, 2.0]));
-    assert_eq!(first_entity.local_id, Some(32));
+    assert_eq!(first_entity.local_id(), Some(32));
 
     let curve = {
         let marker_id: String = "curve".into();
@@ -106,8 +106,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = Some(20);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(20), None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -119,8 +118,6 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;

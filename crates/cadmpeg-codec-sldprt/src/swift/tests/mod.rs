@@ -7,7 +7,7 @@ mod parsing;
 fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue> {
     let PmiDefinition::Dimension { nominal, .. } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id(id))
+        .find(|annotation| annotation.id == pmi_id(id).unwrap())
         .expect("dimension annotation")
         .definition
     else {

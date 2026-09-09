@@ -40,7 +40,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             operands: vec![FeatureInputOperand {
                 offset: 0,
                 reference_ref: "reference".into(),
-                kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_829A),
+                kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
                 entity_index: 0,
                 entity_ref: Some(marker.into()),
             }],
@@ -61,8 +61,6 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some(feature.into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = None;
             constructed_marker.state_value = Some(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;

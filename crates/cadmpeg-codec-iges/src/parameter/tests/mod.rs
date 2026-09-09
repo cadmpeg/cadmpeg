@@ -33,6 +33,7 @@ mod legacy_type402;
 mod lexical;
 mod macros;
 mod presentation_forms;
+mod solid_entity_boundaries;
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let mut bytes = owned_test_file(&[OwnedTestEntity {

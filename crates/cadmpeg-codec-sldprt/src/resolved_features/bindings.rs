@@ -243,7 +243,7 @@ pub(crate) fn bind_pattern_inputs(
                             .filter(|identity| {
                                 identity.components.last().is_some_and(|component| {
                                     View::u32_le_at(&component.type_signature, 4)
-                                        == Some(identity.feature_source_id)
+                                        == Some(identity.feature_source_id.value())
                                         && component.local_id == Some(identity.local_identity)
                                 })
                             })
@@ -253,7 +253,7 @@ pub(crate) fn bind_pattern_inputs(
                                         .source_id
                                         .as_deref()
                                         .and_then(|source| source.parse::<u32>().ok())
-                                        == Some(identity.feature_source_id)
+                                        == Some(identity.feature_source_id.value())
                                 });
                                 let seed = matches.next()?;
                                 matches.next().is_none().then(|| seed.id.clone())
@@ -1048,7 +1048,7 @@ pub(crate) fn finalize_lane_bindings(
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
     for entity in &lane.sketch_entities {
-        if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
+        if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id()) {
             marker_ids
                 .entry((feature.clone(), local_id))
                 .or_default()
@@ -1478,7 +1478,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
             .collect::<HashMap<_, _>>()
     };
     for marker in &mut lane.sketch_entities {
-        let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
+        let Some(key) = marker.feature_ref.clone().zip(marker.object_index()) else {
             continue;
         };
         if marker.coordinates_m.is_none() {

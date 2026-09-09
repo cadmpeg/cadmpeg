@@ -1156,6 +1156,43 @@ struct SurfaceOffsetFields<'a> {
     scale: &'a f64,
 }
 
+fn patch_intcurve_context(
+    bytes: &mut [u8],
+    record: &Record,
+    parameter_range: [usize; 2],
+    discontinuities: [Vec<usize>; 3],
+    flag: Option<(usize, bool)>,
+    context: &IntcurveSupportContext,
+    label: &str,
+) -> Result<(), CodecError> {
+    if discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities().iter().map(Vec::len))
+    {
+        return Err(CodecError::malformed(format_args!(
+            "{label} context is incomplete"
+        )));
+    }
+    AsmEditSet::patch_f64_payloads(
+        bytes,
+        record.offset,
+        parameter_range
+            .into_iter()
+            .chain(discontinuities.into_iter().flatten())
+            .zip(
+                context
+                    .parameter_range()
+                    .into_iter()
+                    .chain(context.discontinuities().iter().flatten().copied()),
+            ),
+    )?;
+    if let Some((offset, value)) = flag {
+        AsmEditSet::patch_native_bool(bytes, record.offset + offset, value)?;
+    }
+    Ok(())
+}
+
 fn patch_surface_offset_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
@@ -1190,33 +1227,28 @@ fn patch_surface_offset_definition(
     let record_bytes = record_slice(bytes, record, "surface-offset")?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
-    if layout
-        .discontinuities
-        .iter()
-        .map(Vec::len)
-        .ne(context.discontinuities().iter().map(Vec::len))
-    {
-        return Err(CodecError::Malformed(
-            "surface-offset context is incomplete".into(),
-        ));
-    }
+    patch_intcurve_context(
+        bytes,
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        Some((layout.discontinuity_flag, *discontinuity_flag)),
+        context,
+        "surface-offset",
+    )?;
     AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
         layout
-            .parameter_range
+            .base_u_range
             .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .chain(layout.base_u_range)
             .chain(layout.base_v_range)
             .chain(layout.base_range)
             .chain([layout.distance, layout.shift, layout.scale])
             .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied())
-                    .chain(base_u_range.iter().copied())
+                base_u_range
+                    .iter()
+                    .copied()
                     .chain(base_v_range.iter().copied())
                     .chain(base_range.iter().copied().chain([
                         distance / LEN_TO_MM,
@@ -1224,11 +1256,6 @@ fn patch_surface_offset_definition(
                         *scale,
                     ])),
             ),
-    )?;
-    AsmEditSet::patch_native_bool(
-        bytes,
-        record.offset + layout.discontinuity_flag,
-        *discontinuity_flag,
     )?;
     Ok(())
 }
@@ -1248,40 +1275,22 @@ fn patch_spring_definition(
         cadmpeg_ir::geometry::SpringLayout::CacheFirst { .. } => false,
     };
     let record_bytes = record_slice(bytes, record, "spring")?;
-    let int_width = stream_width;
-    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
+    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
-    if layout
-        .discontinuities
-        .iter()
-        .map(Vec::len)
-        .ne(context.discontinuities().iter().map(Vec::len))
-    {
-        return Err(CodecError::Malformed("spring context is incomplete".into()));
-    }
-    AsmEditSet::patch_f64_payloads(
+    patch_intcurve_context(
         bytes,
-        record.offset,
-        layout
-            .parameter_range
-            .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
-            ),
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        Some((layout.discontinuity_flag, discontinuity_flag)),
+        &context,
+        "spring",
     )?;
-    AsmEditSet::patch_native_bool(
-        bytes,
-        record.offset + layout.discontinuity_flag,
-        discontinuity_flag,
-    )?;
+
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.direction,
-        int_width,
+        stream_width,
         direction,
     )?;
     Ok(())
@@ -1339,12 +1348,7 @@ fn patch_projection_definition(
                     .zip(parameter_range)
                     .map(|(offset, value)| (*offset, *value)),
             )?;
-            AsmEditSet::patch_bytes_at(
-                bytes,
-                record.offset,
-                role_range.range().start,
-                role.as_str().as_bytes(),
-            )?;
+            role_range.write(&mut bytes[record.offset..], *role)?;
         }
         _ => {
             return Err(CodecError::NotImplemented(
@@ -1352,24 +1356,15 @@ fn patch_projection_definition(
             ));
         }
     }
-    AsmEditSet::patch_f64_payloads(
+
+    patch_intcurve_context(
         bytes,
-        record.offset,
-        layout
-            .parameter_range
-            .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
-            ),
-    )?;
-    AsmEditSet::patch_native_bool(
-        bytes,
-        record.offset + layout.discontinuity_flag,
-        discontinuity_flag,
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        Some((layout.discontinuity_flag, discontinuity_flag)),
+        context,
+        "projection",
     )?;
     Ok(())
 }
@@ -1384,35 +1379,16 @@ fn patch_intersection_definition(
     let record_bytes = record_slice(bytes, record, "intersection")?;
     let layout = crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
-    if layout
-        .discontinuities
-        .iter()
-        .map(Vec::len)
-        .ne(context.discontinuities().iter().map(Vec::len))
-    {
-        return Err(CodecError::Malformed(
-            "intersection context is incomplete".into(),
-        ));
-    }
-    AsmEditSet::patch_f64_payloads(
+    patch_intcurve_context(
         bytes,
-        record.offset,
-        layout
-            .parameter_range
-            .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
-            ),
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        Some((layout.discontinuity_flag, discontinuity_flag)),
+        context,
+        "intersection",
     )?;
-    AsmEditSet::patch_native_bool(
-        bytes,
-        record.offset + layout.discontinuity_flag,
-        discontinuity_flag,
-    )?;
+
     Ok(())
 }
 
@@ -1424,37 +1400,24 @@ fn patch_three_surface_intersection_definition(
     selector: i64,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
-    let int_width = stream_width;
-    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
-        .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
-    if layout
-        .discontinuities
-        .iter()
-        .map(Vec::len)
-        .ne(context.discontinuities().iter().map(Vec::len))
-    {
-        return Err(CodecError::Malformed(
-            "three-surface intersection context is incomplete".into(),
-        ));
-    }
-    AsmEditSet::patch_f64_payloads(
+    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, stream_width)
+        .ok_or_else(|| {
+        CodecError::Malformed("three-surface construction is malformed".into())
+    })?;
+    patch_intcurve_context(
         bytes,
-        record.offset,
-        layout
-            .parameter_range
-            .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
-            ),
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        None,
+        context,
+        "three-surface intersection",
     )?;
+
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.selector,
-        int_width,
+        stream_width,
         selector,
     )?;
     Ok(())
@@ -1474,30 +1437,16 @@ fn patch_surface_curve_definition(
         family.kind(),
     )
     .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
-    if layout
-        .discontinuities
-        .iter()
-        .map(Vec::len)
-        .ne(context.discontinuities().iter().map(Vec::len))
-    {
-        return Err(CodecError::Malformed(
-            "surface-curve context is incomplete".into(),
-        ));
-    }
-    AsmEditSet::patch_f64_payloads(
+    patch_intcurve_context(
         bytes,
-        record.offset,
-        layout
-            .parameter_range
-            .into_iter()
-            .chain(layout.discontinuities.into_iter().flatten())
-            .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
-            ),
+        record,
+        layout.parameter_range,
+        layout.discontinuities,
+        None,
+        context,
+        "surface-curve",
     )?;
+
     Ok(())
 }
 
@@ -1553,11 +1502,12 @@ fn patch_nurbs_surface_record(
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
     let record_bytes = record_slice(bytes, record, "NURBS surface")?;
-    let int_width = stream_width;
     let layout = surface_ordinal
         .map_or_else(
-            || crate::nurbs::core::final_surface_patch_layout(record_bytes, int_width),
-            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal, int_width),
+            || crate::nurbs::core::final_surface_patch_layout(record_bytes, stream_width),
+            |ordinal| {
+                crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal, stream_width)
+            },
         )
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1583,14 +1533,14 @@ fn patch_nurbs_surface_record(
         record.offset,
         &layout.u_knots,
         surface.u_knots(),
-        layout.int_width,
+        stream_width,
     )?;
     AsmEditSet::patch_knot_structure(
         bytes,
         record.offset,
         &layout.v_knots,
         surface.v_knots(),
-        layout.int_width,
+        stream_width,
     )?;
     for (offset, degree) in layout
         .degree_value_offsets
@@ -1598,13 +1548,13 @@ fn patch_nurbs_surface_record(
         .zip([surface.u_degree(), surface.v_degree()])
     {
         let at = record.offset + offset;
-        AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(degree))?;
+        AsmEditSet::patch_layout_integer(bytes, at, stream_width, i64::from(degree))?;
     }
     if let Some(periodic) = edit.periodic {
         for (offset, periodic) in layout.periodic_value_offsets.into_iter().zip(periodic) {
             let at = record.offset + offset;
             let value = if periodic { 2i64 } else { 0i64 };
-            AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
+            AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
         }
     }
     let components = if layout.surface.weights().is_some() {
@@ -1642,10 +1592,13 @@ fn patch_nurbs_curve_record(
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
-    let int_width = stream_width;
     let layout = match target {
-        CacheTarget::Final => crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width),
-        CacheTarget::First => crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width),
+        CacheTarget::Final => {
+            crate::nurbs::core::final_curve_patch_layout(record_bytes, stream_width)
+        }
+        CacheTarget::First => {
+            crate::nurbs::core::first_curve_patch_layout(record_bytes, stream_width)
+        }
     }
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1666,19 +1619,14 @@ fn patch_nurbs_curve_record(
         record.offset,
         &layout.knots,
         curve.knots(),
-        layout.int_width,
+        stream_width,
     )?;
     let degree_at = record.offset + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(
-        bytes,
-        degree_at,
-        layout.int_width,
-        i64::from(curve.degree()),
-    )?;
+    AsmEditSet::patch_layout_integer(bytes, degree_at, stream_width, i64::from(curve.degree()))?;
     if let Some(periodic) = edit.periodic {
         let periodic = if periodic { 2i64 } else { 0i64 };
         let periodic_at = record.offset + layout.periodic_value_offset;
-        AsmEditSet::patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
+        AsmEditSet::patch_layout_integer(bytes, periodic_at, stream_width, periodic)?;
     }
     let components = if layout.curve.weights().is_some() {
         4
@@ -1707,12 +1655,7 @@ fn patch_nurbs_curve_record(
 }
 
 enum PcurvePatchCarrier {
-    Pcurve {
-        scope: std::ops::Range<usize>,
-        wrapper_reversed: Option<bool>,
-        native_tail_flags: Option<[bool; 4]>,
-        parameter_range: Option<[f64; 2]>,
-    },
+    Pcurve(std::ops::Range<usize>),
     Intcurve(std::ops::Range<usize>),
 }
 
@@ -1720,24 +1663,20 @@ impl PcurvePatchCarrier {
     fn admit(
         bytes: &[u8],
         record: &Record,
-        ref_width: RefWidth,
+        stream_width: RefWidth,
         edit: &InlinePcurveEdit<'_>,
     ) -> Result<Self, CodecError> {
         match record.head() {
             "pcurve" => {
-                let scope = sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur")
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "pcurve record {} has no exp_par_cur payload",
-                            record.index
-                        ))
-                    })?;
-                Ok(Self::Pcurve {
-                    scope,
-                    wrapper_reversed: edit.wrapper_reversed,
-                    native_tail_flags: edit.native_tail_flags,
-                    parameter_range: edit.parameter_range,
-                })
+                let scope =
+                    sab::payload_subtype_range(bytes, record, 5, stream_width, "exp_par_cur")
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "pcurve record {} has no exp_par_cur payload",
+                                record.index
+                            ))
+                        })?;
+                Ok(Self::Pcurve(scope))
             }
             "intcurve" => match (
                 edit.wrapper_reversed,
@@ -1765,7 +1704,7 @@ impl PcurvePatchCarrier {
 
     fn scope(&self) -> &std::ops::Range<usize> {
         match self {
-            Self::Pcurve { scope, .. } | Self::Intcurve(scope) => scope,
+            Self::Pcurve(scope) | Self::Intcurve(scope) => scope,
         }
     }
 }
@@ -1783,14 +1722,13 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let ref_width = stream_width;
-    let carrier = PcurvePatchCarrier::admit(bytes, record, ref_width, edit)?;
+    let carrier = PcurvePatchCarrier::admit(bytes, record, stream_width, edit)?;
     let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
         bytes.get(scope.clone()).ok_or_else(|| {
             CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
         })?,
-        ref_width,
+        stream_width,
     )
     .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1811,25 +1749,19 @@ fn patch_nurbs_pcurve_record(
         scope.start,
         &layout.knots,
         nurbs.knots(),
-        layout.int_width,
+        stream_width,
     )?;
     let at = scope.start + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(nurbs.degree()))?;
+    AsmEditSet::patch_layout_integer(bytes, at, stream_width, i64::from(nurbs.degree()))?;
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
-        AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
+        AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
     }
-    if let PcurvePatchCarrier::Pcurve {
-        wrapper_reversed,
-        native_tail_flags,
-        parameter_range,
-        ..
-    } = &carrier
-    {
-        if let Some(reversed) = *wrapper_reversed {
+    if let PcurvePatchCarrier::Pcurve(_) = &carrier {
+        if let Some(reversed) = edit.wrapper_reversed {
             let offset =
-                sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
+                sab::payload_token_offset(bytes, record, stream_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve record {} lacks wrapper-reversal carrier",
                         record.index
@@ -1858,7 +1790,7 @@ fn patch_nurbs_pcurve_record(
         })?;
         let suffix_offsets = (suffix_start..record.chunk_len())
             .map(|index| {
-                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete native metadata suffix",
                         record.index
@@ -1866,7 +1798,7 @@ fn patch_nurbs_pcurve_record(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(flags) = *native_tail_flags {
+        if let Some(flags) = edit.native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
                     return Err(CodecError::malformed(format_args!(
@@ -1886,7 +1818,7 @@ fn patch_nurbs_pcurve_record(
                 }
             }
         }
-        if let Some(range) = *parameter_range {
+        if let Some(range) = edit.parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
                     return Err(CodecError::malformed(format_args!(
@@ -1936,10 +1868,9 @@ fn patch_ref_pcurve_contract(
     let Some(range) = parameter_range else {
         return Ok(());
     };
-    let ref_width = stream_width;
     for (index, value) in [5usize, 6].into_iter().zip(range) {
         let offset =
-            sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+            sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "ref-form pcurve record {} lacks parameter-range field {index}",
                     record.index
@@ -1960,6 +1891,181 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record) {
+        fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);
+        }
+        fn double(bytes: &mut Vec<u8>, value: f64) {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        fn curve(bytes: &mut Vec<u8>, width: RefWidth, dimensions: usize) {
+            bytes.extend_from_slice(crate::nurbs::reader::NUBS_MARKER);
+            for (tag, value) in [(0x04, 1), (0x15, 0), (0x04, 2)] {
+                integer(bytes, tag, value, width);
+            }
+            for knot in [0.0, 1.0] {
+                double(bytes, knot);
+                integer(bytes, 0x04, 1, width);
+            }
+            for pole in [0.0, 1.0] {
+                for _ in 0..dimensions {
+                    double(bytes, pole);
+                }
+            }
+        }
+        let mut bytes = b"\x0f\x0d\x0cproj_int_cur".to_vec();
+        for _ in 0..2 {
+            bytes.extend_from_slice(b"\x0d\x05plane");
+            for (tag, values) in [
+                (0x13, [0.0_f64; 3]),
+                (0x14, [0.0, 0.0, 1.0]),
+                (0x14, [1.0, 0.0, 0.0]),
+            ] {
+                bytes.push(tag);
+                for value in values {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            bytes.push(0x0b);
+        }
+        curve(&mut bytes, width, 2);
+        curve(&mut bytes, width, 2);
+        double(&mut bytes, -2.0);
+        double(&mut bytes, 3.0);
+        for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
+            integer(&mut bytes, 0x04, values.len() as i64, width);
+            for value in values {
+                double(&mut bytes, value);
+            }
+        }
+        bytes.push(0x0a);
+        curve(&mut bytes, width, 3);
+        bytes.push(0x0b);
+        if !early_close {
+            double(&mut bytes, -1.0);
+            double(&mut bytes, 1.0);
+            bytes.extend_from_slice(b"\x07\x05surf1");
+        }
+        bytes.push(0x10);
+        let record = crate::sab::Record {
+            index: 0,
+            name: "intcurve".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: bytes.len(),
+        };
+        (bytes, record)
+    }
+
+    #[test]
+    fn projection_tail_form_rejection_preserves_all_bytes() {
+        use cadmpeg_ir::geometry::{
+            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        };
+
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            for early_close in [false, true] {
+                let (mut bytes, record) = projection_fixture(width, early_close);
+                let context = IntcurveSupportContext::try_new(
+                    std::array::from_fn(|_| IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    }),
+                    [4.0, 5.0],
+                    [vec![0.1], vec![], vec![0.2, 0.3]],
+                )
+                .unwrap();
+                let tail = if early_close {
+                    ProjectionTail::Ranged {
+                        flag: true,
+                        parameter_range: [0.0, 2.0],
+                        role: ProjectionRole::Surf2,
+                    }
+                } else {
+                    ProjectionTail::EarlyClose { flag: true }
+                };
+                let before = bytes.clone();
+                let error = super::patch_projection_definition(
+                    &mut bytes, width, &record, &context, false, &tail,
+                )
+                .unwrap_err();
+                assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+                assert_eq!(bytes, before);
+            }
+        }
+    }
+
+    #[test]
+    fn incomplete_projection_context_preserves_ranged_tail_bytes() {
+        use cadmpeg_ir::geometry::{
+            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        };
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let (mut bytes, record) = projection_fixture(width, false);
+            let context = IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                }),
+                [4.0, 5.0],
+                std::array::from_fn(|_| Vec::new()),
+            )
+            .unwrap();
+            let tail = ProjectionTail::Ranged {
+                flag: true,
+                parameter_range: [7.0, 8.0],
+                role: ProjectionRole::Surf2,
+            };
+            let before = bytes.clone();
+            let error = super::patch_projection_definition(
+                &mut bytes, width, &record, &context, false, &tail,
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::Malformed(ref message) if message == "projection context is incomplete")
+            );
+            assert_eq!(bytes, before);
+        }
+    }
+
+    #[test]
+    fn ascii_field_patch_rejects_a_truncated_payload() {
+        let original = b"\x0d\x01x\x07\x05surf1\x11";
+        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let mut bytes = original[..7].to_vec();
+        let before = bytes.clone();
+        let error = edits
+            .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn truecolor_field_patch_rejects_truncated_payloads() {
+        for (tag, width, payload_width) in [
+            (0x17, RefWidth::Eight, 8),
+            (0x04, RefWidth::Four, 4),
+            (0x04, RefWidth::Eight, 8),
+        ] {
+            let mut original = vec![0x0d, 1, b'x', tag];
+            original.extend_from_slice(&[0; 8][..payload_width]);
+            original.push(0x11);
+            let records = crate::sab::frame(&original, 0, original.len(), width).unwrap();
+            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let mut bytes = original[..4].to_vec();
+            let before = bytes.clone();
+            let error = edits
+                .patch_truecolor_field(&mut bytes, &records[0], 0, 1)
+                .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+            assert_eq!(bytes, before);
+        }
+    }
 
     #[test]
     fn byte_payload_patch_rejects_truncation_and_overflow_without_writing() {

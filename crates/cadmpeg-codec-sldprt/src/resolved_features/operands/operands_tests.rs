@@ -24,8 +24,7 @@ fn qualified_operand_falls_back_to_marker_family_ordinal() {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(local_id);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(local_id));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = None;
             constructed_marker.links = None;
@@ -56,8 +55,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(local_id);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(local_id));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([u, 0.0]);
         constructed_marker.links = None;
@@ -70,8 +68,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 16, 16, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(16);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(16));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([9.0, 9.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -79,7 +76,7 @@ fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
             endpoints
                 .iter()
                 .map(|endpoint| SketchInputLink {
-                    local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                    local_id: u16::try_from(endpoint.local_id().expect("local identity"))
                         .expect("u16 local identity"),
                     entity_ref: endpoint.id.clone(),
                 })
@@ -114,8 +111,7 @@ fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(7);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(7));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -149,8 +145,7 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(16);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(16));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([1.0, 2.0]);
         constructed_marker.links = None;
@@ -179,14 +174,13 @@ fn qualified_point_operand_selects_a_curve_marker_locus() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(10 + index);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(10 + index));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([f64::from(index), 0.0]);
         constructed_marker.links = None;
         constructed_marker
     }));
-    markers[0].local_id = Some(1);
+    markers[0] = markers[0].with_test_identity(markers[0].object_index(), Some(1));
     assert_eq!(
         resolve_operand_marker(
             &markers,
@@ -206,8 +200,8 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, offset as u32, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = Some(100 + offset as u32);
+        constructed_marker =
+            constructed_marker.with_test_identity(object_index, Some(100 + offset as u32));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -243,7 +237,8 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
                 SketchInputKind::LineOrCircle,
                 Some([2.0, 0.0]),
             );
-            constructed_marker.local_id = Some(0);
+            constructed_marker =
+                constructed_marker.with_test_identity(constructed_marker.object_index(), Some(0));
             constructed_marker
         },
     ];
@@ -276,8 +271,6 @@ fn roster_point_operand_uses_coordinate_point_order() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, offset, u64::from(offset), kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = None;
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -330,8 +323,8 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(object_index);
-        constructed_marker.local_id = Some(local_id);
+        constructed_marker =
+            constructed_marker.with_test_identity(Some(object_index), Some(local_id));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([1.0, 2.0]);
         constructed_marker.links = None;
@@ -374,8 +367,7 @@ fn relation_point_operands_use_object_index_before_local_identifier() {
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = matches!(
             kind,
@@ -427,8 +419,7 @@ fn relation_point_operand_rejects_ambiguous_indexed_points() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(7);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(7), None);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([1.0, 2.0]);
         constructed_marker.links = None;
@@ -452,8 +443,7 @@ fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(None, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -533,8 +523,7 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(11);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(11));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
@@ -546,8 +535,7 @@ fn curve_operand_selects_an_arc_by_local_identifier() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 1, 1, SketchInputKind::Arc);
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(3);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(3));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = Some([1.0, 1.0]);
             constructed_marker.links = None;
@@ -579,8 +567,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(11);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(11));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
@@ -592,8 +579,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 1, 1, SketchInputKind::Arc);
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(8);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(8));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = Some([1.0, 1.0]);
             constructed_marker.links = None;
@@ -610,8 +596,7 @@ fn curve_operand_follows_a_unique_local_reference_handle() {
                 SketchInputKind::Relation(SketchRelationKind::Angle),
             );
             constructed_marker.feature_ref = Some("feature".into());
-            constructed_marker.object_index = None;
-            constructed_marker.local_id = Some(3);
+            constructed_marker = constructed_marker.with_test_identity(None, Some(3));
             constructed_marker.state_value = None;
             constructed_marker.coordinates_m = None;
             constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -648,8 +633,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(local_id);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(local_id));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([offset as f64, 0.0]);
         constructed_marker.links = None;
@@ -666,8 +650,7 @@ fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() 
             SketchInputKind::Relation(SketchRelationKind::Distance),
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(10);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(10));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -716,8 +699,7 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(3);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(3));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([offset as f64, 0.0]);
         constructed_marker.links = None;
@@ -744,8 +726,7 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Arc);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(13);
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(Some(13), None);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -778,8 +759,7 @@ fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = local_id;
+        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -859,8 +839,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = None;
-        constructed_marker.local_id = Some(offset);
+        constructed_marker = constructed_marker.with_test_identity(None, Some(offset));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
@@ -881,8 +860,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
             SketchInputKind::Relation(SketchRelationKind::Radius),
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(5);
-        constructed_marker.local_id = Some(6);
+        constructed_marker = constructed_marker.with_test_identity(Some(5), Some(6));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = crate::records::SketchInputLinks::new(
@@ -890,7 +868,7 @@ fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
             endpoints
                 .iter()
                 .map(|endpoint| SketchInputLink {
-                    local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                    local_id: u16::try_from(endpoint.local_id().expect("local identity"))
                         .expect("u16 local identity"),
                     entity_ref: endpoint.id.clone(),
                 })
@@ -919,8 +897,7 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 1, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(2);
-        constructed_marker.local_id = Some(2);
+        constructed_marker = constructed_marker.with_test_identity(Some(2), Some(2));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([2.0, 0.0]);
         constructed_marker.links = None;
@@ -937,8 +914,7 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
             SketchInputKind::Relation(SketchRelationKind::Angle),
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(3);
-        constructed_marker.local_id = Some(3);
+        constructed_marker = constructed_marker.with_test_identity(Some(3), Some(3));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -950,8 +926,7 @@ fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Arc);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.object_index = Some(1);
-        constructed_marker.local_id = Some(1);
+        constructed_marker = constructed_marker.with_test_identity(Some(1), Some(1));
         constructed_marker.state_value = None;
         constructed_marker.coordinates_m = Some([1.0, 0.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(

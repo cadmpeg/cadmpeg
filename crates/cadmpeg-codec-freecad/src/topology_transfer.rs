@@ -30,7 +30,9 @@ use crate::brep::{
     TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
     TextTShapeGeometry,
 };
+use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
+use cadmpeg_ir::report::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
@@ -78,6 +80,7 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<TopologyOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
     for payload in payloads {
@@ -100,6 +103,7 @@ pub(crate) fn transfer(
         }
         builder.emit_unowned_triangulations(ir)?;
         occurrences.extend(builder.occurrences);
+        losses.extend(builder.losses);
     }
     close_radial_rings(&mut ir.model.coedges);
     let referenced_pcurves = ir
@@ -192,6 +196,7 @@ struct Builder<'a> {
     source_object: cadmpeg_ir::products::NonEmptyString,
     source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
     occurrences: Vec<TopologyOccurrence>,
+    losses: Vec<LossNote>,
 }
 
 impl<'a> Builder<'a> {
@@ -215,6 +220,7 @@ impl<'a> Builder<'a> {
             source_object,
             source_indices,
             occurrences: Vec::new(),
+            losses: Vec::new(),
         })
     }
 
@@ -255,7 +261,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    fn emit_pcurves(&self, ir: &mut CadIr) -> Result<(), CodecError> {
+    fn emit_pcurves(&mut self, ir: &mut CadIr) -> Result<(), CodecError> {
         for (position, shape) in self.tables.tshapes.iter().enumerate() {
             let TextTShapeGeometry::Edge {
                 representations, ..
@@ -287,6 +293,11 @@ impl<'a> Builder<'a> {
                 let Some(primary_geometry) = pcurve_geometry(&self.tables.curve2ds[primary - 1])
                     .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
+                    self.losses
+                        .push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                            "payload {} curve2ds index {primary} could not enter neutral geometry",
+                            self.payload.id
+                        )));
                     continue;
                 };
                 let primary_range =
@@ -307,6 +318,9 @@ impl<'a> Builder<'a> {
                             transformed_pcurve_geometry(geometry, parameter_affine)
                         })
                     else {
+                        self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                            "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
+                        )));
                         continue;
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
@@ -340,11 +354,7 @@ impl<'a> Builder<'a> {
                 Tessellation::from_decoded(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
                     triangulation.nodes().to_vec(),
-                    triangulation
-                        .triangles
-                        .iter()
-                        .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                        .collect(),
+                    triangulation.triangles().to_vec(),
                     Vec::new(),
                     triangulation.normals().unwrap_or_default().to_vec(),
                     Vec::new(),
@@ -416,26 +426,25 @@ impl<'a> Builder<'a> {
         self.edges.clear();
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind();
-        if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
-            let TextTShapeGeometry::Edge {
-                degenerated,
-                representations,
-                ..
-            } = &root_shape.geometry
-            else {
-                unreachable!("edge kind and geometry must agree")
-            };
-            if !degenerated
-                && !representations.iter().any(|representation| {
-                    matches!(representation, TextEdgeRepresentation::Curve3d { .. })
-                })
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "unbounded edge TShape {} has no exact curve",
-                    root.shape
-                )));
+        if let TextTShapeGeometry::Edge {
+            degenerated,
+            representations,
+            ..
+        } = &root_shape.geometry
+        {
+            if root_shape.children.is_empty() {
+                if !degenerated
+                    && !representations.iter().any(|representation| {
+                        matches!(representation, TextEdgeRepresentation::Curve3d { .. })
+                    })
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "unbounded edge TShape {} has no exact curve",
+                        root.shape
+                    )));
+                }
+                return Ok(());
             }
-            return Ok(());
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
         let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
@@ -816,11 +825,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|point| face_transform.apply_point(*point))
                     .collect::<Vec<_>>();
-                let triangles = triangulation
-                    .triangles
-                    .iter()
-                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                    .collect::<Vec<_>>();
+                let triangles = triangulation.triangles().to_vec();
                 let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
@@ -1404,7 +1409,7 @@ impl<'a> Builder<'a> {
     }
 
     fn face_pcurve(
-        &self,
+        &mut self,
         edge_use: &TextShapeUse,
         edge_transform: Transform,
         surface: Option<crate::brep::TableRef<TextSurface>>,
@@ -1453,6 +1458,11 @@ impl<'a> Builder<'a> {
             _ => return Ok(None),
         };
         let Some(geometry) = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) else {
+            self.losses
+                .push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                    "payload {} curve2ds index {curve_index} could not enter neutral geometry",
+                    self.payload.id
+                )));
             return Ok(None);
         };
         let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));

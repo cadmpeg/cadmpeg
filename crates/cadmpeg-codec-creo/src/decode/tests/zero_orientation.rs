@@ -860,7 +860,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                     parameter,
                     nurbs.knots(),
                     nurbs.control_points().len(),
-                );
+                )
+                .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
                 point[2] += basis * control.z;
@@ -880,7 +881,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                     parameter,
                     nurbs.knots(),
                     nurbs.control_points().len(),
-                );
+                )
+                .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
                 derivative[2] += basis * control.z;

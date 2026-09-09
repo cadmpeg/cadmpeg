@@ -120,20 +120,14 @@ pub(crate) fn transfer_neutral(
                     ));
                 }
             };
-            Ok(ReferenceSelection::new(target, link.subelements.clone()))
+            Ok(ReferenceSelection::new(target, link.subelements().to_vec()))
         };
         let parameter = |name: &str| scalar_property(&owned, name);
         let x = parameter("X")?;
         let y = parameter("Y")?;
         let position = match (x, y) {
             (None, None) => None,
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some([x, y]),
-            (Some(_), Some(_)) => {
-                return Err(CodecError::malformed(format_args!(
-                    "drawing {} has a non-finite position",
-                    record.id
-                )))
-            }
+            (Some(x), Some(y)) => Some([x, y]),
             _ => {
                 return Err(CodecError::malformed(format_args!(
                     "drawing {} position requires both X and Y",
@@ -186,7 +180,7 @@ pub(crate) fn transfer_neutral(
                 .get("Template")
                 .and_then(|targets| targets.first())
                 .and_then(|link| {
-                    if link.document.is_some() {
+                    if link.document().is_some() {
                         return None;
                     }
                     let object = link.object()?;
@@ -440,18 +434,13 @@ fn typed_property<'a>(
     name: &str,
     type_name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
+    let Some(property) = crate::native::unique_property(properties.iter().copied(), |property| {
+        property.name == name
+    })
+    .map_err(|_| CodecError::malformed(format_args!("{name} has duplicate carriers")))?
+    else {
         return Ok(None);
     };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "{name} has duplicate carriers"
-        )));
-    }
     if property.type_name != type_name {
         return Err(CodecError::malformed(format_args!(
             "{name} has runtime type {}, expected {type_name}",
@@ -636,19 +625,12 @@ fn unique_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let mut matches = properties
-        .iter()
-        .copied()
-        .filter(|property| property.name == name);
-    let Some(property) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "drawing property {name} occurs more than once"
-        )));
-    }
-    Ok(Some(property))
+    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
+        .map_err(|_| {
+            CodecError::malformed(format_args!(
+                "drawing property {name} occurs more than once"
+            ))
+        })
 }
 
 fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<f64> {

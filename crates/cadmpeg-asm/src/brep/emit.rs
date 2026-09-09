@@ -2,6 +2,7 @@
 //! Emit decoded carriers, pcurves, and topology entities into the [`AsmBrep`]
 //! graph, one pass per entity kind.
 
+use super::count_kind;
 use super::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, EndpointSlot, FaceContainment, FaceNativeKey,
     FaceSidedness, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail,
@@ -95,6 +96,8 @@ fn emit_carrier_surface(
     let Carriers {
         surface_geo,
         procedural_surface_defs,
+        procedural_support_sources,
+        procedural_curve_child_sources,
         ..
     } = &mut *carriers;
     let Reachable {
@@ -112,6 +115,8 @@ fn emit_carrier_surface(
         source_object: None,
     });
     if let Some(procedural) = procedural_surface_defs.remove(&i) {
+        let support_start = out.surfaces.len();
+        let curve_start = out.curves.len();
         let (definition, cache) = procedural.into_parts();
         let definition = match definition {
             DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
@@ -403,6 +408,16 @@ fn emit_carrier_surface(
                 format,
             ),
         };
+        procedural_support_sources.extend(
+            out.surfaces[support_start..]
+                .iter()
+                .map(|surface| (i, surface.id.clone())),
+        );
+        procedural_curve_child_sources.extend(
+            out.curves[curve_start..]
+                .iter()
+                .map(|curve| (i, curve.id.clone())),
+        );
         let cache_fit_tolerance = match cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => None,
@@ -1112,101 +1127,100 @@ fn emit_scaled_compound_loft_surface(
     })
 }
 
+#[derive(Clone, Copy)]
+enum LawExpressionScope<'a> {
+    Surface(&'a str),
+    Curve(&'a str),
+}
+
+fn map_law_expression(
+    out: &mut AsmBrep,
+    scope: LawExpressionScope<'_>,
+    path: &str,
+    expression: EmbeddedLawExpression,
+) -> cadmpeg_ir::geometry::LawExpression {
+    match expression {
+        EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+        EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
+        EmbeddedLawExpression::Integer(value) => {
+            cadmpeg_ir::geometry::LawExpression::Integer { value }
+        }
+        EmbeddedLawExpression::Double(value) => {
+            cadmpeg_ir::geometry::LawExpression::Double { value }
+        }
+        EmbeddedLawExpression::Point(value) => cadmpeg_ir::geometry::LawExpression::Point { value },
+        EmbeddedLawExpression::Vector(value) => {
+            cadmpeg_ir::geometry::LawExpression::Vector { value }
+        }
+        EmbeddedLawExpression::Transform { scalars, enums } => {
+            cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
+        }
+        EmbeddedLawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        },
+        EmbeddedLawExpression::Edge {
+            curve,
+            endpoints,
+            parameters,
+        } => {
+            let id = CurveId::mint(match scope {
+                LawExpressionScope::Surface(prefix) => format!("{prefix}:{path}:edge"),
+                LawExpressionScope::Curve(prefix) => format!("{prefix}:{path}"),
+            })
+            .expect("identity grammar");
+            out.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Nurbs(curve),
+                source_object: None,
+            });
+            cadmpeg_ir::geometry::LawExpression::Edge {
+                curve: LoftPathCurve { id, endpoints },
+                parameters,
+            }
+        }
+        EmbeddedLawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        } => cadmpeg_ir::geometry::LawExpression::Spline {
+            native_id,
+            knots,
+            controls,
+            point,
+        },
+        EmbeddedLawExpression::Algebraic { operator, operands } => {
+            cadmpeg_ir::geometry::LawExpression::Algebraic {
+                operator,
+                operands: operands
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, operand)| {
+                        map_law_expression(out, scope, &format!("{path}:{index}"), operand)
+                    })
+                    .collect(),
+            }
+        }
+    }
+}
+
 fn emit_law_surface(
     out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedLawSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_law_expression(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_expression(
-                                out,
-                                owner,
-                                &format!("{path}:{index}"),
-                                operand,
-                                format,
-                            )
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let map_formula = |out: &mut AsmBrep, path: &str, formula: EmbeddedLawFormula| {
         map_law_formula(formula, |index, expression| {
-            map_law_expression(out, i, &format!("{path}:{index}"), expression, format)
+            map_law_expression(out, scope, &format!("{path}:{index}"), expression)
         })
     };
     let embedded = *embedded;
@@ -1234,92 +1248,8 @@ fn emit_skin_surface(
     embedded: Box<EmbeddedSkinSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_law_expression(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:skin:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_expression(
-                                out,
-                                owner,
-                                &format!("{path}:{index}"),
-                                operand,
-                                format,
-                            )
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:skin:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let layout = match embedded.layout {
         EmbeddedSkinSurfaceLayout::Compact {
@@ -1412,7 +1342,7 @@ fn emit_skin_surface(
         source_object: None,
     });
     let formula = map_law_formula(embedded.formula, |variable_index, variable| {
-        map_law_expression(&mut *out, i, &variable_index.to_string(), variable, format)
+        map_law_expression(&mut *out, scope, &variable_index.to_string(), variable)
     });
     ProceduralSurfaceDefinition::Skin {
         construction: Box::new(cadmpeg_ir::geometry::SkinSurfaceConstruction {
@@ -1438,86 +1368,8 @@ fn emit_net_surface(
     embedded: Box<EmbeddedNetSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_net_law(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:net:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_net_law(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:net:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let mut next_section = 0;
     let sections = (*embedded.sections).map(|entries| {
@@ -1594,12 +1446,11 @@ fn emit_net_surface(
         let formula_index = next_formula;
         next_formula += 1;
         map_law_formula(formula, |index, variable| {
-            map_net_law(
+            map_law_expression(
                 &mut *out,
-                i,
+                scope,
                 &format!("{formula_index}:{index}"),
                 variable,
-                format,
             )
         })
     });
@@ -1622,86 +1473,8 @@ fn emit_sweep_surface(
     embedded: Box<EmbeddedSweepSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    fn map_sweep_law(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_sweep_law(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+    let prefix = format!("{format}:brep:procedural_surface#{i}:sweep:law");
+    let scope = LawExpressionScope::Surface(&prefix);
     let embedded = *embedded;
     let (primary_kind, revision_form, layout) = match embedded.layout {
         EmbeddedSweepSurfaceLayout::Legacy {
@@ -1736,12 +1509,11 @@ fn emit_sweep_surface(
                 let formula_index = next_formula;
                 next_formula += 1;
                 map_law_formula(formula, |index, variable| {
-                    map_sweep_law(
+                    map_law_expression(
                         &mut *out,
-                        i,
+                        scope,
                         &format!("{formula_index}:{index}"),
                         variable,
-                        format,
                     )
                 })
             });
@@ -1782,7 +1554,7 @@ fn emit_sweep_surface(
                     },
                 ) => {
                     let formula = map_law_formula(formula, |index, variable| {
-                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
+                        map_law_expression(&mut *out, scope, &format!("explicit:{index}"), variable)
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
                         mode,
@@ -1890,15 +1662,15 @@ fn emit_sweep_surface(
                     formula,
                     trailing_flag,
                 }) => {
-                    let first_law = map_sweep_law(&mut *out, i, "law:first", *first_law, format);
-                    let second_law = map_sweep_law(&mut *out, i, "law:second", *second_law, format);
+                    let first_law = map_law_expression(&mut *out, scope, "law:first", *first_law);
+                    let second_law =
+                        map_law_expression(&mut *out, scope, "law:second", *second_law);
                     let formula = map_law_formula(formula, |index, variable| {
-                        map_sweep_law(
+                        map_law_expression(
                             &mut *out,
-                            i,
+                            scope,
                             &format!("law:formula:{index}"),
                             variable,
-                            format,
                         )
                     });
                     cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
@@ -2573,14 +2345,18 @@ fn emit_carrier_curve(
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
     format: IdFormat<'_>,
-) -> Result<(), &'static str> {
+) {
+    use cadmpeg_ir::geometry::curve_payloads::{
+        DeformableCurveConstruction, TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction,
+    };
+
     let Carriers {
         curve_geo,
         procedural_curve_defs,
         ..
     } = &mut *carriers;
     let Some(mut geometry) = curve_geo.remove(&i) else {
-        return Ok(());
+        return;
     };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
@@ -2600,14 +2376,22 @@ fn emit_carrier_curve(
         geometry,
         source_object: None,
     });
-    match procedural_curve_defs.remove(&i) {
+    let surface_start = out.surfaces.len();
+    let curve_start = out.curves.len();
+    let admission_cause = |error| match error {
+        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
+        cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
+            "invalid procedural curve cache tolerance"
+        }
+    };
+    let procedural = match procedural_curve_defs.remove(&i) {
         Some(super::ProceduralCurveSource::Cached {
             construction,
             cache_fit_tolerance,
             parsed_domain: solved_domain,
         }) => {
-            let definition = (|| {
-                Some(match *construction {
+            let definition = (|| -> Result<_, &'static str> {
+                Ok(match *construction {
                     ProceduralCurveConstruction::VectorOffset((
                         source,
                         parameter_range,
@@ -2622,7 +2406,15 @@ fn emit_carrier_curve(
                             geometry: CurveGeometry::Nurbs(source),
                             source_object: None,
                         });
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(source_id, parameter_range, offset, roles).ok()?)
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(
+                            VectorOffsetCurveConstruction::try_new(
+                                source_id,
+                                parameter_range,
+                                offset,
+                                roles,
+                            )
+                            .map_err(|_| "vector-offset fields are not finite and ordered")?,
+                        )
                     }
                     ProceduralCurveConstruction::Subset((source, parameter_range)) => {
                         let source_id =
@@ -2639,7 +2431,7 @@ fn emit_carrier_curve(
                                 parameter_range,
                                 true,
                             )
-                            .ok()?,
+                            .map_err(|_| "subset-curve range is not finite and ordered")?,
                         )
                     }
                     ProceduralCurveConstruction::TwoSidedOffset(embedded) => {
@@ -2666,17 +2458,23 @@ fn emit_carrier_curve(
                                 })
                             })
                         });
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                std::array::from_fn(|side| {
-                                    cadmpeg_ir::geometry::IntcurveSupportSide {
-                                        surface: surfaces[side].clone(),
-                                        pcurve: pcurves[side].clone(),
-                                    }
-                                }),
-                                embedded.parameter_range,
-                                embedded.discontinuities,
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                            TwoSidedOffsetCurveConstruction::try_new(
+                                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                                    std::array::from_fn(|side| {
+                                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                                            surface: surfaces[side].clone(),
+                                            pcurve: pcurves[side].clone(),
+                                        }
+                                    }),
+                                    embedded.parameter_range,
+                                    embedded.discontinuities,
+                                )?,
+                                embedded.discontinuity_flag,
+                                embedded.offsets,
                             )
-                            .ok()?, embedded.discontinuity_flag, embedded.offsets).ok()?)
+                            .map_err(|_| "two-sided offset fields are not finite and ordered")?,
+                        )
                     }
                     ProceduralCurveConstruction::Intersection(embedded, discontinuity_flag) => {
                         let mut next_side = 0;
@@ -2712,8 +2510,7 @@ fn emit_carrier_curve(
                                 }),
                                 embedded.parameter_range,
                                 embedded.discontinuities,
-                            )
-                            .ok()?,
+                            )?,
                             discontinuity_flag,
                         }
                     }
@@ -2748,8 +2545,7 @@ fn emit_carrier_curve(
                                 }),
                                 embedded.parameter_range,
                                 embedded.discontinuities,
-                            )
-                            .ok()?,
+                            )?,
                             selector: embedded.selector,
                             third: cadmpeg_ir::geometry::IntcurveSupportSide {
                                 surface: Some(surface_ids[2].clone()),
@@ -2769,7 +2565,7 @@ fn emit_carrier_curve(
                         }
                     }
                     ProceduralCurveConstruction::Silhouette(embedded) => {
-                        emit_silhouette_curve(out, i, embedded, format).ok()?
+                        emit_silhouette_curve(out, i, embedded, format)?
                     }
                     ProceduralCurveConstruction::SurfaceOffset(embedded) => {
                         emit_surface_offset_curve(out, i, embedded, format, solved_domain)?
@@ -2778,7 +2574,9 @@ fn emit_carrier_curve(
                         emit_spring_curve(out, i, embedded, format, solved_domain)?
                     }
                     ProceduralCurveConstruction::Deformable(embedded) => {
-                        let (context, form) = embedded.context.into_intersection(solved_domain?);
+                        let (context, form) = embedded.context.into_intersection(
+                            solved_domain.ok_or("missing procedural curve cache domain")?,
+                        );
                         let mut next_side = 0;
                         let support_ids: [Option<SurfaceId>; 2] =
                             context.surfaces.map(|geometry| {
@@ -2859,20 +2657,28 @@ fn emit_carrier_curve(
                                 trailing_value,
                             },
                         };
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(cadmpeg_ir::geometry::curve_payloads::DeformableCurveConstruction::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                                std::array::from_fn(|side| {
-                                    cadmpeg_ir::geometry::IntcurveSupportSide {
-                                        surface: support_ids[side].clone(),
-                                        pcurve: pcurves[side].clone(),
-                                    }
-                                }),
-                                context.parameter_range,
-                                context.discontinuities,
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable(
+                            DeformableCurveConstruction::try_new(
+                                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                                    std::array::from_fn(|side| {
+                                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                                            surface: support_ids[side].clone(),
+                                            pcurve: pcurves[side].clone(),
+                                        }
+                                    }),
+                                    context.parameter_range,
+                                    context.discontinuities,
+                                )?,
+                                form,
+                                source,
+                                embedded.source_parameter_range,
+                                data,
                             )
-                            .ok()?, form, source, embedded.source_parameter_range, data).ok()?)
+                            .map_err(|_| "deformable curve payload is not finite")?,
+                        )
                     }
                     ProceduralCurveConstruction::Projection(embedded) => {
-                        emit_projection_curve(out, i, embedded, format).ok()?
+                        emit_projection_curve(out, i, embedded, format)?
                     }
                     ProceduralCurveConstruction::Law(embedded) => {
                         emit_law_curve(out, i, embedded, format, solved_domain)?
@@ -2905,14 +2711,13 @@ fn emit_carrier_curve(
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
                             cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                                 parameters, components,
-                            )
-                            .ok()?,
+                            )?,
                         )
                     }
                     ProceduralCurveConstruction::Exact => {
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
                     }
-                    ProceduralCurveConstruction::Helix(helix) => helix.into_definition().ok()?,
+                    ProceduralCurveConstruction::Helix(helix) => helix.into_definition()?,
                     ProceduralCurveConstruction::Unknown(native_kind) => {
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
                             native_kind: Some(native_kind),
@@ -2921,43 +2726,35 @@ fn emit_carrier_curve(
                     }
                 })
             })();
-            let definition = definition.ok_or("invalid procedural curve construction")?;
-            let procedural = ProceduralCurve::try_new(
-                ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
-                    .expect("valid owning format and numeric record index"),
-                definition,
-                cache_fit_tolerance,
-            )
-            .map_err(|error| match error {
-                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
-                cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
-                    "invalid procedural curve cache tolerance"
-                }
-            })?;
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                procedural,
-            ));
-        }
-        Some(super::ProceduralCurveSource::Cacheless(definition)) => {
-            out.procedural_curves.push((
-                CurveId::mint(id(format, i)).expect("identity grammar"),
-                ProceduralCurve::new(
+            definition.and_then(|definition| {
+                ProceduralCurve::try_new(
                     ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                         .expect("valid owning format and numeric record index"),
-                    *definition,
+                    definition,
+                    cache_fit_tolerance,
                 )
-                .map_err(|error| match error {
-                    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
-                    cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
-                        "invalid procedural curve cache tolerance"
-                    }
-                })?,
-            ));
+                .map_err(admission_cause)
+            })
         }
-        None => {}
+        Some(super::ProceduralCurveSource::Cacheless(definition)) => ProceduralCurve::new(
+            ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
+                .expect("valid owning format and numeric record index"),
+            *definition,
+        )
+        .map_err(admission_cause),
+        None => return,
+    };
+    match procedural {
+        Ok(procedural) => out.procedural_curves.push((
+            CurveId::mint(id(format, i)).expect("identity grammar"),
+            procedural,
+        )),
+        Err(cause) => {
+            out.surfaces.truncate(surface_start);
+            out.curves.truncate(curve_start);
+            count_kind(&mut out.stats.procedural_curve_kinds, cause);
+        }
     }
-    Ok(())
 }
 
 fn emit_surface_curve_layout<F>(
@@ -2966,15 +2763,19 @@ fn emit_surface_curve_layout<F>(
     format: IdFormat<'_>,
     layout: crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout<F>,
     solved_domain: Option<[f64; 2]>,
-) -> Option<(
-    cadmpeg_ir::geometry::IntcurveSupportContext,
-    Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<F>>,
-)> {
+) -> Result<
+    (
+        cadmpeg_ir::geometry::IntcurveSupportContext,
+        Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<F>>,
+    ),
+    &'static str,
+> {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout;
     let (embedded, tail) = match layout {
         EmbeddedSurfaceCurveLayout::ContextFirst(context) => (context, None),
         EmbeddedSurfaceCurveLayout::CacheFirst { context, flags } => {
-            let (context, form) = context.into_intersection(solved_domain?);
+            let (context, form) = context
+                .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
             let tail = cadmpeg_ir::geometry::SurfaceCurveTail {
                 extension: form.extension,
                 revision: form.revision,
@@ -3013,9 +2814,8 @@ fn emit_surface_curve_layout<F>(
         }),
         embedded.parameter_range,
         embedded.discontinuities,
-    )
-    .ok()?;
-    Some((context, tail))
+    )?;
+    Ok((context, tail))
 }
 
 fn emit_surface_curve_family(
@@ -3024,9 +2824,9 @@ fn emit_surface_curve_family(
     format: IdFormat<'_>,
     family: crate::nurbs::proc_curve::EmbeddedSurfaceCurve,
     solved_domain: Option<[f64; 2]>,
-) -> Option<cadmpeg_ir::geometry::SurfaceCurveFamily> {
+) -> Result<cadmpeg_ir::geometry::SurfaceCurveFamily, &'static str> {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
-    Some(match family {
+    Ok(match family {
         EmbeddedSurfaceCurve::Blend(layout) => {
             let (context, tail) = emit_surface_curve_layout(out, i, format, layout, solved_domain)?;
             cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, tail }
@@ -3100,7 +2900,7 @@ fn emit_surface_offset_curve(
     embedded: EmbeddedSurfaceOffset,
     format: IdFormat<'_>,
     solved_domain: Option<[f64; 2]>,
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let (context, discontinuity_flag, base_endpoints, cache_first) = match embedded.layout {
         EmbeddedSurfaceOffsetLayout::ContextFirst {
             context,
@@ -3110,7 +2910,8 @@ fn emit_surface_offset_curve(
             context,
             base_endpoints,
         } => {
-            let (context, form) = context.into_intersection(solved_domain?);
+            let (context, form) = context
+                .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
             (context, false, base_endpoints, Some(form))
         }
     };
@@ -3139,7 +2940,7 @@ fn emit_surface_offset_curve(
         geometry: CurveGeometry::Nurbs(embedded.base),
         source_object: None,
     });
-    Some(
+    Ok(
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
             cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
                 cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -3149,8 +2950,7 @@ fn emit_surface_offset_curve(
                     }),
                     context.parameter_range,
                     context.discontinuities,
-                )
-                .ok()?,
+                )?,
                 discontinuity_flag,
                 [embedded.base_u_range, embedded.base_v_range],
                 (base, embedded.base_range, base_endpoints),
@@ -3158,7 +2958,7 @@ fn emit_surface_offset_curve(
                 embedded.distance,
                 [embedded.shift, embedded.scale],
             )
-            .ok()?,
+            .map_err(|_| "surface-offset fields are not finite and ordered")?,
         ),
     )
 }
@@ -3203,7 +3003,7 @@ fn emit_spring_curve(
     embedded: EmbeddedSpring,
     format: IdFormat<'_>,
     solved_domain: Option<[f64; 2]>,
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
     let emit_pcurve = |nurbs| PcurveGeometry::Nurbs { nurbs };
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
@@ -3232,7 +3032,8 @@ fn emit_spring_curve(
             discontinuity_flag,
         },
         EmbeddedSpringLayout::CacheFirst { context } => {
-            let (context, form) = context.into_intersection(solved_domain?);
+            let (context, form) = context
+                .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
             let [first_surface, second_surface] = context
                 .surfaces
                 .map(crate::nurbs::proc_curve::SupportSlot::into_surface);
@@ -3253,13 +3054,12 @@ fn emit_spring_curve(
                     ],
                     context.parameter_range,
                     context.discontinuities,
-                )
-                .ok()?,
+                )?,
                 form,
             }
         }
     };
-    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+    Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
         layout,
         direction: embedded.direction,
     })
@@ -3319,86 +3119,9 @@ fn emit_law_curve(
     embedded: EmbeddedLawCurve,
     format: IdFormat<'_>,
     solved_domain: Option<[f64; 2]>,
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
-    fn map_law_curve(
-        out: &mut AsmBrep,
-        owner: i64,
-        path: &str,
-        expression: EmbeddedLawExpression,
-        format: IdFormat<'_>,
-    ) -> cadmpeg_ir::geometry::LawExpression {
-        match expression {
-            EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
-            EmbeddedLawExpression::Text(value) => {
-                cadmpeg_ir::geometry::LawExpression::Text { value }
-            }
-            EmbeddedLawExpression::Integer(value) => {
-                cadmpeg_ir::geometry::LawExpression::Integer { value }
-            }
-            EmbeddedLawExpression::Double(value) => {
-                cadmpeg_ir::geometry::LawExpression::Double { value }
-            }
-            EmbeddedLawExpression::Point(value) => {
-                cadmpeg_ir::geometry::LawExpression::Point { value }
-            }
-            EmbeddedLawExpression::Vector(value) => {
-                cadmpeg_ir::geometry::LawExpression::Vector { value }
-            }
-            EmbeddedLawExpression::Transform { scalars, enums } => {
-                cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
-            }
-            EmbeddedLawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
-                vectors,
-                scale,
-                flags,
-            },
-            EmbeddedLawExpression::Edge {
-                curve,
-                endpoints,
-                parameters,
-            } => {
-                let id =
-                    CurveId::mint(format!("{format}:brep:procedural_curve#{owner}:law:{path}"))
-                        .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(curve),
-                    source_object: None,
-                });
-                cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: LoftPathCurve { id, endpoints },
-                    parameters,
-                }
-            }
-            EmbeddedLawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            } => cadmpeg_ir::geometry::LawExpression::Spline {
-                native_id,
-                knots,
-                controls,
-                point,
-            },
-            EmbeddedLawExpression::Algebraic { operator, operands } => {
-                cadmpeg_ir::geometry::LawExpression::Algebraic {
-                    operator,
-                    operands: operands
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, operand)| {
-                            map_law_curve(out, owner, &format!("{path}:{index}"), operand, format)
-                        })
-                        .collect(),
-                }
-            }
-        }
-    }
+) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
+    let prefix = format!("{format}:brep:procedural_curve#{i}:law");
+    let scope = LawExpressionScope::Curve(&prefix);
     let (parameter_range, version) = match embedded.layout {
         EmbeddedLawCurveLayout::Legacy(range) => (range, None),
         EmbeddedLawCurveLayout::Version {
@@ -3406,7 +3129,7 @@ fn emit_law_curve(
             post_enum,
             parameter_range,
         } => {
-            let domain = solved_domain?;
+            let domain = solved_domain.ok_or("missing procedural curve cache domain")?;
             (
                 std::array::from_fn(|index| parameter_range[index].unwrap_or(domain[index])),
                 Some(cadmpeg_ir::geometry::LawCurveVersionForm {
@@ -3437,10 +3160,10 @@ fn emit_law_curve(
     });
     let mut map_formula = |path: &str, formula: EmbeddedLawFormula| {
         map_law_formula(formula, |index, expression| {
-            map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
+            map_law_expression(&mut *out, scope, &format!("{path}:{index}"), expression)
         })
     };
-    Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
+    Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
             std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
@@ -3448,8 +3171,7 @@ fn emit_law_curve(
             }),
             parameter_range,
             embedded.discontinuities,
-        )
-        .ok()?,
+        )?,
         version,
         extension: embedded.extension,
         primary: map_formula("primary", embedded.primary),
@@ -3501,10 +3223,7 @@ pub(crate) fn emit_carrier_records(
                     reversed_curve_refs,
                     forward_curve_refs,
                     format,
-                )
-                .map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format!("{} record {i}: {error}", r.head()))
-                })?;
+                );
             }
             _ => {}
         }
@@ -4047,6 +3766,7 @@ pub(crate) fn emit_faces(
         loops: kept_loops,
         ..
     } = reach;
+    let subshell_shells = subshell_ancestor_shells(records, by_index);
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
     for r in records {
@@ -4076,7 +3796,11 @@ pub(crate) fn emit_faces(
             }
             out.faces.push(Face {
                 id: FaceId::mint(id(format, i)).expect("identity grammar"),
-                shell: ShellId::mint(id(format, owner)).expect("identity grammar"),
+                shell: ShellId::mint(id(
+                    format,
+                    subshell_shells.get(&owner).copied().unwrap_or(owner),
+                ))
+                .expect("identity grammar"),
                 surface: SurfaceId::mint(id(format, surface)).expect("identity grammar"),
                 sense,
                 loops: loops.into(),
@@ -4256,29 +3980,6 @@ pub(crate) fn emit_containers(
         ));
     }
     Ok(())
-}
-
-/// Project subshell-owned faces onto their nearest shell ancestor, since the
-/// neutral IR has no subshell arena.
-pub(crate) fn project_subshell_faces(
-    out: &mut AsmBrep,
-    records: &[Record],
-    by_index: &HashMap<i64, &Record>,
-    format: IdFormat<'_>,
-) {
-    let subshell_shells = subshell_ancestor_shells(records, by_index);
-    for face in &mut out.faces {
-        let native_owner = face
-            .id
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, index)| index.parse::<i64>().ok())
-            .and_then(|index| by_index.get(&index))
-            .and_then(|record| record.ref_at(5));
-        if let Some(shell) = native_owner.and_then(|owner| subshell_shells.get(&owner)) {
-            face.shell = ShellId::mint(id(format, *shell)).expect("identity grammar");
-        }
-    }
 }
 
 /// Emit direct and inherited entity attributes and derive the link, tag, and

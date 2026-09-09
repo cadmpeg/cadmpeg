@@ -67,7 +67,7 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
 #[test]
 fn resolved_class_relations_preserve_non_null_definition_wire() {
     use crate::native::parasolid::{
-        ParasolidAttributeClassUse, ParasolidTopologyAttributeClassUse,
+        ParasolidAttributeClassUseWire, ParasolidTopologyAttributeClassUseWire,
     };
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) {
         let relation: T = serde_json::from_str(wire).unwrap();
@@ -80,10 +80,10 @@ fn resolved_class_relations_preserve_non_null_definition_wire() {
             assert!(serde_json::from_str::<T>(&invalid).is_err());
         }
     }
-    check::<ParasolidAttributeClassUse>(
+    check::<ParasolidAttributeClassUseWire>(
         r#"{"id":"class","stream_ordinal":0,"entity_51_record":"entity","definition_xmt":2,"attribute_definition":"definition"}"#,
     );
-    check::<ParasolidTopologyAttributeClassUse>(
+    check::<ParasolidTopologyAttributeClassUseWire>(
         r#"{"id":"class","topology_attribute_reference":"topology","entity_51_record":"entity","attribute_class_use":"use","definition_xmt":2,"attribute_definition":"definition"}"#,
     );
 }

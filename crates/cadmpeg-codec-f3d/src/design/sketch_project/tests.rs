@@ -696,8 +696,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         constraints[5].definition.kind(),
         SketchConstraintDefinitionInput::SplineGroup { ref entities }
             if entities == &[
-                neutral_sketch_curve_id(&sketches[0].id, 20, 0).unwrap(),
-                neutral_sketch_curve_id(&sketches[0].id, 21, 0).unwrap(),
+                neutral_sketch_curve_id(&sketches[0].id, 20, 0),
+                neutral_sketch_curve_id(&sketches[0].id, 21, 0),
             ]
     ));
     let line = entities
@@ -1133,8 +1133,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     );
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0).unwrap(),
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0).unwrap(),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0),
         ]
     ));
     assert!(matches!(
@@ -1157,7 +1157,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             &sketches[0].id,
             7,
             0,
-        ).unwrap() && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ) && direction == &Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
         constraints

@@ -249,6 +249,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -273,6 +274,12 @@ pub(in super::super) fn transfer_saved_spline_curves(
             })
         {
             let Some(nurbs) = saved_spline_nurbs(spline) else {
+                losses.push(
+                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                        "Saved section spline at offset {} cannot form a NURBS curve.",
+                        spline.offset
+                    )),
+                );
                 continue;
             };
             let suffix = spline.entity_id.map_or_else(
@@ -483,6 +490,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -665,6 +673,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .map(|value| value * (span.upper - span.lower));
         for (native_surface_id, internal_id, spline) in splines {
             let Some(section_curve) = saved_spline_nurbs(spline) else {
+                losses.push(
+                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                        "Saved section spline at offset {} cannot form a NURBS curve.",
+                        spline.offset
+                    )),
+                );
                 continue;
             };
             let Some(placed) = placed_section_nurbs(transform, &section_curve) else {

@@ -66,32 +66,41 @@ pub(in super::super) fn bspline_basis(
     parameter: f64,
     knots: &[f64],
     count: usize,
-) -> f64 {
-    if parameter == *knots.last().expect("nonempty knots") {
-        return if index + 1 == count { 1.0 } else { 0.0 };
-    }
-    if degree == 0 {
-        return if knots[index] <= parameter && parameter < knots[index + 1] {
+) -> Option<f64> {
+    let end = index.checked_add(degree)?.checked_add(1)?;
+    let window = knots.get(index..=end)?;
+    let first = *window.first()?;
+    let second = *window.get(1)?;
+    let last = *window.last()?;
+    if parameter == *knots.last()? {
+        return Some(if index.checked_add(1)? == count {
             1.0
         } else {
             0.0
-        };
+        });
     }
-    let left_denominator = knots[index + degree] - knots[index];
-    let right_denominator = knots[index + degree + 1] - knots[index + 1];
+    if degree == 0 {
+        return Some(if first <= parameter && parameter < second {
+            1.0
+        } else {
+            0.0
+        });
+    }
+    let left_denominator = window[degree] - first;
+    let right_denominator = last - second;
     let left = if left_denominator > 0.0 {
-        (parameter - knots[index]) / left_denominator
-            * bspline_basis(index, degree - 1, parameter, knots, count)
+        (parameter - first) / left_denominator
+            * bspline_basis(index, degree - 1, parameter, knots, count)?
     } else {
         0.0
     };
     let right = if right_denominator > 0.0 {
-        (knots[index + degree + 1] - parameter) / right_denominator
-            * bspline_basis(index + 1, degree - 1, parameter, knots, count)
+        (last - parameter) / right_denominator
+            * bspline_basis(index + 1, degree - 1, parameter, knots, count)?
     } else {
         0.0
     };
-    left + right
+    Some(left + right)
 }
 
 pub(in super::super) fn bspline_basis_derivative(
@@ -100,21 +109,27 @@ pub(in super::super) fn bspline_basis_derivative(
     parameter: f64,
     knots: &[f64],
     count: usize,
-) -> f64 {
-    let left_denominator = knots[index + degree] - knots[index];
-    let right_denominator = knots[index + degree + 1] - knots[index + 1];
+) -> Option<f64> {
+    let end = index.checked_add(degree)?.checked_add(1)?;
+    let window = knots.get(index..=end)?;
+    if degree == 0 {
+        return Some(0.0);
+    }
+    let left_denominator = window[degree] - window[0];
+    let right_denominator = window[degree + 1] - window[1];
     let left = if left_denominator > 0.0 {
-        degree as f64 / left_denominator * bspline_basis(index, degree - 1, parameter, knots, count)
+        degree as f64 / left_denominator
+            * bspline_basis(index, degree - 1, parameter, knots, count)?
     } else {
         0.0
     };
     let right = if right_denominator > 0.0 {
         degree as f64 / right_denominator
-            * bspline_basis(index + 1, degree - 1, parameter, knots, count)
+            * bspline_basis(index + 1, degree - 1, parameter, knots, count)?
     } else {
         0.0
     };
-    left - right
+    Some(left - right)
 }
 
 pub(in super::super) fn solve_vector_system(
@@ -181,7 +196,7 @@ pub(in super::super) fn interpolation_curve_data(
         matrix.push(
             (0..control_count)
                 .map(|index| bspline_basis(index, DEGREE, *parameter, &knots, control_count))
-                .collect(),
+                .collect::<Option<Vec<_>>>()?,
         );
     }
     for parameter in [parameters[0], parameters[point_count - 1]] {
@@ -190,7 +205,7 @@ pub(in super::super) fn interpolation_curve_data(
                 .map(|index| {
                     bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count)
                 })
-                .collect(),
+                .collect::<Option<Vec<_>>>()?,
         );
     }
     let mut values = points.to_vec();
@@ -572,8 +587,8 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     let (values, layout) = parameters
         .tabulated_cylinder_frame()
         .map(|frame| {
-            let values = frame.values.to_vec();
-            let heads = frame.prefixes;
+            let values = frame.values().to_vec();
+            let heads = frame.prefixes();
             let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
             let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
             if offset_planar_layout {
@@ -821,5 +836,12 @@ mod tests {
 
         assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
+    }
+    #[test]
+    fn malformed_basis_knots_are_rejected() {
+        for knots in [&[][..], &[0.0][..]] {
+            assert_eq!(super::bspline_basis(0, 3, 0.5, knots, 4), None);
+            assert_eq!(super::bspline_basis_derivative(0, 3, 0.5, knots, 4), None);
+        }
     }
 }

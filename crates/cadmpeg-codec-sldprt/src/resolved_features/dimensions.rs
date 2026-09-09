@@ -309,7 +309,7 @@ fn unique_linked_declared_entity_handle_arc_carrier<'a>(
                 candidate.id == first.entity_ref
                     && candidate.feature_ref.as_deref() == Some(feature)
                     && candidate.offset() < handle.offset()
-                    && candidate.local_id == Some(u32::from(first.local_id))
+                    && candidate.local_id() == Some(u32::from(first.local_id))
                     && candidate.coordinates_m.is_some()
                     && candidate.kind == SketchInputKind::Arc
             })?;
@@ -1118,8 +1118,8 @@ pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
             let [center, radial] = window else {
                 unreachable!("two-wide roster window");
             };
-            let center_index = center.object_index?;
-            let radial_index = radial.object_index?;
+            let center_index = center.object_index()?;
+            let radial_index = radial.object_index()?;
             if center_index != radial_index.checked_add(1)? {
                 return None;
             }
@@ -1617,7 +1617,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
                 let pair_radial_object_indices = pairs
                     .iter()
-                    .filter_map(|(_, radial)| radial.object_index)
+                    .filter_map(|(_, radial)| radial.object_index())
                     .collect::<HashSet<_>>();
                 let consumed_carrier_refs = radial_records_by_lane
                     .get(lane.id.as_str())

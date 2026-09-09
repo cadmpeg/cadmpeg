@@ -330,7 +330,7 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A30"))
+        .find(|annotation| annotation.id == pmi_id("A30").unwrap())
         .expect("pattern diameter")
         .definition
     else {
@@ -410,7 +410,7 @@ fn counterbore_pattern_supplies_distinct_hole_diameter() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A30"))
+        .find(|annotation| annotation.id == pmi_id("A30").unwrap())
         .expect("pattern diameter")
         .definition
     else {
@@ -462,7 +462,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A30"))
+        .find(|annotation| annotation.id == pmi_id("A30").unwrap())
         .expect("direct diameter")
         .definition
     else {
@@ -490,7 +490,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A30"))
+        .find(|annotation| annotation.id == pmi_id("A30").unwrap())
         .expect("direct diameter")
         .definition
     else {
@@ -555,7 +555,7 @@ fn directional_plane_distance_supplies_location_nominal() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("location dimension")
         .definition
     else {
@@ -607,7 +607,7 @@ fn directional_compound_hole_axes_supply_location_nominal() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("hole-axis location")
         .definition
     else {
@@ -684,7 +684,7 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("slot length location")
         .definition
     else {
@@ -776,7 +776,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("direct depth annotation")
         .definition
     else {
@@ -804,7 +804,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("thread depth annotation")
         .definition
     else {
@@ -850,7 +850,7 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("AD"))
+        .find(|annotation| annotation.id == pmi_id("AD").unwrap())
         .expect("counterbore depth")
         .definition
     else {
@@ -1019,7 +1019,7 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
             ..
         } = &annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id(id))
+            .find(|annotation| annotation.id == pmi_id(id).unwrap())
             .expect("compound-hole annotation")
             .definition
         else {
@@ -1079,7 +1079,7 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("width annotation")
         .definition
     else {
@@ -1158,7 +1158,7 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
         ..
     } = &annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A50"))
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("radius annotation")
         .definition
     else {
@@ -1256,7 +1256,7 @@ fn zero_nominal_dimension_keeps_the_annotation_without_a_nominal() {
     let annotations = project(&root);
     let annotation = annotations
         .iter()
-        .find(|annotation| annotation.id == pmi_id("A60"))
+        .find(|annotation| annotation.id == pmi_id("A60").unwrap())
         .expect("zero nominal angle");
     let PmiDefinition::Dimension {
         dimension,
@@ -1289,5 +1289,5 @@ fn dimension_without_a_nominal_key_is_skipped() {
     let annotations = project(&root);
     assert!(!annotations
         .iter()
-        .any(|annotation| annotation.id == pmi_id("A60")));
+        .any(|annotation| annotation.id == pmi_id("A60").unwrap()));
 }

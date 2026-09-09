@@ -60,8 +60,7 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.object_index = object_index;
-        constructed_marker.local_id = None;
+        constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = Some(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
@@ -132,8 +131,8 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
     };
     assert_eq!(entity.kind, SketchInputKind::LineOrCircle);
     assert_eq!(entity.coordinates_m, Some([0.022_224_980_75, 0.0]));
-    assert_eq!(entity.object_index, Some(11));
-    assert_eq!(entity.local_id, Some(7));
+    assert_eq!(entity.object_index(), Some(11));
+    assert_eq!(entity.local_id(), Some(7));
 
     payload[offset + 92] = 0;
     assert_eq!(marker_coordinates(&payload, offset), None);
@@ -1162,7 +1161,7 @@ fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_lay
     let entity = &sketch_input_entities(&point, "lane")[0];
     assert_eq!(entity.kind, SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([0.03, 0.005]));
-    assert_eq!(entity.local_id, Some(10));
+    assert_eq!(entity.local_id(), Some(10));
     assert_eq!(entity.state_value, None);
 
     let mut embedded = vec![0; 120 + LEGACY_SKETCH_MARKER.len()];
