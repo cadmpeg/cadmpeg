@@ -43,6 +43,9 @@ pub enum NativeConvertError {
     /// A typed child record references no record in its owning arena.
     #[error("native record has an invalid owner: {0}")]
     InvalidOwner(String),
+    /// A native collection violates its codec-owned admission contract.
+    #[error("native collection is invalid: {0}")]
+    InvalidCollection(String),
     /// A source-independent unknown record has no retained source counterpart.
     #[error("native unknown record has no retained source record: {0}")]
     MissingRetainedSourceRecord(String),
@@ -291,6 +294,15 @@ impl NativeNamespace {
         converted.sort_by(|left, right| left.id().cmp(right.id()));
         self.arenas.insert(name.into(), converted);
         Ok(())
+    }
+
+    /// Admit an arena through a codec-owned collection constructor.
+    pub fn arena_as_collection<T, C>(&self, name: &str) -> Result<C, NativeConvertError>
+    where
+        T: DeserializeOwned,
+        C: TryFrom<Vec<T>, Error = NativeConvertError>,
+    {
+        C::try_from(self.arena_as(name)?)
     }
 
     /// Deserialize an arena into codec-owned typed records.

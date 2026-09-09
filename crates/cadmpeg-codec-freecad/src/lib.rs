@@ -107,10 +107,13 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
-    let string_tables = match namespace.arena_as::<native::StringTableRecord>("string_tables") {
+    let string_tables = match namespace
+        .arena_as_collection::<native::StringTableRecord, native::StringTables>("string_tables")
+    {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let string_tables = string_tables.as_slice();
     let element_maps = match namespace.arena_as::<native::ElementMapRecord>("element_maps") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
@@ -513,14 +516,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             }
         }
     }
-    for (expected_table_index, table) in string_tables.iter().enumerate() {
-        if table.index != expected_table_index {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!("{} has invalid index or entry count", table.id),
-                Some(table.id.clone()),
-            ));
-        }
+    for table in string_tables {
         if table
             .owner_property
             .as_ref()
@@ -949,7 +945,7 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
             namespace.set_arena("carrier_census", &brep::carrier_census(&shape_payloads))?;
-            namespace.set_arena("string_tables", &string_tables)?;
+            namespace.set_arena("string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena("product_nodes", &product_nodes)?;
             let joint_records = joint::transfer(&graph.objects, &graph.properties)?;
@@ -1092,7 +1088,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &gui_graph,
                 &shape_payloads,
-                &string_tables,
+                string_tables.as_slice(),
                 &element_maps,
             )?;
             ir.native
