@@ -558,7 +558,14 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                     return Err("sketch text anchor and rotation must be finite");
                 }
             }
-            _ => {}
+            SketchGeometryDefinition::Point { .. }
+            | SketchGeometryDefinition::Line { .. }
+            | SketchGeometryDefinition::ReferenceLine { .. }
+            | SketchGeometryDefinition::Circle { .. }
+            | SketchGeometryDefinition::Arc { .. }
+            | SketchGeometryDefinition::Nurbs { .. }
+            | SketchGeometryDefinition::ExternalReference { .. }
+            | SketchGeometryDefinition::Native { .. } => {}
         }
         Ok(Self(definition))
     }
@@ -1461,7 +1468,10 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
                     }
                 }
             }
-            _ => {}
+            SpatialSketchGeometryDefinition::Point { .. }
+            | SpatialSketchGeometryDefinition::Nurbs { .. }
+            | SpatialSketchGeometryDefinition::NurbsSurface { .. }
+            | SpatialSketchGeometryDefinition::Native { .. } => {}
         }
         Ok(Self(definition))
     }
