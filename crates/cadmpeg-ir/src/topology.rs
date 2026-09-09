@@ -21,15 +21,87 @@ use std::collections::{HashMap, HashSet};
 /// RGBA color, components in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ColorWire")]
 pub struct Color {
-    /// Red.
-    pub r: f32,
-    /// Green.
-    pub g: f32,
-    /// Blue.
-    pub b: f32,
-    /// Alpha (opacity).
-    pub a: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ColorWire {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+}
+
+impl TryFrom<ColorWire> for Color {
+    type Error = String;
+
+    fn try_from(wire: ColorWire) -> Result<Self, Self::Error> {
+        for (field, value) in [("r", wire.r), ("g", wire.g), ("b", wire.b), ("a", wire.a)] {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(format!("color {field} must be finite and in [0, 1]"));
+            }
+        }
+        Ok(Self {
+            r: wire.r,
+            g: wire.g,
+            b: wire.b,
+            a: wire.a,
+        })
+    }
+}
+
+impl Color {
+    /// Construct RGBA components in the closed unit interval.
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Option<Self> {
+        Self::try_from(ColorWire { r, g, b, a }).ok()
+    }
+
+    /// Convert eight-bit RGBA components to the closed unit interval.
+    pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            r: f32::from(r) / 255.0,
+            g: f32::from(g) / 255.0,
+            b: f32::from(b) / 255.0,
+            a: f32::from(a) / 255.0,
+        }
+    }
+
+    /// Red component.
+    pub const fn r(self) -> f32 {
+        self.r
+    }
+    /// Green component.
+    pub const fn g(self) -> f32 {
+        self.g
+    }
+    /// Blue component.
+    pub const fn b(self) -> f32 {
+        self.b
+    }
+    /// Opacity component.
+    pub const fn a(self) -> f32 {
+        self.a
+    }
+
+    /// Replace opacity with its complement.
+    #[must_use]
+    pub fn invert_alpha(self) -> Self {
+        Self {
+            a: 1.0 - self.a,
+            ..self
+        }
+    }
+
+    /// Replace opacity with a component in the closed unit interval.
+    pub fn with_alpha(self, a: f32) -> Option<Self> {
+        Self::new(self.r, self.g, self.b, a)
+    }
 }
 
 /// Orientation relative to referenced geometry.
@@ -299,7 +371,8 @@ pub struct Face {
     pub color: Option<Color>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 impl Face {
@@ -1240,7 +1313,8 @@ pub struct Edge {
     pub param_range: Option<[f64; 2]>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 /// A vertex: a topological point referencing a position carrier.
@@ -1253,7 +1327,8 @@ pub struct Vertex {
     pub point: PointId,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
+    #[serde(deserialize_with = "deserialize_tolerance")]
+    pub tolerance: Option<crate::units::PositiveScalar>,
 }
 
 /// A position carrier for a vertex.
@@ -1267,6 +1342,12 @@ pub struct Point {
     /// Source object carrying this free point, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
+}
+
+fn deserialize_tolerance<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::units::PositiveScalar>, D::Error> {
+    crate::units::deserialize_named(deserializer, "tolerance")
 }
 
 #[cfg(test)]
@@ -1342,6 +1423,31 @@ mod tests {
             .unwrap();
         assert!(shell.faces().is_empty());
         assert_eq!(shell.free_vertices(), &[vertex]);
+    }
+
+    #[test]
+    fn color_rejects_invalid_components_on_construction_and_wire() {
+        for invalid in [-1.0, 1.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            for index in 0..4 {
+                let mut values = [0.5; 4];
+                values[index] = invalid;
+                assert!(super::Color::new(values[0], values[1], values[2], values[3]).is_none());
+            }
+        }
+        for field in ["r", "g", "b", "a"] {
+            let mut value = serde_json::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0});
+            value[field] = serde_json::json!(-1.0);
+            let error =
+                serde_json::from_value::<super::Color>(value).expect_err("invalid component");
+            assert!(error.to_string().contains(field));
+        }
+        let color = super::Color::new(0.0, 0.25, 0.5, 1.0).expect("valid color");
+        assert_eq!(
+            serde_json::to_value(color).expect("serialize"),
+            serde_json::json!({"r": 0.0, "g": 0.25, "b": 0.5, "a": 1.0})
+        );
+        assert!(color.with_alpha(-1.0).is_none());
+        assert_eq!(color.a(), 1.0);
     }
 
     use super::{

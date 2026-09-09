@@ -149,15 +149,15 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         tolerance: None,
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumOffsetPlane {
@@ -220,15 +220,15 @@ fn generic_native_offset_plane_support_stays_native() {
     };
     let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumOffsetPlane {
@@ -293,25 +293,25 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         neutral_feature(
-            "producer",
+            "synthetic:test:id#producer",
             "producer-native",
             cadmpeg_ir::features::FeatureDefinition::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             },
         ),
         neutral_feature(
-            "thread",
+            "synthetic:test:id#thread",
             "thread-native",
             cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
                 face: cadmpeg_ir::features::FaceSelection::Unresolved,
@@ -382,12 +382,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
-        [FeatureId::mint("producer").expect("identity grammar")]
+        [FeatureId::mint("synthetic:test:id#producer").expect("identity grammar")]
     );
 
     let surface = Surface {
@@ -474,25 +474,25 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "producer",
+            "synthetic:test:id#producer",
             "producer-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "thread",
+            "synthetic:test:id#thread",
             "thread-native",
             FeatureDefinition::CosmeticThread {
                 face: FaceSelection::Unresolved,
@@ -563,7 +563,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         FeatureDefinition::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -572,15 +572,15 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
     let mut signature = [0; 12];
     signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("operation").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#operation").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::OffsetSurface {
@@ -637,25 +637,25 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "producer",
+            "synthetic:test:id#producer",
             "producer-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "fillet",
+            "synthetic:test:id#fillet",
             "fillet-native",
             FeatureDefinition::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -722,7 +722,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "2".into()).unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into()).unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -740,7 +740,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
-        [FeatureId::mint("producer").expect("identity grammar")]
+        [FeatureId::mint("synthetic:test:id#producer").expect("identity grammar")]
     );
 }
 
@@ -751,32 +751,32 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "target",
+            "synthetic:test:id#target",
             "target-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "tool",
+            "synthetic:test:id#tool",
             "tool-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "cut",
+            "synthetic:test:id#cut",
             "cut-native",
             FeatureDefinition::CutWithSurface {
                 targets: BodySelection::Unresolved,
@@ -852,19 +852,19 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(matches!(
         targets,
         BodySelection::Generated { bodies, native }
-            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
+            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
     ));
     assert!(matches!(
         tools,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
         features[2].dependencies.as_slice(),
         vec![
-            FeatureId::mint("target").expect("identity grammar"),
-            FeatureId::mint("tool").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#target").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#tool").expect("identity grammar")
         ]
     );
 }
@@ -876,32 +876,32 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "first",
+            "synthetic:test:id#first",
             "first-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "second",
+            "synthetic:test:id#second",
             "second-native",
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Unresolved,
             },
         ),
         feature(
-            "plane",
+            "synthetic:test:id#plane",
             "plane-native",
             FeatureDefinition::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
@@ -962,8 +962,8 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     assert_eq!(
         features[2].dependencies.as_slice(),
         vec![
-            FeatureId::mint("first").expect("identity grammar"),
-            FeatureId::mint("second").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#first").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#second").expect("identity grammar")
         ]
     );
 }
@@ -1003,25 +1003,25 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         feature(
-            "producer",
+            "synthetic:test:id#producer",
             "producer-native",
             cadmpeg_ir::features::FeatureDefinition::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             },
         ),
         feature(
-            "thread",
+            "synthetic:test:id#thread",
             "thread-native",
             cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
                 face: cadmpeg_ir::features::FaceSelection::Unresolved,
@@ -1086,7 +1086,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1157,32 +1157,32 @@ fn split_face_collects_distinct_generated_target_faces() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
         neutral_feature(
-            "producer-a",
+            "synthetic:test:id#producer-a",
             "producer-a-native",
             FeatureDefinition::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             },
         ),
         neutral_feature(
-            "producer-b",
+            "synthetic:test:id#producer-b",
             "producer-b-native",
             FeatureDefinition::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             },
         ),
         neutral_feature(
-            "split",
+            "synthetic:test:id#split",
             "split-native",
             FeatureDefinition::SplitFace {
                 targets: FaceSelection::Unresolved,
@@ -1250,16 +1250,16 @@ fn split_face_collects_distinct_generated_target_faces() {
     assert!(matches!(
         targets,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == &vec![
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer-a").expect("identity grammar"), "7".into()).unwrap(),
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("producer-b").expect("identity grammar"), "9".into()).unwrap(),
+            if faces.as_slice() == [
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into()).unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into()).unwrap(),
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(
         features[2].dependencies.as_slice(),
         vec![
-            FeatureId::mint("producer-a").expect("identity grammar"),
-            FeatureId::mint("producer-b").expect("identity grammar")
+            FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar")
         ]
     );
 }

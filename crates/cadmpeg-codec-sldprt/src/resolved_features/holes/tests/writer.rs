@@ -48,7 +48,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 };
                 shape
                     .try_edit(|_, _, diameter| {
-                        *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap())
+                        *diameter = Some(cadmpeg_ir::features::PositiveLength::new(8.0).unwrap());
                     })
                     .unwrap();
                 *extent = Some(LinearTermination::Blind {
@@ -157,7 +157,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         edited_construction,
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         shape.diameter(),
     )
     .unwrap();
@@ -347,7 +347,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 
         *shape = cadmpeg_ir::features::HoleShape::new(
             edited_construction,
-            shape.exit_kind().clone(),
+            *shape.exit_kind(),
             shape.diameter(),
         )
         .unwrap();
@@ -374,7 +374,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 
         *shape = cadmpeg_ir::features::HoleShape::new(
             edited_construction,
-            shape.exit_kind().clone(),
+            *shape.exit_kind(),
             shape.diameter(),
         )
         .unwrap();

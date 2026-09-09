@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Protein state and its owned package entries on the native wire.
 
+use cadmpeg_container::ZipCompression;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use cadmpeg_ir::products::NonEmptyString;
 use serde::{de::Error as _, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,38 +178,200 @@ impl ProteinRecordWire {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "ZipCompression", rename_all = "lowercase")]
+enum ZipCompressionWire {
+    Stored,
+    Deflate,
+    Zstd,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProteinEntryRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) name: String,
-    pub(crate) compression: String,
+    #[serde(with = "ZipCompressionWire")]
+    pub(crate) compression: ZipCompression,
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ProteinAssetRecordWire", into = "ProteinAssetRecordWire")]
 pub(crate) struct ProteinAssetRecord {
+    pub(crate) id: String,
+    pub(crate) entry_name: InstancePropertiesEntry,
+    pub(crate) asset: cadmpeg_protein::DecodedRecord,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ProteinAssetRecordWire {
     pub(crate) id: String,
     pub(crate) entry_name: String,
     pub(crate) ordinal: u64,
     pub(crate) asset: cadmpeg_protein::DecodedRecord,
 }
 
+impl TryFrom<ProteinAssetRecordWire> for ProteinAssetRecord {
+    type Error = String;
+    fn try_from(wire: ProteinAssetRecordWire) -> Result<Self, Self::Error> {
+        if wire.ordinal != wire.asset.ordinal {
+            return Err("ordinal disagrees with asset.ordinal".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
+            asset: wire.asset,
+        })
+    }
+}
+
+impl From<ProteinAssetRecord> for ProteinAssetRecordWire {
+    fn from(value: ProteinAssetRecord) -> Self {
+        let ordinal = value.ordinal();
+        Self {
+            id: value.id,
+            entry_name: value.entry_name.into(),
+            ordinal,
+            asset: value.asset,
+        }
+    }
+}
+
+impl ProteinAssetRecord {
+    pub(crate) fn ordinal(&self) -> u64 {
+        self.asset.ordinal
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ProteinRejectionRecordWire",
+    into = "ProteinRejectionRecordWire"
+)]
 pub(crate) struct ProteinRejectionRecord {
+    pub(crate) id: String,
+    pub(crate) entry_name: InstancePropertiesEntry,
+    pub(crate) ordinal: u64,
+    detail: NonEmptyString,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ProteinRejectionRecordWire {
     pub(crate) id: String,
     pub(crate) entry_name: String,
     pub(crate) ordinal: u64,
     pub(crate) detail: String,
 }
 
+impl TryFrom<ProteinRejectionRecordWire> for ProteinRejectionRecord {
+    type Error = String;
+    fn try_from(wire: ProteinRejectionRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
+            ordinal: wire.ordinal,
+            detail: NonEmptyString::new(wire.detail).ok_or("detail must not be empty")?,
+        })
+    }
+}
+
+impl From<ProteinRejectionRecord> for ProteinRejectionRecordWire {
+    fn from(value: ProteinRejectionRecord) -> Self {
+        Self {
+            id: value.id,
+            entry_name: value.entry_name.into(),
+            ordinal: value.ordinal,
+            detail: value.detail.as_str().to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) struct InstancePropertiesEntry(String);
+
+impl TryFrom<String> for InstancePropertiesEntry {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !value.ends_with("InstanceProperties.bin") {
+            return Err("entry_name must end with InstanceProperties.bin");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl From<InstancePropertiesEntry> for String {
+    fn from(value: InstancePropertiesEntry) -> Self {
+        value.0
+    }
+}
+
+impl InstancePropertiesEntry {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ProteinEntryRecord, ProteinRecord};
+    use super::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
     use cadmpeg_ir::native::NativeNamespace;
     use std::num::NonZeroU32;
+
+    #[test]
+    fn asset_and_rejection_admission_preserves_positions_and_entry_names() {
+        let asset = serde_json::json!({
+            "id": "asset", "entry_name": "assets/InstanceProperties.bin", "ordinal": 3,
+            "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+                "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+        });
+        let mut admitted: ProteinAssetRecord =
+            serde_json::from_value(asset.clone()).expect("valid asset");
+        assert_eq!(serde_json::to_value(&admitted).expect("valid asset"), asset);
+        admitted.asset.ordinal = 4;
+        assert_eq!(admitted.ordinal(), 4);
+        let wire = serde_json::to_value(admitted).expect("valid asset");
+        assert_eq!(wire["ordinal"], 4);
+        assert_eq!(wire["asset"]["ordinal"], 4);
+        let mut inconsistent = asset.clone();
+        inconsistent["ordinal"] = serde_json::json!(4);
+        assert!(serde_json::from_value::<ProteinAssetRecord>(inconsistent)
+            .expect_err("inconsistent ordinal")
+            .to_string()
+            .contains("ordinal"));
+        let rejection = serde_json::json!({
+            "id": "rejection", "entry_name": "InstanceProperties.bin", "ordinal": 0, "detail": "unsupported schema"
+        });
+        let admitted: ProteinRejectionRecord =
+            serde_json::from_value(rejection.clone()).expect("valid rejection");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("valid rejection"),
+            rejection
+        );
+        for entry_name in ["", "InstanceProperties.bin.bak", "instanceproperties.bin"] {
+            let mut wire = asset.clone();
+            wire["entry_name"] = serde_json::json!(entry_name);
+            assert!(serde_json::from_value::<ProteinAssetRecord>(wire)
+                .expect_err("invalid entry")
+                .to_string()
+                .contains("entry_name"));
+            let mut wire = rejection.clone();
+            wire["entry_name"] = serde_json::json!(entry_name);
+            assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
+                .expect_err("invalid entry")
+                .to_string()
+                .contains("entry_name"));
+        }
+        let mut wire = rejection;
+        wire["detail"] = serde_json::json!("");
+        assert!(serde_json::from_value::<ProteinRejectionRecord>(wire)
+            .expect_err("empty detail")
+            .to_string()
+            .contains("detail"));
+    }
 
     #[test]
     fn package_count_comes_from_owned_entries_and_the_wire_must_agree() {
@@ -219,7 +383,7 @@ mod tests {
                 id: "inventor:protein:entry#0".into(),
                 ordinal: 0,
                 name: "asset.bin".into(),
-                compression: "stored".into(),
+                compression: super::ZipCompression::Stored,
                 crc32: 0,
                 compressed_size: 0,
                 uncompressed_size: 0,
@@ -275,6 +439,39 @@ mod tests {
                 ProteinRecord::read(&namespace).expect("valid test fixture"),
                 record
             );
+        }
+    }
+    #[test]
+    fn protein_compression_wire_uses_the_archive_vocabulary() {
+        for compression in [
+            super::ZipCompression::Stored,
+            super::ZipCompression::Deflate,
+            super::ZipCompression::Zstd,
+        ] {
+            let entry = ProteinEntryRecord {
+                id: "inventor:protein:entry#0".into(),
+                ordinal: 0,
+                name: "asset.bin".into(),
+                compression,
+                crc32: 0,
+                compressed_size: 0,
+                uncompressed_size: 0,
+            };
+            let mut wire = serde_json::to_value(&entry).expect("Protein entry fixture serializes");
+            assert_eq!(wire["compression"], compression.label());
+            assert_eq!(
+                serde_json::from_value::<ProteinEntryRecord>(wire.clone())
+                    .expect("Protein entry fixture serializes"),
+                entry
+            );
+            wire["compression"] = serde_json::json!("banana");
+            let mut namespace = NativeNamespace::default();
+            namespace
+                .set_arena("protein_entries", &[wire])
+                .expect("Protein entry fixture serializes");
+            assert!(namespace
+                .arena_as::<ProteinEntryRecord>("protein_entries")
+                .is_err());
         }
     }
 }

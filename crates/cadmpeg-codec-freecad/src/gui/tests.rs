@@ -60,27 +60,25 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
     let camera = presentation.camera().expect("camera state");
-    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
-    assert_eq!(camera.orientation, Some([0.0, 0.0, 1.0, 0.25]));
+    assert_eq!(
+        camera.position.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 2.0, 3.0])
+    );
+    assert_eq!(
+        camera
+            .orientation
+            .map(cadmpeg_ir::units::NonzeroVector::get),
+        Some([0.0, 0.0, 1.0, 0.25])
+    );
     assert_eq!(
         camera.properties["settings"],
         "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
-    assert_eq!(presentation.states[1].assets.len(), 1);
-    assert!(presentation.states[1].assets[0].ends_with("section.bin"));
+    assert_eq!(presentation.states()[1].assets.len(), 1);
+    assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-
-    let mut corrupted = result.ir().clone();
-    corrupted.model.presentation_documents[0]
-        .camera_mut()
-        .expect("camera state")
-        .orientation = Some([0.0; 4]);
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "invalid document presentation state"));
 }
 
 #[test]
@@ -358,8 +356,16 @@ fn keeps_registered_non_presentation_properties_native() {
     assert_eq!(view.visible, Some(false));
     assert_eq!(view.display_mode.as_deref(), Some("3"));
     assert_eq!(view.selection_style.as_deref(), Some("1"));
-    assert_eq!(view.line_width, Some(3.5));
-    assert_eq!(view.point_size, Some(4.5));
+    assert_eq!(
+        view.line_width
+            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+        Some(3.5)
+    );
+    assert_eq!(
+        view.point_size
+            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+        Some(4.5)
+    );
     for name in [
         "ShowInTree",
         "OnTopWhenSelected",

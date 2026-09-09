@@ -37,7 +37,8 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(2.0).unwrap(),
+                    length: cadmpeg_ir::features::NonZeroLength::new(2.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
@@ -76,7 +77,7 @@ fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     revolutions: &[ConsolidatedRevolutionBinding],
-) -> (usize, usize) {
+) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     const TOLERANCE: f64 = 2e-3;
 
     fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
@@ -241,7 +242,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut surface_bindings = HashMap::<SurfaceId, usize>::new();
+    let mut surface_bindings = HashMap::<SurfaceId, Option<usize>>::new();
     for face in &ir.model.faces {
         if !unknown_surfaces.contains(&face.surface) {
             continue;
@@ -299,13 +300,16 @@ fn bind_consolidated_revolution_faces_and_seams(
         surface_bindings
             .entry(face.surface.clone())
             .and_modify(|stored| {
-                if *stored != binding {
-                    *stored = usize::MAX;
+                if *stored != Some(binding) {
+                    *stored = None;
                 }
             })
-            .or_insert(binding);
+            .or_insert(Some(binding));
     }
-    surface_bindings.retain(|_, binding| *binding != usize::MAX);
+    let surface_bindings = surface_bindings
+        .into_iter()
+        .filter_map(|(surface, binding)| binding.map(|index| (surface, index)))
+        .collect::<HashMap<_, _>>();
     for (surface_id, binding) in &surface_bindings {
         if let Some(surface) = ir
             .model
@@ -314,7 +318,9 @@ fn bind_consolidated_revolution_faces_and_seams(
             .find(|surface| &surface.id == surface_id)
         {
             surface.geometry = revolutions[*binding].geometry.clone();
-            annotations.derived(&surface.id, "geometry");
+            annotations
+                .derived(&surface.id, "geometry")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
 
@@ -397,10 +403,12 @@ fn bind_consolidated_revolution_faces_and_seams(
         edge.param_range = Some(parameter_range);
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
-            .derived(&edge.id, "param_range");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&edge.id, "param_range")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         seam_count += 1;
     }
-    (surface_bindings.len(), seam_count)
+    Ok((surface_bindings.len(), seam_count))
 }
 
 #[cfg(test)]
@@ -553,7 +561,8 @@ mod consolidated_revolution_binding_tests {
                     geometry: geometry.clone(),
                     profile_sweep: 0.5,
                 }],
-            ),
+            )
+            .expect("valid exactness fields"),
             (2, 1)
         );
         assert!(ir
@@ -799,8 +808,9 @@ fn standard_extrusion_support_id(
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     side: &crate::families::b5::transfer::ResolvedExtrusionSupport,
-) -> SurfaceId {
-    procedural_supports
+) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+    let source_object = cgm_source("surface", side.surface_object_id)?;
+    Ok(procedural_supports
         .entry(side.surface_object_id)
         .or_insert_with(|| {
             let id = SurfaceId::mint(format!(
@@ -819,11 +829,11 @@ fn standard_extrusion_support_id(
             surfaces.push(Surface {
                 id: id.clone(),
                 geometry: side.surface.clone(),
-                source_object: Some(cgm_source("surface", side.surface_object_id)),
+                source_object: Some(source_object),
             });
             id
         })
-        .clone()
+        .clone())
 }
 
 /// Emit one resolved object-stream extrusion construction in the standard family.
@@ -834,9 +844,9 @@ pub(crate) fn emit_standard_extrusion_definition(
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
     extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
-        return definition.clone();
+        return Ok(definition.clone());
     }
     let surface_object_id = extrusion.surface_object_id;
     let directrix_id = CurveId::mint(format!(
@@ -849,20 +859,24 @@ pub(crate) fn emit_standard_extrusion_definition(
             supports,
             cache_fit_tolerance,
         } => {
-            let sides = (*supports).map(|side| IntcurveSupportSide {
-                surface: Some(standard_extrusion_support_id(
-                    annotations,
-                    surfaces,
-                    procedural_supports,
-                    &side,
-                )),
-                pcurve: Some(SupportPcurve::new(
-                    side.pcurve,
-                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                )),
-            });
+            let [first, second] = *supports;
+            let mut build_side = |side: crate::families::b5::transfer::ResolvedExtrusionSupport| {
+                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+                    surface: Some(standard_extrusion_support_id(
+                        annotations,
+                        surfaces,
+                        procedural_supports,
+                        &side,
+                    )?),
+                    pcurve: Some(SupportPcurve::new(
+                        side.pcurve,
+                        (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
+                            .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                            .flatten(),
+                    )),
+                })
+            };
+            let sides = [build_side(first)?, build_side(second)?];
             annotate(
                 annotations,
                 &directrix_id,
@@ -874,7 +888,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:standard:extrusion-directrix-procedure#{}",
@@ -920,7 +934,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
         }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::Offset {
@@ -946,7 +960,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)),
+                source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
                 annotations,
@@ -959,7 +973,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Unknown { record: None },
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:standard:extrusion-directrix-procedure#{}",
@@ -988,7 +1002,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                                 surfaces,
                                 procedural_supports,
                                 &support,
-                            )),
+                            )?),
                         },
                         range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
                             parameter_range: source_parameter_range,
@@ -1006,7 +1020,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         revision_form: None,
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
-    definition
+    Ok(definition)
 }
 
 fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
@@ -1147,7 +1161,7 @@ struct StandardPopulationSelection {
     spine: Vec<u8>,
     records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
-    fbb_edge_table: bool,
+    edge_table_form: EdgeTableForm,
     vertex_roster_compatible: bool,
 }
 
@@ -1167,7 +1181,7 @@ fn standard_population_selections(
                 spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
                 records: population.records,
                 supports: population.supports,
-                fbb_edge_table: layout.fbb_edge_table,
+                edge_table_form: layout.edge_table_form,
                 vertex_roster_compatible:
                     crate::families::standard::records::standard_vertex_roster(
                         &scan.data,
@@ -1372,8 +1386,8 @@ fn try_decode_standard_populations(
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
         merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope);
-        if output.report.geometry_transferred {
-            merged.report.geometry_transferred = true;
+        if output.report.transfer.geometry_transferred() {
+            merged.report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
         }
     }
 
@@ -1456,9 +1470,13 @@ fn try_decode_standard_population(
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
-    let fbb_only = selection.map_or(scan.variant == Variant::FbbOnly, |selection| {
-        selection.fbb_edge_table
-    });
+    let edge_table_form = selection.map_or_else(
+        || match scan.variant {
+            Variant::FbbOnly => EdgeTableForm::FbbOnly,
+            _ => EdgeTableForm::Standard,
+        },
+        |selection| selection.edge_table_form,
+    );
     if !work_budget.charge() {
         return None;
     }
@@ -1466,10 +1484,9 @@ fn try_decode_standard_population(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
-    let points = (if fbb_only {
-        fbb::fbb_only_vertex_points(standard_spine)
-    } else {
-        fbb::standard_vertex_points(standard_spine)
+    let points = (match edge_table_form {
+        EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
+        EdgeTableForm::Standard => fbb::standard_vertex_points(standard_spine),
     })
     .unwrap_or_default()
     .into_iter()
@@ -1517,7 +1534,7 @@ fn try_decode_standard_population(
         .collect::<HashSet<_>>();
     let standard_edge_count = selection.map_or_else(
         || {
-            (if fbb_only {
+            (if edge_table_form == EdgeTableForm::FbbOnly {
                 fbb::fbb_only_edge_count(standard_spine)
             } else {
                 fbb::standard_edge_count(standard_spine)
@@ -1650,7 +1667,7 @@ fn try_decode_standard_population(
             surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
-                source_object: Some(cgm_source("carrier", *tag)),
+                source_object: Some(cgm_source("carrier", *tag).ok()?),
             });
             if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
                 procedural_surface_plans.push((i, id, *tag, procedure));
@@ -1704,7 +1721,7 @@ fn try_decode_standard_population(
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
-                    source_object: Some(cgm_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target).ok()?),
                 });
             }
             None => {
@@ -1732,7 +1749,7 @@ fn try_decode_standard_population(
                                 .expect("identity grammar"),
                         ),
                     },
-                    source_object: Some(cgm_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target).ok()?),
                 });
             }
         }
@@ -1790,6 +1807,7 @@ fn try_decode_standard_population(
             } => {
                 let support_id = match support {
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
+                        let source_object = cgm_source("surface", support_object_id).ok()?;
                         procedural_supports
                             .entry(support_object_id)
                             .or_insert_with(|| {
@@ -1808,7 +1826,7 @@ fn try_decode_standard_population(
                                 surfaces.push(Surface {
                                     id: id.clone(),
                                     geometry: support,
-                                    source_object: Some(cgm_source("surface", support_object_id)),
+                                    source_object: Some(source_object),
                                 });
                                 id
                             })
@@ -1831,7 +1849,7 @@ fn try_decode_standard_population(
                         surfaces.push(Surface {
                             id: support_id.clone(),
                             geometry: SurfaceGeometry::Unknown { record: None },
-                            source_object: Some(cgm_source("surface", support_object_id)),
+                            source_object: Some(cgm_source("surface", support_object_id).ok()?),
                         });
                         let definition = emit_standard_extrusion_definition(
                             &mut ir,
@@ -1840,7 +1858,8 @@ fn try_decode_standard_population(
                             &mut procedural_supports,
                             &mut extrusion_definitions,
                             *extrusion,
-                        );
+                        )
+                        .ok()?;
                         let construction = ProceduralSurfaceId::mint(format!(
                             "catia:standard:procedural-support-definition#{support_object_id}"
                         ))
@@ -1904,7 +1923,8 @@ fn try_decode_standard_population(
                     &mut procedural_supports,
                     &mut extrusion_definitions,
                     *extrusion,
-                );
+                )
+                .ok()?;
                 (
                     "object_stream_b5_03_2c",
                     carrier,
@@ -1924,7 +1944,7 @@ fn try_decode_standard_population(
                     "profile_curve",
                     Exactness::Derived,
                 );
-                annotations.derived(&directrix_id, "geometry");
+                annotations.derived(&directrix_id, "geometry").ok()?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(revolution.directrix.clone()),
@@ -2007,7 +2027,8 @@ fn try_decode_standard_population(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
+    )
+    .ok()?;
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::mint(format!("catia:standard:pt#{i}")).expect("identity grammar");
@@ -2024,7 +2045,9 @@ fn try_decode_standard_population(
             position: *p,
             source_object: vertex_roster
                 .as_ref()
-                .map(|roster| cgm_source("vertex", roster[i])),
+                .map(|roster| cgm_source("vertex", roster[i]))
+                .transpose()
+                .ok()?,
         });
         let vertex_id = VertexId::mint(format!("catia:standard:v#{i}")).expect("identity grammar");
         annotate(
@@ -2035,7 +2058,7 @@ fn try_decode_standard_population(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        annotations.derived(&vertex_id, "point");
+        annotations.derived(&vertex_id, "point").ok()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -2052,7 +2075,8 @@ fn try_decode_standard_population(
         &mut topology_annotations,
         &face_bindings,
         standard_spine,
-    );
+    )
+    .ok()?;
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
@@ -2063,7 +2087,7 @@ fn try_decode_standard_population(
         &records,
         &face_bounds,
         standard_spine,
-        fbb_only,
+        edge_table_form,
         brep,
         selection.map(|selection| selection.supports.as_slice()),
         &scan.data,
@@ -2086,8 +2110,8 @@ fn try_decode_standard_population(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
-        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports);
-        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports);
+        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
+        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
         if !ir.model.vertices.is_empty() {
             attach_free_vertices(
                 &mut ir,
@@ -2102,14 +2126,16 @@ fn try_decode_standard_population(
             &mut ir,
             &mut annotations,
             &consolidated_revolutions,
-        );
+        )
+        .ok()?;
     let mut consolidated_curve_bindings = append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
         &scan.data,
         &consolidated_records,
         &scan.surface_alias_tags,
-    );
+    )
+    .ok()?;
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
@@ -2119,8 +2145,9 @@ fn try_decode_standard_population(
         &consolidated_records,
         &face_bounds,
         &owner_binding_budget,
-    );
-    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    )
+    .ok()?;
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations).ok()?;
     let annotations = annotations.build();
 
     let mut report = build_geometry_report(
@@ -2310,11 +2337,11 @@ fn try_decode_standard_population(
             ),
         );
     }
+    report.coverage.record(
+        crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
+        0,
+    );
     for (key, exhaustion) in [
-        (
-            crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_QUOTIENT_PREPARATION_COUNT,
-            mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
-        ),
         (
             crate::coverage::STANDARD_TOPOLOGY_MESH_EXHAUSTION_INCIDENCE_ENUMERATION_COUNT,
             mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
@@ -3062,10 +3089,10 @@ pub(crate) fn attach_standard_faces(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let face_count = fbb::standard_face_count(brep).unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
-        return;
+        return Ok(());
     }
     let body_id = BodyId::mint("catia:standard:body#0".to_string()).expect("identity grammar");
     let region_id =
@@ -3084,7 +3111,9 @@ pub(crate) fn attach_standard_faces(
             Exactness::ByteExact,
         );
         for field in ["shell", "surface", "sense"] {
-            annotations.derived(&face_id, field);
+            annotations
+                .derived(&face_id, field)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         face_ids.push(face_id.clone());
         ir.model.faces.push(Face {
@@ -3112,7 +3141,9 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&body_id, "regions")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Sheet,
@@ -3132,7 +3163,9 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&region_id, "body")
-        .derived(&region_id, "shells");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&region_id, "shells")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
@@ -3148,15 +3181,14 @@ pub(crate) fn attach_standard_faces(
     );
     annotations
         .derived(&shell_id, "region")
-        .derived(&shell_id, "faces");
+        .map_err(cadmpeg_core::CodecError::malformed)?
+        .derived(&shell_id, "faces")
+        .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.model.shells.push(
-        match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return;
-            }
-        },
+        Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new())
+            .map_err(cadmpeg_core::CodecError::malformed)?,
     );
+    Ok(())
 }
 
 pub(crate) fn partition_standard_face_components(
@@ -3181,7 +3213,9 @@ pub(crate) fn partition_standard_face_components(
         })
         .collect();
     body.regions.clone_from(&region_ids);
-    annotations.derived(&body_id, "regions");
+    if annotations.derived(&body_id, "regions").is_err() {
+        return false;
+    }
 
     for (component, faces) in components.iter().enumerate() {
         let region_id = region_ids[component].clone();
@@ -3198,7 +3232,9 @@ pub(crate) fn partition_standard_face_components(
                 return false;
             };
             face.shell = shell_id.clone();
-            annotations.derived(&face.id, "shell");
+            if annotations.derived(&face.id, "shell").is_err() {
+                return false;
+            }
         }
         if component == 0 {
             let Some(region) = ir
@@ -3225,7 +3261,7 @@ pub(crate) fn partition_standard_face_components(
             .is_err()
             {
                 return false;
-            };
+            }
             continue;
         }
         for (id, tag) in [
@@ -3241,17 +3277,25 @@ pub(crate) fn partition_standard_face_components(
                 Exactness::Inferred,
             );
         }
-        annotations
+        if annotations
             .derived(&region_id, "body")
-            .derived(&region_id, "shells");
+            .and_then(|builder| builder.derived(&region_id, "shells"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
         });
-        annotations
+        if annotations
             .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
+            .and_then(|builder| builder.derived(&shell_id, "faces"))
+            .is_err()
+        {
+            return false;
+        }
         ir.model.shells.push(
             match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
                 Ok(shell) => shell,
@@ -3639,7 +3683,7 @@ fn attach_standard_topology(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     spine: &[u8],
-    fbb_only: bool,
+    edge_table_form: EdgeTableForm,
     brep: &[u8],
     support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
     source: &[u8],
@@ -3652,7 +3696,7 @@ fn attach_standard_topology(
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
-    let Some(edge_count) = (if fbb_only {
+    let Some(edge_count) = (if edge_table_form == EdgeTableForm::FbbOnly {
         crate::families::standard::fbb::fbb_only_edge_count(spine)
     } else {
         crate::families::standard::fbb::standard_edge_count(spine)
@@ -3813,8 +3857,8 @@ fn attach_standard_topology(
     {
         let e5_edges = e5_topology
             .edges
-            .into_values()
-            .map(|edge| (edge.record_id, [edge.start_vertex, edge.end_vertex]));
+            .into_iter()
+            .map(|(record_id, edge)| (record_id, [edge.start_vertex, edge.end_vertex]));
         if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
         }
@@ -4431,10 +4475,10 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let fbb_mesh_ports = fbb_only
+    let fbb_mesh_ports = (edge_table_form == EdgeTableForm::FbbOnly)
         .then(|| missing_edge::standard_mesh_edge_ports(spine))
         .flatten();
-    let mesh_topology = if fbb_only {
+    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
         fbb_mesh_ports
             .as_deref()
             .and_then(|ports| topology::parse_fbb_with_native_vertices(spine, ports))
@@ -4483,7 +4527,8 @@ fn attach_standard_topology(
         })
         .collect();
     let mut mesh_search_exhausted = false;
-    let native_fbb_topology = if fbb_only && !has_open_face_domains {
+    let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
+    {
         native_endpoint_pairs.as_ref().and_then(|pairs| {
             fbb::parse_fbb_endpoints_with_edge_classes(
                 spine,
@@ -4630,7 +4675,7 @@ fn attach_standard_topology(
                     .iter()
                     .zip(line_constraint.flexible_edge_mask())
                     .zip(&face_domain_edges)
-                    .map(|((circle, line), face)| *circle || *line || *face)
+                    .map(|((circle, line), face)| *circle || line || *face)
                     .collect::<Vec<_>>();
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -4862,7 +4907,8 @@ fn attach_standard_topology(
         &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
-    );
+    )
+    .map_err(|_| StandardTopologyFailure::InadmissibleNeutralModel)?;
     Ok(())
 }
 
@@ -4993,7 +5039,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -5022,7 +5068,7 @@ fn emit_standard_topology(
             native_support,
             limit_curve_bindings[edge_index]
                 .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
-        );
+        )?;
         let reversed = param_range.is_some_and(|range| range[0] > range[1]);
         edge_reversed.push(reversed);
         let param_range = param_range.map(ordered_range);
@@ -5042,11 +5088,19 @@ fn emit_standard_topology(
             Exactness::ByteExact,
         );
         if curve.is_some() {
-            annotations.derived(&id, "curve");
+            annotations
+                .derived(&id, "curve")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        annotations.derived(&id, "start").derived(&id, "end");
+        annotations
+            .derived(&id, "start")
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "end")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         if param_range.is_some() {
-            annotations.derived(&id, "param_range");
+            annotations
+                .derived(&id, "param_range")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ir.model.edges.push(Edge {
             id,
@@ -5136,7 +5190,9 @@ fn emit_standard_topology(
                         "derived_surface_parameter_curve",
                         Exactness::Derived,
                     );
-                    annotations.derived(&id, "geometry");
+                    annotations
+                        .derived(&id, "geometry")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
@@ -5146,8 +5202,9 @@ fn emit_standard_topology(
                             None,
                         ),
                     });
-                    (id, range)
-                });
+                    Ok::<_, cadmpeg_core::CodecError>((id, range))
+                })
+                .transpose()?;
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
                 let id = coedge_ids[coedge_index].clone();
@@ -5167,10 +5224,14 @@ fn emit_standard_topology(
                     "radial_next",
                     "sense",
                 ] {
-                    annotations.derived(&id, field);
+                    annotations
+                        .derived(&id, field)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 if pcurve_id.is_some() {
-                    annotations.derived(&id, "pcurves");
+                    annotations
+                        .derived(&id, "pcurves")
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
                 ir.model.coedges.push(Coedge {
                     id,
@@ -5204,10 +5265,15 @@ fn emit_standard_topology(
             );
             annotations
                 .derived(&loop_id, "face")
+                .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&loop_id, "coedges")
-                .derived(&loop_id, "vertex_uses");
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .derived(&loop_id, "vertex_uses")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             if boundary_role != LoopBoundaryRole::Unspecified {
-                annotations.derived(&loop_id, "boundary_role");
+                annotations
+                    .derived(&loop_id, "boundary_role")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -5230,6 +5296,7 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
+    Ok(())
 }
 
 pub(crate) fn standard_native_support_endpoint_pair(
@@ -5577,8 +5644,8 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let graph = graph?;
     let identity_points = unique_native_identity_points(
-        &graph.logical_vertices,
-        graph.vertex_points.len(),
+        graph.vertices.logical_vertices(),
+        graph.vertices.raw_points().len(),
         &graph.vertex_tolerances,
         points,
     );
@@ -6848,11 +6915,11 @@ fn bind_standard_a5_owner_surfaces(
     records: &[ConsolidatedRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records);
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
-        return 0;
+        return Ok(0);
     }
     let owner_carriers = owners
         .iter()
@@ -6946,7 +7013,7 @@ fn bind_standard_a5_owner_surfaces(
     }
     let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
     else {
-        return 0;
+        return Ok(0);
     };
     let mut bound = 0;
     for ((_, _, surface), carrier) in unknown_faces.into_iter().zip(bindings) {
@@ -6955,10 +7022,12 @@ fn bind_standard_a5_owner_surfaces(
         };
         ir.model.surfaces[surface].geometry =
             SurfaceGeometry::Nurbs(carriers[carrier].geometry.clone());
-        annotations.derived(&ir.model.surfaces[surface].id, "geometry");
+        annotations
+            .derived(&ir.model.surfaces[surface].id, "geometry")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         bound += 1;
     }
-    bound
+    Ok(bound)
 }
 
 /// Keep a topological endpoint pair when p-curve derivation cannot prove it.
@@ -7870,7 +7939,7 @@ pub(crate) fn build_standard_edge_curve(
     points: [usize; 2],
     native_support: Option<&StandardEdgeSupport>,
     limit_curve: Option<(&NurbsCurve, [f64; 2])>,
-) -> (Option<CurveId>, Option<[f64; 2]>) {
+) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
@@ -7878,7 +7947,7 @@ pub(crate) fn build_standard_edge_curve(
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
-                return (None, None);
+                return Ok((None, None));
             }
             (
                 CurveGeometry::Line {
@@ -8086,7 +8155,7 @@ pub(crate) fn build_standard_edge_curve(
             Some(native) => {
                 match standard_oriented_native_support_pcurves(native, &ir.model.points, points) {
                     Some(pcurves) => Some(pcurves),
-                    None => return (None, None),
+                    None => return Ok((None, None)),
                 }
             }
             None => None,
@@ -8113,7 +8182,9 @@ pub(crate) fn build_standard_edge_curve(
     if matches!(&geometry, CurveGeometry::Line { .. }) {
         annotations
             .derived(&id, "geometry.origin")
-            .derived(&id, "geometry.direction");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8123,9 +8194,13 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         annotations
             .derived(&id, "geometry.center")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.ref_direction")
-            .derived(&id, "geometry.radius");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.radius")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8135,10 +8210,15 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         annotations
             .derived(&id, "geometry.center")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.major_direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.major_radius")
-            .derived(&id, "geometry.minor_radius");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.minor_radius")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -8146,13 +8226,15 @@ pub(crate) fn build_standard_edge_curve(
             CurveGeometry::Circle { .. }
         )
     ) {
-        annotations.derived(&id, "geometry.axis");
+        annotations
+            .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let geometry_is_unknown = matches!(&geometry, CurveGeometry::Unknown { .. });
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        source_object: Some(cgm_source("edge-support", support.tag)),
+        source_object: Some(cgm_source("edge-support", support.tag)?),
     });
     if matches!(
         &support.geometry,
@@ -8160,7 +8242,7 @@ pub(crate) fn build_standard_edge_curve(
     ) {
         let sides = if let Some(native) = native_support {
             let Some(pcurves) = oriented_native_support_pcurves.as_ref() else {
-                return (None, None);
+                return Ok((None, None));
             };
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
@@ -8169,7 +8251,7 @@ pub(crate) fn build_standard_edge_curve(
                     annotations,
                     native.surface_object_ids[side],
                     &native.carriers[side],
-                ));
+                )?);
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
@@ -8210,7 +8292,9 @@ pub(crate) fn build_standard_edge_curve(
                 );
                 annotations
                     .derived(&procedural_id, "curve")
-                    .derived(&procedural_id, "definition");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(&procedural_id, "definition")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 let _attached = ir.model.add_procedural_curve(
                     id.clone(),
                     ProceduralCurve::new(
@@ -8229,7 +8313,7 @@ pub(crate) fn build_standard_edge_curve(
             }
         }
     }
-    (Some(id), param_range)
+    Ok((Some(id), param_range))
 }
 
 fn ensure_native_edge_support_surface(
@@ -8237,8 +8321,8 @@ fn ensure_native_edge_support_surface(
     annotations: &mut AnnotationBuilder,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-) -> SurfaceId {
-    let source = cgm_source("surface", surface_object_id);
+) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+    let source = cgm_source("surface", surface_object_id)?;
     let source_matches = ir
         .model
         .surfaces
@@ -8247,10 +8331,10 @@ fn ensure_native_edge_support_surface(
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
     if source_matches.len() == 1 {
-        return source_matches
+        return Ok(source_matches
             .into_iter()
             .next()
-            .expect("one identity-matched support surface");
+            .expect("one identity-matched support surface"));
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let geometry_matches = ir
@@ -8261,10 +8345,10 @@ fn ensure_native_edge_support_surface(
             .map(|surface| surface.id.clone())
             .collect::<HashSet<_>>();
         if source_matches.is_empty() && geometry_matches.len() == 1 {
-            return geometry_matches
+            return Ok(geometry_matches
                 .into_iter()
                 .next()
-                .expect("one geometry-matched support surface");
+                .expect("one geometry-matched support surface"));
         }
     }
     let id = SurfaceId::mint(format!(
@@ -8330,7 +8414,7 @@ fn ensure_native_edge_support_surface(
             None,
         ));
     }
-    id
+    Ok(id)
 }
 
 pub(crate) fn standard_circle_pair_solution_is_simple(
@@ -8419,10 +8503,16 @@ struct StandardLineSelection {
 
 type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeLineRole {
+    NotLine,
+    Fixed,
+    Flexible,
+}
+
 struct StandardLinePairConstraint {
     points: Vec<Point3>,
-    line_edges: Vec<bool>,
-    flexible_edges: Vec<bool>,
+    edge_roles: Vec<EdgeLineRole>,
     edges_by_face: HashMap<usize, Vec<usize>>,
     simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
 }
@@ -8437,27 +8527,31 @@ impl StandardLinePairConstraint {
             .iter()
             .map(|point| point.position)
             .collect::<Vec<_>>();
-        let line_edges = supports
+        let edge_roles = supports
             .iter()
-            .map(|support| {
-                matches!(
+            .enumerate()
+            .map(|(edge, support)| {
+                if !matches!(
                     support.geometry,
                     crate::families::standard::records::StandardCurveGeometry::Line
-                )
+                ) {
+                    EdgeLineRole::NotLine
+                } else if endpoint_options
+                    .get(edge)
+                    .is_some_and(|options| options.len() > 1)
+                {
+                    EdgeLineRole::Flexible
+                } else {
+                    EdgeLineRole::Fixed
+                }
             })
             .collect::<Vec<_>>();
-        let mut flexible_edges = vec![false; supports.len()];
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
 
-        for (edge, (support, options)) in supports.iter().zip(endpoint_options).enumerate() {
-            if !matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-            ) || options.len() <= 1
-            {
+        for (edge, support) in supports.iter().enumerate() {
+            if edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
-            flexible_edges[edge] = true;
             for &face in &support.faces {
                 let edges = edges_by_face.entry(face).or_default();
                 if !edges.contains(&edge) {
@@ -8468,20 +8562,21 @@ impl StandardLinePairConstraint {
 
         Self {
             points,
-            line_edges,
-            flexible_edges,
+            edge_roles,
             edges_by_face,
             simplicity_cache: RefCell::new(HashMap::new()),
         }
     }
 
-    fn flexible_edge_mask(&self) -> &[bool] {
-        &self.flexible_edges
+    fn flexible_edge_mask(&self) -> impl Iterator<Item = bool> + '_ {
+        self.edge_roles
+            .iter()
+            .map(|role| *role == EdgeLineRole::Flexible)
     }
 
     fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
         pairs.iter().enumerate().all(|(edge, pair)| {
-            if !self.line_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] == EdgeLineRole::NotLine {
                 return true;
             }
             let Some(pair) = pair else {
@@ -8498,9 +8593,9 @@ impl StandardLinePairConstraint {
         if !self.is_valid(pairs) {
             return false;
         }
-        let mut selected = vec![None; self.flexible_edges.len()];
+        let mut selected = vec![None; self.edge_roles.len()];
         for (edge, pair) in pairs.iter().enumerate() {
-            if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
+            if self.edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
             let Some(pair) = pair else {
@@ -8926,7 +9021,7 @@ pub(crate) fn attach_standard_circles(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for support in supports {
         let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
             support.geometry
@@ -8967,7 +9062,9 @@ pub(crate) fn attach_standard_circles(
             "curve_support_60_circle",
             Exactness::ByteExact,
         );
-        annotations.derived(&id, "geometry.axis");
+        annotations
+            .derived(&id, "geometry.axis")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Circle {
@@ -8976,9 +9073,10 @@ pub(crate) fn attach_standard_circles(
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius,
             },
-            source_object: Some(cgm_source("edge-support", support.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
+    Ok(())
 }
 
 fn circle_axis_from_endpoints(
@@ -9152,7 +9250,7 @@ pub(crate) fn attach_standard_lines(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for support in supports {
         if !matches!(
             support.geometry,
@@ -9183,13 +9281,16 @@ pub(crate) fn attach_standard_lines(
         );
         annotations
             .derived(&id, "geometry.origin")
-            .derived(&id, "geometry.direction");
+            .map_err(cadmpeg_core::CodecError::malformed)?
+            .derived(&id, "geometry.direction")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Line { origin, direction },
-            source_object: Some(cgm_source("edge-support", support.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
+    Ok(())
 }
 
 fn plane_intersection_line(

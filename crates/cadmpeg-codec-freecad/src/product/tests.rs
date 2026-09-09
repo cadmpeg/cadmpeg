@@ -309,7 +309,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
         .expect("properties");
     assert_eq!(properties.len(), 5);
     assert!(properties.iter().any(|property| {
-        property.name == "Description" && property.raw_xml.contains("<Wrapper>")
+        property.name == "Description" && property.xml.text().contains("<Wrapper>")
     }));
     assert!(properties.iter().any(|property| {
         property.name == "PartNumber" && property.type_name == "App::PropertyInteger"

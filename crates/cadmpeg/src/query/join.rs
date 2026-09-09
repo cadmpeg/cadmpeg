@@ -13,7 +13,8 @@ use clap::{Args, ValueEnum};
 use serde_json::{Map, Value};
 
 use super::document::CadirDocument;
-use super::item::{emit_values, ArenaTarget, Output};
+use super::item::{emit_values, ArenaTarget};
+use super::output::OutputArgs;
 
 /// How to emit matching rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -56,27 +57,9 @@ pub struct JoinArgs {
     /// order).
     #[arg(long, value_name = "N")]
     pub head: Option<usize>,
-    /// Comma-separated dotted field paths; project as TSV (no expressions).
-    /// Paths are relative to each result object (`left.id`, `right.links`).
-    /// Conflicts with `--json`.
-    #[arg(long, value_delimiter = ',', conflicts_with = "json")]
-    pub fields: Option<Vec<String>>,
-    /// Wrap join rows in the JSON envelope.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl JoinArgs {
-    /// Resolves the flat clap output fields into one output mode.
-    pub(crate) fn mode(&self) -> Output<'_> {
-        if self.json {
-            Output::Json
-        } else if let Some(paths) = self.fields.as_deref() {
-            Output::Tsv(paths)
-        } else {
-            Output::Pretty
-        }
-    }
+    /// Record output selection.
+    #[command(flatten)]
+    pub(crate) output: OutputArgs,
 }
 
 struct JoinSpec<'a> {
@@ -91,7 +74,8 @@ struct JoinSpec<'a> {
 }
 
 /// Runs `query join` against one or two CADIR documents.
-pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
+pub fn run(args: &JoinArgs) -> Result<()> {
+    let output = args.output.mode();
     let left_doc = CadirDocument::load(&args.file, "join")?;
     let left_target = ArenaTarget::parse(&args.left_arena)?;
     let left_records;
@@ -176,12 +160,12 @@ fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
         match spec.mode {
             JoinMode::Matched => {
                 for (ri, key) in pairs {
-                    rows.push(row_pair(spec, left_rec, Some(&spec.right[ri]), Some(&key)));
+                    rows.push(row_pair(spec, left_rec, Some((&spec.right[ri], &key))));
                 }
             }
             JoinMode::Unmatched => {
                 if pairs.is_empty() {
-                    rows.push(row_pair(spec, left_rec, None, None));
+                    rows.push(row_pair(spec, left_rec, None));
                 }
             }
             JoinMode::All => {
@@ -199,7 +183,7 @@ fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {
     rows
 }
 
-fn row_pair(spec: &JoinSpec<'_>, left: &Value, right: Option<&Value>, key: Option<&str>) -> Value {
+fn row_pair(spec: &JoinSpec<'_>, left: &Value, matched: Option<(&Value, &str)>) -> Value {
     let mut map = Map::new();
     map.insert(
         "left_arena".to_owned(),
@@ -209,11 +193,15 @@ fn row_pair(spec: &JoinSpec<'_>, left: &Value, right: Option<&Value>, key: Optio
         "right_arena".to_owned(),
         Value::String(spec.right_arena.to_owned()),
     );
-    if let Some(k) = key {
-        map.insert("key".to_owned(), Value::String(k.to_owned()));
-    }
+    let right = match matched {
+        Some((right, key)) => {
+            map.insert("key".to_owned(), Value::String(key.to_owned()));
+            right.clone()
+        }
+        None => Value::Null,
+    };
     map.insert("left".to_owned(), left.clone());
-    map.insert("right".to_owned(), right.cloned().unwrap_or(Value::Null));
+    map.insert("right".to_owned(), right);
     attach_files(&mut map, spec);
     Value::Object(map)
 }

@@ -95,7 +95,7 @@ pub(crate) enum PmDcExpressionKind {
     Value {
         value: f64,
         value_type: u16,
-        state: Option<u32>,
+        state: u32,
     },
     ParameterReference {
         operand: PmDcReference,
@@ -706,11 +706,7 @@ fn parse_value_expression(
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let value = cursor.f64("literal expression value")?;
     let value_type = cursor.u16("literal expression type")?;
-    let state = if version > 14 {
-        Some(cursor.u32("literal expression state")?)
-    } else {
-        None
-    };
+    let state = cursor.u32("literal expression state")?;
     cursor.finish("literal expression")?;
     Ok(PmDcExpressionPayload {
         save_version_major: version,
@@ -1028,7 +1024,7 @@ mod tests {
             parsed.kind,
             PmDcExpressionKind::Value {
                 value: 25.4,
-                state: Some(0),
+                state: 0,
                 ..
             }
         ));
@@ -1166,7 +1162,7 @@ mod tests {
                 kind: PmDcExpressionKind::Value {
                     value: 60.96,
                     value_type: 0,
-                    state: Some(0),
+                    state: 0,
                 },
             },
             String::new(),
@@ -1251,31 +1247,42 @@ mod tests {
         );
         assert_eq!(
             parameters[0].value,
-            Some(ParameterValue::Length(Length::new(609.6).unwrap()))
+            Some(ParameterValue::Length(
+                Length::new(609.6).expect("finite length fixture")
+            ))
         );
     }
 
     #[test]
     fn rejects_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId::mint(name).expect("identity grammar"),
+            id: ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: name.into(),
             expression: name.into(),
             display: None,
             value: Some(ParameterValue::Real(
-                cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
+                cadmpeg_ir::features::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: (dependencies).try_into().unwrap(),
+            dependencies: (dependencies).try_into().expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
         };
         let parameters = vec![
-            make("a", vec![ParameterId::mint("b").expect("identity grammar")]),
-            make("b", vec![ParameterId::mint("a").expect("identity grammar")]),
-            make("c", vec![ParameterId::mint("a").expect("identity grammar")]),
+            make(
+                "a",
+                vec![ParameterId::mint("synthetic:test:id#b").expect("identity grammar")],
+            ),
+            make(
+                "b",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
+            make(
+                "c",
+                vec![ParameterId::mint("synthetic:test:id#a").expect("identity grammar")],
+            ),
             make("d", Vec::new()),
         ];
         let (closed, rejected) = close_parameter_graph(parameters);
@@ -1285,7 +1292,7 @@ mod tests {
                 .into_iter()
                 .map(|parameter| parameter.id.into_string())
                 .collect::<Vec<_>>(),
-            ["d"]
+            ["synthetic:test:id#d"]
         );
     }
 }

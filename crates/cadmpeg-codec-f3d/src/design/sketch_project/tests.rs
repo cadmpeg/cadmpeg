@@ -11,7 +11,8 @@ use crate::records::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
+    SketchGeometryDefinition,
 };
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
@@ -114,7 +115,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             byte_offset: record_index as u64,
             geometry_offset: 0,
             entity_genesis: Some(0),
-            primary_id,
+            primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
             secondary_id: 0,
             geometry: Some(SketchCurveGeometry::Line {
                 start: Point3::new(start.0, start.1, 0.0),
@@ -129,23 +130,27 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         curve(12, 12, (10.0, 10.0), (0.0, 10.0)),
         curve(13, 13, (0.0, 10.0), (0.0, 0.0)),
     ];
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#14".into(),
         record_index: 14,
         owner_reference: Some(42),
         class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 14,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             14,
             crate::records::SketchPointClosure::Selector4State0,
             None,
             0.0,
-            None,
         ),
         paired_reference: 15,
         coordinates: Point2::new(0.0, 0.0),
-    };
+    })
+    .unwrap();
     let text = SketchText {
         id: "f3d:BulkStream.dat:text#20".into(),
         record_index: 20,
@@ -160,12 +165,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         font_family: "Arial".into(),
         font_weight: 400,
         height: 10.0,
-        color: cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        },
+        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
         layout: crate::records::SketchTextLayout::TextexTag {
             width_factor: 1.0,
             alignment: Some(crate::records::SketchTextAlignment {
@@ -236,9 +236,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             .as_deref()
             .is_some_and(|id| id.contains(":curve#")))
         .all(|entity| entity.construction));
-    assert!(entities.iter().any(
-        |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
-    ));
+    assert!(entities.iter().any(|entity| matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Text { .. }
+    ) && !entity.construction));
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some("f3d:BulkStream.dat:point#14") && !entity.construction
     }));
@@ -264,40 +265,48 @@ fn point_closure_does_not_mark_construction_geometry() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#10".into(),
         record_index: 10,
         owner_reference: Some(42),
         class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 10,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             10,
             crate::records::SketchPointClosure::Selector4State0,
             None,
             0.0,
-            None,
         ),
         paired_reference: 11,
         coordinates: Point2::new(0.0, 0.0),
-    };
-    let standalone_point = SketchPoint {
+    })
+    .unwrap();
+    let standalone_point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#11".into(),
         record_index: 11,
         owner_reference: Some(42),
         class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 11,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             11,
             crate::records::SketchPointClosure::Selector2State1,
             None,
             0.0,
-            None,
         ),
         paired_reference: 12,
         coordinates: Point2::new(2.0, 0.0),
-    };
+    })
+    .unwrap();
     let curve = SketchCurveIdentity {
         id: "f3d:BulkStream.dat:curve#20".into(),
         record_index: 20,
@@ -306,7 +315,7 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 20,
         geometry_offset: 0,
         entity_genesis: Some(0),
-        primary_id: 20,
+        primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(0.0, 0.0, 0.0),
@@ -359,23 +368,27 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:native:point#175".into(),
         record_index: 175,
         owner_reference: Some(172),
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 400,
         coordinate_offset: 89,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             10,
             crate::records::SketchPointClosure::Selector0State0,
             None,
             0.0,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 4.0),
-    };
+    })
+    .unwrap();
     let line = SketchCurveIdentity {
         id: "f3d:native:curve#217".into(),
         record_index: 217,
@@ -384,7 +397,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 500,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 20,
+        primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Line {
             start: Point3::new(1.0, 2.0, 0.0),
@@ -401,7 +414,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 800,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 22,
+        primary_id: std::num::NonZeroU64::new(22).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Arc {
             center: Point3::new(0.0, 0.0, 0.0),
@@ -420,7 +433,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 700,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 21,
+        primary_id: std::num::NonZeroU64::new(21).unwrap(),
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Nurbs {
             carrier_reference: None,
@@ -454,21 +467,24 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         ))
     );
     assert_eq!(entities.len(), 4);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Line { start, end }
-            if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SketchGeometry::Arc { start_angle, end_angle, .. }
-            if start_angle.get() == 0.0
-                && end_angle.get() == -std::f64::consts::FRAC_PI_2
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Point { position } if position == Point2::new(2.5, 4.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Line { start, end }
+                if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SketchGeometryDefinition::Arc { start_angle, end_angle, .. }
+                if start_angle.get() == 0.0
+                    && end_angle.get() == -std::f64::consts::FRAC_PI_2
+        )));
     let nurbs = entities
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
@@ -603,12 +619,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         &entities,
     );
     assert!(matches!(
-        constraints[0].definition,
-        SketchConstraintDefinition::Horizontal { .. }
+        constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     assert!(matches!(
-        constraints[1].definition,
-        SketchConstraintDefinition::Native {
+        constraints[1].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             native_state: Some(0x1_0000_0040),
             native_flags: None,
@@ -627,39 +643,49 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
                 ]
     ));
     assert!(matches!(
-        constraints[2].definition,
-        SketchConstraintDefinition::Coincident { ref entities } if entities.len() == 2
+        constraints[2].definition.kind(),
+        SketchConstraintDefinitionInput::Coincident { ref entities } if entities.len() == 2
     ));
     assert!(matches!(
-        constraints[3].definition,
-        SketchConstraintDefinition::Midpoint { .. }
+        constraints[3].definition.kind(),
+        SketchConstraintDefinitionInput::Midpoint { .. }
     ));
     assert!(matches!(
-        constraints[4].definition,
-        SketchConstraintDefinition::Native {
+        constraints[4].definition.kind(),
+        SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ref entities,
             ..
         } if native_kind == "curvature" && entities.len() == 4
     ));
     assert!(matches!(
-        constraints[5].definition,
-        SketchConstraintDefinition::SplineGroup { ref entities }
+        constraints[5].definition.kind(),
+        SketchConstraintDefinitionInput::SplineGroup { ref entities }
             if entities == &[
-                neutral_sketch_curve_id(&sketches[0].id, 20, 0),
-                neutral_sketch_curve_id(&sketches[0].id, 21, 0),
+                neutral_sketch_curve_id(&sketches[0].id, 20, 0).unwrap(),
+                neutral_sketch_curve_id(&sketches[0].id, 21, 0).unwrap(),
             ]
     ));
     let line = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+            )
+        })
         .unwrap();
     let point = entities
         .iter()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .find(|entity| {
+            matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
         .unwrap();
     let other_point = SketchEntity::new(
-        SketchEntityId("generated:point#other".into()),
+        SketchEntityId::mint("generated:test:point#other").unwrap(),
         point.sketch.clone(),
         point.geometry.clone(),
     )
@@ -669,22 +695,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::V,
-            ..
-        })
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
-        Some(SketchConstraintDefinition::SameCoordinate {
-            axis: SketchCoordinateAxis::U,
-            ..
-        })
+        Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
-        Some(SketchConstraintDefinition::Midpoint { .. })
+        Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
         SketchConstraintKind::Tangent,
@@ -694,7 +714,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
     }
     let other_line = SketchEntity::new(
-        SketchEntityId("generated:line#other".into()),
+        SketchEntityId::mint("generated:test:line#other").unwrap(),
         line.sketch.clone(),
         line.geometry.clone(),
     )
@@ -704,15 +724,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Tangent { .. })
+        Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Curvature { .. })
+        Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
-        Some(SketchConstraintDefinition::Equal { .. })
+        Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
         SketchConstraintKind::Colinear,
@@ -729,7 +749,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
 #[test]
 fn nonplanar_sketch_curves_project_in_model_space() {
-    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
@@ -766,7 +786,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: u64::from(record_index),
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id,
+        primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id: 0,
         geometry: Some(geometry),
     };
@@ -812,7 +832,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 103,
         geometry_offset: 100,
         entity_genesis: None,
-        primary_id: 3,
+        primary_id: std::num::NonZeroU64::new(3).unwrap(),
         secondary_id: 0,
         geometry: None,
     });
@@ -868,23 +888,27 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
-    let point = SketchPoint {
+    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
         owner_reference: Some(42),
         class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         byte_offset: 106,
         coordinate_offset: 0,
+        companion: crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            incident_curves: Vec::new(),
+        },
         record_form: crate::records::SketchPointRecordForm::version11(
             5,
             crate::records::SketchPointClosure::Selector0State0,
             None,
             4.5,
-            None,
         ),
         paired_reference: 0,
         coordinates: Point2::new(2.5, 3.5),
-    };
+    })
+    .unwrap();
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
@@ -909,12 +933,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
-    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } =
-        &mut coincident_point.record_form
-    else {
+    let mut form = coincident_point.record_form().clone();
+    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form else {
         panic!("point fixture has a version-11 record form");
     };
-    *persistent_id = 6;
+    *persistent_id = std::num::NonZeroU64::new(6).unwrap();
+    coincident_point.try_set_record_form(form).unwrap();
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
@@ -956,7 +980,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         byte_offset: 109,
         entity_genesis: None,
-        persistent_id: 8,
+        persistent_id: std::num::NonZeroU64::new(8).unwrap(),
         u_degree: 1,
         v_degree: 1,
         u_knots: vec![0.0, 0.0, 1.0, 1.0],
@@ -1010,24 +1034,27 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     );
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(13.0, 21.0, 32.0)
-                && end == Point3::new(16.0, 24.0, 35.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(14.0, 22.0, 33.0)
-                && end == Point3::new(17.0, 25.0, 36.0)
-    )));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Line { start, end }
-            if start == Point3::new(10.0, 21.0, 32.0)
-                && end == Point3::new(10.0, 24.0, 32.0)
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(13.0, 21.0, 32.0)
+                    && end == Point3::new(16.0, 24.0, 35.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(14.0, 22.0, 33.0)
+                    && end == Point3::new(17.0, 25.0, 36.0)
+        )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start, end }
+                if start == Point3::new(10.0, 21.0, 32.0)
+                    && end == Point3::new(10.0, 24.0, 32.0)
+        )));
     let constraints = project_spatial_sketch_constraints(
         &[placement],
         &relations,
@@ -1037,59 +1064,95 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &entities,
     );
     assert!(matches!(
-        constraints.first(),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
-            ..
-        }) if entities == &[
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
-            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0),
+        constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0).unwrap(),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0).unwrap(),
         ]
     ));
     assert!(matches!(
-        constraints.get(1),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Midpoint { .. },
-            ..
-        })
+        constraints
+            .get(1)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
-        constraints.get(2),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident { .. },
-            ..
-        })
+        constraints
+            .get(2)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        constraints.get(3),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelToDirection {
+        constraints.get(3).map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::ParallelToDirection {
                 entity,
                 direction,
-            },
-            ..
-        }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
+            }) if entity == &crate::ids::neutral_spatial_sketch_curve_id(
             &sketches[0].id,
             7,
             0,
-        ) && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ).unwrap() && direction == &Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
-        constraints.get(4),
-        Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
-            definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface { .. },
-            ..
-        })
+        constraints
+            .get(4)
+            .map(|constraint| constraint.definition.kind()),
+        Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointOnSurface { .. })
     ));
-    assert!(entities.iter().any(|entity| matches!(
-        entity.geometry,
-        SpatialSketchGeometry::Circle {
-            center,
-            normal,
-            reference_direction,
-            radius: actual_radius,
-        } if (center == Point3::new(13.0, 21.0, 32.0)
-            && normal == Vector3::new(0.0, 1.0, 0.0)
-            && reference_direction == Vector3::new(0.0, 0.0, 1.0)) && actual_radius.get() == 2.0
-    )));
+    assert!(entities
+        .iter()
+        .any(|entity| matches!(*entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius: actual_radius,
+            } if actual_radius.get() == 2.0 && center == Point3::new(13.0, 21.0, 32.0)
+                && normal == Vector3::new(0.0, 1.0, 0.0)
+                && reference_direction == Vector3::new(0.0, 0.0, 1.0)
+        )));
+}
+
+#[test]
+fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: 34,
+            },
+        )
+        .unwrap(),
+        id: "f3d:design:design-sketch-placement#1".into(),
+        scope_record_index: None,
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).unwrap(),
+        visibility: None,
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+    };
+    let surface = SketchSurface {
+        id: "f3d:design:surface#2".into(),
+        record_index: 2,
+        owner_reference: Some(201),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        byte_offset: 0,
+        entity_genesis: None,
+        persistent_id: std::num::NonZeroU64::new(2).unwrap(),
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        ],
+    };
+    let placements = [placement];
+    let (planar, planar_entities) =
+        project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION);
+    let (spatial, spatial_entities) =
+        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION);
+    assert_eq!(planar.len(), 1);
+    assert!(planar_entities.is_empty());
+    assert_eq!(spatial.len(), 1);
+    assert_eq!(spatial_entities.len(), 1);
 }

@@ -222,7 +222,7 @@ fn local_feature_wire_rejects_empty_collections_and_invalid_strings() {
 #[test]
 fn planar_profiles_and_post_processing_reject_invalid_edits() {
     let spatial = ProfileRef::SpatialSketchProfiles {
-        sketch: crate::sketches::SpatialSketchId("test:spatial".into()),
+        sketch: crate::sketches::SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap(),
         profiles: vec![0].try_into().unwrap(),
     };
     assert!(PlanarProfileRef::try_from(spatial.clone()).is_err());

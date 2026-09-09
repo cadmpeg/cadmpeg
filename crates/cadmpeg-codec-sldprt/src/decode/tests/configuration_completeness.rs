@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let faces = FaceSelection::generated(
         vec![cadmpeg_ir::features::GeneratedFaceRef::new(
-            FeatureId::mint("producer").expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
             "1".into(),
         )
         .unwrap()],
@@ -27,15 +27,15 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     .unwrap();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("draft").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Draft {
@@ -74,7 +74,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
             *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::generated(
                     vec![cadmpeg_ir::features::GeneratedFaceRef::new(
-                        FeatureId::mint("producer").expect("identity grammar"),
+                        FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                         "2".into(),
                     )
                     .unwrap()],
@@ -104,22 +104,22 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
 #[test]
 fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("configured").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#configured").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::from([("Scope".into(), "Body1".into())]),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         ),
         native_ref: None,
@@ -154,7 +154,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         ),
     ] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration-{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
@@ -162,7 +162,9 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                cadmpeg_ir::features::DistinctMembers::default(),
+            ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([(
@@ -180,7 +182,10 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                         .unwrap(),
                     },
                     dependencies: ((ordinal == 0)
-                        .then(|| FeatureId::mint("missing-dependency").expect("identity grammar"))
+                        .then(|| {
+                            FeatureId::mint("synthetic:test:id#missing-dependency")
+                                .expect("identity grammar")
+                        })
                         .into_iter()
                         .collect::<Vec<_>>())
                     .try_into()
@@ -211,15 +216,15 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("metadata-only").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#metadata-only").expect("identity grammar"),
         ordinal: 0,
         name: Some("Localized tree item".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Feature".into()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {
@@ -242,18 +247,19 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
 #[test]
 fn active_configuration_inherits_late_feature_resolutions() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("mirror").expect("identity grammar");
-    let seed = PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"));
+    let feature_id = FeatureId::mint("synthetic:test:id#mirror").expect("identity grammar");
+    let seed =
+        PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Pattern {
@@ -267,17 +273,17 @@ fn active_configuration_inherits_late_feature_resolutions() {
         ),
         native_ref: None,
     });
-    let hole_id = FeatureId::mint("hole").expect("identity grammar");
+    let hole_id = FeatureId::mint("synthetic:test:id#hole").expect("identity grammar");
     ir.model.features.push(Feature {
         id: hole_id.clone(),
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Hole {
@@ -309,14 +315,16 @@ fn active_configuration_inherits_late_feature_resolutions() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
         name: "Configuration".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            cadmpeg_ir::features::DistinctMembers::default(),
+        ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -324,9 +332,9 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: FeatureDefinition::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
@@ -337,9 +345,9 @@ fn active_configuration_inherits_late_feature_resolutions() {
                 hole_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: FeatureDefinition::Hole {
                         profile: None,
                         profile_filter: None,
@@ -408,7 +416,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         shape.construction().clone(),
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         edited_diameter,
     )
     .unwrap();
@@ -426,61 +434,63 @@ fn active_configuration_inherits_late_feature_resolutions() {
 #[test]
 fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "D1".into(),
         expression: "1".into(),
         display: None,
         value: Some(ParameterValue::Integer(1)),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("unevaluated-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#unevaluated-parameter").expect("identity grammar"),
         owner: None,
         ordinal: 1,
         name: "Text".into(),
         expression: "native text".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
         name: "Configuration".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            cadmpeg_ir::features::DistinctMembers::default(),
+        ),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -512,31 +522,33 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 #[test]
 fn active_configuration_snapshots_final_neutral_design_state() {
     let mut ir = CadIr::empty();
-    let feature_id = FeatureId::mint("feature").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: Some(true),
-        dependencies: (vec![FeatureId::mint("dependency").expect("identity grammar")])
-            .try_into()
-            .unwrap(),
+        dependencies: (vec![
+            FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
+        ])
+        .try_into()
+        .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
             vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         )
         .unwrap(),
         native_ref: None,
     });
-    let parameter_id = ParameterId::mint("parameter").expect("identity grammar");
+    let parameter_id = ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
         owner: Some(feature_id.clone()),
@@ -544,7 +556,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -552,7 +564,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     });
     for (ordinal, active) in [(0, true), (1, false)] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration-{ordinal}"))
                 .expect("identity grammar"),
             ordinal,
             active,
@@ -560,7 +572,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                cadmpeg_ir::features::DistinctMembers::default(),
+            ),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -578,12 +592,14 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
-            dependencies: (vec![FeatureId::mint("dependency").expect("identity grammar")])
-                .try_into()
-                .unwrap(),
+            dependencies: (vec![
+                FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
+            ])
+            .try_into()
+            .unwrap(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         }
     );
@@ -599,7 +615,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .get_mut(&feature_id)
         .expect("active feature state")
         .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
-        outputs: Default::default(),
+        outputs: cadmpeg_ir::features::DistinctMembers::default(),
     };
     snapshot_active_configuration(&mut ir);
     assert_eq!(
@@ -614,9 +630,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
 #[test]
 fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
     let mut ir = CadIr::empty();
-    let independent = ParameterId::mint("independent").expect("identity grammar");
-    let overridden = ParameterId::mint("overridden").expect("identity grammar");
-    let dependent = ParameterId::mint("dependent").expect("identity grammar");
+    let independent = ParameterId::mint("synthetic:test:id#independent").expect("identity grammar");
+    let overridden = ParameterId::mint("synthetic:test:id#overridden").expect("identity grammar");
+    let dependent = ParameterId::mint("synthetic:test:id#dependent").expect("identity grammar");
     let parameter = |id: ParameterId, value, dependencies: Vec<ParameterId>| DesignParameter {
         id,
         owner: None,
@@ -655,7 +671,9 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         name: id.into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Default::default()),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            cadmpeg_ir::features::DistinctMembers::default(),
+        ),
         parameter_values,
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -663,13 +681,13 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
     };
     ir.model.configurations = vec![
         configuration(
-            "resolved",
+            "synthetic:test:id#resolved",
             BTreeMap::from([(
                 overridden.clone(),
                 ParameterValue::Length(Length::new(25.0).unwrap()),
             )]),
         ),
-        configuration("unresolved", BTreeMap::new()),
+        configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
     complete_resolved_configuration_parameter_snapshots(&mut ir);

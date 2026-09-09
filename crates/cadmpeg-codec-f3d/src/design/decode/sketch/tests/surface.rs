@@ -51,7 +51,7 @@ fn sketch_surface_parser_recovers_tensor_product_grid() {
 
     let surface = parse_sketch_surface(&payload).expect("canonical surface payload");
     assert_eq!(surface.entity_genesis, Some(17));
-    assert_eq!(surface.persistent_id, 29);
+    assert_eq!(surface.persistent_id.get(), 29);
     assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
     assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);

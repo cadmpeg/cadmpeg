@@ -6,7 +6,7 @@ use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
 use sha2::{Digest, Sha256};
 use std::fmt::{Debug, Formatter, Write as _};
 
-pub fn feature_hash(model: &cadmpeg_ir::document::Model) -> String {
+pub(crate) fn feature_hash(model: &cadmpeg_ir::document::Model) -> String {
     let mut features = model
         .features
         .iter()
@@ -48,19 +48,19 @@ impl Debug for FeatureHashView<'_> {
 }
 
 /// Stable hash of the native feature histories.
-pub fn history_hash(histories: &[FeatureHistory]) -> String {
+pub(crate) fn history_hash(histories: &[FeatureHistory]) -> String {
     hash_debug(histories)
 }
 
 /// Stable hash of neutral configurations.
-pub fn configuration_hash(configurations: &[DesignConfiguration]) -> String {
+pub(crate) fn configuration_hash(configurations: &[DesignConfiguration]) -> String {
     let mut configurations = configurations.to_vec();
     configurations.sort_by(|left, right| left.id.cmp(&right.id));
     hash_debug(&configurations)
 }
 
 /// Stable hash of configuration-local evaluated parameter state.
-pub fn configuration_parameter_value_hash(configurations: &[DesignConfiguration]) -> String {
+pub(crate) fn configuration_parameter_value_hash(configurations: &[DesignConfiguration]) -> String {
     let mut values = configurations
         .iter()
         .filter(|configuration| !configuration.parameter_values.is_empty())
@@ -71,7 +71,7 @@ pub fn configuration_parameter_value_hash(configurations: &[DesignConfiguration]
 }
 
 /// Stable hash of configuration-local evaluated feature state.
-pub fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) -> String {
+pub(crate) fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) -> String {
     let mut states = configurations
         .iter()
         .filter(|configuration| !configuration.feature_states.is_empty())
@@ -82,7 +82,7 @@ pub fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) 
 }
 
 /// Stable hash of native configuration records.
-pub fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
+pub(crate) fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
     let mut configurations = histories
         .iter()
         .flat_map(|history| history.configurations.clone())
@@ -92,14 +92,14 @@ pub fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
 }
 
 /// Stable hash of neutral feature parameters.
-pub fn parameter_hash(parameters: &[DesignParameter]) -> String {
+pub(crate) fn parameter_hash(parameters: &[DesignParameter]) -> String {
     let mut parameters = parameters.to_vec();
     parameters.sort_by(|left, right| left.id.cmp(&right.id));
     hash_debug(&parameters)
 }
 
 /// Stable hash of native feature parameters, properties, and ordering.
-pub fn native_parameter_hash(histories: &[FeatureHistory]) -> String {
+pub(crate) fn native_parameter_hash(histories: &[FeatureHistory]) -> String {
     let mut parameters = histories
         .iter()
         .flat_map(|history| &history.features)

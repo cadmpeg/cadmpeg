@@ -11,7 +11,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::sketches::SketchConstraintDefinition;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
 use crate::loss::CreoLossCode;
 use crate::test_support::*;
@@ -48,11 +48,11 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         let expected_native_ref =
             sketch
                 .id
-                .0
+                .as_str()
                 .replacen("creo:model:sketch#", "creo:featdefs:sketch#", 1);
         let identity_scope = sketch
             .id
-            .0
+            .as_str()
             .strip_prefix("creo:model:sketch#")
             .expect("Creo sketch identity");
         assert_eq!(
@@ -75,7 +75,10 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
-            .all(|entity| entity.id().0.contains(&format!("#{identity_scope}:"))));
+            .all(|entity| entity
+                .id()
+                .as_str()
+                .contains(&format!("#{identity_scope}:"))));
         let parameters = result
             .ir()
             .model
@@ -109,19 +112,19 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .iter()
             .find(|constraint| {
                 matches!(
-                    &constraint.definition,
-                    SketchConstraintDefinition::Native { .. }
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::Native { .. }
                 )
             })
             .expect("reference-line verhor");
         assert!(reference_verhor.id.as_str().starts_with(&format!(
             "creo:featdefs:sketch_constraint#{identity_scope}:verhor:reference_line:offset:"
         )));
-        let SketchConstraintDefinition::Native {
+        let SketchConstraintDefinitionInput::Native {
             native_properties,
             operands,
             ..
-        } = &reference_verhor.definition
+        } = reference_verhor.definition.kind()
         else {
             panic!("reference-line verhor must remain native");
         };

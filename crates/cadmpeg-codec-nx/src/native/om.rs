@@ -11,7 +11,9 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
+pub(crate) mod finite_value;
 pub(crate) mod journal_group;
+use finite_value::FiniteValue;
 pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
 mod reference_wire;
@@ -37,7 +39,7 @@ use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
 pub(crate) mod roll_forward;
 use crate::om::IndexedStore;
-use roll_forward::OmRollForwardStateGroup;
+use roll_forward::OmRollForwardStateTable;
 pub(crate) mod state_slot_lane;
 use state_slot_lane::OmOperationStateSlotLane;
 pub(crate) mod state_status;
@@ -178,17 +180,20 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 .iter()
                 .find(|(entry, section)| {
                     entry
-                        .file_span
+                        .file_span()
                         .map_or(section.offset as u64, |(offset, _)| {
                             offset + section.offset as u64
                         })
-                        == link.section_offset
+                        == link.location.section_offset()
                 })?
                 .1
                 .clone();
             let header = section.record_area_header()?;
             let bytes = section.record_area?.bytes;
-            let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
+            let entry_offset = link
+                .location
+                .section_offset()
+                .checked_sub(section.offset as u64)?;
             let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(OmRecordArea {
                 id: format!("nx:om-record-areas:area#{section_key}-{}", header.offset),
@@ -214,18 +219,18 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(rows) = section.audit_trail_rows() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             rows.into_iter()
                 .filter_map(move |row| {
@@ -253,18 +258,18 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(map) = section.operation_state_counter_map() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             map.into_rows()
                 .enumerate()
@@ -294,18 +299,18 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(groups) = section.operation_state_journal_groups() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             groups
                 .into_iter()
@@ -328,48 +333,37 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
-pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGroup> {
+pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateTable> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+        .filter_map(|(section_ordinal, link)| {
+            let (entry, section) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
-            }) else {
-                return Vec::new();
-            };
-            let Some(table) = section.operation_state_group_table() else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
+                    == link.location.section_offset()
+            })?;
+            let table = section.operation_state_group_table()?;
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let table_end_offset = entry_offset + table.end_offset() as u64;
             let table_footer = table.footer();
-            table
+            let frames = table
                 .into_groups()
                 .into_iter()
-                .enumerate()
-                .filter_map(move |(ordinal, group)| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmRollForwardStateGroup {
-                        id: format!(
-                            "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        frame: group.into_absolute(entry_offset)?,
-                        table_footer,
-                        source_entry: entry.name.clone(),
-                        table_end_offset,
-                    })
-                })
-                .collect()
+                .filter_map(|group| group.into_absolute(entry_offset))
+                .collect();
+            Some(OmRollForwardStateTable::from_frames(
+                section_ordinal,
+                &link.id,
+                &entry.name,
+                table_footer,
+                table_end_offset,
+                frames,
+            ))
         })
         .collect()
 }
@@ -383,18 +377,18 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(messages) = section.operation_state_messages() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             messages
                 .into_iter()
@@ -426,18 +420,18 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(table) = section.operation_state_status_table() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
                 .into_entries()
@@ -473,18 +467,18 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
         .flat_map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
-                    .file_span
+                    .file_span()
                     .map_or(section.offset as u64, |(offset, _)| {
                         offset + section.offset as u64
                     })
-                    == link.section_offset
+                    == link.location.section_offset()
             }) else {
                 return Vec::new();
             };
             let Some(table) = section.operation_state_status_table() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             table
                 .into_entries()
@@ -658,12 +652,11 @@ pub struct Expression {
     pub expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<f64>,
+    pub value: Option<FiniteValue>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
-    #[serde(default)]
-    pub source_table: String,
+    pub source_table: cadmpeg_ir::NonEmptyString,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
 }
@@ -722,9 +715,9 @@ impl From<Expression> for ExpressionWire {
             name: value.name.into_spelling(),
             unit: value.unit,
             expression: value.expression,
-            value: value.value,
+            value: value.value.map(FiniteValue::get),
             source_entry: value.source_entry,
-            source_table: value.source_table,
+            source_table: value.source_table.as_str().to_owned(),
             source_offset: value.source_offset,
         }
     }
@@ -749,9 +742,10 @@ impl TryFrom<ExpressionWire> for Expression {
             name,
             unit: wire.unit,
             expression: wire.expression,
-            value: wire.value,
+            value: wire.value.map(FiniteValue::try_from).transpose()?,
             source_entry: wire.source_entry,
-            source_table: wire.source_table,
+            source_table: cadmpeg_ir::NonEmptyString::new(wire.source_table)
+                .ok_or("source_table must not be empty")?,
             source_offset: wire.source_offset,
         })
     }
@@ -1077,7 +1071,7 @@ pub struct ObjectRecord {
     /// Globally unique record identity.
     pub id: String,
     /// Persistent OM object identifier and the offset of its table word.
-    pub object_id: Option<(u32, u64)>,
+    pub object_id: (u32, u64),
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
@@ -1126,10 +1120,8 @@ struct ObjectRecordWire {
 
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
-        let (object_id, object_id_source_offset) = match value.object_id {
-            Some((id, offset)) => (Some(id), Some(offset)),
-            None => (None, None),
-        };
+        let (id, offset) = value.object_id;
+        let (object_id, object_id_source_offset) = (Some(id), Some(offset));
         Self {
             id: value.id,
             object_id,
@@ -1153,11 +1145,10 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
         let object_id = match (wire.object_id, wire.object_id_source_offset) {
-            (None, None) => None,
-            (Some(id), Some(offset)) => Some((id, offset)),
+            (Some(id), Some(offset)) => (id, offset),
             _ => {
                 return Err(
-                    "object record object_id and object_id_source_offset are present together"
+                    "object record object_id and object_id_source_offset are required together"
                         .to_owned(),
                 );
             }
@@ -1827,19 +1818,79 @@ pub struct DataBlockColumnIndexTable {
 
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StoreHeader {
+#[serde(from = "StoreHeaderWire", into = "StoreHeaderWire")]
+pub enum StoreHeader {
+    /// Header in an ID-bounded store record.
+    Fixed(FixedStoreHeader),
+    /// Header in an offset-bounded store block.
+    OffsetOnly(OffsetStoreHeader),
+}
+
+/// Product/version header in an ID-bounded store record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixedStoreHeader {
+    /// Persistent object identity.
+    pub object_id: u32,
+    /// Product/version location and text.
+    pub header: OffsetStoreHeader,
+}
+
+/// Product/version location and text in an offset-bounded store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffsetStoreHeader {
     /// Globally unique store-header identity.
     pub id: String,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
-    /// Persistent object identity when the header belongs to an ID-bounded record.
-    pub object_id: Option<u32>,
     /// Exact printable product/version text.
     pub version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
     pub source_entry: String,
     /// Absolute file offset of the `04 01` marker.
     pub source_offset: u64,
+}
+
+impl StoreHeader {
+    pub(crate) fn header(&self) -> &OffsetStoreHeader {
+        match self {
+            Self::Fixed(header) => &header.header,
+            Self::OffsetOnly(header) => header,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoreHeaderWire {
+    object_id: Option<u32>,
+    #[serde(flatten)]
+    header: OffsetStoreHeader,
+}
+
+impl From<StoreHeaderWire> for StoreHeader {
+    fn from(wire: StoreHeaderWire) -> Self {
+        match wire.object_id {
+            Some(object_id) => Self::Fixed(FixedStoreHeader {
+                object_id,
+                header: wire.header,
+            }),
+            None => Self::OffsetOnly(wire.header),
+        }
+    }
+}
+
+impl From<StoreHeader> for StoreHeaderWire {
+    fn from(header: StoreHeader) -> Self {
+        match header {
+            StoreHeader::Fixed(header) => Self {
+                object_id: Some(header.object_id),
+                header: header.header,
+            },
+            StoreHeader::OffsetOnly(header) => Self {
+                object_id: None,
+                header,
+            },
+        }
+    }
 }
 
 /// Role of one bounded block in an offset-only NX OM store.
@@ -1881,8 +1932,8 @@ pub struct StringValue {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Exact printable value.
@@ -1898,8 +1949,31 @@ mod printable_value_wire_tests {
     use super::StringValue;
 
     #[test]
+    fn object_record_requires_identity_and_its_offset() {
+        let wire = serde_json::json!({
+            "id": "record", "object_id": 1, "object_id_source_offset": 10,
+            "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
+            "byte_len": 1, "sha256": "hash", "source_entry": "entry", "source_offset": 20
+        });
+        let record: super::ObjectRecord = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        for field in ["object_id", "object_id_source_offset"] {
+            let mut invalid = wire.clone();
+            invalid[field] = serde_json::Value::Null;
+            assert!(serde_json::from_value::<super::ObjectRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
+        }
+        let mut invalid = wire;
+        invalid["object_id"] = serde_json::Value::Null;
+        invalid["object_id_source_offset"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<super::ObjectRecord>(invalid).is_err());
+    }
+
+    #[test]
     fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
-        let json = r#"{"id":"value","record":"record","object_id":null,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
+        let json = r#"{"id":"value","record":"record","object_id":1,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
         let value: StringValue = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         for invalid in ["", "\n", "μ"] {
@@ -1920,8 +1994,8 @@ pub struct ObjectReference {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
     pub ordinal: u32,
     /// Typed reference and its same-section target when present.
@@ -1940,8 +2014,8 @@ pub struct ObjectRecordHandlePair {
     pub id: String,
     /// Owning entry in the native OM record directory.
     pub record: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
     /// First handle-reference occurrence.
     pub first_reference: String,
     /// Second handle-reference occurrence.
@@ -2212,7 +2286,7 @@ pub fn material_texture_catalog_entries(
     else {
         return Vec::new();
     };
-    let Some((entry_offset, size)) = entry.file_span else {
+    let Some((entry_offset, size)) = entry.file_span() else {
         return Vec::new();
     };
     let Some(start) = usize::try_from(entry_offset).ok() else {
@@ -2299,7 +2373,7 @@ pub fn external_references(container: &Container) -> Vec<ExternalReference> {
             let ordinal = ordinals.entry(entry.name.clone()).or_default();
             let current = *ordinal;
             *ordinal += 1;
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             ExternalReference {
                 id: format!("nx:external-reference:{}#{current}", entry.name),
                 ordinal: current,
@@ -2317,7 +2391,7 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
         .external_reference_records()
         .into_iter()
         .map(|(entry, record)| {
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             ExternalReferenceRecord {
                 id: format!(
                     "nx:external-reference-record:{}#{}",
@@ -2351,7 +2425,7 @@ pub fn external_reference_indexed_records(
         .external_reference_indexed_records()
         .into_iter()
         .filter_map(|(entry, record)| {
-            let entry_offset = entry.file_span?.0;
+            let entry_offset = entry.file_span()?.0;
             let source_offset = entry_offset.checked_add(record.offset as u64)?;
             let bytes = container
                 .bounded_entry_bytes(source_offset, u64::try_from(record.byte_len).ok()?)?;
@@ -2568,7 +2642,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
         .enumerate()
         .filter(|(_, entry)| entry.name == "/Root/part/arrangements")
         .filter_map(|(entry_index, entry)| {
-            let (offset, size) = entry.file_span?;
+            let (offset, size) = entry.file_span()?;
             let (offset_usize, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container
                 .data
@@ -2663,7 +2737,7 @@ pub fn part_attributes(container: &Container) -> Vec<PartAttribute> {
         .enumerate()
         .find(|(_, entry)| entry.name == "/Root/part/attrs")
         .and_then(|(entry_index, entry)| {
-            let (offset, size) = entry.file_span?;
+            let (offset, size) = entry.file_span()?;
             let start = usize::try_from(offset).ok()?;
             let payload = container
                 .data
@@ -2737,7 +2811,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             definitions.insert(
                 (entry_index, definition.offset),
@@ -2756,7 +2830,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     }
     for (entry, section) in container.indexed_om_sections() {
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             definitions
@@ -2801,7 +2875,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions.insert(
                 (entry_index, definition.offset),
@@ -2820,7 +2894,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     }
     for (entry, section) in container.indexed_om_sections() {
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions
@@ -2849,7 +2923,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         let Some(records) = section.as_fixed() else {
             continue;
         };
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         let record_bytes = records
             .iter()
@@ -2858,7 +2932,12 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
-        for (source, _, _, reference) in section.references() {
+        for (source, reference) in records.iter().enumerate().flat_map(|(source, record)| {
+            record
+                .references(records.len())
+                .into_iter()
+                .map(move |reference| (source, reference))
+        }) {
             let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                 continue;
             };
@@ -2928,7 +3007,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: Some((record.object_id.0, entry_offset + record.object_id.1)),
+                    object_id: (record.object_id.0, entry_offset + record.object_id.1),
                     section_ordinal: section_ordinal as u32,
                     record_ordinal: record_ordinal as u32,
                     section_offset,
@@ -2950,20 +3029,20 @@ pub fn rmfastload_object_id_table(
     container: &Container,
 ) -> Option<(RmFastLoadObjectIdTable, Vec<RmFastLoadObjectId>)> {
     let (entry, table) = container.rmfastload_object_id_table()?;
-    let entry_offset = entry.file_span?.0;
+    let entry_offset = entry.file_span()?.0;
     let table_id = "nx:rmfastload:object-id-table#0".to_string();
     let mut object_ids = table
         .object_ids
-        .into_vec()
-        .into_iter()
+        .as_slice()
+        .iter()
         .enumerate()
         .map(|(ordinal, object_id)| RmFastLoadObjectId {
             id: format!("nx:rmfastload:object-id#{ordinal:010}"),
             table: table_id.clone(),
             ordinal: ordinal as u32,
-            value: object_id.value,
+            value: *object_id,
             stable_identity: None,
-            source_offset: entry_offset + object_id.offset as u64,
+            source_offset: entry_offset + table.member_offset(ordinal) as u64,
         })
         .collect::<Vec<_>>();
     assign_rmfastload_object_id_identities(&mut object_ids);
@@ -3006,7 +3085,7 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         candidates.push((
             section_ordinal,
@@ -3104,7 +3183,7 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
                 data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
                 kind,
-                source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
+                source_offset: entry.file_span().map_or(0, |(offset, _)| offset)
                     + control.offset as u64,
             })
         })
@@ -3129,7 +3208,7 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
             else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             values
                 .into_iter()
@@ -3193,7 +3272,7 @@ pub fn data_block_control_class_references(
                 return Vec::new();
             };
             let entry_index = entry.index();
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             ordinals
                 .into_iter()
@@ -3245,7 +3324,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                 return Vec::new();
             };
             let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             let block_count = records.len() + 1;
             values
@@ -3314,7 +3393,7 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
             let Some((control, _, _)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             crate::om::references(control.bytes, control.offset)
                 .into_iter()
@@ -3388,9 +3467,7 @@ pub fn data_block_references(
 ) -> Vec<DataBlockReference> {
     let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
-        let Some((object_id, _)) = record.object_id else {
-            continue;
-        };
+        let (object_id, _) = record.object_id;
         target_records
             .entry((record.source_entry.clone(), object_id))
             .or_default()
@@ -3411,7 +3488,7 @@ pub fn data_block_references(
             let Some((control, _, records)) = section.as_offset_only() else {
                 return Vec::new();
             };
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let mut source_blocks = Vec::with_capacity(records.len() + 1);
             source_blocks.push(control.clone());
             source_blocks.extend(records.iter().cloned());
@@ -3480,7 +3557,7 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
             continue;
         };
         let entry_index = entry.index();
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + storage_offset as u64;
         let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
         let parsed_definitions = PaletteIndex::all().map(|color_index| {
@@ -3611,18 +3688,20 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
         .into_iter()
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             match &section.store {
                 IndexedStore::Fixed { records } => records.iter().find_map(|record| {
                     crate::om::store_version(record.bytes, record.offset).map(|version| {
-                        StoreHeader {
-                            id: format!("nx:om-store-headers:store#{section_ordinal}"),
-                            section_ordinal: section_ordinal as u32,
-                            object_id: Some(record.object_id.0),
-                            version: version.value.into_owned(),
-                            source_entry: entry.name.clone(),
-                            source_offset: entry_offset + version.offset as u64,
-                        }
+                        StoreHeader::Fixed(FixedStoreHeader {
+                            object_id: record.object_id.0,
+                            header: OffsetStoreHeader {
+                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
+                                section_ordinal: section_ordinal as u32,
+                                version: version.value.into_owned(),
+                                source_entry: entry.name.clone(),
+                                source_offset: entry_offset + version.offset as u64,
+                            },
+                        })
                     })
                 }),
                 IndexedStore::OffsetOnly {
@@ -3631,14 +3710,13 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
                     .chain(records.iter())
                     .find_map(|record| {
                         crate::om::store_version(record.bytes, record.offset).map(|version| {
-                            StoreHeader {
+                            StoreHeader::OffsetOnly(OffsetStoreHeader {
                                 id: format!("nx:om-store-headers:store#{section_ordinal}"),
                                 section_ordinal: section_ordinal as u32,
-                                object_id: None,
                                 version: version.value.into_owned(),
                                 source_entry: entry.name.clone(),
                                 source_offset: entry_offset + version.offset as u64,
-                            }
+                            })
                         })
                     }),
             }
@@ -3653,13 +3731,20 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section.as_fixed().is_none() {
+            let Some(records) = section.as_fixed() else {
                 return Vec::new();
-            }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .string_values()
-                .into_iter()
+            };
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+            records
+                .iter()
+                .enumerate()
+                .flat_map(|(record_ordinal, record)| {
+                    record.string_values().into_iter().enumerate().map(
+                        move |(value_ordinal, value)| {
+                            (record_ordinal, value_ordinal, record.object_id.0, value)
+                        },
+                    )
+                })
                 .map(move |(record_ordinal, value_ordinal, object_id, value)| {
                     let record =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
@@ -3688,13 +3773,15 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
-            if section.as_fixed().is_none() {
+            let Some(records) = section.as_fixed() else {
                 return Vec::new();
-            }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .references()
-                .into_iter()
+            };
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+            records.iter().enumerate().flat_map(|(record_ordinal, record)| {
+                record.references(records.len()).into_iter().enumerate().map(move |(reference_ordinal, reference)| {
+                    (record_ordinal, reference_ordinal, record.object_id.0, reference)
+                })
+            })
                 .map(
                     move |(record_ordinal, reference_ordinal, object_id, reference)| {
                         let record = format!(
@@ -3854,7 +3941,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
             {
                 return Vec::new();
             }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let Some(records) = section.as_fixed() else {
                 return Vec::new();
             };
@@ -3915,7 +4002,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
     }
     let mut expressions = Vec::new();
     for (entry_index, entry) in container.entries.iter().enumerate() {
-        let Some((entry_offset, size)) = entry.file_span else {
+        let Some((entry_offset, size)) = entry.file_span() else {
             continue;
         };
         let (Ok(offset), Ok(size)) = (usize::try_from(entry_offset), usize::try_from(size)) else {
@@ -3955,7 +4042,14 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
-            let value = expression.constant_value();
+            let value = expression
+                .constant_value()
+                .and_then(|value| FiniteValue::try_from(value).ok());
+            let Some(source_table) = cadmpeg_ir::NonEmptyString::new(format!(
+                "nx:om-entry-{entry_index}:expression-table#{table_offset}"
+            )) else {
+                continue;
+            };
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
                 owner: indexed_record
@@ -3971,7 +4065,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 expression: expression.expression.to_string(),
                 value,
                 source_entry: entry.name.clone(),
-                source_table: format!("nx:om-entry-{entry_index}:expression-table#{table_offset}"),
+                source_table,
                 source_offset: entry_offset + expression.offset as u64,
             });
         }
@@ -3980,20 +4074,12 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
     expressions
 }
 
-fn expression_scope(expression: &Expression) -> &str {
-    if expression.source_table.is_empty() {
-        &expression.source_entry
-    } else {
-        &expression.source_table
-    }
-}
-
 pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
             .entry((
-                expression_scope(expression).to_string(),
+                expression.source_table.as_str().to_string(),
                 expression.name.as_str().to_string(),
                 expression.unit.clone(),
             ))
@@ -4002,7 +4088,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut values = BTreeMap::<(String, String, ExpressionUnit), f64>::new();
     for expression in expressions.iter_mut() {
         let key = (
-            expression_scope(expression).to_string(),
+            expression.source_table.as_str().to_string(),
             expression.name.as_str().to_string(),
             expression.unit.clone(),
         );
@@ -4011,7 +4097,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             continue;
         }
         if let Some(value) = expression.value {
-            values.insert(key, value);
+            values.insert(key, value.get());
         }
     }
 
@@ -4022,7 +4108,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             .filter(|expression| expression.value.is_none())
         {
             let expression_key = (
-                expression_scope(expression).to_string(),
+                expression.source_table.as_str().to_string(),
                 expression.name.as_str().to_string(),
                 expression.unit.clone(),
             );
@@ -4031,7 +4117,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             }
             let evaluated = evaluate_parameterized_expression(&expression.expression, |name| {
                 let key = (
-                    expression_scope(expression).to_string(),
+                    expression.source_table.as_str().to_string(),
                     name.to_string(),
                     expression.unit.clone(),
                 );
@@ -4040,9 +4126,9 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 }
                 values.get(&key).copied()
             });
-            if let Some(value) = evaluated {
+            if let Some(value) = evaluated.and_then(|value| FiniteValue::try_from(value).ok()) {
                 expression.value = Some(value);
-                values.insert(expression_key.clone(), value);
+                values.insert(expression_key.clone(), value.get());
                 changed = true;
             }
         }
@@ -4108,16 +4194,19 @@ mod tests {
 
     #[test]
     fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4128,22 +4217,35 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, None);
-        assert_eq!(expressions[2].value, None);
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
     }
 
     #[test]
     fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4155,22 +4257,35 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[2].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(13.0));
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(13.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
-        let expression = |name: &str, formula: &str, value| super::Expression {
+        let expression = |name: &str, formula: &str, value: Option<f64>| super::Expression {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "part".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 0,
         };
         let mut expressions = vec![
@@ -4181,87 +4296,198 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, Some(4.0));
-        assert_eq!(expressions[2].value, Some(-4.0));
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(4.0)
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(-4.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_scopes_names_to_their_expression_table() {
-        let expression =
-            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+        let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
+            super::Expression {
                 id: id.into(),
                 owner: None,
                 declaration: None,
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value,
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
                 source_entry: "part".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
-            };
+            }
+        };
         let mut expressions = vec![
-            expression("a-p2", "table-a", "p2", "5", Some(5.0)),
-            expression("a-p3", "table-a", "p3", "p2 * 2", None),
-            expression("b-p2", "table-b", "p2", "7", Some(7.0)),
-            expression("b-p3", "table-b", "p3", "p2 * 2", None),
+            expression(
+                "a-p2",
+                "nx:test:expression-table#table-a",
+                "p2",
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "a-p3",
+                "nx:test:expression-table#table-a",
+                "p3",
+                "p2 * 2",
+                None,
+            ),
+            expression(
+                "b-p2",
+                "nx:test:expression-table#table-b",
+                "p2",
+                "7",
+                Some(7.0),
+            ),
+            expression(
+                "b-p3",
+                "nx:test:expression-table#table-b",
+                "p3",
+                "p2 * 2",
+                None,
+            ),
         ];
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[1].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(14.0));
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(14.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
-        let expression =
-            |id: &str, table: &str, name: &str, formula: &str, value| super::Expression {
+        let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
+            super::Expression {
                 id: id.into(),
                 owner: None,
                 declaration: None,
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value,
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
                 source_entry: "part".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset: 0,
-            };
+            }
+        };
         let mut expressions = vec![
-            expression("a-p1-first", "table-a", "p1", "3", Some(3.0)),
-            expression("a-p1-second", "table-a", "p1", "5", Some(5.0)),
-            expression("a-p2", "table-a", "p2", "p1 * 2", None),
-            expression("b-p1", "table-b", "p1", "7", Some(7.0)),
-            expression("b-p2", "table-b", "p2", "p1 * 2", None),
+            expression(
+                "a-p1-first",
+                "nx:test:expression-table#table-a",
+                "p1",
+                "3",
+                Some(3.0),
+            ),
+            expression(
+                "a-p1-second",
+                "nx:test:expression-table#table-a",
+                "p1",
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "a-p2",
+                "nx:test:expression-table#table-a",
+                "p2",
+                "p1 * 2",
+                None,
+            ),
+            expression(
+                "b-p1",
+                "nx:test:expression-table#table-b",
+                "p1",
+                "7",
+                Some(7.0),
+            ),
+            expression(
+                "b-p2",
+                "nx:test:expression-table#table-b",
+                "p2",
+                "p1 * 2",
+                None,
+            ),
         ];
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[0].value, None);
-        assert_eq!(expressions[1].value, None);
-        assert_eq!(expressions[2].value, None);
-        assert_eq!(expressions[3].value, Some(7.0));
-        assert_eq!(expressions[4].value, Some(14.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            None
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(7.0)
+        );
+        assert_eq!(
+            expressions[4]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(14.0)
+        );
     }
 
     #[test]
     fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
-        let expression =
-            |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
-                super::Expression {
-                    id: id.into(),
-                    owner: None,
-                    declaration: None,
-                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-                    unit,
-                    expression: formula.into(),
-                    value,
-                    source_entry: "part".into(),
-                    source_table: "table".into(),
-                    source_offset: 0,
-                }
-            };
+        let expression = |id: &str,
+                          name: &str,
+                          unit: super::ExpressionUnit,
+                          formula: &str,
+                          value: Option<f64>| {
+            super::Expression {
+                id: id.into(),
+                owner: None,
+                declaration: None,
+                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+                unit,
+                expression: formula.into(),
+                value: value.map(|value| {
+                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                }),
+                source_entry: "part".into(),
+                source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                    .unwrap(),
+                source_offset: 0,
+            }
+        };
         let mut expressions = vec![
             expression(
                 "length-p1",
@@ -4295,10 +4521,30 @@ mod tests {
 
         super::evaluate_expression_graphs(&mut expressions);
 
-        assert_eq!(expressions[0].value, Some(5.0));
-        assert_eq!(expressions[1].value, Some(45.0));
-        assert_eq!(expressions[2].value, Some(10.0));
-        assert_eq!(expressions[3].value, Some(15.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(5.0)
+        );
+        assert_eq!(
+            expressions[1]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(45.0)
+        );
+        assert_eq!(
+            expressions[2]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(10.0)
+        );
+        assert_eq!(
+            expressions[3]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(15.0)
+        );
     }
 
     #[test]
@@ -4310,9 +4556,12 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
-            value,
+            value: value.map(|value| {
+                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+            }),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4329,7 +4578,7 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(ir.model.parameters[2].value, None);
         assert_eq!(
@@ -4349,7 +4598,8 @@ mod tests {
             expression: text.into(),
             value: None,
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: "table".into(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: u64::from(key),
         };
         let expressions = [
@@ -4366,27 +4616,31 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert!(ir.model.parameters[2].dependencies.is_empty());
     }
 
     #[test]
     fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
-        let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
-            super::Expression {
-                id: format!("nx:test:expression#{key}"),
-                owner: None,
-                declaration: None,
-                name: crate::om::parameter_name::ParameterName::new(name.to_string()),
-                unit,
-                expression: text.into(),
-                value,
-                source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: "table".into(),
-                source_offset: u64::from(key),
-            }
-        };
+        let expression =
+            |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value: Option<f64>| {
+                super::Expression {
+                    id: format!("nx:test:expression#{key}"),
+                    owner: None,
+                    declaration: None,
+                    name: crate::om::parameter_name::ParameterName::new(name.to_string()),
+                    unit,
+                    expression: text.into(),
+                    value: value.map(|value| {
+                        crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
+                    }),
+                    source_entry: "/Root/UG_PART/UG_PART".into(),
+                    source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                        .unwrap(),
+                    source_offset: u64::from(key),
+                }
+            };
         let expressions = [
             expression(10, "p1", super::ExpressionUnit::Millimeter, "5", Some(5.0)),
             expression(11, "p1", super::ExpressionUnit::Degree, "45", Some(45.0)),
@@ -4415,7 +4669,7 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(
             ir.model.parameters[2].dependencies.as_slice(),
@@ -4466,14 +4720,26 @@ mod tests {
                 expression: text.into(),
                 value: None,
                 source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: table.into(),
+                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
                 source_offset,
             };
         let expressions = [
-            expression("a-p3", "table-a", "p3", "p2 * 2", 40),
-            expression("b-p3", "table-b", "p3", "p2 * 2", 10),
-            expression("a-p2", "table-a", "p2", "5", 30),
-            expression("b-p2", "table-b", "p2", "7", 20),
+            expression(
+                "a-p3",
+                "nx:test:expression-table#table-a",
+                "p3",
+                "p2 * 2",
+                40,
+            ),
+            expression(
+                "b-p3",
+                "nx:test:expression-table#table-b",
+                "p3",
+                "p2 * 2",
+                10,
+            ),
+            expression("a-p2", "nx:test:expression-table#table-a", "p2", "5", 30),
+            expression("b-p2", "nx:test:expression-table#table-b", "p2", "7", 20),
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -4485,17 +4751,17 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
             ir.model.features[0].id.as_str(),
-            "table-b:feature#equations"
+            "nx:test:feature#equations-table-b"
         );
         assert_eq!(ir.model.features[0].ordinal, 0);
         assert_eq!(
             ir.model.features[1].id.as_str(),
-            "table-a:feature#equations"
+            "nx:test:feature#equations-table-a"
         );
         assert_eq!(ir.model.features[1].ordinal, 1);
         assert_eq!(
@@ -4576,7 +4842,8 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4592,7 +4859,7 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
         assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
@@ -4626,7 +4893,8 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset,
         };
         let expressions = [
@@ -4645,7 +4913,7 @@ mod tests {
             &[],
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(
             ir.model
@@ -4720,9 +4988,10 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 20,
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -4734,7 +5003,7 @@ mod tests {
             &uses,
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
         assert_eq!(
             ir.model.parameters[0].properties["consumer.0"],
             "nx:feature-history:feature#1-2"
@@ -4754,9 +5023,10 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 10,
         };
         let parameter_use = |id: &str, operation: &str, source_offset| {
@@ -4783,7 +5053,7 @@ mod tests {
             &uses,
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
 
         assert_eq!(
             ir.model.parameters[0].properties["parameter_use.0"],
@@ -4804,9 +5074,10 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(5.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 20,
         };
         let parameter_use = crate::native::features::FeatureParameterUse {
@@ -4827,7 +5098,7 @@ mod tests {
             std::slice::from_ref(&parameter_use),
             &mut annotations,
         )
-        .unwrap();
+        .expect("valid exactness fields");
         let parameter_owners = ir
             .model
             .parameters
@@ -4890,9 +5161,10 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p3".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "12".to_string(),
-            value: Some(12.0),
+            value: Some(crate::native::om::finite_value::FiniteValue::try_from(12.0).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
-            source_table: "table".to_string(),
+            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                .unwrap(),
             source_offset: 900,
         };
         let bindings = crate::native::features::feature_parameter_bindings(
@@ -4980,6 +5252,10 @@ mod tests {
         assert_eq!(blocks[0].block_ordinal, 0);
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
         assert_eq!(blocks[1].role, super::DataBlockRole::Column);
+        for (ordinal, block) in blocks.iter().enumerate() {
+            assert_eq!(block.block_ordinal as usize, ordinal);
+            assert_eq!(block.id, format!("nx:om-data-blocks-0:block#{ordinal}"));
+        }
         assert!(blocks[0].byte_len > 0);
         assert!(blocks[0].stable_identity.is_some());
         let forms = super::data_block_control_forms(&container);
@@ -5197,10 +5473,16 @@ mod tests {
         );
         assert_eq!(expressions[0].unit, super::ExpressionUnit::Degree);
         assert_eq!(expressions[0].expression, "120");
-        assert_eq!(expressions[0].value, Some(120.0));
+        assert_eq!(
+            expressions[0]
+                .value
+                .map(crate::native::om::finite_value::FiniteValue::get),
+            Some(120.0)
+        );
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
         assert!(expressions[0]
             .source_table
+            .as_str()
             .starts_with("nx:om-entry-0:expression-table#"));
         let declarations = result
             .ir()
@@ -5261,12 +5543,15 @@ mod tests {
             .arena_as::<super::StoreHeader>("store_headers")
             .expect("required invariant");
         assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0].version.as_str(), "NX 2027.3102");
-        assert_eq!(headers[0].object_id, Some(0x101));
-        assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
+        assert_eq!(headers[0].header().version.as_str(), "NX 2027.3102");
+        let super::StoreHeader::Fixed(header) = &headers[0] else {
+            panic!("ID-bounded store header");
+        };
+        assert_eq!(header.object_id, 0x101);
+        assert_eq!(object_records[1].object_id.0, 0x102);
         assert_eq!(
-            object_records[1].object_id.map(|(_, offset)| offset),
-            object_records[0].object_id.map(|(_, offset)| offset + 4)
+            object_records[1].object_id.1,
+            object_records[0].object_id.1 + 4
         );
         assert_eq!(
             expressions[0].owner.as_ref().map(|owner| &owner.record),
@@ -5296,7 +5581,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(strings.len(), 1);
         assert_eq!(strings[0].record, object_records[1].id);
-        assert_eq!(strings[0].object_id, Some(0x102));
+        assert_eq!(strings[0].object_id, 0x102);
         assert_eq!(strings[0].value.as_str(), "SKETCH_001");
         let references = result
             .ir()
@@ -5307,7 +5592,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(references.len(), 3);
         assert_eq!(references[0].record, object_records[1].id);
-        assert_eq!(references[0].object_id, Some(0x102));
+        assert_eq!(references[0].object_id, 0x102);
         let wire = serde_json::to_value(&references).unwrap();
         assert_eq!(wire[0]["value"], 0x1234_5678);
         assert_eq!(wire[0]["target_record"], serde_json::Value::Null);

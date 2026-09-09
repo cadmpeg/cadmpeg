@@ -21,7 +21,7 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let entry = DirEntry {
         name: "section".into(),
         region: Region::Header,
-        file_span: None,
+        body: crate::container::DirEntryBody::Directory,
     };
     let entries = [entry];
     let entry = crate::container::entry_ref::EntryRef::new(&entries, 0).unwrap();
@@ -130,9 +130,11 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{index}")),
         unit: ExpressionUnit::Millimeter,
         expression: index.to_string(),
-        value: Some(f64::from(index)),
+        value: Some(
+            crate::native::om::finite_value::FiniteValue::try_from(f64::from(index)).unwrap(),
+        ),
         source_entry: source_entry.into(),
-        source_table: source_table.into(),
+        source_table: cadmpeg_ir::NonEmptyString::new(source_table).unwrap(),
         source_offset: u64::from(index),
     };
     let mut expressions = [
@@ -165,7 +167,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     .is_empty());
 
     expressions[2].source_entry = "section-a".into();
-    expressions[2].source_table = "table-a".into();
+    expressions[2].source_table = cadmpeg_ir::NonEmptyString::new("table-a").unwrap();
     assert_eq!(
         super::feature_block_dimensions(
             std::slice::from_ref(&construction),
@@ -404,9 +406,11 @@ fn feature_history_links_follow_unique_physical_section_order() {
         row: format!("row-{id}"),
         slot: SegmentIndexSlot::Value,
         schema_role,
-        separator_byte_len: (section_offset - source_offset) as u32,
-        source_offset,
-        section_offset,
+        location: crate::native::segments::om_location::OmLocation::new(
+            source_offset,
+            (section_offset - source_offset) as u32,
+        )
+        .unwrap(),
     };
     let links = super::canonical_feature_history_links([
         link("late", OmSchemaRole::FeatureHistory, 300, 300),
@@ -418,7 +422,7 @@ fn feature_history_links_follow_unique_physical_section_order() {
     assert_eq!(
         links
             .iter()
-            .map(|link| (link.id.as_str(), link.section_offset))
+            .map(|link| (link.id.as_str(), link.location.section_offset()))
             .collect::<Vec<_>>(),
         [("duplicate", 100), ("late", 300)]
     );
@@ -952,11 +956,11 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         uses[0].id,
         "nx:feature-history:datum-csys-block-use#0-3-0-1"
     );
-    assert_eq!(uses[0].reference_ordinal, 3);
+    assert_eq!(u8::from(uses[0].reference_ordinal), 3);
     assert_eq!(uses[0].input_operation_label, "operation#0");
-    assert_eq!(uses[1].reference_ordinal, 4);
+    assert_eq!(u8::from(uses[1].reference_ordinal), 4);
     assert_eq!(uses[1].input_operation_label, "operation#6");
-    assert_eq!(uses[2].reference_ordinal, 4);
+    assert_eq!(u8::from(uses[2].reference_ordinal), 4);
     assert_eq!(uses[2].input_operation_label, "operation#7");
 }
 
@@ -1412,9 +1416,9 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
     assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
     assert_eq!(uses[0].column_row, "row#3");
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 108);
-    assert_eq!(uses[1].row_slot, 1);
+    assert_eq!(u8::from(uses[1].row_slot), 1);
     assert_eq!(uses[1].source_offset, 109);
 }
 
@@ -1486,9 +1490,9 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[0].input_slot.number(), 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
     assert_eq!(uses[0].column_row, "linked-row#3");
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 107);
-    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 114);
     let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
     assert_eq!(targets.len(), 1);
@@ -1579,9 +1583,9 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
     assert_eq!(uses[0].column_row, "target-row#3");
     assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
-    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(u8::from(uses[0].row_slot), 0);
     assert_eq!(uses[0].source_offset, 105);
-    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(u8::from(uses[1].row_slot), 3);
     assert_eq!(uses[1].source_offset, 112);
     let targets = feature_input_column_targets(
         std::slice::from_ref(&input),
@@ -1672,7 +1676,7 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
     assert_eq!(uses.len(), 4);
     assert_eq!(
         uses.iter()
-            .map(|use_| (use_.construction_slot, use_.row_slot))
+            .map(|use_| (u8::from(use_.construction_slot), u8::from(use_.row_slot)))
             .collect::<Vec<_>>(),
         [(5, 0), (5, 3), (6, 1), (7, 2)]
     );

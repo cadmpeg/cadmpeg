@@ -11,27 +11,27 @@ use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
-    let mut transform = identity_matrix();
+    let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     transform[0][3] = 1.0;
     transform[1][3] = 2.0;
     transform[2][3] = 3.0;
 
     let mut joint_origin = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#1",
+        "f3d:native/BulkStream.dat:parameter-scope#1",
         crate::records::feature::DesignFeatureKind::JointOrigin,
         1,
     );
-    joint_origin.with_joint_origin_transform(transform);
+    joint_origin.with_joint_origin_transform(transform.try_into().unwrap());
 
     let mut work_plane = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#2",
+        "f3d:native/BulkStream.dat:parameter-scope#2",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         2,
     );
-    work_plane.with_work_plane_transform(transform);
+    work_plane.with_work_plane_transform(transform.try_into().unwrap());
 
     let mut work_point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#3",
+        "f3d:native/BulkStream.dat:parameter-scope#3",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         3,
     );
@@ -76,7 +76,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 #[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#4",
+        "f3d:native/BulkStream.dat:parameter-scope#4",
         crate::records::feature::DesignFeatureKind::Scale,
         4,
     );
@@ -124,11 +124,11 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 #[test]
 fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#10",
+        "f3d:native/BulkStream.dat:parameter-scope#10",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         10,
     );
-    referenced.with_work_plane_transform(identity_matrix());
+    referenced.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     referenced.with_work_plane_reference(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
@@ -153,7 +153,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 2,
-        recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
+        recipe_id: format!("f3d:native/BulkStream.dat:construction-recipe#{record_index}"),
         recipe_prefix_offset: 3,
         recipe_prefix_bytes: Vec::new(),
         recipe_references: Vec::new(),
@@ -167,11 +167,11 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         next_byte_offset: 5,
     };
     let mut plane = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#20",
+        "f3d:native/BulkStream.dat:parameter-scope#20",
         crate::records::feature::DesignFeatureKind::WorkPlane,
         20,
     );
-    plane.with_work_plane_transform(identity_matrix());
+    plane.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
             placement_record_index: 21,
@@ -204,13 +204,13 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
 
     let planes = [10, 20, 30].map(|record_index| {
-        let id = format!("f3d:native:parameter-scope#{record_index}");
+        let id = format!("f3d:native/BulkStream.dat:parameter-scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
             crate::records::feature::DesignFeatureKind::WorkPlane,
             record_index,
         );
-        scope.with_work_plane_transform(identity_matrix());
+        scope.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
         scope
     });
     let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {
@@ -240,7 +240,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         })),
     };
     let mut point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#40",
+        "f3d:native/BulkStream.dat:parameter-scope#40",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         40,
     );
@@ -265,7 +265,9 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
     let point = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:parameter-scope#40"))
+        .find(|feature| {
+            feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:parameter-scope#40")
+        })
         .expect("projected work point");
     let FeatureDefinition::DatumPoint {
         construction: Some(construction),
@@ -298,12 +300,12 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
 
     let mut predecessor = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#10",
+        "f3d:native/BulkStream.dat:parameter-scope#10",
         crate::records::feature::DesignFeatureKind::Extrude,
         10,
     );
     predecessor.history_state_id = Some(4);
-    let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
+    let recipe_id = "f3d:native/BulkStream.dat:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe {
         record_index: 12,
         byte_offset: 0,
@@ -325,7 +327,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         next_byte_offset: 5,
     };
     let mut point = DesignParameterScope::empty(
-        "f3d:native:parameter-scope#20",
+        "f3d:native/BulkStream.dat:parameter-scope#20",
         crate::records::feature::DesignFeatureKind::WorkPoint,
         20,
     );
@@ -350,8 +352,9 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             reference_type_offset: 0,
         });
     }
-    let timeline = DesignFeatureTimeline {
-        frame: crate::records::DesignTimelineFrame::test_items(
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:native/BulkStream.dat", 0),
+        crate::records::DesignTimelineFrame::test_items(
             0,
             vec![
                 crate::records::Located {
@@ -364,12 +367,12 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 },
             ],
         ),
-        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: std::num::NonZeroU64::new(1).unwrap(),
-        source_ordinal: 0,
-        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-    };
+        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
     let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
@@ -444,44 +447,55 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     use crate::records::topology::DesignConstructionOperandGroupFrame;
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
 
-    let stream = "f3d:native";
+    let stream = "f3d:native/BulkStream.dat";
     let group = |scope_record_index: u32,
                  scope_reference_ordinal: u32,
                  record_index: u32,
                  members: &[u32],
                  role: DesignOperandRole| {
-        DesignConstructionOperandGroup {
-            id: format!("{stream}:construction-group#{record_index}"),
-            scope_record_index,
-            scope_reference_ordinal,
-            record_index,
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            members: members
-                .iter()
-                .copied()
-                .map(|value| crate::records::Located { value, offset: 0 })
-                .collect(),
-            lost_edge_references: Vec::new(),
-            frame: DesignConstructionOperandGroupFrame {
-                member_count_offset: 0,
-                auxiliary_records: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_records: Vec::new(),
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 1,
-                opaque_index_offset: 0,
-                opaque_scalar: 0.0,
-                opaque_scalar_offset: 0,
-                variant: false,
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("{stream}:construction-group#{record_index}"),
+                scope_record_index,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                members: members
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(index, value)| crate::records::Located {
+                        value,
+                        offset: index as u64 * 11,
+                    })
+                    .collect(),
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 0,
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: Vec::new(),
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 1,
+                        opaque_index_offset: 18,
+                        opaque_scalar: 0.0,
+                        opaque_scalar_offset: 22,
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
             },
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
-            role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            paired_byte_offset: 0,
-        }
+        )
+        .unwrap()
     };
 
     let mut base_flange = DesignParameterScope::empty(
@@ -491,7 +505,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     {
         let value = Some(DesignBaseFlangeOperation {
-            thickness: 0.2,
+            thickness: crate::records::feature::DesignPositiveScalar::new(0.2).unwrap(),
             thickness_offset: 0,
             profile_group_record_index: 100,
             profile_record_index: 101,
@@ -549,7 +563,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         &mut surface_stitch.payload
     {
         *slot = Some(DesignSurfaceStitchOperation {
-            gap_tolerance: 0.01,
+            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
             gap_tolerance_offset: 0,
             tolerance_record_index: 302,
             settings_record_index: 303,
@@ -578,9 +592,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            source_transform: identity_matrix(),
+            source_transform: crate::records::SketchPlacementMatrix::IDENTITY,
             source_transform_offset: 0,
-            copied_transform: identity_matrix(),
+            copied_transform: crate::records::SketchPlacementMatrix::IDENTITY,
             copied_transform_offset: 0,
         });
     }
@@ -593,29 +607,31 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     if let crate::records::feature::DesignScopePayload::CopyPasteBodies(slot) =
         &mut copy_paste_bodies.payload
     {
-        *slot = Some(DesignCopyPasteBodiesOperation {
-            bodies: vec![crate::records::feature::DesignCopiedBody {
-                operand: crate::records::Located {
-                    value: 502,
-                    offset: 0,
-                },
-                source: crate::records::Located {
-                    value: 11,
-                    offset: 0,
-                },
-                copied: crate::records::Located {
-                    value: 12,
-                    offset: 0,
-                },
-            }],
-            body_group_record_index: 501,
-            body_group_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
-                .unwrap(),
-            body_group_byte_offset: 0,
-            relation_record_index: 503,
-            relation_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            relation_byte_offset: 0,
-        });
+        *slot = Some(
+            DesignCopyPasteBodiesOperation::try_new(
+                vec![crate::records::feature::DesignCopiedBody {
+                    operand: crate::records::Located {
+                        value: 502,
+                        offset: 26,
+                    },
+                    source: crate::records::Located {
+                        value: 11,
+                        offset: 25,
+                    },
+                    copied: crate::records::Located {
+                        value: 12,
+                        offset: 40,
+                    },
+                }],
+                501,
+                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+                503,
+                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                0,
+            )
+            .unwrap(),
+        );
     }
 
     let mut base_feature = DesignParameterScope::empty(
@@ -661,17 +677,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
-            designation: "M3.5x0.6".into(),
+            designation: cadmpeg_ir::NonEmptyString::new("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
             )
             .expect("nominal size"),
-            profile: "GB Metric profile".into(),
-            major_diameter: 0.35995,
-            minor_diameter: 0.293,
-            pitch: 0.06,
-            pitch_diameter: 0.3166,
+            profile: cadmpeg_ir::NonEmptyString::new("GB Metric profile").unwrap(),
+            pitch: crate::records::feature::DesignPositiveScalar::new(0.06).unwrap(),
             face_group_record_indices: vec![701],
+            diameters: crate::records::feature::DesignThreadDiameters::new(0.35995, 0.293, 0.3166)
+                .unwrap(),
         });
     }
     thread.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
@@ -732,7 +747,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("BaseFlange"),
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: (ProfileRef::Sketch(neutral_sketch_id(&placement)))
+            profile: (ProfileRef::Sketch(neutral_sketch_id(&placement).unwrap()))
                 .try_into()
                 .unwrap(),
             thickness: cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
@@ -884,11 +899,8 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     let cages = [cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
     crate::with_scan(&archive, |scan| {
@@ -966,11 +978,8 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     let cages = [cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        faces: Vec::new(),
-        symmetries: Vec::new(),
         source_object: None,
+        cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
     crate::with_scan(&archive, |scan| {

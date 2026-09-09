@@ -80,7 +80,9 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        let sketch = model_sketch_id(scan, definition);
+        let Some(sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         for (ordinal, _) in table.rows.iter().enumerate() {
             if let Some((_, parameter)) =
                 resolved_feature_dimension_parameter(&sketch, table, ordinal)
@@ -194,7 +196,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
-        let sketch = model_sketch_id(scan, definition);
+        let Some(sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         if !feature_ids.contains(&owner) {
             continue;
@@ -306,7 +310,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             expression,
             display: feature_dimension_display(dimension.dimension_type),
             value,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties,
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),

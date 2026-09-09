@@ -42,12 +42,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         physical_token: Some("PrismMaterial-Generated".into()),
         schema: Some("GenericSchema".into()),
         category: Some("Plastic/Generated".into()),
-        base_color: Some(Color {
-            r: 0.15,
-            g: 0.35,
-            b: 0.75,
-            a: 1.0,
-        }),
+        base_color: Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color")),
         properties: BTreeMap::from([
             ("reflectivity_at_0deg".into(), 0.25),
             ("refraction_index".into(), 1.5),
@@ -70,12 +65,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     assert_eq!(appearance.category.as_deref(), Some("Plastic/Generated"));
     assert_eq!(
         appearance.base_color,
-        Some(Color {
-            r: 0.15,
-            g: 0.35,
-            b: 0.75,
-            a: 1.0,
-        })
+        Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color"))
     );
     assert_eq!(
         appearance.properties.get("reflectivity_at_0deg"),
@@ -106,7 +96,10 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 0,
-        visual_guid: "11111111-2222-3333-4444-555555555555".into(),
+        visual_guid: crate::records::DesignVisualToken::try_from(
+            "11111111-2222-3333-4444-555555555555".to_owned(),
+        )
+        .unwrap(),
         visual_guid_offset: 0,
         physical_token: Some(crate::records::RecordedValue {
             value: "PrismMaterial-Generated".into(),
@@ -239,18 +232,10 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
         .expect("generated multi-Protein decode");
     assert_eq!(decoded.ir().model.appearances.len(), 2);
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
-        r: 0.2,
-        g: 0.3,
-        b: 0.4,
-        a: 1.0,
-    });
-    edited.model.appearances[1].base_color = Some(cadmpeg_ir::topology::Color {
-        r: 0.6,
-        g: 0.7,
-        b: 0.8,
-        a: 1.0,
-    });
+    edited.model.appearances[0].base_color =
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color"));
+    edited.model.appearances[1].base_color =
+        Some(cadmpeg_ir::topology::Color::new(0.6, 0.7, 0.8, 1.0).expect("valid color"));
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)

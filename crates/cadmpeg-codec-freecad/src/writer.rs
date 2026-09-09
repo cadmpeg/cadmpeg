@@ -45,36 +45,18 @@ pub(crate) fn write_seekable(
     let ir = resolution.ir();
     let namespace = resolution.namespace();
     let document = resolution.document();
-    let entry_records = namespace
-        .arenas()
-        .get("entries")
-        .map_or(&[][..], Vec::as_slice);
-    let mut entries = entry_records
-        .iter()
-        .enumerate()
-        .map(|(record_index, record)| {
-            record
-                .field("name")
-                .and_then(|name| name.as_str().map(str::to_owned))
-                .map(|name| EntrySlot { record_index, name })
-                .ok_or_else(|| {
-                    CodecError::Malformed("FCStd entry record has no string name".into())
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     validate_entry_names(&entries)?;
-    let source_document_slot = entries
+    let source_document = entries
         .iter()
         .find(|entry| entry.name == "Document.xml")
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
-    let source_document = entry_at(namespace, source_document_slot.record_index)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
-    drop(source_document);
     let written_graph = crate::persistence::parse_with_context(&document_xml, document, None)?;
     validate_declarations(
         &objects,
@@ -102,8 +84,7 @@ pub(crate) fn write_seekable(
             (left.name != "Document.xml", left.name.as_str())
                 .cmp(&(right.name != "Document.xml", right.name.as_str()))
         });
-        for slot in &entries {
-            let entry = entry_at(namespace, slot.record_index)?;
+        for entry in &entries {
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -122,7 +103,8 @@ pub(crate) fn write_seekable(
     let notes = vec![
         format!(
             "semantic FCStd archive written for {target} (SchemaVersion={} FileVersion={})",
-            document.schema_version, document.file_version
+            document.schema_version,
+            document.file_version.as_str()
         ),
         "unsupported retained entries and unedited XML records were preserved".into(),
     ];
@@ -140,23 +122,7 @@ pub(crate) struct WriteOutcome {
     pub(crate) notes: Vec<String>,
 }
 
-struct EntrySlot {
-    record_index: usize,
-    name: String,
-}
-
-fn entry_at(
-    namespace: &cadmpeg_ir::native::NativeNamespace,
-    index: usize,
-) -> Result<EntryRecord, CodecError> {
-    namespace
-        .arena_iter_as::<EntryRecord>("entries")
-        .nth(index)
-        .ok_or_else(|| CodecError::Malformed("FCStd entry record disappeared".into()))?
-        .map_err(CodecError::from)
-}
-
-fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
+fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
         if entry.name.is_empty()
@@ -228,10 +194,10 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
     let source_text = std::str::from_utf8(source)
         .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
     let mut ordered = properties.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|property| property.byte_start);
+    ordered.sort_by_key(|property| property.xml.start());
     if ordered
         .windows(2)
-        .any(|pair| pair[0].byte_end > pair[1].byte_start)
+        .any(|pair| pair[0].xml.end() > pair[1].xml.start())
     {
         return Err(CodecError::Malformed(
             "overlapping retained FCStd property spans".into(),
@@ -240,11 +206,11 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
     let mut result = Vec::with_capacity(source.len());
     let mut cursor = 0usize;
     for property in ordered {
-        let start = usize::try_from(property.byte_start)
+        let start = usize::try_from(property.xml.start())
             .map_err(|_| CodecError::Malformed("property start exceeds address space".into()))?;
-        let end = usize::try_from(property.byte_end)
+        let end = usize::try_from(property.xml.end())
             .map_err(|_| CodecError::Malformed("property end exceeds address space".into()))?;
-        if start < cursor || end > source.len() || start >= end {
+        if start < cursor || end > source.len() {
             return Err(CodecError::malformed(format_args!(
                 "invalid retained span for property {}",
                 property.id
@@ -256,7 +222,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
                 property.id
             ))
         })?;
-        if retained != property.raw_xml {
+        if retained != property.xml.text() {
             return Err(CodecError::malformed(format_args!(
                 "retained bytes disagree with property {} provenance",
                 property.id
@@ -272,8 +238,8 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
     validate_property_wrapper(property)?;
-    let mut replacement = property.raw_xml.clone();
-    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let mut replacement = property.xml.text().to_owned();
+    let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;
@@ -300,7 +266,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         if serialized == value.raw_xml {
             continue;
         }
-        if property.raw_xml[start..end] != value.raw_xml {
+        if property.xml.text()[start..end] != value.raw_xml {
             return Err(CodecError::malformed(format_args!(
                 "property {} retained value {} disagrees with provenance",
                 property.id, value.order
@@ -322,7 +288,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
 }
 
 fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
-    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
         CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;

@@ -177,17 +177,20 @@ pub fn decode_body_bounds(
         let [(values, value_offsets)] = repeated.as_slice() else {
             continue;
         };
-        out.push(DesignBodyBounds {
-            id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
-            entity_suffix: entity.entity_id.suffix(),
-            entity_byte_offset: entity.byte_offset,
-            record_indices,
-            record_byte_offsets: [*first as u64, *second as u64, *third as u64],
-            value_byte_offsets: value_offsets.map(|offset| offset as u64),
-            body_binding_ids: Vec::new(),
-            maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
-            minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
-        });
+        out.push(
+            DesignBodyBounds::try_from(crate::records::DesignBodyBoundsWire {
+                id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
+                entity_suffix: entity.entity_id.suffix(),
+                entity_byte_offset: entity.byte_offset,
+                record_indices,
+                record_byte_offsets: [*first as u64, *second as u64, *third as u64],
+                value_byte_offsets: value_offsets.map(|offset| offset as u64),
+                body_binding_ids: Vec::new(),
+                maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
+                minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
+            })
+            .map_err(CodecError::Malformed)?,
+        );
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -380,11 +383,26 @@ fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid:
     })
 }
 
+#[derive(Clone, Copy)]
+enum ReferencePadding {
+    None,
+    TwoZeros,
+}
+
+impl ReferencePadding {
+    fn trailing_zeros(self) -> usize {
+        match self {
+            Self::None => 0,
+            Self::TwoZeros => 2,
+        }
+    }
+}
+
 struct LocalReferenceCandidate {
     target: u64,
     end: usize,
     inline_type_guid: Option<String>,
-    trailing_zeros: usize,
+    padding: ReferencePadding,
 }
 
 fn local_reference_candidates(
@@ -400,14 +418,14 @@ fn local_reference_candidates(
                 target,
                 end,
                 inline_type_guid: inline_type_guid.clone(),
-                trailing_zeros: 2,
+                padding: ReferencePadding::TwoZeros,
             });
             if allow_extra_zero && bytes.get(end) == Some(&0) {
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end: end + 1,
                     inline_type_guid,
-                    trailing_zeros: 2,
+                    padding: ReferencePadding::TwoZeros,
                 });
             }
         }
@@ -419,14 +437,14 @@ fn local_reference_candidates(
                     target,
                     end,
                     inline_type_guid: None,
-                    trailing_zeros: 0,
+                    padding: ReferencePadding::None,
                 });
                 if allow_extra_zero && bytes.get(end) == Some(&0) {
                     candidates.push(LocalReferenceCandidate {
                         target,
                         end: end + 1,
                         inline_type_guid: None,
-                        trailing_zeros: 0,
+                        padding: ReferencePadding::None,
                     });
                 }
             }
@@ -544,9 +562,7 @@ fn parse_snapshot_body_map_frame(
         return Ok(None);
     };
     for companion in local_reference_candidates(bytes, companion_at, true) {
-        let Some(reserved_count) = 2usize.checked_sub(companion.trailing_zeros) else {
-            continue;
-        };
+        let reserved_count = 2 - companion.padding.trailing_zeros();
         let Some(reserved_end) = companion.end.checked_add(reserved_count) else {
             continue;
         };
@@ -577,31 +593,29 @@ fn parse_snapshot_body_map_frame(
         else {
             continue;
         };
-        if bytes.get(pairs_start..pairs_end).is_none() {
+        let Some(pairs) = bytes.get(pairs_start..pairs_end) else {
             continue;
-        }
-        if (0..count).any(|pair| {
-            View::u64_le_at(bytes, pairs_start + pair * 16 + 8).is_none_or(|body_entity| {
+        };
+        if pairs.chunks_exact(16).any(|pair| {
+            View::u64_le_at(pair, 8).is_none_or(|body_entity| {
                 !entity_has_type(
                     meta,
                     body_entity,
-                    crate::design::body::SNAPSHOT_BODY_RECORD_TYPE_GUID,
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                 )
             })
         }) {
             continue;
         }
         for container in local_reference_candidates(bytes, pairs_end, false) {
-            let Some(reserved_count) = 3usize.checked_sub(container.trailing_zeros) else {
-                continue;
-            };
+            let reserved_count = 3 - container.padding.trailing_zeros();
             let Some(reserved_end) = container.end.checked_add(reserved_count) else {
                 continue;
             };
             if !reference_has_type(
                 meta,
                 &container,
-                crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             ) || !bytes
                 .get(container.end..reserved_end)
                 .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
@@ -633,12 +647,12 @@ fn parse_snapshot_body_map_frame(
             bindings.try_reserve(count).map_err(|_| {
                 crate::error::malformed("F3D snapshot body-map count exceeds capacity")
             })?;
-            for pair in 0..count {
-                let at = pairs_start + pair * 16;
+            for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
+                let mut pair = View::over_retained(pair);
                 bindings.push(BodyBinding {
-                    asm_key: View::u64_le_at(bytes, at).expect("validated pair extent"),
-                    asm_key_offset: at,
-                    entity_suffix: View::u64_le_at(bytes, at + 8).expect("validated pair extent"),
+                    asm_key: pair.req_u64_le()?,
+                    asm_key_offset: pairs_start + ordinal * 16,
+                    entity_suffix: pair.req_u64_le()?,
                 });
             }
             return Ok(Some(BodyMapRecord {
@@ -914,7 +928,7 @@ fn parse_body_map_frame(
             reference_has_type(
                 meta,
                 reference,
-                crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             )
         })
         .filter_map(|reference| decode_name(reference.end));
@@ -1003,19 +1017,22 @@ pub fn decode_design_body_bindings(
                     })
                     .collect::<Vec<_>>();
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-                out.push(DesignBodyBinding {
-                    id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                    stream: entry.name.clone(),
-                    pair_count,
-                    pair_ordinal: ordinal,
-                    asm_body_key: binding.asm_key,
-                    asm_body_key_offset: binding.asm_key_offset as u64,
-                    entity_suffix: binding.entity_suffix,
-                    entity_suffix_offset: binding.entity_suffix_offset() as u64,
-                    blob_name: record.blob_name.clone(),
-                    blob_name_offset: record.blob_name_offset as u64,
-                    body,
-                });
+                out.push(
+                    DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+                        id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
+                        stream: entry.name.clone(),
+                        pair_count,
+                        pair_ordinal: ordinal,
+                        asm_body_key: binding.asm_key,
+                        asm_body_key_offset: binding.asm_key_offset as u64,
+                        entity_suffix: binding.entity_suffix,
+                        entity_suffix_offset: binding.entity_suffix_offset() as u64,
+                        blob_name: record.blob_name.clone(),
+                        blob_name_offset: record.blob_name_offset as u64,
+                        body,
+                    })
+                    .map_err(CodecError::Malformed)?,
+                );
             }
         }
     }
@@ -1034,10 +1051,10 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
             .iter()
             .filter(|binding| {
                 stream == ids::native_scope(&binding.stream)
-                    && binding.entity_suffix == bounds.entity_suffix
+                    && binding.entity_suffix == bounds.entity_suffix()
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|binding| binding.asm_body_key_offset);
+        matches.sort_by_key(|binding| binding.asm_body_key_offset());
         bounds.body_binding_ids = matches
             .into_iter()
             .map(|binding| binding.id.clone())
@@ -1310,7 +1327,7 @@ mod tests {
         push_snapshot_reference(
             &mut out,
             700,
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             1,
         );
         out.push(0);
@@ -1349,7 +1366,7 @@ mod tests {
                     ]),
                 },
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                    crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
@@ -1406,7 +1423,7 @@ mod tests {
         push_snapshot_reference(
             &mut out,
             700,
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             form,
         );
         if form == 2 {
@@ -1445,14 +1462,14 @@ mod tests {
                     vec![901],
                 ),
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_RECORD_TYPE_GUID,
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
                     vec![500],
                 ),
                 presentation_type(
-                    crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                    crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
@@ -1554,7 +1571,7 @@ mod tests {
             1,
             1,
             "BREP.snapshot.smb",
-            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
         );
         assert!(
             snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())

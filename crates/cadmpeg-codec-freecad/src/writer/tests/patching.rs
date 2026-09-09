@@ -41,11 +41,9 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             dynamic: None,
         },
         order: 0,
-        raw_xml: format!(
+        xml: crate::native::RetainedXml::from_text(format!(
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
-        ),
-        byte_start: 0,
-        byte_end: 0,
+        ), 0).unwrap(),
     };
     let output = String::from_utf8(serialize_property(&property).expect("required invariant"))
         .expect("required invariant");

@@ -17,7 +17,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
-    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -27,21 +27,24 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut ir = CadIr::empty();
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("planar-entity".into()),
-            SketchId("planar-sketch".into()),
-            SketchGeometry::Native {
-                native_kind: "SplineHandle".into(),
-            },
+            SketchEntityId::mint("synthetic:test:id#planar-entity").unwrap(),
+            SketchId::mint("synthetic:test:id#planar-sketch").unwrap(),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("SplineHandle")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some("native:planar".into())),
     );
     ir.model.spatial_sketch_entities.push(
         SpatialSketchEntity::new(
-            SpatialSketchEntityId("spatial-entity".into()),
-            SpatialSketchId("spatial-sketch".into()),
-            SpatialSketchGeometry::Native {
-                native_kind: "ReferenceCurve".into(),
-            },
+            SpatialSketchEntityId::mint("synthetic:test:id#spatial-entity").unwrap(),
+            SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Native {
+                native_kind: cadmpeg_ir::products::NonEmptyString::new("ReferenceCurve")
+                    .expect("nonempty source identity"),
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("native:spatial".into())),
     );
@@ -59,47 +62,48 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
 fn only_sketch_owned_relation_records_without_constraints_are_counted() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId::mint("sketch-feature").expect("identity grammar"),
+        id: FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(SketchId(
-                    "sketch".into(),
-                ))),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                    SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                )),
             },
         ),
         native_ref: Some("feature".into()),
     });
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("represented-geometry".into()),
-            SketchId("sketch".into()),
-            SketchGeometry::Native {
-                native_kind: "UnknownGeometry".into(),
-            },
+            SketchEntityId::mint("synthetic:test:id#represented-geometry").unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some("geometry-marker".into())),
     );
-    let marker = |id: &str, ordinal, kind| SketchInputEntity {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature".into()),
-        ordinal,
-        offset: u64::from(ordinal),
-        object_index: None,
-        local_id: None,
-        kind,
-        state_value: None,
-        coordinates_m: None,
-        links: None,
+    let marker = |id: &str, ordinal, kind| {
+        let marker_id: String = id.into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, ordinal, u64::from(ordinal), kind);
+        constructed_marker.feature_ref = Some("feature".into());
+        constructed_marker.object_index = None;
+        constructed_marker.local_id = None;
+        constructed_marker.state_value = None;
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
     };
     let relation = FeatureInputRelationInstance {
         id: "relation-instance".into(),
@@ -187,7 +191,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         .evaluation
         .set_definition(FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: Default::default(),
+            children: cadmpeg_ir::features::TreeChildren::default(),
         })
         .unwrap();
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
@@ -198,18 +202,19 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
     let mut ir = CadIr::empty();
     let entity = |id: &str, native_ref: &str| {
         SketchEntity::new(
-            SketchEntityId(id.into()),
-            SketchId("sketch".into()),
-            SketchGeometry::Native {
-                native_kind: "UnknownGeometry".into(),
-            },
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("synthetic:test:id#sketch").unwrap(),
+            SketchGeometry::native(
+                cadmpeg_ir::products::NonEmptyString::new("UnknownGeometry")
+                    .expect("nonempty source identity"),
+            ),
         )
         .with_native_ref(Some(native_ref.into()))
     };
     ir.model.sketch_entities = vec![
-        entity("first", "relation-marker"),
-        entity("second", "relation-marker"),
-        entity("profile", "profile-stream-record"),
+        entity("synthetic:test:id#first", "relation-marker"),
+        entity("synthetic:test:id#second", "relation-marker"),
+        entity("synthetic:test:id#profile", "profile-stream-record"),
     ];
     let native = SldprtNative {
         feature_input_lanes: vec![FeatureInputLane {
@@ -227,37 +232,47 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
-                SketchInputEntity {
-                    id: "relation-marker".into(),
-                    parent: "lane".into(),
-                    feature_ref: Some("feature".into()),
-                    ordinal: 0,
-                    offset: 0,
-                    object_index: None,
-                    local_id: None,
-                    kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
-                    state_value: None,
-                    coordinates_m: None,
-                    links: crate::records::SketchInputLinks::new(
+                {
+                    let marker_id: String = "relation-marker".into();
+                    let marker_parent: String = "lane".into();
+                    let mut constructed_marker = SketchInputEntity::new(
+                        marker_id,
+                        marker_parent,
+                        0,
+                        0,
+                        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+                    );
+                    constructed_marker.feature_ref = Some("feature".into());
+                    constructed_marker.object_index = None;
+                    constructed_marker.local_id = None;
+                    constructed_marker.state_value = None;
+                    constructed_marker.coordinates_m = None;
+                    constructed_marker.links = crate::records::SketchInputLinks::new(
                         0,
                         vec![SketchInputLink {
                             local_id: 1,
                             entity_ref: "geometry-marker".into(),
                         }],
-                    ),
+                    );
+                    constructed_marker
                 },
-                SketchInputEntity {
-                    id: "geometry-marker".into(),
-                    parent: "lane".into(),
-                    feature_ref: Some("feature".into()),
-                    ordinal: 1,
-                    offset: 1,
-                    object_index: None,
-                    local_id: Some(1),
-                    kind: SketchInputKind::from_native_code(99),
-                    state_value: None,
-                    coordinates_m: None,
-                    links: None,
+                {
+                    let marker_id: String = "geometry-marker".into();
+                    let marker_parent: String = "lane".into();
+                    let mut constructed_marker = SketchInputEntity::new(
+                        marker_id,
+                        marker_parent,
+                        1,
+                        1,
+                        SketchInputKind::from_native_code(99),
+                    );
+                    constructed_marker.feature_ref = Some("feature".into());
+                    constructed_marker.object_index = None;
+                    constructed_marker.local_id = Some(1);
+                    constructed_marker.state_value = None;
+                    constructed_marker.coordinates_m = None;
+                    constructed_marker.links = None;
+                    constructed_marker
                 },
             ],
         }],
@@ -366,28 +381,28 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
 #[test]
 fn native_dimension_subtypes_are_reported() {
     let mut ir = CadIr::empty();
-    let owner = FeatureId::mint("owner").expect("identity grammar");
+    let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: Some("Feature".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),
@@ -396,7 +411,7 @@ fn native_dimension_subtypes_are_reported() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: Some(ParameterPmi {
             subtype: PmiDimensionSubtype::Native("Ordinate".into()),

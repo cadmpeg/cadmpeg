@@ -57,7 +57,7 @@ pub fn transfer_topology_bound_planes(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir);
     let solved_vertices =
         solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
@@ -170,7 +170,13 @@ pub fn transfer_topology_bound_planes(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -180,14 +186,14 @@ pub fn transfer_topology_bound_planes(
         });
         transferred += 1;
     }
-    transferred
+    Ok(transferred)
 }
 
 pub fn retain_unresolved_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
         (
@@ -224,7 +230,14 @@ pub fn retain_unresolved_surface_carriers(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: format!("{}{}", namespace.source_prefix(), row.id),
+                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        "{}{}",
+                        namespace.source_prefix(),
+                        row.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                     name: None,
                     color: None,
                     visible: if namespace.is_visible() {
@@ -259,7 +272,13 @@ pub fn retain_unresolved_surface_carriers(
             },
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: format!("VisibGeom:{}", row.id),
+                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    "VisibGeom:{}",
+                    row.id
+                ))
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -268,6 +287,7 @@ pub fn retain_unresolved_surface_carriers(
             }),
         });
     }
+    Ok(())
 }
 
 pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
@@ -417,14 +437,12 @@ fn positional_cylinder_carrier(
         }
     }
     let frame = record.positional_cylinder_frame()?;
-    frame
-        .is_valid()
-        .then_some(CarrierEquation::Cylinder(CylinderEquation {
-            origin: frame.origin,
-            axis: frame.axis,
-            ref_direction: frame.ref_direction,
-            radius: frame.radius,
-        }))
+    Some(CarrierEquation::Cylinder(CylinderEquation {
+        origin: frame.origin(),
+        axis: frame.axis(),
+        ref_direction: frame.ref_direction(),
+        radius: frame.radius(),
+    }))
 }
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
@@ -492,13 +510,17 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
     scan.framing
         .sections
         .iter()
-        .filter(|section| section.role == SectionRole::PsbGeometry)
+        .filter(|section| section.role() == SectionRole::PsbGeometry)
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
         .map(|section| {
-            UnknownId::mint(format!("creo:{}:section#{}", section.name, section.offset))
-                .expect("identity grammar")
+            UnknownId::mint(format!(
+                "creo:{}:section#{}",
+                section.name(),
+                section.offset
+            ))
+            .expect("identity grammar")
         })
 }
 

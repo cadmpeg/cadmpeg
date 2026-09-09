@@ -72,31 +72,31 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
 
 #[test]
 fn layered_parameter_aliases_match_materialized_precedence() {
-    let global_owner = FeatureId::mint("global").expect("identity grammar");
-    let local_owner = FeatureId::mint("local").expect("identity grammar");
+    let global_owner = FeatureId::mint("synthetic:test:id#global").expect("identity grammar");
+    let local_owner = FeatureId::mint("synthetic:test:id#local").expect("identity grammar");
     let parameters = [
         DesignParameter {
-            id: ParameterId::mint("global-id").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#global-id").expect("identity grammar"),
             owner: Some(global_owner.clone()),
             ordinal: 0,
             name: "Width".into(),
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         },
         DesignParameter {
-            id: ParameterId::mint("local-id").expect("identity grammar"),
+            id: ParameterId::mint("synthetic:test:id#local-id").expect("identity grammar"),
             owner: Some(local_owner.clone()),
             ordinal: 0,
             name: "Width".into(),
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -107,7 +107,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
 
     for owner in [
         Some(local_owner),
-        Some(FeatureId::mint("unrelated").expect("identity grammar")),
+        Some(FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar")),
         None,
     ] {
         let materialized = aliases.materialize(owner.as_ref());
@@ -219,7 +219,7 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
         &parameters,
         &HashMap::new(),
         &HashSet::new(),
-        Some(&FeatureId::mint("unrelated").expect("identity grammar")),
+        Some(&FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar")),
     );
 
     assert_eq!(

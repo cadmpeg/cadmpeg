@@ -407,9 +407,7 @@ fn normalize_parameter_names(ir: &mut CadIr) {
     let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &mut ir.model.parameters {
         let scope = parameter.owner.clone();
-        let reserved = reserved_by_scope
-            .get(&scope)
-            .expect("every parameter scope has a reserved-name set");
+        let reserved = reserved_by_scope.entry(scope.clone()).or_default();
         let used = used_by_scope.entry(scope).or_default();
         let source_name = parameter.name.clone();
         if !source_name.is_empty() && used.insert(source_name.clone()) {
@@ -606,11 +604,11 @@ fn transfer_principal_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.declaration_class.to_string()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumPrincipalPlane {
@@ -641,11 +639,11 @@ fn transfer_reference_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.kind.to_string()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Unresolved {
@@ -666,7 +664,9 @@ fn transfer_sketch(
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
 ) {
-    let sketch_id = SketchId(neutral_history_id(&object.id, "sketch"));
+    let Ok(sketch_id) = SketchId::mint(neutral_history_id(&object.id, "sketch")) else {
+        return;
+    };
     let feature_id =
         FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.sketches.push(Sketch {
@@ -675,7 +675,7 @@ fn transfer_sketch(
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved,
-        profiles: Vec::new(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some(object.id.clone()),
     });
     ir.model.features.push(Feature {
@@ -683,11 +683,11 @@ fn transfer_sketch(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Sketch".to_string()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Sketch {
@@ -705,7 +705,7 @@ fn transfer_sketch(
 struct NativeOperationCandidate<'a> {
     object: &'a CatiaDesignObject,
     owner_record: &'a CatiaObjectRecord,
-    kind: &'a str,
+    kind: NativeOperationClass,
 }
 
 struct ReferencePlaneCandidate<'a> {
@@ -744,7 +744,7 @@ fn native_operation_candidate<'a>(
     let owner_class = object.owner_class.as_ref()?;
     let owner_class_name = owner_class.name.as_str();
     let owner_class_entry = owner_class.entry.as_str();
-    is_admitted_native_operation_class(owner_class_name).then_some(())?;
+    let kind = NativeOperationClass::try_from(owner_class_name).ok()?;
     (owner_record.class_name() == Some(owner_class_name)
         && owner_record.class_entry() == Some(owner_class_entry)
         && owner_record.entity_id() == Some(object.owner_entity_id)
@@ -752,21 +752,51 @@ fn native_operation_candidate<'a>(
     .then_some(NativeOperationCandidate {
         object,
         owner_record,
-        kind: owner_class_name,
+        kind,
     })
 }
 
-pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {
-    matches!(
-        name,
-        "EdgeFillet"
-            | "Prism_EndLimit_Length"
-            | "Prism_ThickThin1"
-            | "Prism_ThickThin2"
-            | "Revol_ThickThin1"
-            | "CircPattern_RadialNumber"
-            | "Sweep_ThickThin1"
-    )
+/// Admitted native operation class.
+#[derive(Clone, Copy)]
+pub(crate) enum NativeOperationClass {
+    EdgeFillet,
+    PrismEndLimitLength,
+    PrismThickThin1,
+    PrismThickThin2,
+    RevolThickThin1,
+    CircPatternRadialNumber,
+    SweepThickThin1,
+}
+
+impl TryFrom<&str> for NativeOperationClass {
+    type Error = ();
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        match name {
+            "EdgeFillet" => Ok(Self::EdgeFillet),
+            "Prism_EndLimit_Length" => Ok(Self::PrismEndLimitLength),
+            "Prism_ThickThin1" => Ok(Self::PrismThickThin1),
+            "Prism_ThickThin2" => Ok(Self::PrismThickThin2),
+            "Revol_ThickThin1" => Ok(Self::RevolThickThin1),
+            "CircPattern_RadialNumber" => Ok(Self::CircPatternRadialNumber),
+            "Sweep_ThickThin1" => Ok(Self::SweepThickThin1),
+            _ => Err(()),
+        }
+    }
+}
+
+impl NativeOperationClass {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::EdgeFillet => "EdgeFillet",
+            Self::PrismEndLimitLength => "Prism_EndLimit_Length",
+            Self::PrismThickThin1 => "Prism_ThickThin1",
+            Self::PrismThickThin2 => "Prism_ThickThin2",
+            Self::RevolThickThin1 => "Revol_ThickThin1",
+            Self::CircPatternRadialNumber => "CircPattern_RadialNumber",
+            Self::SweepThickThin1 => "Sweep_ThickThin1",
+        }
+    }
 }
 
 pub(crate) fn is_admitted_native_reference_plane_class(name: &str) -> bool {
@@ -783,7 +813,7 @@ fn transfer_native_operation(
     native_operation_object_ids: &HashSet<&str>,
 ) {
     let object = candidate.object;
-    let kind = candidate.kind.to_string();
+    let kind = candidate.kind;
     let NativeOperationDefinitionProperties {
         source_properties: properties,
         definition_value_count,
@@ -799,8 +829,7 @@ fn transfer_native_operation(
         design_objects,
         native_operation_object_ids,
     );
-    let (definition, source_properties) =
-        native_operation_definition(&kind, &object.id, properties);
+    let (definition, source_properties) = native_operation_definition(kind, &object.id, properties);
     let feature_id =
         FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
@@ -808,11 +837,11 @@ fn transfer_native_operation(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties,
-        source_tag: Some(kind.clone()),
+        source_tag: Some(kind.as_str().to_string()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(object.id.clone()),
@@ -841,24 +870,24 @@ fn transfer_native_operation(
 /// result, edge group, pattern seed, pattern axis, pattern angle, pattern
 /// count, or operation-specific dependency roles.
 fn native_operation_definition(
-    kind: &str,
+    kind: NativeOperationClass,
     native_ref: &str,
     properties: BTreeMap<String, String>,
 ) -> (FeatureDefinition, BTreeMap<String, String>) {
     let definition = match kind {
-        "Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2" => {
-            FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::Extrude,
-            }
-        }
-        "Revol_ThickThin1" => FeatureDefinition::Unresolved {
+        NativeOperationClass::PrismEndLimitLength
+        | NativeOperationClass::PrismThickThin1
+        | NativeOperationClass::PrismThickThin2 => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude,
+        },
+        NativeOperationClass::RevolThickThin1 => FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Revolve,
         },
-        "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
+        NativeOperationClass::CircPatternRadialNumber => FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_CIRCULAR,
         },
-        "Sweep_ThickThin1" => FeatureDefinition::Sweep {
+        NativeOperationClass::SweepThickThin1 => FeatureDefinition::Sweep {
             shape: cadmpeg_ir::features::SweepShape::unresolved(Some(native_ref.to_string())),
             path: Some(cadmpeg_ir::features::PathRef::Unresolved(
                 native_ref.to_string(),
@@ -875,12 +904,8 @@ fn native_operation_definition(
             scale: None,
             allow_multi_profile_faces: None,
         },
-        "EdgeFillet" => FeatureDefinition::Unresolved {
+        NativeOperationClass::EdgeFillet => FeatureDefinition::Unresolved {
             family: UnresolvedFamily::Fillet,
-        },
-        _ => FeatureDefinition::Native {
-            kind: kind.into(),
-            parameters: BTreeMap::new(),
         },
     };
     (definition, properties)

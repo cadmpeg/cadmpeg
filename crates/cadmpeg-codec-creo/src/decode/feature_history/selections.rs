@@ -98,7 +98,7 @@ pub(in super::super) fn feature_edge_selection(
     ) {
         Some(
             EdgeSelection::generated(edges, native.clone())
-                .unwrap_or_else(|_| EdgeSelection::Native(native)),
+                .unwrap_or(EdgeSelection::Native(native)),
         )
     } else {
         Some(EdgeSelection::Native(native))

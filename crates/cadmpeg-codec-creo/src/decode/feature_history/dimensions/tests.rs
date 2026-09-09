@@ -15,7 +15,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
         stream_offset: 0,
-        body: vec![0; 20],
+        body: vec![0; 20].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     });
@@ -78,7 +78,8 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     }
 
     let (transferred, _) =
-        transfer_feature_dimensions(&scan, &mut ir, &mut AnnotationBuilder::new()).unwrap();
+        transfer_feature_dimensions(&scan, &mut ir, &mut AnnotationBuilder::new())
+            .expect("valid test fixture");
 
     assert_eq!(transferred, 1);
     assert!(ir

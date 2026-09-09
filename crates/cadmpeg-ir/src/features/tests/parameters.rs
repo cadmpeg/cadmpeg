@@ -21,8 +21,8 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
 
 #[test]
 fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
-    let first = ParameterId::mint("test:parameter#first").unwrap();
-    let second = ParameterId::mint("test:parameter#second").unwrap();
+    let first = ParameterId::mint("test:test:parameter#first").unwrap();
+    let second = ParameterId::mint("test:test:parameter#second").unwrap();
     assert!(DistinctMembers::try_from(vec![first.clone(), first.clone()]).is_err());
     let mut dependencies = DistinctMembers::try_from(vec![second.clone(), first.clone()]).unwrap();
     assert!(!dependencies.insert(first.clone()));
@@ -33,7 +33,7 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     assert!(dependencies.is_empty());
 
     let mut wire = serde_json::json!({
-        "id":"test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
+        "id":"test:test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
         "dependencies":[second, first]
     });
     let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();

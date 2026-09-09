@@ -588,3 +588,98 @@ fn intersection_data_requires_complete_schema_header() {
         .iter()
         .all(|record| record.kind() != 90));
 }
+
+#[test]
+fn topology_reference_views_reserve_only_one_as_null() {
+    for raw in [0_u16, 1, 2, 32_767] {
+        for (kind, len, offsets, sense) in [
+            (NodeKind::Face, 39, &[8, 18, 20, 22, 24, 26][..], Some(28)),
+            (
+                NodeKind::Edge,
+                32,
+                &[8, 18, 20, 22, 24, 26, 28, 30][..],
+                None,
+            ),
+            (
+                NodeKind::Shell,
+                24,
+                &[8, 10, 12, 14, 16, 18, 20, 22][..],
+                None,
+            ),
+            (NodeKind::Loop, 16, &[8, 10, 12, 14][..], None),
+            (
+                NodeKind::Fin,
+                23,
+                &[4, 6, 8, 10, 12, 14, 16, 18, 20][..],
+                Some(22),
+            ),
+            (NodeKind::Vertex, 28, &[8, 10, 12, 14, 16][..], None),
+        ] {
+            let mut bytes = vec![0; len];
+            for &offset in offsets {
+                put_ref(&mut bytes, offset, raw);
+            }
+            if let Some(offset) = sense {
+                bytes[offset] = b'+';
+            }
+            let node = Node {
+                kind,
+                xmt: 2,
+                pos: 0,
+                shift: 0,
+                bytes,
+            };
+            let references = match kind {
+                NodeKind::Face => {
+                    let f = node.face_fields().unwrap();
+                    vec![f.attributes, f.next_face, f.loop_xmt, f.shell, f.surface]
+                }
+                NodeKind::Edge => {
+                    let f = node.edge_fields().unwrap();
+                    vec![f.attributes, f.fin, f.curve]
+                }
+                NodeKind::Shell => {
+                    let f = node.shell_fields().unwrap();
+                    vec![
+                        f.attributes,
+                        f.body,
+                        f.next_shell,
+                        f.first_face,
+                        f.sentinel_0,
+                        f.sentinel_1,
+                        f.region,
+                        f.last_face,
+                    ]
+                }
+                NodeKind::Loop => {
+                    let f = node.loop_fields().unwrap();
+                    vec![f.attributes, f.fin, f.face, f.next_loop]
+                }
+                NodeKind::Fin => {
+                    let f = node.fin_fields().unwrap();
+                    vec![
+                        f.attributes,
+                        f.loop_xmt,
+                        f.forward,
+                        f.backward,
+                        f.vertex,
+                        f.edge,
+                        f.other,
+                        f.curve_xmt,
+                    ]
+                }
+                NodeKind::Vertex => {
+                    let f = node.vertex_fields().unwrap();
+                    vec![f.attributes, f.point]
+                }
+                _ => panic!("topology reference family"),
+            };
+            for reference in references {
+                assert_eq!(
+                    reference.map(u32::from),
+                    (raw != 1).then_some(u32::from(raw))
+                );
+            }
+        }
+    }
+}

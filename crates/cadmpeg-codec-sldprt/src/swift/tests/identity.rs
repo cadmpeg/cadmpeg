@@ -68,7 +68,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
     else {
         panic!("dimension definition");
     };
-    assert_eq!(*nominal, length(6.1468));
+    assert_eq!(*nominal, length(6.1468).expect("finite length"));
 
     let mut ambiguous = features.clone();
     ambiguous.push(neutral_feature(
@@ -174,7 +174,8 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
     assert_eq!(
         first.targets,
         [PmiTarget::ShapeAspect {
-            source_id: "F10".into()
+            source_id: cadmpeg_ir::products::NonEmptyString::new("F10")
+                .expect("nonempty source identity")
         }]
     );
 }

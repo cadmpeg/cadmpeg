@@ -246,8 +246,14 @@ impl<'a> Cursor<'a> {
         Ok(view.req_u32_le()?)
     }
 
-    pub(crate) fn take(&mut self, len: usize, _field: &str) -> Result<&'a [u8], CodecError> {
-        Ok(self.source.req_take(len)?)
+    /// Reads a fixed-width byte array.
+    pub(crate) fn take_array<const N: usize>(
+        &mut self,
+        field: &str,
+    ) -> Result<[u8; N], CodecError> {
+        self.source
+            .array()
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor PmDc {field}")))
     }
 
     pub(crate) fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
@@ -294,7 +300,7 @@ impl<'a> Cursor<'a> {
         let len = units.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
+        ctx.charge_retained(len as u64, "retain Inventor PmDc string")?;
         self.source.utf16_le(units).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor PmDc {field} is not UTF-16"))
         })

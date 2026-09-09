@@ -36,7 +36,8 @@ fn id_strategy() -> impl Strategy<Value = String> {
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: crate::CodecFormat::Step,
-        object_id: object_id.into(),
+        object_id: crate::products::NonEmptyString::new(object_id)
+            .expect("nonempty source identity"),
         name: None,
         color: None,
         visible: None,

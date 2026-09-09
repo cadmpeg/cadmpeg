@@ -432,7 +432,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     decoded.ir_mut().model.configurations[0]
         .parameter_values
         .insert(
-            cadmpeg_ir::features::ParameterId::mint("configuration-only")
+            cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#configuration-only")
                 .expect("identity grammar"),
             cadmpeg_ir::features::ParameterValue::Integer(3),
         );

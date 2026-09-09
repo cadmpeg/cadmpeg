@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
+    UnsupportedBodyCensusReason,
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -67,9 +68,34 @@ enum VerificationStatus {
     try_from = "RederivationBoundaryWire",
     into = "RederivationBoundaryWire"
 )]
-struct RederivationBoundary {
-    feature: Option<FeatureBoundary>,
-    reason: String,
+enum RederivationBoundary {
+    Unsupported {
+        feature: FeatureBoundary,
+        reason: UnsupportedBodyCensusReason,
+    },
+    SavedBodyCensusMismatch,
+    ConfigurationEvaluation,
+    WorkerTimeout,
+    WorkerFailure,
+}
+
+impl RederivationBoundary {
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::Unsupported { reason, .. } => reason.as_str(),
+            Self::SavedBodyCensusMismatch => "saved_body_census_mismatch",
+            Self::ConfigurationEvaluation => "configuration_evaluation",
+            Self::WorkerTimeout => "profile_worker_timeout",
+            Self::WorkerFailure => "profile_worker_failure",
+        }
+    }
+
+    fn feature(&self) -> Option<&FeatureBoundary> {
+        match self {
+            Self::Unsupported { feature, .. } => Some(feature),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,30 +121,49 @@ impl TryFrom<RederivationBoundaryWire> for RederivationBoundary {
             (None, None) if wire.feature_name.is_none() && wire.feature_family.is_none() => None,
             _ => return Err("feature: identity and ordinal must be present together; name and family require identity".into()),
         };
-        Ok(Self {
-            feature,
-            reason: wire.reason,
-        })
+        let boundary = match wire.reason.as_str() {
+            "saved_body_census_mismatch" => Self::SavedBodyCensusMismatch,
+            "configuration_evaluation" => Self::ConfigurationEvaluation,
+            "profile_worker_timeout" => Self::WorkerTimeout,
+            "profile_worker_failure" => Self::WorkerFailure,
+            _ => {
+                let reason = UnsupportedBodyCensusReason::deserialize(
+                    serde::de::value::StringDeserializer::<serde::de::value::Error>::new(
+                        wire.reason,
+                    ),
+                )
+                .map_err(|error| format!("reason: {error}"))?;
+                return Ok(Self::Unsupported {
+                    feature: feature.ok_or("feature: required for unsupported evaluation")?,
+                    reason,
+                });
+            }
+        };
+        if feature.is_some() {
+            return Err("feature: only unsupported evaluation can name a feature".into());
+        }
+        Ok(boundary)
     }
 }
 
 impl From<RederivationBoundary> for RederivationBoundaryWire {
     fn from(value: RederivationBoundary) -> Self {
-        let (feature, feature_name, feature_family, feature_ordinal) = match value.feature {
-            Some(feature) => (
+        let reason = value.reason().to_owned();
+        let (feature, feature_name, feature_family, feature_ordinal) = match value {
+            RederivationBoundary::Unsupported { feature, .. } => (
                 Some(feature.id.as_str().to_owned()),
                 feature.name,
                 feature.family,
                 Some(feature.ordinal),
             ),
-            None => (None, None, None, None),
+            _ => (None, None, None, None),
         };
         Self {
             feature,
             feature_name,
             feature_family,
             feature_ordinal,
-            reason: value.reason,
+            reason,
         }
     }
 }
@@ -220,6 +265,21 @@ enum DecodeStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FailureStatus {
+    TimedOut,
+    Failed,
+}
+
+impl From<FailureStatus> for DecodeStatus {
+    fn from(status: FailureStatus) -> Self {
+        match status {
+            FailureStatus::TimedOut => Self::TimedOut,
+            FailureStatus::Failed => Self::Failed,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum WorkerFailure {
     TimedOut,
@@ -291,16 +351,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(path.as_path())
             .to_string_lossy()
             .into_owned();
-        if let Some(decoded) = first.as_ref().ok().or_else(|| second.as_ref().ok()) {
-            add_totals(
-                decoded,
-                &mut totals,
-                &mut total_loss_codes,
-                &mut total_loss_details,
-            );
-            fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
-        } else {
-            fixtures.push(failed_fixture_evidence(filename, status));
+        match (first.as_ref(), second.as_ref()) {
+            (Ok(decoded), _) | (_, Ok(decoded)) => {
+                add_totals(
+                    decoded,
+                    &mut totals,
+                    &mut total_loss_codes,
+                    &mut total_loss_details,
+                );
+                fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
+            }
+            (Err(first), Err(second)) => {
+                let failure = if matches!(first, WorkerFailure::TimedOut)
+                    || matches!(second, WorkerFailure::TimedOut)
+                {
+                    FailureStatus::TimedOut
+                } else {
+                    FailureStatus::Failed
+                };
+                fixtures.push(failed_fixture_evidence(filename, failure));
+            }
         }
     }
 
@@ -406,15 +476,14 @@ fn fixture_evidence(
     }
 }
 
-fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvidence {
-    let reason = match status {
-        DecodeStatus::TimedOut => "profile_worker_timeout",
-        DecodeStatus::Failed => "profile_worker_failure",
-        DecodeStatus::Complete => unreachable!("completed status has decoded evidence"),
+fn failed_fixture_evidence(filename: String, status: FailureStatus) -> FixtureEvidence {
+    let boundary = match status {
+        FailureStatus::TimedOut => RederivationBoundary::WorkerTimeout,
+        FailureStatus::Failed => RederivationBoundary::WorkerFailure,
     };
     FixtureEvidence {
         filename,
-        status,
+        status: status.into(),
         deterministic: false,
         entities: EntityCounts::default(),
         losses: BTreeMap::new(),
@@ -424,10 +493,7 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         all_bodies_colored: false,
         all_faces_colored: false,
         rederivation: VerificationStatus::Missing,
-        rederivation_boundary: Some(RederivationBoundary {
-            feature: None,
-            reason: reason.to_string(),
-        }),
+        rederivation_boundary: Some(boundary),
     }
 }
 
@@ -440,10 +506,9 @@ fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<Rederivatio
     {
         *counts
             .entry((
-                boundary.reason.clone(),
+                boundary.reason().to_owned(),
                 boundary
-                    .feature
-                    .as_ref()
+                    .feature()
                     .and_then(|feature| feature.family.clone()),
             ))
             .or_default() += 1;
@@ -550,9 +615,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
         if appearances.next().is_some() {
             return None;
         }
-        appearance
-            .base_color
-            .filter(|color| normalized_color(*color))
+        appearance.base_color
     });
 
     // A body appearance is the base for every owned face that has no direct
@@ -585,8 +648,8 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
 
     match direct_color {
         Some(color) => match bindings.first() {
-            None => normalized_color(color),
-            Some(_) => bound_color.is_some_and(|bound| normalized_color(color) && bound == color),
+            None => true,
+            Some(_) => bound_color.is_some_and(|bound| bound == color),
         },
         None => bound_color.is_some(),
     }
@@ -619,36 +682,21 @@ fn unique_face_body<'a>(
     ir.model.bodies.iter().find(|body| body.id == body_id)
 }
 
-fn normalized_color(color: Color) -> bool {
-    [color.r, color.g, color.b, color.a]
-        .into_iter()
-        .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
-}
-
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
     match saved_body_census_evidence(ir) {
         BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
         BodyCensusEvaluation::Mismatch { .. } => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: None,
-                reason: "saved_body_census_mismatch".to_string(),
-            }),
+            Some(RederivationBoundary::SavedBodyCensusMismatch),
         ),
         BodyCensusEvaluation::Unsupported { feature, reason } => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: Some(feature),
-                reason: reason.as_str().to_string(),
-            }),
+            Some(RederivationBoundary::Unsupported { feature, reason }),
         ),
         BodyCensusEvaluation::ConfigurationEvaluation => (
             VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: None,
-                reason: "configuration_evaluation".to_string(),
-            }),
+            Some(RederivationBoundary::ConfigurationEvaluation),
         ),
     }
 }
@@ -919,20 +967,29 @@ mod tests {
 
     #[test]
     fn external_assembly_applicability_uses_the_complete_local_loss_identity() {
-        use cadmpeg_ir::report::{LossKind, LossTaxonomy};
+        use cadmpeg_ir::report::{LossKind, LossNamespace, LossTaxonomy};
+
+        const NX_NAMESPACE: LossNamespace<'static> = match LossNamespace::new(NX_LOSS_NAMESPACE) {
+            Ok(namespace) => namespace,
+            Err(_) => panic!("reserved NX loss namespace"),
+        };
+        const OTHER_NAMESPACE: LossNamespace<'static> = match LossNamespace::new("other") {
+            Ok(namespace) => namespace,
+            Err(_) => panic!("reserved alternate loss namespace"),
+        };
 
         let external = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            NX_NAMESPACE,
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_namespace = LossKind::namespaced(
-            "other",
+            OTHER_NAMESPACE,
             EXTERNAL_ASSEMBLY_LOSS_CODE,
             LossTaxonomy::AssemblyComponentsExternal,
         );
         let wrong_code = LossKind::namespaced(
-            NX_LOSS_NAMESPACE,
+            NX_NAMESPACE,
             "assembly.other",
             LossTaxonomy::AssemblyComponentsExternal,
         );
@@ -968,29 +1025,32 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Block {
                     dimensions: Some([
-                        cadmpeg_ir::features::PositiveLength::new(1.0).unwrap(),
-                        cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
-                        cadmpeg_ir::features::PositiveLength::new(3.0).unwrap(),
+                        cadmpeg_ir::features::PositiveLength::new(1.0)
+                            .expect("valid block fixture"),
+                        cadmpeg_ir::features::PositiveLength::new(2.0)
+                            .expect("valid block fixture"),
+                        cadmpeg_ir::features::PositiveLength::new(3.0)
+                            .expect("valid block fixture"),
                     ]),
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
                 },
                 vec![body],
             )
-            .unwrap(),
+            .expect("valid block fixture"),
             native_ref: None,
         });
 
@@ -1006,15 +1066,15 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Block {
@@ -1024,7 +1084,7 @@ mod tests {
                 },
                 vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
             )
-            .unwrap(),
+            .expect("valid unresolved block fixture"),
             native_ref: None,
         });
 
@@ -1032,40 +1092,38 @@ mod tests {
         assert_eq!(status, VerificationStatus::Missing);
         assert_eq!(
             boundary,
-            Some(RederivationBoundary {
-                feature: Some(FeatureBoundary {
-                    id: cadmpeg_ir::features::FeatureId::mint("block")
+            Some(RederivationBoundary::Unsupported {
+                feature: FeatureBoundary {
+                    id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#block")
                         .expect("valid block fixture identity"),
                     name: Some("BLOCK".to_string()),
                     family: Some("block".to_string()),
                     ordinal: 17
-                }),
-                reason: "incomplete_feature_definition".to_string(),
+                },
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             })
         );
     }
 
     #[test]
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
-        let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
-            feature: family.map(|family| FeatureBoundary {
-                id: cadmpeg_ir::features::FeatureId::mint("feature")
+        let boundary = |family: &str| RederivationBoundary::Unsupported {
+            feature: FeatureBoundary {
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                     .expect("valid feature fixture identity"),
                 name: None,
                 family: Some(family.to_owned()),
                 ordinal: 0,
-            }),
-            reason: reason.to_string(),
+            },
+            reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         };
         let mut fixtures = [fixture(), fixture(), fixture()];
         fixtures[0].rederivation = VerificationStatus::Missing;
-        fixtures[0].rederivation_boundary =
-            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[0].rederivation_boundary = Some(boundary("hole"));
         fixtures[1].rederivation = VerificationStatus::Missing;
-        fixtures[1].rederivation_boundary =
-            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[1].rederivation_boundary = Some(boundary("hole"));
         fixtures[2].rederivation = VerificationStatus::Missing;
-        fixtures[2].rederivation_boundary = Some(boundary("configuration_evaluation", None));
+        fixtures[2].rederivation_boundary = Some(RederivationBoundary::ConfigurationEvaluation);
 
         assert_eq!(
             rederivation_boundary_counts(&fixtures),
@@ -1090,20 +1148,20 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::TreeNode {
                     role: FeatureTreeNodeRole::History,
-                    children: Default::default(),
+                    children: cadmpeg_ir::features::TreeChildren::default(),
                 },
             ),
             native_ref: None,
@@ -1167,12 +1225,7 @@ mod tests {
             physical_token: None,
             schema: None,
             category: None,
-            base_color: Some(Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 1.0,
-            }),
+            base_color: Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color")),
             properties: BTreeMap::new(),
             textures: Vec::new(),
         });
@@ -1194,12 +1247,7 @@ mod tests {
             &AppearanceTarget::Body(body.id),
         ));
 
-        ir.model.bodies[0].color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.bodies[0].color = Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(has_effective_color(
             &ir,
             ir.model.bodies[0].color,
@@ -1211,18 +1259,9 @@ mod tests {
             ir.model.bodies[0].color,
             &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
         ));
-        ir.model.appearances[0].base_color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
-        ir.model.bodies[0].color = Some(Color {
-            r: 0.9,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.appearances[0].base_color =
+            Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
+        ir.model.bodies[0].color = Some(Color::new(0.9, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(!has_effective_color(
             &ir,
             ir.model.bodies[0].color,
@@ -1275,12 +1314,8 @@ mod tests {
         });
         assert!(!has_effective_color(&ir, None, &target));
 
-        ir.model.appearances[0].base_color = Some(Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        });
+        ir.model.appearances[0].base_color =
+            Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:binding#binding-2"
                 .try_into()
@@ -1306,42 +1341,9 @@ mod tests {
     }
 
     #[test]
-    fn effective_color_requires_normalized_direct_color() {
-        let ir = CadIr::empty();
-        let target = AppearanceTarget::Body(
-            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
-        );
-        assert!(!has_effective_color(
-            &ir,
-            Some(Color {
-                r: 1.1,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            &target,
-        ));
-        assert!(has_effective_color(
-            &ir,
-            Some(Color {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            &target,
-        ));
-    }
-
-    #[test]
     fn effective_face_color_inherits_unique_body_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube();
-        let body_color = Color {
-            r: 0.2,
-            g: 0.3,
-            b: 0.4,
-            a: 1.0,
-        };
+        let body_color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
         ir.model.bodies[0].color = Some(body_color);
 
         assert!(ir.model.faces.iter().all(|face| {
@@ -1386,5 +1388,22 @@ mod tests {
         assert!(gates[6].assertions[0].passed);
         assert_eq!(gates[6].assertions[1].id, "saved_body_census_rederived");
         assert!(!gates[6].assertions[1].passed);
+    }
+}
+
+#[cfg(test)]
+mod boundary_wire_tests {
+    use super::RederivationBoundary;
+
+    #[test]
+    fn worker_boundary_requires_a_feature_for_unsupported_reasons() {
+        let wire = serde_json::json!({
+            "feature": null, "feature_name": null, "feature_family": null,
+            "feature_ordinal": null, "reason": "incomplete_feature_definition"
+        });
+        assert!(serde_json::from_value::<RederivationBoundary>(wire)
+            .expect_err("unsupported boundaries require a feature")
+            .to_string()
+            .contains("feature"));
     }
 }

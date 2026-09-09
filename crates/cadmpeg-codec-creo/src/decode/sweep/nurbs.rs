@@ -2,14 +2,15 @@
 //! B-spline basis, interpolation, extruded NURBS helpers, and tabulated-cylinder directrices.
 
 use super::super::holes::ExtrusionSpan;
-use super::super::sketch::{normalized, section_point_in_model, section_xyz_in_model};
+use super::super::sketch::{section_point_in_model, section_xyz_in_model};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::analytic::planes::valid_positive_nurbs_curve;
 use crate::vecmath::cross;
+use crate::vecmath::normalize;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
 const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
@@ -19,31 +20,32 @@ pub(in super::super) fn extruded_geometry_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
 ) -> Option<SurfaceGeometry> {
-    match geometry {
-        SketchGeometry::Line { start, end } => {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
-            let line = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            let normal = normalized(cross(line, transform.normal))?;
+            let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            let normal = normalize(cross(line, transform.normal()))?;
             Some(SurfaceGeometry::Plane {
                 origin: Point3::new(start[0], start[1], start[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
                 u_axis: Vector3::new(line[0], line[1], line[2]),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::Arc { center, radius, .. }
+        | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(SurfaceGeometry::Cylinder {
                 origin: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(
-                    transform.normal[0],
-                    transform.normal[1],
-                    transform.normal[2],
+                    transform.normal()[0],
+                    transform.normal()[1],
+                    transform.normal()[2],
                 ),
                 ref_direction: Vector3::new(
-                    transform.u_axis[0],
-                    transform.u_axis[1],
-                    transform.u_axis[2],
+                    transform.u_axis()[0],
+                    transform.u_axis()[1],
+                    transform.u_axis()[2],
                 ),
                 radius: radius.get(),
             })
@@ -217,8 +219,8 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     {
         return None;
     }
-    Some(SketchGeometry::Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+    Some(SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::new(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
@@ -230,7 +232,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
             nurbs.periodic(),
         )
         .ok()?,
-    })
+    ))
 }
 
 pub(in super::super) fn interpolation_spline_surface(
@@ -412,7 +414,7 @@ pub(in super::super) fn extruded_nurbs_surface(
 }
 
 pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
-    let SketchGeometry::Nurbs { curve } = geometry else {
+    let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return None;
     };
     let nurbs = curve
@@ -473,11 +475,14 @@ pub(in super::super) fn extrusion_brep_side_surface(
     end: [f64; 2],
     span: ExtrusionSpan,
 ) -> Option<SurfaceGeometry> {
-    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+    if matches!(
+        geometry.definition(),
+        SketchGeometryDefinition::Nurbs { .. }
+    ) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower);
         let sweep = transform
-            .normal
+            .normal()
             .map(|value| value * (span.upper - span.lower));
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
@@ -486,12 +491,15 @@ pub(in super::super) fn extrusion_brep_side_surface(
             sweep,
         )?));
     }
-    let section_geometry = match geometry {
-        SketchGeometry::Line { .. } => SketchGeometry::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        },
-        value => value.clone(),
+    let section_geometry = match geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            })
+            .ok()?
+        }
+        _ => geometry.clone(),
     };
     extruded_geometry_surface(transform, &section_geometry)
 }

@@ -11,6 +11,7 @@ use super::prelude::*;
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
+    use crate::design::decode::scopes::CircularPatternAxisCandidate;
     use crate::records::feature::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
@@ -28,22 +29,65 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         direction_offset: 53,
     };
 
-    let historical_only = [(historical.clone(), 10, 11)];
+    let historical_only = [CircularPatternAxisCandidate {
+        axis: historical.clone(),
+        axis_record_index: 10,
+        selection_record_index: 11,
+    }];
     assert_eq!(
-        select_circular_pattern_axis(&historical_only).map(|candidate| (candidate.1, candidate.2)),
+        select_circular_pattern_axis(&historical_only).map(|candidate| (
+            candidate.axis_record_index,
+            candidate.selection_record_index
+        )),
         Some((10, 11))
     );
 
-    let mixed = [(historical.clone(), 10, 11), (inline.clone(), 20, 21)];
+    let mixed = [
+        CircularPatternAxisCandidate {
+            axis: historical.clone(),
+            axis_record_index: 10,
+            selection_record_index: 11,
+        },
+        CircularPatternAxisCandidate {
+            axis: inline.clone(),
+            axis_record_index: 20,
+            selection_record_index: 21,
+        },
+    ];
     assert_eq!(
-        select_circular_pattern_axis(&mixed).map(|candidate| (candidate.1, candidate.2)),
+        select_circular_pattern_axis(&mixed).map(|candidate| (
+            candidate.axis_record_index,
+            candidate.selection_record_index
+        )),
         Some((20, 21))
     );
 
-    let duplicate_inline = [(inline.clone(), 20, 21), (inline, 30, 31)];
+    let duplicate_inline = [
+        CircularPatternAxisCandidate {
+            axis: inline.clone(),
+            axis_record_index: 20,
+            selection_record_index: 21,
+        },
+        CircularPatternAxisCandidate {
+            axis: inline,
+            axis_record_index: 30,
+            selection_record_index: 31,
+        },
+    ];
     assert!(select_circular_pattern_axis(&duplicate_inline).is_none());
 
-    let duplicate_historical = [(historical.clone(), 10, 11), (historical, 12, 13)];
+    let duplicate_historical = [
+        CircularPatternAxisCandidate {
+            axis: historical.clone(),
+            axis_record_index: 10,
+            selection_record_index: 11,
+        },
+        CircularPatternAxisCandidate {
+            axis: historical,
+            axis_record_index: 12,
+            selection_record_index: 13,
+        },
+    ];
     assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
 }
 
@@ -255,9 +299,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[count_start + 4] = b'x';
     bytes[angle_start + 4] = b'x';
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        DesignParameterOwner {
+        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
+            byte_offset: (evaluated_value_offset) - 40,
             frame_length: 104,
             class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
@@ -267,9 +311,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             evaluated_value_offset,
             parameter_record_index: record_index + 1,
             owned_ordinal: local_ordinal,
-            variant: None,
+            variant: Some(0),
             companion_record_index: record_index + 2,
-        }
+        })
+        .unwrap()
     };
     let owners = [
         owner(count_record_index, 0, 25.0, 101),
@@ -349,10 +394,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .expect("exact rectangular-pattern scalar lanes");
-    assert_eq!(rectangular.u_count, 3);
-    assert_eq!(rectangular.v_count, 1);
-    assert_eq!(rectangular.u_extent, 10.0);
-    assert_eq!(rectangular.v_extent, 0.0);
+    assert_eq!(rectangular.u_count(), 3);
+    assert_eq!(rectangular.v_count(), 1);
+    assert_eq!(rectangular.u_extent(), 10.0);
+    assert_eq!(rectangular.v_extent(), 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
     assert_eq!(rectangular.instances, None);
@@ -391,7 +436,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
-    invalid_inactive_spacing[3].evaluated_value = 1.0;
+    {
+        let mut wire =
+            crate::records::DesignParameterOwnerWire::from(invalid_inactive_spacing[3].clone());
+        wire.evaluated_value = 1.0;
+        invalid_inactive_spacing[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
@@ -402,7 +452,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
     let mut duplicate_lane = rectangular_owners.clone();
-    duplicate_lane[3].local_ordinal = 2;
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
+        wire.local_ordinal = 2;
+        duplicate_lane[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
@@ -434,8 +488,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .expect("exact assembly scalar lanes");
-    assert_eq!(alignment.angle, 3.0);
-    assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
+    assert_eq!(alignment.angle(), 3.0);
+    assert_eq!(alignment.offset(), [1.0, 10.0, 0.0]);
     assert_eq!(
         alignment
             .owners
@@ -478,8 +532,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &placement_and_alignment_owners,
     )
     .expect("assembly alignment after four placement lanes");
-    assert_eq!(alignment.angle, 0.25);
-    assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(alignment.angle(), 0.25);
+    assert_eq!(alignment.offset(), [4.0, 5.0, 6.0]);
     assert_eq!(
         alignment
             .owners
@@ -496,8 +550,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &placement_and_alignment_owners,
     )
     .expect("JointOrigin datum-envelope alignment after four placement lanes");
-    assert_eq!(datum_envelope_alignment.angle, 0.25);
-    assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(datum_envelope_alignment.angle(), 0.25);
+    assert_eq!(datum_envelope_alignment.offset(), [4.0, 5.0, 6.0]);
     assert_eq!(
         datum_envelope_alignment
             .owners
@@ -526,8 +580,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &short_axial_owners,
     )
     .expect("six-owner alignment belongs to the 705-byte axial frame");
-    assert_eq!(short_axial_alignment.angle, 0.5);
-    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(short_axial_alignment.angle(), 0.5);
+    assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
 
     let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
@@ -548,8 +602,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_alignment_owners,
     )
     .expect("legacy assembly axial alignment lanes");
-    assert_eq!(alignment.angle, 0.5);
-    assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(alignment.angle(), 0.5);
+    assert_eq!(alignment.offset(), [0.0, 0.0, 2.0]);
     assert_eq!(
         alignment
             .owners
@@ -684,8 +738,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &legacy_alignment_owners,
     )
     .expect("legacy assembly alignment and operand frames");
-    assert_eq!(axial_alignment.angle, 0.5);
-    assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(axial_alignment.angle(), 0.5);
+    assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
     let axial_frames = axial_alignment.operand_frames().unwrap();
     assert_eq!(axial_frames[0].reference_offset, 29);
     assert_eq!(axial_frames[0].transform_offset, 39);
@@ -710,8 +764,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &short_axial_owners,
     )
     .expect("short axial assembly alignment and operand frames");
-    assert_eq!(short_axial_alignment.angle, 0.5);
-    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(short_axial_alignment.angle(), 0.5);
+    assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
     assert_eq!(
         short_axial_alignment
             .owners
@@ -778,7 +832,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.reference_members = crate::records::ReferenceRun::unlocated(
         placement_and_alignment_owners
             .iter()
-            .map(|owner| owner.record_index)
+            .map(crate::records::DesignParameterOwner::record_index)
             .collect(),
     );
     if let crate::records::feature::DesignScopePayload::Assemble(slot)
@@ -818,10 +872,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut conflicting_assembly = single_frame_scopes[0].clone();
     conflicting_assembly.assembly_alignment_mut().unwrap().form = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
-    conflicting_joint_origin
-        .joint_origin_frame_mut()
-        .unwrap()
-        .joint_origin_transform[2][3] += 1.0;
+    let frame = conflicting_joint_origin.joint_origin_frame_mut().unwrap();
+    let mut transform = frame.joint_origin_transform.rows();
+    transform[2][3] += 1.0;
+    frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(

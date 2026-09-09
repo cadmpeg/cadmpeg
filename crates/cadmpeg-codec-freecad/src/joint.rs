@@ -4,14 +4,13 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{
-    empty_link_target, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
+    optional_reference, JointBody, JointConnectorRecord, JointRecord, PairedJointFamily,
 };
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
-use cadmpeg_ir::transform::Transform;
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -68,10 +67,10 @@ pub(crate) fn transfer(
             let reference = links(&owned, "ObjectToGround")
                 .into_iter()
                 .next()
-                .unwrap_or_else(empty_link_target);
+                .and_then(optional_reference);
             JointBody::Grounded {
                 reference,
-                placement,
+                placement: placement.try_into().map_err(CodecError::Malformed)?,
             }
         } else if let Some(joint_type) = joint_type {
             let connector_record = |owned: &[&PropertyRecord],
@@ -83,10 +82,15 @@ pub(crate) fn transfer(
                     reference: connector(owned, reference_name)?
                         .into_iter()
                         .next()
-                        .unwrap_or_else(empty_link_target),
+                        .and_then(optional_reference),
                     placement: placement(owned, placement_name)?
-                        .unwrap_or_else(crate::product::identity),
-                    offset: placement(owned, offset_name)?.unwrap_or_else(crate::product::identity),
+                        .unwrap_or_else(crate::product::identity)
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
+                    offset: placement(owned, offset_name)?
+                        .unwrap_or_else(crate::product::identity)
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
                 })
             };
             JointBody::Pair {
@@ -247,8 +251,8 @@ pub(crate) fn transfer_neutral(
                 } => AssemblyJoint::grounded(
                     id,
                     JointConnector {
-                        operand: operand(reference)?,
-                        frame: Transform::from_rows(*placement)?,
+                        operand: operand(reference.as_ref()?)?,
+                        frame: placement.transform(),
                         detached: bool_value("Detach1").unwrap_or(false),
                     },
                     None,
@@ -274,20 +278,17 @@ pub(crate) fn transfer_neutral(
                         kind,
                         [
                             JointConnector {
-                                operand: operand(&first.reference)?,
-                                frame: Transform::from_rows(first.placement)?,
+                                operand: operand(first.reference.as_ref()?)?,
+                                frame: first.placement.transform(),
                                 detached: bool_value("Detach1").unwrap_or(false),
                             },
                             JointConnector {
-                                operand: operand(&second.reference)?,
-                                frame: Transform::from_rows(second.placement)?,
+                                operand: operand(second.reference.as_ref()?)?,
+                                frame: second.placement.transform(),
                                 detached: bool_value("Detach2").unwrap_or(false),
                             },
                         ],
-                        Some([
-                            Transform::from_rows(first.offset)?,
-                            Transform::from_rows(second.offset)?,
-                        ]),
+                        Some([first.offset.transform(), second.offset.transform()]),
                     )
                 }
             };
@@ -374,7 +375,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
-    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         malformed(format!(
             "joint enumeration property {} has invalid XML: {error}",
             property.id

@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Color;
 
+use crate::brep::feature_source::FeatureSourceId;
 use crate::container::{ContainerScan, Section};
 use crate::layout::display_lists_inline_visual_properties_prefix as inline_visual;
 use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
@@ -36,7 +37,7 @@ pub(crate) struct DisplayAppearanceAssignment {
 
 #[derive(Debug, Clone)]
 pub(crate) struct FeatureAppearanceAssignment {
-    pub(crate) feature_source_id: u32,
+    pub(crate) feature_source_id: FeatureSourceId,
     pub(crate) feature_timestamp: u32,
     pub(crate) packed_color: u32,
     pub(crate) color: Color,
@@ -46,16 +47,11 @@ pub(crate) struct FeatureAppearanceAssignment {
 
 pub(crate) struct ResolvedDisplayAppearances {
     pub(crate) by_face: BTreeMap<usize, AppearanceDefinition>,
-    pub(crate) matched_feature_sources: BTreeSet<u32>,
+    pub(crate) matched_feature_sources: BTreeSet<FeatureSourceId>,
 }
 
 pub(crate) fn packed_rgb(packed: u32) -> Color {
-    Color {
-        r: (packed & 0xff) as f32 / 255.0,
-        g: ((packed >> 8) & 0xff) as f32 / 255.0,
-        b: ((packed >> 16) & 0xff) as f32 / 255.0,
-        a: 1.0,
-    }
+    Color::from_rgba8(packed as u8, (packed >> 8) as u8, (packed >> 16) as u8, 255)
 }
 
 pub(crate) fn definitions(scan: &ContainerScan) -> Vec<AppearanceDefinition> {
@@ -227,7 +223,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
             }
             let Some(feature_source_id) =
                 View::u32_le_at(record, feature_visual::FEATURE_SOURCE_ID)
-                    .filter(|value| *value != 0 && *value != u32::MAX)
+                    .and_then(|value| FeatureSourceId::try_from(value).ok())
             else {
                 continue;
             };
@@ -269,7 +265,8 @@ pub(crate) fn resolve_display_appearances(
         }
     }
 
-    let mut feature_by_source = HashMap::<u32, Option<FeatureAppearanceAssignment>>::new();
+    let mut feature_by_source =
+        HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
     for assignment in feature_assignments(scan) {
         feature_by_source
             .entry(assignment.feature_source_id)
@@ -284,7 +281,7 @@ pub(crate) fn resolve_display_appearances(
             .or_insert_with(|| Some(assignment));
     }
     let mut matched_feature_sources = BTreeSet::new();
-    let mut faces_by_source = BTreeMap::<u32, Vec<usize>>::new();
+    let mut faces_by_source = BTreeMap::<FeatureSourceId, Vec<usize>>::new();
     for (table_index, face) in faces.iter().enumerate() {
         if let Some(source_id) = face.feature_source_id() {
             faces_by_source

@@ -1473,12 +1473,12 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert!(lane
         .sketch_entities
         .windows(2)
-        .all(|entities| entities[0].offset < entities[1].offset));
+        .all(|entities| entities[0].offset() < entities[1].offset()));
     assert!(lane
         .sketch_entities
         .iter()
         .enumerate()
-        .all(|(ordinal, entity)| entity.ordinal == ordinal as u32));
+        .all(|(ordinal, entity)| entity.ordinal() == ordinal as u32));
     assert!(lane
         .sketch_entities
         .iter()
@@ -1492,7 +1492,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let by_ordinal = |ordinal| {
         lane.sketch_entities
             .iter()
-            .find(|entity| entity.ordinal == ordinal)
+            .find(|entity| entity.ordinal() == ordinal)
             .unwrap()
     };
     assert_eq!(by_ordinal(0).kind, SketchInputKind::Point);
@@ -1516,7 +1516,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         let entity = native.feature_input_lanes[0]
             .sketch_entities
             .iter_mut()
-            .find(|entity| entity.ordinal == 1)
+            .find(|entity| entity.ordinal() == 1)
             .unwrap();
         entity.kind = SketchInputKind::from_native_code(5);
         entity.state_value = Some(12.5);
@@ -1550,7 +1550,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         sldprt_native(regenerated.ir()).feature_input_lanes[0]
             .sketch_entities
             .iter()
-            .find(|entity| entity.ordinal == 1)
+            .find(|entity| entity.ordinal() == 1)
             .unwrap()
             .kind,
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
@@ -1579,7 +1579,7 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("has edited class declarations"));
+    assert!(error.to_string().contains("class index does not match"));
 }
 
 #[test]
@@ -1632,7 +1632,7 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("has edited named scalars"));
+    assert!(error.to_string().contains("scalar index does not match"));
 }
 
 #[test]

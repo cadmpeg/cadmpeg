@@ -450,7 +450,7 @@ pub(crate) fn restore_configuration_tree_node_definitions(
             .evaluation
             .set_definition(FeatureDefinition::TreeNode {
                 role: *role,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             })
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
@@ -506,11 +506,14 @@ pub(crate) fn project_configuration_sketch_states(
             .collect::<HashMap<_, _>>();
         for feature in &mut features {
             if let FeatureDefinition::SpatialSketch { sketch } = feature.evaluation.definition() {
-                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.as_str().replacen(
-                    ":model:feature#",
-                    ":model:spatial-sketch#",
-                    1,
-                ));
+                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(
+                    feature
+                        .id
+                        .as_str()
+                        .replacen(":model:feature#", ":model:spatial-sketch#", 1),
+                ) else {
+                    continue;
+                };
                 if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
                     feature
                         .evaluation
@@ -1000,10 +1003,7 @@ fn configuration_feature_plane_frame(
         } => configuration_reference_plane_frame(reference, features, visiting).and_then(
             |(origin, normal, u_axis)| {
                 let normal_length = normal.norm();
-                (normal_length.is_finite()
-                    && normal_length > f64::EPSILON
-                    && distance.get().is_finite())
-                .then_some((
+                (normal_length.is_finite() && normal_length > f64::EPSILON).then_some((
                     Point3::new(
                         origin.x + normal.x * distance.get() / normal_length,
                         origin.y + normal.y * distance.get() / normal_length,
@@ -1175,7 +1175,7 @@ pub(crate) fn configuration_surface_carriers(
         .shells
         .iter()
         .filter(|shell| shell_ids.contains(&shell.id))
-        .flat_map(|shell| shell.faces())
+        .flat_map(cadmpeg_ir::topology::Shell::faces)
         .collect::<HashSet<_>>();
     let surface_ids = ir
         .model

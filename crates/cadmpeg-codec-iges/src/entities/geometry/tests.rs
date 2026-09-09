@@ -502,10 +502,7 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
             view: 0,
             transform,
             label_display: 0,
-            status: crate::directory::SourceStatus::from_codes(
-                [0, 0, 0, 0],
-                crate::global::GlobalTable::V5Later,
-            ),
+            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
             line_weight: 0,
             color: 0,
             parameter_line_count: 0,
@@ -1193,4 +1190,106 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn transform_translation_overflow_after_inch_scaling_is_rejected() {
+    fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
+        crate::directory::DirectoryEntry {
+            source_offset: 0,
+            sequence,
+            entity_type: 124,
+            parameter_start: 0,
+            structure: 0,
+            line_font: 0,
+            level: 0,
+            view: 0,
+            transform,
+            label_display: 0,
+            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
+            line_weight: 0,
+            color: 0,
+            parameter_line_count: 0,
+            form: 0,
+            reserved: [[b' '; 8]; 2],
+            label: [b' '; 8],
+            subscript: 0,
+        }
+    }
+
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use std::collections::{BTreeMap, BTreeSet};
+    let entry = transform_entry(1, 0);
+    let values = [
+        124.0,
+        1.0,
+        0.0,
+        0.0,
+        f64::MAX,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+    ];
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Real(value),
+                span: 0..0,
+            })
+            .collect(),
+        Vec::new(),
+    );
+    let result = super::resolve_transform(
+        1,
+        &BTreeMap::from([(1, &entry)]),
+        &BTreeMap::from([(1, &record)]),
+        25.4,
+        crate::global::RealPrecision {
+            single_significance: 6,
+            double_significance: 15,
+        },
+        &mut BTreeSet::new(),
+        None,
+    )
+    .map(super::Affine::body_transform);
+    assert!(result.is_err());
+}
+
+#[test]
+fn affine_composition_rejects_translation_overflow() {
+    let transform = super::Affine::new([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert!(transform.compose(transform).is_none());
+}
+
+#[test]
+fn decode_reports_transform_translation_overflow_after_inch_scaling() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,1,2HIN,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let bytes = transformed_circular_arc_file_with_global(
+        0,
+        b"124,1,0,0,1.7D308,0,1,0,0,0,0,1,0;",
+        b"100,0,0,0,1,0,0,1;",
+        global,
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("non-finite coefficients after length scaling")));
 }

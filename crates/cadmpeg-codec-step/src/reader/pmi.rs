@@ -23,6 +23,15 @@ use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct AnnotationIndex(usize);
+
+impl AnnotationIndex {
+    fn get(self) -> usize {
+        self.0
+    }
+}
+
 struct MeasureContext<'a> {
     length_scale: f64,
     angle_scale: f64,
@@ -36,15 +45,15 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, cadmpeg_core::CodecError> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
             notes: Vec::new(),
-        };
+        });
     }
     let base_aspects = exchange
         .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
@@ -57,7 +66,7 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
-    let mut annotations = BTreeMap::<u64, usize>::new();
+    let mut annotations = BTreeMap::<u64, AnnotationIndex>::new();
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
@@ -90,7 +99,7 @@ pub(super) fn decode(
                     StepLossCode::MetadataStringInvalid,
                 )
             }),
-            targets([id]),
+            targets([id])?,
             None,
             PmiDefinition::Datum { identification },
         );
@@ -139,7 +148,7 @@ pub(super) fn decode(
                     StepLossCode::MetadataStringInvalid,
                 )
             }),
-            targets([id]),
+            targets([id])?,
             None,
             PmiDefinition::DatumTarget {
                 form: datum_target_form(&form),
@@ -175,6 +184,16 @@ pub(super) fn decode(
             })
             .flatten()
             .collect::<Vec<_>>();
+        let datum_references = match datum_references.try_into() {
+            Ok(references) => references,
+            Err(error) => {
+                losses.push(
+                    StepLossCode::PmiDatumSystemInvalid
+                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
+                );
+                continue;
+            }
+        };
         push_annotation(
             ir,
             &mut annotations,
@@ -195,7 +214,7 @@ pub(super) fn decode(
                     .iter()
                     .flat_map(references)
                     .filter(|id| base_aspects.contains(id)),
-            ),
+            )?,
             None,
             PmiDefinition::DatumSystem {
                 references: datum_references,
@@ -265,7 +284,7 @@ pub(super) fn decode(
             &mut annotations,
             id,
             name,
-            targets(aspect_ids),
+            targets(aspect_ids)?,
             None,
             PmiDefinition::Dimension {
                 dimension: kind,
@@ -365,7 +384,7 @@ pub(super) fn decode(
                 .and_then(|value| measure(value, exchange, &mut measurements));
             if let (Some(lower), Some(upper)) = (lower, upper) {
                 if set_dimension_tolerance(
-                    &mut ir.model.pmi[index].definition,
+                    &mut ir.model.pmi[index.get()].definition,
                     DimensionTolerance::PlusMinus { lower, upper },
                 ) {
                     typed.insert(id);
@@ -382,7 +401,7 @@ pub(super) fn decode(
             }
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
-                &mut ir.model.pmi[index].definition,
+                &mut ir.model.pmi[index.get()].definition,
                 DimensionTolerance::Fit(fit),
             ) {
                 typed.extend([id, fit_id]);
@@ -455,7 +474,7 @@ pub(super) fn decode(
                     .flat_map(|partial| partial.parameters.iter())
                     .find_map(|value| measure(value, exchange, &mut measurements))
             });
-        let Some(magnitude) = magnitude else {
+        let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
                 record.display_name()
@@ -496,7 +515,7 @@ pub(super) fn decode(
             .flat_map(|partial| partial.parameters.iter())
             .flat_map(references)
             .find_map(|id| {
-                let annotation = &ir.model.pmi[*annotations.get(&id)?];
+                let annotation = &ir.model.pmi[annotations.get(&id)?.get()];
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then(|| annotation.id.clone())
             });
@@ -516,7 +535,7 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-            targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
+            targets(refs.iter().copied().filter(|id| base_aspects.contains(id)))?,
             None,
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -663,7 +682,7 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
-    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed)?;
     let points_by_source = point_sources(ir);
     let curves_by_source = curve_sources(ir);
     let geometry_sources = GeometrySources {
@@ -686,19 +705,21 @@ pub(super) fn decode(
         .iter()
         .flat_map(|annotation| &annotation.targets)
         .filter_map(|target| match target {
-            PmiTarget::ShapeAspect { source_id } => source_id.strip_prefix('#')?.parse().ok(),
+            PmiTarget::ShapeAspect { source_id } => {
+                source_id.as_str().strip_prefix('#')?.parse().ok()
+            }
             _ => None,
         })
         .collect::<BTreeSet<u64>>();
     typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionTolerance) -> bool {
@@ -722,7 +743,7 @@ fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionToler
 
 fn mark_characteristic_representations(
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, usize>,
+    annotations: &BTreeMap<u64, AnnotationIndex>,
     typed: &mut HashSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
@@ -773,10 +794,10 @@ fn mark_characteristic_representations(
 
 fn resolve_feature_for_datum_target_relationships(
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, usize>,
+    annotations: &BTreeMap<u64, AnnotationIndex>,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
@@ -784,20 +805,22 @@ fn resolve_feature_for_datum_target_relationships(
         let Some(&annotation_index) = annotations.get(&related) else {
             continue;
         };
-        let Some(annotation) = ir.model.pmi.get_mut(annotation_index) else {
-            continue;
-        };
+        let annotation = &mut ir.model.pmi[annotation_index.get()];
         let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
             continue;
         };
         push_target(
             basis,
             PmiTarget::ShapeAspect {
-                source_id: format!("#{relating}"),
+                source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{relating}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source_id must not be empty")
+                    })?,
             },
         );
         typed.extend([id, relating]);
     }
+    Ok(())
 }
 
 fn resolve_geometric_item_usages(
@@ -805,11 +828,11 @@ fn resolve_geometric_item_usages(
     topology: &TopologyData,
     geometry_sources: GeometrySources<'_>,
     shape_aspects: &BTreeSet<u64>,
-    annotations: &BTreeMap<u64, usize>,
+    annotations: &BTreeMap<u64, AnnotationIndex>,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
 ) {
-    let mut aspect_annotations = BTreeMap::<u64, BTreeSet<usize>>::new();
+    let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, &annotation_index) in annotations {
         if shape_aspects.contains(&annotation_id) {
             aspect_annotations
@@ -882,7 +905,7 @@ fn resolve_geometric_item_usages(
             continue;
         }
         for annotation_index in annotation_indices {
-            let annotation = &mut ir.model.pmi[annotation_index];
+            let annotation = &mut ir.model.pmi[annotation_index.get()];
             for target in &targets {
                 if !annotation.targets.contains(target) {
                     annotation.targets.push(target.clone());
@@ -1003,7 +1026,7 @@ fn datum_references(
     value: &Value,
     precedence: NonZeroU32,
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, usize>,
+    annotations: &BTreeMap<u64, AnnotationIndex>,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Vec<DatumReference> {
@@ -1140,7 +1163,9 @@ fn modifier_text(
             typed.insert(*id);
             let kind = parameters.first()?.enumeration()?.to_ascii_lowercase();
             let measure_id = parameters.get(1)?.reference()?;
-            let value = measure(&Value::Reference(measure_id), exchange, measurements)?.value;
+            let value = measure(&Value::Reference(measure_id), exchange, measurements)?
+                .value
+                .get();
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
         }
@@ -1336,14 +1361,14 @@ fn collect_placement_candidates(
 
 fn push_annotation(
     ir: &mut CadIr,
-    annotations: &mut BTreeMap<u64, usize>,
+    annotations: &mut BTreeMap<u64, AnnotationIndex>,
     id: u64,
     name: Option<String>,
     targets: Vec<PmiTarget>,
     visible: Option<bool>,
     definition: PmiDefinition,
 ) {
-    annotations.insert(id, ir.model.pmi.len());
+    annotations.insert(id, AnnotationIndex(ir.model.pmi.len()));
     ir.model.pmi.push(PmiAnnotation {
         id: pmi_id(id),
         name: name.filter(|value| !value.is_empty()),
@@ -1353,12 +1378,16 @@ fn push_annotation(
     });
 }
 
-fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
+fn targets(ids: impl IntoIterator<Item = u64>) -> Result<Vec<PmiTarget>, cadmpeg_core::CodecError> {
     let mut seen = BTreeSet::new();
     ids.into_iter()
         .filter(|id| seen.insert(*id))
-        .map(|id| PmiTarget::ShapeAspect {
-            source_id: format!("#{id}"),
+        .map(|id| {
+            Ok(PmiTarget::ShapeAspect {
+                source_id: cadmpeg_ir::products::NonEmptyString::new(format!("#{id}")).ok_or_else(
+                    || cadmpeg_core::CodecError::malformed("source_id must not be empty"),
+                )?,
+            })
         })
         .collect()
 }
@@ -1861,29 +1890,25 @@ fn measure_inner(
         return None;
     }
     match value {
-        Value::Integer(value) => Some(PmiValue {
-            value: *value as f64,
-            quantity: PmiQuantity::Ratio,
-        }),
-        Value::Real(value) => Some(PmiValue {
-            value: *value,
-            quantity: PmiQuantity::Ratio,
-        }),
-        Value::Typed(name, value) => value.number().map(|number| PmiValue {
-            value: if name.contains("LENGTH") {
-                number * measurements.length_scale
-            } else if name.contains("ANGLE") {
-                number * measurements.angle_scale
-            } else {
-                number
-            },
-            quantity: if name.contains("LENGTH") {
-                PmiQuantity::Length
-            } else if name.contains("ANGLE") {
-                PmiQuantity::Angle
-            } else {
-                PmiQuantity::Ratio
-            },
+        Value::Integer(value) => PmiValue::new(*value as f64, PmiQuantity::Ratio),
+        Value::Real(value) => PmiValue::new(*value, PmiQuantity::Ratio),
+        Value::Typed(name, value) => value.number().and_then(|number| {
+            PmiValue::new(
+                if name.contains("LENGTH") {
+                    number * measurements.length_scale
+                } else if name.contains("ANGLE") {
+                    number * measurements.angle_scale
+                } else {
+                    number
+                },
+                if name.contains("LENGTH") {
+                    PmiQuantity::Length
+                } else if name.contains("ANGLE") {
+                    PmiQuantity::Angle
+                } else {
+                    PmiQuantity::Ratio
+                },
+            )
         }),
         Value::Reference(id) => {
             if !active.insert(*id) {
@@ -1948,10 +1973,7 @@ fn measure_inner(
                 .flat_map(|partial| &partial.parameters)
                 .find_map(|parameter| {
                     scalar_number(parameter)
-                        .map(|number| PmiValue {
-                            value: number * scale,
-                            quantity,
-                        })
+                        .and_then(|number| PmiValue::new(number * scale, quantity))
                         .or_else(|| {
                             measure_inner(parameter, exchange, active, depth + 1, measurements)
                         })

@@ -260,7 +260,12 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             "{gap}"
         );
         if decoded {
-            assert_eq!(result.ir().model.edges[0].tolerance, Some(0.001));
+            assert_eq!(
+                result.ir().model.edges[0]
+                    .tolerance
+                    .map(cadmpeg_ir::units::PositiveScalar::get),
+                Some(0.001)
+            );
             assert_eq!(
                 result.ir().model.edges[0].start,
                 result.ir().model.edges[0].end

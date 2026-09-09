@@ -6,11 +6,10 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{
-    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
-};
+use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::transform::Transform;
 
+use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -62,20 +61,13 @@ pub(crate) struct AssemblyPlacement<'a> {
     pub(crate) attribute_reference: u32,
     pub(crate) state: u8,
     pub(crate) transform_prefix: bool,
-    pub(crate) transform_encoding: [u16; 2],
-    pub(crate) transform: [[f64; 4]; 4],
+    pub(crate) transform: CompactMatrix,
     pub(crate) branch: u8,
     pub(crate) graphics_state: u8,
     pub(crate) occurrence_id: u32,
     pub(crate) graphics_index: u32,
     pub(crate) object_reference: u32,
     pub(crate) suffix: View<'a>,
-}
-
-struct CompactTransform {
-    prefixed: bool,
-    encoding: [u16; 2],
-    matrix: [[f64; 4]; 4],
 }
 
 #[derive(Debug)]
@@ -118,7 +110,7 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
             Some(placement) => {
-                let mut rows = placement.transform;
+                let mut rows = placement.transform.rows();
                 for row in rows.iter_mut().take(3) {
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
@@ -179,19 +171,8 @@ where
 }
 
 fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
-    let path = (!reference.path.is_empty()).then(|| reference.path.clone());
-    let document_id = reference
-        .document_id
-        .chars()
-        .any(|character| character != '0');
-    if path.is_none() && !document_id {
-        return PrototypeReference::Unresolved;
-    }
     PrototypeReference::External {
-        document: match path {
-            Some(path) => ExternalDocumentReference::path(path),
-            None => ExternalDocumentReference::document_id(reference.document_id.clone()),
-        },
+        document: reference.document(),
         object: None,
     }
 }
@@ -346,7 +327,7 @@ fn parse_placement<'a>(
     let owner_reference = cursor.u32("placement owner reference")?;
     let attribute_reference = cursor.u32("placement attribute reference")?;
     let state = cursor.u8("placement state")?;
-    let compact_transform = cursor.transform()?;
+    let (transform_prefix, transform) = cursor.transform()?;
     let branch = cursor.u8("placement branch")?;
     let graphics_state = cursor.u8("placement graphics state")?;
     let occurrence_id = cursor.u32("placement occurrence id")?;
@@ -377,9 +358,8 @@ fn parse_placement<'a>(
         owner_reference,
         attribute_reference,
         state,
-        transform_prefix: compact_transform.prefixed,
-        transform_encoding: compact_transform.encoding,
-        transform: compact_transform.matrix,
+        transform_prefix,
+        transform,
         branch,
         graphics_state,
         occurrence_id,
@@ -432,19 +412,6 @@ impl<'a> Cursor<'a> {
             .map_err(|error| error.during(field))?)
     }
 
-    fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {
-        let value = self
-            .source
-            .req_f64_le()
-            .map_err(|error| error.during(field))?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor {field} is not finite"
-            )));
-        }
-        Ok(value)
-    }
-
     fn count32(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let value = usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::malformed(format_args!("Inventor {field} is too large")))?;
@@ -466,13 +433,13 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
+        ctx.charge_retained(len as u64, "retain Inventor assembly string")?;
         self.source
             .utf16_le(count)
             .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
     }
 
-    fn transform(&mut self) -> Result<CompactTransform, CodecError> {
+    fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
         let mut peek = self.source;
         let prefixed = peek.u32_le() == Some(0x0000_0203);
         if prefixed {
@@ -482,26 +449,8 @@ impl<'a> Cursor<'a> {
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
-        let mut rows = [[0.0; 4]; 4];
-        for (index, value) in rows.iter_mut().flatten().enumerate() {
-            let bit = 1_u16 << index;
-            *value = if zero & bit == 0 {
-                if set & bit == 0 {
-                    self.f64("placement transform value")?
-                } else {
-                    1.0
-                }
-            } else if set & bit == 0 {
-                0.0
-            } else {
-                -1.0
-            };
-        }
-        Ok(CompactTransform {
-            prefixed,
-            encoding: [set, zero],
-            matrix: rows,
-        })
+        let matrix = CompactMatrix::try_new(set, zero, |_| Ok(self.source.req_f64_le()?))?;
+        Ok((prefixed, matrix))
     }
 
     fn remaining(&mut self, field: &'static str) -> Result<View<'a>, CodecError> {
@@ -554,10 +503,10 @@ mod tests {
                     .expect("synthetic placement fits policy");
             let placement = parse_placement(&ctx, root).expect("synthetic placement parses");
             assert_eq!(placement.transform_prefix, prefixed);
-            assert_eq!(placement.transform[0][3], expected[0]);
-            assert_eq!(placement.transform[1][3], expected[1]);
-            assert_eq!(placement.transform[2][3], expected[2]);
-            assert_eq!(placement.transform[3][3], 1.0);
+            assert_eq!(placement.transform.rows()[0][3], expected[0]);
+            assert_eq!(placement.transform.rows()[1][3], expected[1]);
+            assert_eq!(placement.transform.rows()[2][3], expected[2]);
+            assert_eq!(placement.transform.rows()[3][3], 1.0);
         }
 
         let rotation = placement_fixture(9, false, 0x8412, 0x7bef, &[]);
@@ -566,8 +515,8 @@ mod tests {
             DecodeContext::from_root_bytes(&rotation, &arena, &DecodePolicy::default())
                 .expect("synthetic rotation fits policy");
         let placement = parse_placement(&ctx, root).expect("synthetic rotation parses");
-        assert_eq!(placement.transform[0][1], -1.0);
-        assert_eq!(placement.transform[1][0], 1.0);
+        assert_eq!(placement.transform.rows()[0][1], -1.0);
+        assert_eq!(placement.transform.rows()[1][0], 1.0);
     }
 
     #[test]
@@ -576,8 +525,11 @@ mod tests {
         let reference = external_reference(4, "components/part.ipt", [0, 0]);
         let occurrence = assembly_occurrence(7);
         let mut placement = assembly_placement(7);
-        placement.transform[0][3] = 1.25;
-        placement.transform[1][3] = -2.0;
+        let mut rows = placement.transform.rows();
+        rows[0][3] = 1.25;
+        rows[1][3] = -2.0;
+        placement.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
 
@@ -603,9 +555,15 @@ mod tests {
         let reference = external_reference(4, "components/part.ipt", [0, 0]);
         let occurrences = [assembly_occurrence(7), assembly_occurrence(8)];
         let mut first = assembly_placement(7);
-        first.transform[0][3] = 1.0;
+        let mut rows = first.transform.rows();
+        rows[0][3] = 1.0;
+        first.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
-        second.transform[0][3] = 2.0;
+        let mut rows = second.transform.rows();
+        rows[0][3] = 2.0;
+        second.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
 
@@ -620,8 +578,12 @@ mod tests {
 
     #[test]
     fn path_identity_takes_precedence_on_external_prototypes() {
-        let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
+        let reference = external_reference_with_document_id(
+            4,
+            "components/part.ipt",
+            [0, 0],
+            "00112233445566778899aabbccddeeff",
+        );
         let projection = project_occurrences(
             &[ufrx_occurrence(4, 7, 0)],
             &[reference],
@@ -642,9 +604,13 @@ mod tests {
     #[test]
     fn projects_suppressed_occurrence_without_graphics_placement() {
         let ufrx = ufrx_occurrence(4, 7, 0);
-        let mut reference = external_reference(4, "", [SUPPRESSED_REFERENCE_STATE, 0]);
-        reference.document_id = "00112233445566778899aabbccddeeff".into();
-        let expected_document_id = reference.document_id.clone();
+        let expected_document_id = "00112233445566778899aabbccddeeff".to_owned();
+        let reference = external_reference_with_document_id(
+            4,
+            "",
+            [SUPPRESSED_REFERENCE_STATE, 0],
+            &expected_document_id,
+        );
         let occurrence = assembly_occurrence(7);
 
         let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
@@ -683,7 +649,7 @@ mod tests {
         occurrence_id: u32,
         ordinal: u32,
     ) -> UfrxOccurrenceRecord {
-        UfrxOccurrenceRecord {
+        UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
             end_string_flag: 0,
@@ -694,7 +660,8 @@ mod tests {
             header_padding_words: 0,
             record_len: 1,
             record_sha256: "0".repeat(64),
-        }
+        })
+        .expect("valid native record fixture")
     }
 
     fn external_reference(
@@ -702,7 +669,16 @@ mod tests {
         path: &str,
         state: [u16; 2],
     ) -> ExternalReferenceRecord {
-        ExternalReferenceRecord {
+        external_reference_with_document_id(reference_id, path, state, &"0".repeat(32))
+    }
+
+    fn external_reference_with_document_id(
+        reference_id: u32,
+        path: &str,
+        state: [u16; 2],
+        document_id: &str,
+    ) -> ExternalReferenceRecord {
+        ExternalReferenceRecord::try_from(crate::native::ufrx::ExternalReferenceRecordWire {
             id: format!("inventor:ufrx:external-reference#{reference_id}"),
             ordinal: reference_id,
             path: path.into(),
@@ -711,13 +687,14 @@ mod tests {
             display_name: String::new(),
             state_groups: Vec::new(),
             state,
-            document_id: "0".repeat(32),
+            document_id: document_id.into(),
             database_id: "0".repeat(32),
             reference_id,
             occurrence_count: 1,
             version: 0,
             flags: 0,
-        }
+        })
+        .expect("valid reference fixture")
     }
 
     fn assembly_occurrence(occurrence_id: u32) -> AssemblyOccurrenceRecord {
@@ -740,7 +717,7 @@ mod tests {
     }
 
     fn assembly_placement(occurrence_id: u32) -> AssemblyPlacementRecord {
-        AssemblyPlacementRecord {
+        AssemblyPlacementRecord::try_from(crate::native::AssemblyPlacementRecordWire {
             id: format!("inventor:assembly:placement#{occurrence_id}"),
             segment_token: "synthetic".into(),
             record_ordinal: occurrence_id,
@@ -749,8 +726,8 @@ mod tests {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform_encoding: [0, 0],
-            transform: Transform::identity().rows(),
+            transform: CompactMatrix::try_from_rows(0, 0, Transform::identity().rows())
+                .expect("finite explicit matrix fixture"),
             branch: 0,
             graphics_state: 0,
             occurrence_id,
@@ -758,7 +735,8 @@ mod tests {
             object_reference: 0,
             suffix_len: 0,
             suffix_sha256: "0".repeat(64),
-        }
+        })
+        .expect("valid placement fixture")
     }
 
     fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {

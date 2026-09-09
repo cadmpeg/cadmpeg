@@ -5,6 +5,7 @@ use crate::families::standard::fbb::{
     boundary_cycles, classify_fbb_edge_layouts, cover_cycle, largest_fbb_run,
     parse_fbb_edge_tables, parse_trim_chain, parse_vertex_table,
 };
+use crate::families::standard::trim_packet::TrimPacket;
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
 use crate::solve::UnionFind;
@@ -388,12 +389,8 @@ pub struct CoedgeUse {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
-    pub(crate) triangles: Vec<[u32; 3]>,
+    pub(crate) packet: TrimPacket,
     pub(crate) frame_vector: Option<[f64; 3]>,
-    pub(crate) handles: Vec<u32>,
-    pub(crate) independent_count: usize,
-    pub(crate) strip_lengths: Vec<usize>,
-    pub(crate) fan_lengths: Vec<usize>,
     pub(crate) kind: u8,
 }
 
@@ -979,7 +976,10 @@ pub(crate) fn incidence_cycles(
 /// following counted `05 08 01` table supplies vertex coordinates.
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let face_run = largest_fbb_run(bytes)?;
+    let face_start = face_run.face_start;
+    let face_count = face_run.face_count;
+    let after_faces = face_run.after_faces();
     let (mut edge_rows, _, vertex_header, handle_width) =
         parse_fbb_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
@@ -1007,7 +1007,7 @@ pub(crate) fn reconstruct(
     let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut faces = Vec::with_capacity(trims.len());
     for trim in trims {
-        let cycles = boundary_cycles(&trim.triangles)?;
+        let cycles = boundary_cycles(trim.packet.triangles())?;
         let mut boundaries = Vec::with_capacity(cycles.len());
         for cycle in cycles {
             boundaries.push(cover_cycle(&cycle, &edge_rows, &mut union)?);

@@ -606,11 +606,11 @@ pub(crate) fn project(
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Native {

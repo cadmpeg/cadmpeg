@@ -49,13 +49,13 @@ use crate::native::om::display_color::{rm_display_color_assignments, RmDisplayCo
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
 use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::roll_forward::OmRollForwardStateTable;
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(clippy::wildcard_imports)]
 use super::{
@@ -312,7 +312,7 @@ pub(crate) struct OmRecords {
     pub(crate) audit_trail_rows: Vec<OmAuditTrailRow>,
     pub(crate) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
     pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
-    pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
+    pub(crate) operation_state_groups: Vec<OmRollForwardStateTable>,
     pub(crate) operation_state_messages: Vec<OmOperationStateMessage>,
     pub(crate) operation_state_statuses: Vec<OmOperationStateStatus>,
     pub(crate) operation_state_slot_lanes: Vec<OmOperationStateSlotLane>,
@@ -443,12 +443,19 @@ pub(crate) fn terminal_feature_body_ids(
     bindings: &[SegmentBodyBinding],
     statuses: &[SegmentBodyLineageStatus],
 ) -> Option<BTreeSet<BodyId>> {
-    if statuses.len() != bindings.len() {
-        return None;
+    let mut statuses_by_binding = BTreeMap::new();
+    for status in statuses {
+        if statuses_by_binding
+            .insert(status.segment_body_binding.as_str(), status)
+            .is_some()
+        {
+            return None;
+        }
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().zip(statuses) {
+    for binding in bindings {
+        let status = statuses_by_binding.remove(binding.id.as_str())?;
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = emitted
             .iter()
@@ -463,7 +470,8 @@ pub(crate) fn terminal_feature_body_ids(
             selected.extend(stream_bodies);
         }
     }
-    (mapped == *emitted && !selected.is_empty()).then_some(selected)
+    (statuses_by_binding.is_empty() && mapped == *emitted && !selected.is_empty())
+        .then_some(selected)
 }
 
 impl NativeModel {
@@ -1433,3 +1441,6 @@ use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockRefe
 use crate::native::features::holes::FeatureSimpleHoleTemplate;
 use crate::native::features::holes::FeatureSymbolicThread;
 use crate::native::features::holes::FeatureThreadedHoleTemplate;
+
+#[cfg(test)]
+mod tests;

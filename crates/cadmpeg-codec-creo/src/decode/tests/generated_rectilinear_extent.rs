@@ -18,7 +18,8 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::features::NonZeroLength::new(42.0).unwrap(),
+                    length: cadmpeg_ir::features::NonZeroLength::new(42.0)
+                        .expect("nonzero length fixture"),
                 },
                 draft: None,
             },
@@ -45,7 +46,8 @@ fn section() -> crate::feature::FeatureSection3d {
 fn blind(length: f64) -> ExtrudeSide {
     ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: cadmpeg_ir::features::NonZeroLength::new(length).unwrap(),
+            length: cadmpeg_ir::features::NonZeroLength::new(length)
+                .expect("nonzero length fixture"),
         },
         draft: None,
     }

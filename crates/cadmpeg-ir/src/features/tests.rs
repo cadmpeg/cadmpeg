@@ -1407,7 +1407,7 @@ fn draft_anchor_round_trips_through_the_flat_wire_shape() {
         "neutral_plane": {"kind": "unresolved"},
         "parting_tool": {"kind": "native", "value": "draft:parting-tool"},
         "pull_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "pull_plane": "draft:pull-plane",
+        "pull_plane": "test:draft:plane#pull",
         "angle": 0.1,
         "outward": false
     });
@@ -1437,7 +1437,7 @@ fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
     for invalid in [
         {
             let mut value = base.clone();
-            value["pull_plane"] = serde_json::json!("draft:pull-plane");
+            value["pull_plane"] = serde_json::json!("test:draft:plane#pull");
             value
         },
         {
@@ -1851,7 +1851,7 @@ fn body_selection_admission_rejects_invalid_members() {
     let state = FeatureInputTopologyId::mint("test:model:feature-input#1").unwrap();
     assert!(BodySelection::historical(state, vec![], "native".into()).is_err());
     assert!(GeneratedBodyRef::new(
-        super::FeatureId::mint("test:feature#1").unwrap(),
+        super::FeatureId::mint("test:test:feature#1").unwrap(),
         " ".into()
     )
     .is_err());
@@ -1869,7 +1869,7 @@ fn body_selection_admission_rejects_invalid_members() {
 fn topology_membership_admission() {
     use super::{DistinctMembers, FeatureResultTopology};
     let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
-    let feature = super::FeatureId::mint("test:feature#1").unwrap();
+    let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
     assert!(FeatureResultTopology::new(
         id.clone(),
         feature.clone(),
@@ -1901,7 +1901,7 @@ fn topology_membership_admission() {
         .is_err()
     );
     assert!(serde_json::from_value::<FeatureResultTopology>(
-        serde_json::json!({"id":"test:model:feature-result#1","output_of":"test:feature#1"})
+        serde_json::json!({"id":"test:model:feature-result#1","output_of":"test:test:feature#1"})
     )
     .is_err());
 }

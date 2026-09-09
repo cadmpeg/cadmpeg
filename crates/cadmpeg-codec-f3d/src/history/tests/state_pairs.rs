@@ -139,7 +139,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::DesignFeatureKind::Sketch,
         200,
     );
-    let binding = DesignBodyBinding {
+    let binding = DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
         id: format!("{stream}:design-body-binding#150"),
         stream: stream.into(),
         pair_count: 1,
@@ -147,11 +147,12 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         asm_body_key: 1,
         asm_body_key_offset: 0,
         entity_suffix: 150,
-        entity_suffix_offset: 0,
+        entity_suffix_offset: 8,
         blob_name: "BREP.second.smbh".into(),
-        blob_name_offset: 0,
+        blob_name_offset: 16,
         body: None,
-    };
+    })
+    .unwrap();
     let scopes = vec![scope.clone(), next_scope];
     let bindings = bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
@@ -1303,11 +1304,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         };
     let side = |entries: Vec<crate::records::topology::DesignTopologyRecipeEntry>| {
         crate::records::topology::DesignTopologyRecipeSide {
-            field_count: std::num::NonZeroU32::new(3).unwrap(),
             header_value: 0,
             scalars: vec![0, 0],
             payload_prefix: vec![0],
-            payload_entry_count: u32::try_from(entries.len()).unwrap(),
+
             entries,
         }
     };

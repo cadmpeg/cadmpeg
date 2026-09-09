@@ -230,8 +230,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         FeatureDefinition,
     };
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-        SpatialSketch, SpatialSketchId,
+        Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+        SketchGeometryDefinition, SketchId, SpatialSketch, SpatialSketchId,
     };
 
     let native_feature = feature("sketch-native", Some("7"), 0);
@@ -243,7 +243,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         configurations: Vec::new(),
         features: vec![native_feature],
     };
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("sketch").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#sketch")
+        .expect("identity grammar");
     let unresolved = FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
     };
@@ -253,11 +254,11 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         ordinal: 0,
         name: Some("sketch-native".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(unresolved.clone(), Vec::new())
             .unwrap(),
@@ -265,17 +266,17 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     });
     let spatial_feature_id = cadmpeg_ir::features::FeatureId::mint("sldprt:model:feature#spatial")
         .expect("identity grammar");
-    let spatial_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+    let spatial_sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#spatial").unwrap();
     ir.model.features.push(NeutralFeature {
         id: spatial_feature_id.clone(),
         ordinal: 1,
         name: Some("spatial-native".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::SpatialSketch {
@@ -286,28 +287,30 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         .unwrap(),
         native_ref: Some("spatial-native".into()),
     });
-    let sketch_id = SketchId("projected-sketch".into());
+    let sketch_id = SketchId::mint("synthetic:test:id#projected-sketch").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("sketch-native".into()),
         configuration: Some("0".into()),
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("lane".into()),
     });
     ir.model.sketch_entities.push(
         SketchEntity::new(
-            SketchEntityId("configuration-line".into()),
+            SketchEntityId::mint("synthetic:test:id#configuration-line").unwrap(),
             sketch_id.clone(),
-            SketchGeometry::Line {
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            },
+            })
+            .unwrap(),
         )
         .with_native_ref(Some("line-marker".into())),
     );
@@ -320,14 +323,15 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         native_ref: Some("lane".into()),
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
+            .expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -335,9 +339,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: unresolved,
                 },
             ),
@@ -345,9 +349,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
                 spatial_feature_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: FeatureDefinition::SpatialSketch { sketch: None },
                 },
             ),
@@ -356,39 +360,49 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     });
     let mut lane = feature_input_lane("lane", Some("0"));
     lane.sketch_entities = vec![
-        crate::records::SketchInputEntity {
-            id: "line-marker".into(),
-            parent: lane.id.clone(),
-            feature_ref: Some("sketch-native".into()),
-            ordinal: 0,
-            offset: 10,
-            object_index: Some(1),
-            local_id: Some(1),
-            kind: crate::records::SketchInputKind::LineOrCircle,
-            state_value: None,
-            coordinates_m: None,
-            links: None,
+        {
+            let marker_id: String = "line-marker".into();
+            let marker_parent: String = lane.id.clone();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                0,
+                10,
+                crate::records::SketchInputKind::LineOrCircle,
+            );
+            constructed_marker.feature_ref = Some("sketch-native".into());
+            constructed_marker.object_index = Some(1);
+            constructed_marker.local_id = Some(1);
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = None;
+            constructed_marker.links = None;
+            constructed_marker
         },
-        crate::records::SketchInputEntity {
-            id: "relation-marker".into(),
-            parent: lane.id.clone(),
-            feature_ref: Some("sketch-native".into()),
-            ordinal: 1,
-            offset: 20,
-            object_index: Some(2),
-            local_id: Some(2),
-            kind: crate::records::SketchInputKind::Relation(
-                crate::records::SketchRelationKind::Horizontal,
-            ),
-            state_value: None,
-            coordinates_m: None,
-            links: crate::records::SketchInputLinks::new(
+        {
+            let marker_id: String = "relation-marker".into();
+            let marker_parent: String = lane.id.clone();
+            let mut constructed_marker = crate::records::SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                1,
+                20,
+                crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Horizontal,
+                ),
+            );
+            constructed_marker.feature_ref = Some("sketch-native".into());
+            constructed_marker.object_index = Some(2);
+            constructed_marker.local_id = Some(2);
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m = None;
+            constructed_marker.links = crate::records::SketchInputLinks::new(
                 0,
                 vec![crate::records::SketchInputLink {
                     local_id: 1,
                     entity_ref: "line-marker".into(),
                 }],
-            ),
+            );
+            constructed_marker
         },
     ];
 
@@ -411,9 +425,9 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     assert!(ir.model.sketch_constraints.iter().any(|constraint| {
         constraint.native_ref.as_deref() == Some("relation-marker")
             && matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Horizontal { ref entity }
-                    if entity.0 == "configuration-line"
+                constraint.definition.kind(),
+                SketchConstraintDefinitionInput::Horizontal { ref entity }
+                    if entity.as_str() == "synthetic:test:id#configuration-line"
             )
     }));
 }
@@ -451,11 +465,11 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         ordinal,
         name: Some(name.into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Sketch".into()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Sketch {
@@ -467,8 +481,8 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
-        neutral("owner", "Sketch1", "owner-native", 0),
-        neutral("alias", "Sketch1<3>", "alias-native", 1),
+        neutral("synthetic:test:id#owner", "Sketch1", "owner-native", 0),
+        neutral("synthetic:test:id#alias", "Sketch1<3>", "alias-native", 1),
     ];
     bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
@@ -508,21 +522,22 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
     let feature_id = FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
-    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+    let sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#spatial").unwrap();
     let planar_state_id =
         FeatureId::mint("sldprt:model:feature#planar-state").expect("identity grammar");
-    let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
+    let planar_sketch_id =
+        SpatialSketchId::mint("sldprt:model:spatial-sketch#planar-state").unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("spatial".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::SpatialSketch {
@@ -538,11 +553,11 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         ordinal: 1,
         name: Some("planar-state".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::SpatialSketch {
@@ -571,15 +586,17 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     });
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId::mint(format!("configuration-{ordinal}"))
-                .expect("identity grammar"),
+            id: cadmpeg_ir::features::ConfigurationId::mint(format!(
+                "synthetic:test:id#configuration-{ordinal}"
+            ))
+            .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
             source_index: Some(ordinal),
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: ConfigurationBodies::Resolved(Default::default()),
+            bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([
@@ -587,9 +604,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                     feature_id.clone(),
                     ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: Default::default(),
+                            outputs: cadmpeg_ir::features::DistinctMembers::default(),
                         },
-                        dependencies: Default::default(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         definition: FeatureDefinition::SpatialSketch { sketch: None },
                     },
                 ),
@@ -597,9 +614,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                     planar_state_id.clone(),
                     ConfigurationFeatureState {
                         evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: Default::default(),
+                            outputs: cadmpeg_ir::features::DistinctMembers::default(),
                         },
-                        dependencies: Default::default(),
+                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         definition: FeatureDefinition::Sketch {
                             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                         },
@@ -640,18 +657,18 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 
     let feature_id =
         FeatureId::mint("sldprt:model:feature#scoped-spatial").expect("identity grammar");
-    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
+    let sketch_id = SpatialSketchId::mint("sldprt:model:spatial-sketch#scoped-spatial").unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("scoped-spatial".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::SpatialSketch {
@@ -676,9 +693,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         feature_id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Default::default(),
+                outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             definition: FeatureDefinition::SpatialSketch { sketch: None },
         },
     );
@@ -703,8 +720,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         Feature as NeutralFeature, FeatureDefinition, FeatureId,
     };
 
-    let producer_id = FeatureId::mint("producer").expect("identity grammar");
-    let consumer_id = FeatureId::mint("consumer").expect("identity grammar");
+    let producer_id = FeatureId::mint("synthetic:test:id#producer").expect("identity grammar");
+    let consumer_id = FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar");
     let unresolved = FeatureDefinition::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
             edges: EdgeSelection::Unresolved,
@@ -719,11 +736,11 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: Some(native_ref.into()),
@@ -744,14 +761,15 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
+        id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
+            .expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(1),
         name: "Default".into(),
         material: None,
         properties: BTreeMap::from([("id".into(), "1".into())]),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -759,9 +777,9 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                 producer_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: FeatureDefinition::StoredGeometry,
                 },
             ),
@@ -769,9 +787,9 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
                 consumer_id.clone(),
                 ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: Default::default(),
+                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
                     },
-                    dependencies: Default::default(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     definition: unresolved,
                 },
             ),
@@ -823,11 +841,11 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Hole {
@@ -1068,11 +1086,11 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(base_definition, Vec::new())
             .unwrap(),
@@ -1084,9 +1102,9 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         id.clone(),
         ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Default::default(),
+                outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             definition: local_definition,
         },
     );
@@ -1193,11 +1211,11 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: None,
@@ -1297,11 +1315,11 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: None,
@@ -1393,11 +1411,11 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, Vec::new()).unwrap(),
         native_ref: None,
@@ -1456,7 +1474,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         expression: "7mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1469,7 +1487,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         expression: "7".into(),
         display: None,
         value: Some(ParameterValue::Integer(7)),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1482,7 +1500,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::from([
             (parameter_id.clone(), ParameterValue::Integer(7)),
             (
@@ -1579,11 +1597,11 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition(), Vec::new()).unwrap(),
         native_ref: Some(feature_ref.into()),
@@ -1608,9 +1626,9 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Default::default(),
+                outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             definition: definition(),
         },
     );
@@ -1624,7 +1642,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         &[(
             cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").expect("identity grammar"),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 11,
                 trailing_fields: Vec::new(),
             },
@@ -1671,11 +1689,11 @@ fn configuration_frame_alias_binds_without_body_membership() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition(), Vec::new()).unwrap(),
         native_ref: None,
@@ -1709,9 +1727,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
         feature_id,
         cadmpeg_ir::features::ConfigurationFeatureState {
             evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: Default::default(),
+                outputs: cadmpeg_ir::features::DistinctMembers::default(),
             },
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             definition: definition(),
         },
     );

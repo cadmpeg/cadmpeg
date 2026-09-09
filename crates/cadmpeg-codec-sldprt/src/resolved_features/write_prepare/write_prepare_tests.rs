@@ -5,7 +5,7 @@ use super::{append_spatial_vertex, arc_angle_relation_kind, patch_spatial_vertex
 use crate::records::SketchRelationKind;
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 #[test]
 fn spatial_vertex_patch_preserves_record_shape_and_order() {
@@ -46,20 +46,23 @@ fn generated_arc_angles_use_only_exact_native_quadrants() {
 fn solved_tangent_treats_arcs_as_bounded_circles() {
     use cadmpeg_ir::features::Angle;
 
-    let line = SketchGeometry::Line {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(-2.0, 1.0),
         end: Point2::new(2.0, 1.0),
-    };
-    let arc = SketchGeometry::Arc {
+    })
+    .unwrap();
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length::new(1.0).unwrap(),
         start_angle: Angle::new(0.0).unwrap(),
         end_angle: Angle::new(std::f64::consts::PI).unwrap(),
-    };
-    let circle = SketchGeometry::Circle {
+    })
+    .unwrap();
+    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(2.0, 0.0),
         radius: Length::new(1.0).unwrap(),
-    };
+    })
+    .unwrap();
     assert_eq!(solved_tangent(&line, &arc), Some(true));
     assert_eq!(solved_tangent(&arc, &circle), Some(true));
 }

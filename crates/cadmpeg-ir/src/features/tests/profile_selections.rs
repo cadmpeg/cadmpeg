@@ -4,9 +4,9 @@ use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSk
 
 #[test]
 fn profile_selection_members_are_checked_at_construction_and_on_wire() {
-    let sketch = SketchId("test:sketch#one".into());
-    let spatial = SpatialSketchId("test:spatial-sketch#one".into());
-    let entity = SketchEntityId("test:sketch-entity#one".into());
+    let sketch = SketchId::mint("test:test:sketch#one").unwrap();
+    let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
+    let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
     let state = FeatureInputTopologyId::mint("test:model:feature-input#one").unwrap();
     let face = HistoricalFaceId::mint("test:model:historical-face#one").unwrap();
     let profiles = [
@@ -78,10 +78,10 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
 
 #[test]
 fn path_selection_members_are_checked_at_construction_and_on_wire() {
-    let sketch = SketchId("test:sketch#one".into());
-    let spatial = SpatialSketchId("test:spatial-sketch#one".into());
-    let entity = SketchEntityId("test:sketch-entity#one".into());
-    let spatial_entity = SpatialSketchEntityId("test:spatial-entity#one".into());
+    let sketch = SketchId::mint("test:test:sketch#one").unwrap();
+    let spatial = SpatialSketchId::mint("test:test:spatial-sketch#one").unwrap();
+    let entity = SketchEntityId::mint("test:test:sketch-entity#one").unwrap();
+    let spatial_entity = SpatialSketchEntityId::mint("test:test:spatial-entity#one").unwrap();
     let state = FeatureInputTopologyId::mint("test:model:feature-input#one").unwrap();
     let edge = HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap();
     let paths = [
@@ -145,7 +145,7 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
 
 #[test]
 fn generated_profiles_require_references_and_preserve_repeated_curves() {
-    let feature = FeatureId::mint("test:feature#one").unwrap();
+    let feature = FeatureId::mint("test:test:feature#one").unwrap();
     for invalid in ["", " \t"] {
         assert!(GeneratedCurveRef::new(feature.clone(), invalid.into()).is_err());
         assert!(serde_json::from_value::<GeneratedCurveRef>(

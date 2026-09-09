@@ -39,5 +39,3 @@ pub(crate) fn normalize_with_length(vector: [f64; 3]) -> Option<([f64; 3], f64)>
         )
     })
 }
-
-pub(crate) use normalize as normalized;

@@ -841,7 +841,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         } if matches!(sections.as_slice(), [
             cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(first)),
             cadmpeg_ir::features::LoftSection::Profile(cadmpeg_ir::features::ProfileRef::Sketch(second)),
-        ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
+        ] if first.as_str().ends_with("#Section1") && second.as_str().ends_with("#Section2"))
     ));
     assert!(matches!(
         feature("SurfaceLoft").evaluation.definition(),
@@ -867,7 +867,8 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert_eq!(compatibility_properties.len(), 1);
     assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
     assert!(compatibility_properties[0]
-        .raw_xml
+        .xml
+        .text()
         .contains("<Bool value=\"false\"/>"));
     assert!(matches!(
         feature("Pipe").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Sweep {

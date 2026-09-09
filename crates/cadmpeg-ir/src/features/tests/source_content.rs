@@ -7,8 +7,8 @@ use crate::math::Point3;
 #[test]
 fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
     let parameter =
-        FeatureSourceContent::Parameter(ParameterId::mint("test:reference#one").unwrap());
-    let child = FeatureSourceContent::Feature(FeatureId::mint("test:reference#one").unwrap());
+        FeatureSourceContent::Parameter(ParameterId::mint("test:test:reference#one").unwrap());
+    let child = FeatureSourceContent::Feature(FeatureId::mint("test:test:reference#one").unwrap());
     for reference in [parameter.clone(), child.clone()] {
         assert!(FeatureContent::try_from(vec![reference.clone(), reference.clone()]).is_err());
         let mut content = FeatureContent::try_from(vec![reference.clone()]).unwrap();
@@ -42,17 +42,17 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
 #[test]
 fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     let mut feature = Feature::new(
-        FeatureId::mint("test:feature#owner").unwrap(),
+        FeatureId::mint("test:test:feature#owner").unwrap(),
         1,
         FeatureDefinition::DatumPoint {
             position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,
         },
     );
-    let dependency = FeatureId::mint("test:feature#dependency").unwrap();
+    let dependency = FeatureId::mint("test:test:feature#dependency").unwrap();
     feature.dependencies.insert(dependency.clone());
     let parameter =
-        FeatureSourceContent::Parameter(ParameterId::mint("test:parameter#one").unwrap());
+        FeatureSourceContent::Parameter(ParameterId::mint("test:test:parameter#one").unwrap());
     feature.source_content.push(parameter.clone()).unwrap();
     let original = serde_json::to_value(&feature).unwrap();
     assert_eq!(

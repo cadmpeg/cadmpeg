@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignConstructionOperandGroupFrame;
 use crate::records::topology::DesignOperandRole;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
@@ -258,7 +259,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             op: BooleanOp::NewBody,
             solid: Some(true),
             ..
-        } if (profile == &neutral_sketch_id(&placement)) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
+        } if (profile == &neutral_sketch_id(&placement).unwrap()) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
     ));
     let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -378,26 +379,27 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if actual_draft.get() == 0.2
     ));
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
-    let selection = DesignExtrudeSelectionGroup {
-        id: "f3d:Design/BulkStream.dat:selection#300".into(),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal: 0,
-        record_index: 300,
-        byte_offset: 700,
-        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-        member_count_offset: 720,
-        members: vec![crate::records::Located {
-            value: 301,
-            offset: 724,
-        }],
-        opaque_index: 1,
-        opaque_index_offset: 735,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 739,
-        variant: false,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 760,
-    };
+    let selection = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection#300".into(),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 300,
+            byte_offset: 700,
+            class_tag: "308".to_owned(),
+            member_count_offset: 732,
+            members: vec![301],
+            member_offsets: vec![737],
+            opaque_index: 1,
+            opaque_index_offset: 747,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 751,
+            variant: false,
+            paired_class_tag: "259".to_owned(),
+            paired_byte_offset: 800,
+        },
+    )
+    .unwrap();
     let mut feature = Feature {
         id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
         ordinal: 0,
@@ -493,18 +495,28 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut owned_along = along.clone();
     owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
     owned_along.record_index = 45;
-    owned_along.source = crate::records::DesignParameterSource::new(
-        owned_along.source_kind().to_owned(),
-        Some(44),
-        owned_along.family_discriminator(),
-    )
-    .unwrap();
+    owned_along
+        .try_set_source(
+            crate::records::DesignParameterSource::new(
+                owned_along.source_kind().to_owned(),
+                Some(44),
+                owned_along.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
-        .expect("generated parameter owner is canonical");
-    owner.id = "f3d:Design/BulkStream.dat:owner#44".into();
-    owner.record_index = 44;
-    owner.scope_record_index = scope.record_index;
-    owner.parameter_record_index = owned_along.record_index;
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
+    {
+        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        wire.id = "f3d:Design/BulkStream.dat:owner#44".into();
+        wire.record_index = 44;
+        wire.scope_record_index = scope.record_index;
+        wire.parameter_record_index = owned_along.record_index;
+        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    }
     let mut sketch_scope = scope.clone();
     sketch_scope.id = "f3d:Design/BulkStream.dat:scope#11".into();
     sketch_scope.record_index = placement
@@ -523,16 +535,17 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let sketches = [cadmpeg_ir::sketches::Sketch {
-        id: neutral_sketch_id(&placement),
+        id: neutral_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
         native_ref: Some(placement.id.clone()),
     }];
     crate::design::feature_project::bind_sketch_feature_geometry(
@@ -577,16 +590,23 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
-        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-            boundary: Vec::new(),
-        }],
+        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            vec![cadmpeg_ir::sketches::SpatialSketchEntityUse {
+                entity: cadmpeg_ir::sketches::SpatialSketchEntityId::mint(
+                    "synthetic:test:spatial-entity#extrude-profile",
+                )
+                .unwrap(),
+                reversed: false,
+            }],
+        )
+        .unwrap()],
         native_ref: Some(placement.id.clone()),
     };
     crate::design::feature_project::bind_sketch_feature_geometry(
@@ -623,7 +643,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 ref profiles
             },
             ..
-        } if sketch == &spatial_sketch.id && profiles.as_slice() == &[0]
+        } if sketch == &spatial_sketch.id && profiles.as_slice() == [0]
     ));
     assert_eq!(
         spatial_extrude.dependencies.as_slice(),
@@ -641,7 +661,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     );
     let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
-        id: neutral_spatial_sketch_id(&placement),
+        id: neutral_spatial_sketch_id(&placement).unwrap(),
         name: None,
         configuration: None,
         visible: None,
@@ -674,7 +694,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             ..
         } if sketch == &open_spatial_sketch.id
-            && selections.as_slice() == &[format!(
+            && selections.as_slice() == [format!(
                 "f3d:Design/BulkStream.dat:design-record-header#{}",
                 scope
                     .extrude_profile()
@@ -684,41 +704,47 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )]
     ));
 
-    let body_group = DesignConstructionOperandGroup {
-        id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
-        scope_record_index: 12,
-        scope_reference_ordinal: 1,
-        record_index: 101,
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
-        members: vec![crate::records::Located {
-            value: 200,
-            offset: 1026,
-        }],
-        lost_edge_references: Vec::new(),
-        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
-            member_count_offset: 1021,
-            auxiliary_records: Vec::new(),
-            auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located {
-                value: 300,
-                offset: 1044,
+    let body_group = DesignConstructionOperandGroup::try_from(
+        crate::records::topology::DesignConstructionOperandGroupDraft {
+            id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 1,
+            record_index: 101,
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
+            members: vec![crate::records::Located {
+                value: 200,
+                offset: 1026,
             }],
-            trailing_transforms: Vec::new(),
-            trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(),
-            opaque_index: 180,
-            opaque_index_offset: 1072,
-            opaque_scalar: 0.125,
-            opaque_scalar_offset: 1076,
-            variant: false,
-        },
-        operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
-        role_offset: 1054,
+            lost_edge_references: Vec::new(),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: vec![crate::records::Located {
+                        value: 300,
+                        offset: 1044,
+                    }],
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 180,
+                    opaque_index_offset: 1072,
+                    opaque_scalar: 0.125,
+                    opaque_scalar_offset: 1076,
+                    variant: false,
+                },
+            )
+            .unwrap(),
+            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
+            role_offset: 1054,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-        paired_byte_offset: 1125,
-    };
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_byte_offset: 1125,
+        },
+    )
+    .unwrap();
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     let target_body = project_extrude(
         &scope,
@@ -749,10 +775,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.id = "f3d:Design/BulkStream.dat:operand-group#105".into();
     target_shape_group.record_index = 105;
     target_shape_group.scope_reference_ordinal = 2;
-    target_shape_group.members = vec![crate::records::Located {
-        value: 201,
-        offset: 1026,
-    }];
+    target_shape_group
+        .try_set_members(vec![crate::records::Located {
+            value: 201,
+            offset: 1026,
+        }])
+        .unwrap();
     target_shape_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -770,10 +798,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
     unrelated_target_group.record_index = 106;
     unrelated_target_group.scope_reference_ordinal = 3;
-    unrelated_target_group.members = vec![crate::records::Located {
-        value: 202,
-        offset: unrelated_target_group.members[0].offset,
-    }];
+    unrelated_target_group
+        .try_set_members(vec![crate::records::Located {
+            value: 202,
+            offset: unrelated_target_group.members()[0].offset,
+        }])
+        .unwrap();
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
@@ -885,19 +915,28 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             ..
         } if state == &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
-            && faces.as_slice() == &[
+            && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 12),
                 crate::ids::history_input_face_id(&prefix, 19),
                 crate::ids::history_input_face_id(&prefix, 27),
             ]
-            && native.as_str() == &target_shape_group.id
+            && native.as_str() == target_shape_group.id
     ));
 
     let mut multi_target_group = target_shape_group.clone();
-    multi_target_group.members.push(crate::records::Located {
-        value: 202,
-        offset: 1030,
-    });
+    multi_target_group
+        .try_set_members(
+            multi_target_group
+                .members()
+                .iter()
+                .copied()
+                .chain([crate::records::Located {
+                    value: 202,
+                    offset: 1037,
+                }])
+                .collect(),
+        )
+        .unwrap();
     let mut second_target_operand = target_shape_operand.clone();
     second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
     second_target_operand.owner = DesignOperandOwner::Group {
@@ -1000,7 +1039,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(ref profile),
             ..
-        } if profile == &neutral_sketch_id(&placement)
+        } if profile == &neutral_sketch_id(&placement).unwrap()
     ));
     {
         let value = Some(DesignFixedExtrudeParameters {
@@ -1539,24 +1578,24 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
-    let planar_sketch = SketchId("f3d:sketch:planar".into());
-    let spatial_sketch = SpatialSketchId("f3d:sketch:spatial".into());
+    let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
+    let spatial_sketch = SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap();
     let planar_feature = feature(
-        "f3d:feature:planar-sketch",
+        "synthetic:test:id#f3d:feature:planar-sketch",
         0,
         FeatureDefinition::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar_sketch.clone())),
         },
     );
     let spatial_feature = feature(
-        "f3d:feature:spatial-sketch",
+        "synthetic:test:id#f3d:feature:spatial-sketch",
         1,
         FeatureDefinition::SpatialSketch {
             sketch: Some(spatial_sketch.clone()),
         },
     );
     let base_flange = feature(
-        "f3d:feature:base-flange",
+        "synthetic:test:id#f3d:feature:base-flange",
         2,
         FeatureDefinition::SheetMetalBaseFlange {
             profile: (ProfileRef::Sketch(planar_sketch.clone()))
@@ -1567,7 +1606,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         },
     );
     let loft = feature(
-        "f3d:feature:loft",
+        "synthetic:test:id#f3d:feature:loft",
         3,
         FeatureDefinition::Loft {
             sections: vec![

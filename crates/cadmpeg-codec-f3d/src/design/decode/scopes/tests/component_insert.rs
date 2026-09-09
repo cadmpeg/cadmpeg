@@ -90,7 +90,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     assert_eq!(construction.carrier_record_index, 10);
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
-    assert_eq!(*construction.transform(), transform);
+    assert_eq!(*construction.transform(), transform.try_into().unwrap());
     assert_eq!(
         construction.transform_offset(),
         Some((scope_at + 50) as u64)
@@ -150,7 +150,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             construction.transform_offset(),
             Some((scope_at + transform_at) as u64)
         );
-        assert_eq!(*construction.transform(), transform);
+        assert_eq!(*construction.transform(), transform.try_into().unwrap());
     }
 
     let mut expanded = Vec::new();
@@ -218,7 +218,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         construction.neutron_role_offset,
         (expanded_role_at + 4) as u64
     );
-    assert_eq!(*construction.transform(), transform);
+    assert_eq!(*construction.transform(), transform.try_into().unwrap());
     assert_eq!(
         construction.transform_offset(),
         Some((expanded_scope_at + 54) as u64)
@@ -400,7 +400,10 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(
+        *construction.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY
+    );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
 }
@@ -504,7 +507,10 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(
+        *construction.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY
+    );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
 
@@ -617,7 +623,10 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(
+        *construction.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY
+    );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
 }
@@ -736,7 +745,10 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, 159);
-    assert_eq!(*construction.transform(), identity_matrix());
+    assert_eq!(
+        *construction.transform(),
+        crate::records::SketchPlacementMatrix::IDENTITY
+    );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
 
@@ -877,7 +889,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         (bytes, scope, scope_at)
     };
 
-    let identity = identity_matrix();
+    let identity = crate::records::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
     let records = IndexedRecordOffsets::build(&bytes);
     let construction = exact_component_insert_construction(&bytes, &records, &scope)
@@ -889,7 +901,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(*construction.transform(), identity);
+    assert_eq!(*construction.transform(), identity.try_into().unwrap());
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
 
@@ -909,7 +921,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         construction.neutron_role_offset,
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
-    assert_eq!(*construction.transform(), transformed);
+    assert_eq!(*construction.transform(), transformed.try_into().unwrap());
     assert_eq!(
         construction.transform_offset(),
         Some((scope_at + 46) as u64)
@@ -957,6 +969,6 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     matrix[178..254].copy_from_slice(&null_guid);
     assert_eq!(
         super::super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index,),
-        Some((transform, Some(50), occurrence_identity))
+        Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
     );
 }

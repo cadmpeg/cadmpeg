@@ -6,13 +6,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature, FeatureDefinition,
-    FeatureId, FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, Length,
-    LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
+    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature,
+    FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup, HoleKind,
+    HolePlacement, Length, LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::products::NonEmptyString;
 use cadmpeg_ir::sketches::Sketch;
 use serde::{Deserialize, Serialize};
 
@@ -234,13 +235,63 @@ pub(crate) struct PmDcLinkedHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmDcFeatureLabelPayloadWire",
+    into = "PmDcFeatureLabelPayloadWire"
+)]
 pub(crate) struct PmDcFeatureLabelPayload {
+    pub(crate) save_version_major: u8,
+    pub(crate) header: PmDcLinkedHeader,
+    pub(crate) index: u32,
+    pub(crate) participants: PmDcReferenceList,
+    name: NonEmptyString,
+    class_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PmDcFeatureLabelPayloadWire {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
     pub(crate) index: u32,
     pub(crate) participants: PmDcReferenceList,
     pub(crate) name: String,
     pub(crate) class_id: String,
+}
+
+impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
+    type Error = String;
+    fn try_from(wire: PmDcFeatureLabelPayloadWire) -> Result<Self, Self::Error> {
+        if wire.class_id.len() != 32 {
+            return Err("class_id must contain 32 bytes".into());
+        }
+        Ok(Self {
+            save_version_major: wire.save_version_major,
+            header: wire.header,
+            index: wire.index,
+            participants: wire.participants,
+            name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
+            class_id: wire.class_id,
+        })
+    }
+}
+
+impl From<PmDcFeatureLabelPayload> for PmDcFeatureLabelPayloadWire {
+    fn from(value: PmDcFeatureLabelPayload) -> Self {
+        Self {
+            save_version_major: value.save_version_major,
+            header: value.header,
+            index: value.index,
+            participants: value.participants,
+            name: value.name.as_str().to_owned(),
+            class_id: value.class_id,
+        }
+    }
+}
+
+impl PmDcFeatureLabelPayload {
+    pub(crate) fn class_id(&self) -> &str {
+        &self.class_id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -334,9 +385,6 @@ pub(crate) fn inventory(
                     })
                 }
                 FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).map(|label| {
-                    if label.name.is_empty() {
-                        return;
-                    }
                     inventory.labels.push(Located::new(
                         label,
                         type_id_string(record.type_id),
@@ -851,14 +899,9 @@ fn parse_label(
     let index = cursor.u32("feature-label index")?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
-    let class_id = type_id_string(
-        cursor
-            .take(16, "feature-label class id")?
-            .try_into()
-            .expect("sixteen-byte class id"),
-    );
+    let class_id = type_id_string(cursor.take_array("feature-label class id")?);
     cursor.finish("feature label")?;
-    Ok(PmDcFeatureLabelPayload {
+    PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
         save_version_major: version,
         header,
         index,
@@ -866,6 +909,7 @@ fn parse_label(
         name,
         class_id,
     })
+    .map_err(CodecError::malformed)
 }
 
 const EXTRUSION_CLASS_ID: &str = "3111a90cd0118b83000819b00524dc09";
@@ -1095,13 +1139,13 @@ fn project_extrusion(
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
-        name: Some(label.name.clone()),
+        name: Some(label.name.as_str().to_owned()),
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: boolean_properties(source, &[20, 22], index),
         source_tag: Some("extrude".into()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
@@ -1197,13 +1241,13 @@ fn project_fillet(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: boolean_properties(source, &[2, 3, 4, 5, 8], index),
             source_tag: Some("fillet".into()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Fillet {
@@ -1240,13 +1284,13 @@ fn project_chamfer(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: boolean_properties(source, &[6, 9], index),
             source_tag: Some("chamfer".into()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Chamfer {
@@ -1315,7 +1359,7 @@ fn project_hole(
         source.identity.segment_token.as_str(),
         transform_reference.index.checked_sub(1)?,
     ))?;
-    if transform.matrix[3]
+    if transform.matrix.rows()[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
         .any(|(actual, expected)| (actual - expected).abs() > EPS_FEATURE_PROJECT_HOLE_E10)
@@ -1349,13 +1393,13 @@ fn project_hole(
         Feature {
             id: feature_id,
             ordinal: u64::from(label.index),
-            name: Some(label.name.clone()),
+            name: Some(label.name.as_str().to_owned()),
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("hole".into()),
             source_text: None,
-            source_content: Default::default(),
+            source_content: FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Hole {
@@ -1365,9 +1409,9 @@ fn project_hole(
                     direction: None,
                     placements: Some(vec![HolePlacement::Directed {
                         position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                            transform.matrix[0][3] * 10.0,
-                            transform.matrix[1][3] * 10.0,
-                            transform.matrix[2][3] * 10.0,
+                            transform.matrix.rows()[0][3] * 10.0,
+                            transform.matrix.rows()[1][3] * 10.0,
+                            transform.matrix.rows()[2][3] * 10.0,
                         ))?,
                         direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                     }]),
@@ -1552,9 +1596,7 @@ fn length_parameter(
 fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
     let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Length(value) if value.get().is_finite() && value.get() >= 0.0 => {
-            Some(*value)
-        }
+        ParameterValue::Length(value) if value.get() >= 0.0 => Some(*value),
         _ => None,
     }
 }
@@ -1570,7 +1612,7 @@ fn angle_parameter(
         reference.index.checked_sub(1)?,
     ))?;
     match index.parameter_values.get(parameter.id().as_str())? {
-        ParameterValue::Angle(value) if value.get().is_finite() => Some(*value),
+        ParameterValue::Angle(value) => Some(*value),
         _ => None,
     }
 }
@@ -1761,6 +1803,33 @@ mod tests {
         )
     }
 
+    #[test]
+    fn located_label_admission_rejects_empty_name_and_wrong_class_width() {
+        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
+        let valid = serde_json::to_value(&label).expect("valid label fixture");
+        let admitted: PmDcFeatureLabel =
+            serde_json::from_value(valid.clone()).expect("valid label fixture");
+        assert_eq!(
+            serde_json::to_value(admitted).expect("valid label fixture"),
+            valid
+        );
+        for (field, value) in [
+            ("name", String::new()),
+            ("class_id", "a".repeat(31)),
+            ("class_id", "a".repeat(33)),
+        ] {
+            let mut wire = valid.clone();
+            wire[field] = serde_json::json!(value);
+            assert!(serde_json::from_value::<PmDcFeatureLabel>(wire)
+                .expect_err("invalid label")
+                .to_string()
+                .contains(field));
+        }
+        let mut wire = valid;
+        wire["class_id"] = serde_json::json!("z".repeat(32));
+        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_ok());
+    }
+
     fn test_label(
         owner_ordinal: u32,
         index: u32,
@@ -1768,7 +1837,7 @@ mod tests {
         participants: &[u32],
     ) -> PmDcFeatureLabel {
         Located::new(
-            PmDcFeatureLabelPayload {
+            PmDcFeatureLabelPayload::try_from(PmDcFeatureLabelPayloadWire {
                 save_version_major: 16,
                 header: PmDcLinkedHeader {
                     header_value: 0,
@@ -1782,7 +1851,8 @@ mod tests {
                 participants: reference_list(participants),
                 name: format!("Feature {index}"),
                 class_id: class_id.into(),
-            },
+            })
+            .expect("valid label fixture"),
             type_id_string(FEATURE_LABEL_TYPE),
             SEGMENT,
             owner_ordinal + 1000,
@@ -1832,7 +1902,7 @@ mod tests {
             expression: String::new(),
             display: None,
             value: Some(value),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),
@@ -2027,7 +2097,7 @@ mod tests {
         let raw_radius = raw_parameter(20);
         let neutral_radius = neutral_parameter(
             &raw_radius,
-            ParameterValue::Length(Length::new(2.5).unwrap()),
+            ParameterValue::Length(Length::new(2.5).expect("finite length fixture")),
         );
         let fillet_properties = vec![
             test_property(
@@ -2126,7 +2196,7 @@ mod tests {
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
             &raw_distance,
-            ParameterValue::Length(Length::new(1.25).unwrap()),
+            ParameterValue::Length(Length::new(1.25).expect("finite length fixture")),
         );
         let chamfer_properties = vec![
             test_property(
@@ -2208,9 +2278,12 @@ mod tests {
         let neutral_parameters = vec![
             neutral_parameter(
                 &raw_length,
-                ParameterValue::Length(Length::new(12.0).unwrap()),
+                ParameterValue::Length(Length::new(12.0).expect("finite length fixture")),
             ),
-            neutral_parameter(&raw_taper, ParameterValue::Angle(Angle::new(0.1).unwrap())),
+            neutral_parameter(
+                &raw_taper,
+                ParameterValue::Angle(Angle::new(0.1).expect("finite angle fixture")),
+            ),
         ];
         let raw_sketch = Located::new(
             crate::sketch::PmDcSketchPayload {
@@ -2229,16 +2302,18 @@ mod tests {
             50,
         );
         let neutral_sketch = Sketch {
-            id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
+            id: SketchId::mint(format!("inventor:design:sketch#{SEGMENT}-50"))
+                .expect("valid test fixture"),
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid test fixture"),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some(raw_sketch.id()),
         };
         let direction = Located::new(
@@ -2389,12 +2464,12 @@ mod tests {
     fn projects_generated_hole() {
         let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
         let neutral_parameters = [
-            ParameterValue::Length(Length::new(5.0).unwrap()),
-            ParameterValue::Length(Length::new(20.0).unwrap()),
-            ParameterValue::Length(Length::new(9.0).unwrap()),
-            ParameterValue::Length(Length::new(3.0).unwrap()),
-            ParameterValue::Angle(Angle::new(1.5).unwrap()),
-            ParameterValue::Angle(Angle::new(2.0).unwrap()),
+            ParameterValue::Length(Length::new(5.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(20.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(9.0).expect("finite length fixture")),
+            ParameterValue::Length(Length::new(3.0).expect("finite length fixture")),
+            ParameterValue::Angle(Angle::new(1.5).expect("finite angle fixture")),
+            ParameterValue::Angle(Angle::new(2.0).expect("finite angle fixture")),
         ]
         .into_iter()
         .zip(&raw_parameters)
@@ -2404,15 +2479,18 @@ mod tests {
             crate::sketch::PmDcTransformPayload {
                 save_version_major: 16,
                 header: test_header(),
-                prefix: None,
-                value_mask: 0,
-                zero_mask: 0,
-                matrix: [
-                    [1.0, 0.0, 0.0, 1.0],
-                    [0.0, 1.0, 0.0, 2.0],
-                    [0.0, 0.0, 1.0, 3.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
+                prefix_present: false,
+                matrix: crate::compact_matrix::CompactMatrix::try_from_rows(
+                    0,
+                    0,
+                    [
+                        [1.0, 0.0, 0.0, 1.0],
+                        [0.0, 1.0, 0.0, 2.0],
+                        [0.0, 0.0, 1.0, 3.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                )
+                .expect("finite explicit matrix fixture"),
             },
             "184d8790d011f8d10008cabc0663dc09".into(),
             SEGMENT,

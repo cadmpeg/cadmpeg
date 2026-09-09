@@ -19,7 +19,7 @@ use crate::history::parameters::{
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
-pub fn prepare_parameters_for_write(
+pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
@@ -384,7 +384,7 @@ pub(crate) fn rewrite_parameter_expression(
         if expression_identifier_is_syntax(expression, &token) {
             continue;
         }
-        let Some(replacement) = aliases.get(&token.value) else {
+        let Some(replacement) = aliases.get(token.value(expression).as_ref()) else {
             continue;
         };
         rewritten.push_str(&expression[copied..token.start]);

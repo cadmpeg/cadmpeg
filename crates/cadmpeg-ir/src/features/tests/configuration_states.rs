@@ -40,7 +40,7 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
 
 #[test]
 fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
-    let earlier = FeatureId::mint("test:feature#earlier").unwrap();
+    let earlier = FeatureId::mint("test:test:feature#earlier").unwrap();
     let state = ConfigurationFeatureState {
         evaluation: ConfigurationEvaluation::Active {
             outputs: DistinctMembers::default(),

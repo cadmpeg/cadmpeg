@@ -35,7 +35,6 @@ loss_codes! {
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CreoLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CreoLossCode {
     /// PSB section census and prototype/instance transfer summary.
@@ -393,7 +392,16 @@ impl CreoLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
-        LossKind::namespaced("creo", self.code(), self.shared_taxonomy())
+        LossKind::namespaced(
+            const {
+                match cadmpeg_ir::report::LossNamespace::new("creo") {
+                    Ok(namespace) => namespace,
+                    Err(_) => panic!("reserved codec namespace"),
+                }
+            },
+            self.code(),
+            self.shared_taxonomy(),
+        )
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

@@ -86,7 +86,7 @@ pub(in super::super) fn named_feature_definition(
     if let Some(role) = tree_node_role {
         return Some(IrFeatureDefinition::TreeNode {
             role,
-            children: Default::default(),
+            children: cadmpeg_ir::features::TreeChildren::default(),
         });
     }
     if kind == "Mirror" {
@@ -353,7 +353,7 @@ mod tests {
                     BodySelection::Unresolved,
                     BodySelection::Unresolved
                 )
-                .unwrap(),
+                .expect("valid test fixture"),
 
                 approximate: None,
             })

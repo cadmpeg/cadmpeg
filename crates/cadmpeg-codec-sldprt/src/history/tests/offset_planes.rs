@@ -100,7 +100,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 #[test]
 fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry() {
     let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("offset").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -134,7 +134,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         .source_properties
         .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
     let mut principal = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("right").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#right").expect("identity grammar"),
         1,
         FeatureDefinition::DatumPrincipalPlane {
             plane: cadmpeg_ir::features::PrincipalPlane::Right,
@@ -161,7 +161,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
 #[test]
 fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     let mut base = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("base").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
         0,
         FeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -175,7 +175,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     base.native_ref = Some("sldprt:history:feature#0:base".into());
 
     let mut alias = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("alias").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#alias").expect("identity grammar"),
         1,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(base.id.clone())),
@@ -194,7 +194,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .insert("UAxis".into(), "0,0,-1".into());
 
     let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("offset").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         2,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -247,11 +247,11 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
 #[test]
 fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("offset").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(
-                FeatureId::mint("reference").expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
             )),
             distance: Length::new(6.0).unwrap(),
         },
@@ -270,7 +270,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         .source_properties
         .insert("UAxis".into(), "0,0,-1".into());
     let mut reference = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("reference").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
         1,
         FeatureDefinition::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(

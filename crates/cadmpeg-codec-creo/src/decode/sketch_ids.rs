@@ -7,7 +7,7 @@ use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::container::ContainerScan;
 
 use super::feature_history::owned_section_feature_id;
-use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader};
+use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoSketchTableKind};
 
 pub(crate) fn feature_definition_has_sketch_design(
     definition: &crate::feature::FeatureDefinition,
@@ -28,24 +28,19 @@ pub(crate) fn sketch_table_headers(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
-    let mut push = |kind, declared_count, entity_ref, entry_ref, buckets, row_count, offset| {
+    let mut push = |kind, row_count, offset| {
         headers.push(CreoSketchTableHeader {
             kind,
-            declared_count,
-            entity_ref,
-            entry_ref,
-            buckets,
             row_count,
             offset,
         });
     };
     if let Some(table) = &definition.variables {
         push(
-            "variables",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Variables {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
@@ -53,116 +48,111 @@ pub(crate) fn sketch_table_headers(
     if let Some(table) = crate::feature::equation_table(&definition.body, 0, definition.body.len())
     {
         push(
-            "equations",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Equations {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.segments {
         push(
-            "segments",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Segments {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.trim_entities {
         push(
-            "trim_entities",
-            table.declared_count,
-            table.entity_ref,
-            table.entry_ref,
-            table
-                .buckets
-                .iter()
-                .map(|bucket| CreoSketchBucketHeader {
-                    index: bucket.index,
-                    declared_entry_count: bucket.declared_entry_count,
-                    decoded_entry_count: bucket.decoded_entry_count,
-                    offset: bucket.offset,
-                })
-                .collect(),
+            CreoSketchTableKind::TrimEntities {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+                entry_ref: table.entry_ref,
+                buckets: table
+                    .buckets
+                    .iter()
+                    .map(|bucket| CreoSketchBucketHeader {
+                        index: bucket.index,
+                        declared_entry_count: bucket.declared_entry_count,
+                        decoded_entry_count: bucket.decoded_entry_count,
+                        offset: bucket.offset,
+                    })
+                    .collect(),
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.trim_vertices {
         push(
-            "trim_vertices",
-            table.declared_count,
-            table.entity_ref,
-            table.entry_ref,
-            table
-                .buckets
-                .iter()
-                .map(|bucket| CreoSketchBucketHeader {
-                    index: bucket.index,
-                    declared_entry_count: bucket.declared_entry_count,
-                    decoded_entry_count: bucket.decoded_entry_count,
-                    offset: bucket.offset,
-                })
-                .collect(),
+            CreoSketchTableKind::TrimVertices {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+                entry_ref: table.entry_ref,
+                buckets: table
+                    .buckets
+                    .iter()
+                    .map(|bucket| CreoSketchBucketHeader {
+                        index: bucket.index,
+                        declared_entry_count: bucket.declared_entry_count,
+                        decoded_entry_count: bucket.decoded_entry_count,
+                        offset: bucket.offset,
+                    })
+                    .collect(),
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.order_table {
         push(
-            "order",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Order {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.dimensions {
         push(
-            "dimensions",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Dimensions {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.relations {
         push(
-            "relations",
-            Some(table.declared_count),
-            table.entity_ref,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::Relations {
+                declared_count: table.declared_count,
+                entity_ref: table.entity_ref,
+            },
             table.rows.len(),
             table.offset,
         );
         if let Some(header) = table.skamps.as_ref().and_then(|table| table.header()) {
             push(
-                "solver_incidences",
-                Some(header.declared_count),
-                Some(header.entity_ref),
-                None,
-                Vec::new(),
+                CreoSketchTableKind::SolverIncidences {
+                    declared_count: header.declared_count,
+                    entity_ref: header.entity_ref,
+                },
                 table.skamps().len(),
                 header.offset,
             );
         }
         if let Some(header) = table.triples.as_ref().and_then(|table| table.header()) {
             push(
-                "relation_triples",
-                Some(header.declared_count),
-                Some(header.entity_ref),
-                None,
-                Vec::new(),
+                CreoSketchTableKind::RelationTriples {
+                    declared_count: header.declared_count,
+                    entity_ref: header.entity_ref,
+                },
                 table.triples().len(),
                 header.offset,
             );
@@ -170,11 +160,7 @@ pub(crate) fn sketch_table_headers(
     }
     if let Some(table) = &definition.saved_section {
         push(
-            "saved_entities",
-            None,
-            None,
-            None,
-            Vec::new(),
+            CreoSketchTableKind::SavedEntities,
             table.entities.len(),
             table.offset,
         );
@@ -239,36 +225,38 @@ pub(crate) fn feature_sketch_record_id_in_scan(
 pub(crate) fn model_sketch_id(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
-) -> SketchId {
+) -> Option<SketchId> {
     let native_id = feature_sketch_record_id_in_scan(scan, definition);
-    SketchId(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1))
+    SketchId::mint(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1)).ok()
 }
 
 pub(crate) fn sketch_identity_scope(sketch: &SketchId) -> &str {
     sketch
-        .0
+        .as_str()
         .strip_prefix("creo:model:sketch#")
-        .unwrap_or(&sketch.0)
+        .unwrap_or(sketch.as_str())
 }
 
 pub(crate) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> SketchEntityId {
-    SketchEntityId(format!(
+) -> Option<SketchEntityId> {
+    SketchEntityId::mint(format!(
         "creo:featdefs:sketch_entity#{}:{suffix}",
         sketch_identity_scope(sketch)
     ))
+    .ok()
 }
 
 pub(crate) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> SketchConstraintId {
-    SketchConstraintId(format!(
+) -> Option<SketchConstraintId> {
+    SketchConstraintId::mint(format!(
         "creo:featdefs:sketch_constraint#{}:{suffix}",
         sketch_identity_scope(sketch)
     ))
+    .ok()
 }
 
 pub(crate) fn sketch_native_ref(sketch: &SketchId) -> String {

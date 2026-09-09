@@ -9,6 +9,7 @@
 //! <!-- /generated: capability inventor -->
 
 mod assembly;
+mod compact_matrix;
 mod container;
 mod coverage;
 mod database;

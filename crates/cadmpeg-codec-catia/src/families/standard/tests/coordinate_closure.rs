@@ -212,28 +212,22 @@ fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
 
 #[test]
 fn quotient_merges_roots_forced_to_one_coordinate_identity() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [0, 1, 0, 2]
+    let mut quotient = MeshQuotient::new(
+        [0, 1, 0, 2]
             .into_iter()
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
 
     assert!(quotient.merge_singleton_coordinate_roots(&[Vec::new(), Vec::new()]));
     assert_eq!(quotient.root_count(), 3);
-    assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    assert_eq!(quotient.find(0), quotient.find(2));
 }
 
 #[test]
 fn singleton_coordinate_root_merges_are_batched() {
     const ROOT_COUNT: usize = 10_000;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(ROOT_COUNT),
-        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
-        members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![Vec::new(); ROOT_COUNT / 2];
 
     assert!(quotient.merge_singleton_coordinate_roots(&candidates));
@@ -243,11 +237,7 @@ fn singleton_coordinate_root_merges_are_batched() {
 #[test]
 fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
     let all = Arc::new(HashSet::from([0, 1, 2]));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: vec![all.clone(); 6],
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![all.clone(); 6]);
     quotient.merge(1, 2).expect("shared first corner");
     quotient.merge(3, 4).expect("shared second corner");
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
@@ -257,24 +247,23 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
         .expect("unique joint coordinate closure");
 
     assert_eq!(quotient.root_count(), 3);
-    assert_eq!(quotient.union.find(0), quotient.union.find(5));
-    assert_eq!(assignment[&quotient.union.find(0)], 0);
-    assert_eq!(assignment[&quotient.union.find(1)], 1);
-    assert_eq!(assignment[&quotient.union.find(3)], 2);
+    assert_eq!(quotient.find(0), quotient.find(5));
+    assert_eq!(assignment[&quotient.find(0)], 0);
+    assert_eq!(assignment[&quotient.find(1)], 1);
+    assert_eq!(assignment[&quotient.find(3)], 2);
     for node in 0..6 {
-        let root = quotient.union.find(node);
-        assert_eq!(quotient.domains[root].len(), 1);
-        assert_eq!(quotient.domains[root].iter().next(), assignment.get(&root));
+        let root = quotient.find(node);
+        assert_eq!(quotient.domains()[root].len(), 1);
+        assert_eq!(
+            quotient.domains()[root].iter().next(),
+            assignment.get(&root)
+        );
     }
 }
 
 #[test]
 fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0]), 2),
-        members: (0..2).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let budget = WorkBudget::new(0);
 
     assert!(quotient
@@ -286,11 +275,7 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
 #[test]
 fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
     const ROOT_COUNT: usize = 100;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(ROOT_COUNT),
-        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
-        members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let budget = WorkBudget::new(2 * ROOT_COUNT + 1);
 
     let assignment = quotient
@@ -306,13 +291,11 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 fn quotient_incidence_closure_updates_face_degrees_incrementally() {
     const EDGE_COUNT: usize = 64;
     let singleton = |point| Arc::new(HashSet::from([point]));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2 * EDGE_COUNT),
-        domains: (0..EDGE_COUNT)
+    let mut quotient = MeshQuotient::new(
+        (0..EDGE_COUNT)
             .flat_map(|edge| [singleton(edge), singleton((edge + 1) % EDGE_COUNT)])
             .collect(),
-        members: (0..2 * EDGE_COUNT).map(|node| vec![node]).collect(),
-    };
+    );
     for edge in 0..EDGE_COUNT {
         quotient
             .merge(edge * 2 + 1, ((edge + 1) % EDGE_COUNT) * 2)
@@ -341,11 +324,7 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
 #[test]
 fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search() {
     const EDGE_COUNT: usize = 50;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(EDGE_COUNT * 2),
-        domains: repeated_domain(HashSet::from([0, 1]), EDGE_COUNT * 2),
-        members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), EDGE_COUNT * 2));
     let candidates = (0..EDGE_COUNT)
         .map(|edge| vec![[edge % 2, edge % 2]])
         .collect::<Vec<_>>();
@@ -365,11 +344,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
 
 #[test]
 fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: repeated_domain(HashSet::from([0, 1]), 6),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 6));
     quotient.merge(1, 2).expect("shared relation root");
     let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
     let budget = WorkBudget::new(1_000);
@@ -379,21 +354,19 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
         .expect("arc-consistent coordinate closure");
 
     assert_eq!(quotient.root_count(), 2);
-    assert_eq!(assignment[&quotient.union.find(0)], 0);
-    assert_eq!(assignment[&quotient.union.find(4)], 1);
+    assert_eq!(assignment[&quotient.find(0)], 0);
+    assert_eq!(assignment[&quotient.find(4)], 1);
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0, 1], vec![0], vec![0, 1, 2], vec![0]]
+    let mut quotient = MeshQuotient::new(
+        [vec![0, 1], vec![0], vec![0, 1, 2], vec![0]]
             .into_iter()
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .collect(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
     let budget = WorkBudget::new(100);
 
     let assignment = quotient
@@ -401,22 +374,20 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
         .expect("point-support-forced coordinate closure");
 
     assert_eq!(quotient.root_count(), 3);
-    assert_eq!(assignment[&quotient.union.find(0)], 1);
-    assert_eq!(assignment[&quotient.union.find(1)], 0);
-    assert_eq!(assignment[&quotient.union.find(2)], 2);
+    assert_eq!(assignment[&quotient.find(0)], 1);
+    assert_eq!(assignment[&quotient.find(1)], 0);
+    assert_eq!(assignment[&quotient.find(2)], 2);
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [vec![0, 1, 2, 3], vec![0, 1, 2, 3], vec![3], vec![3]]
+    let mut quotient = MeshQuotient::new(
+        [vec![0, 1, 2, 3], vec![0, 1, 2, 3], vec![3], vec![3]]
             .into_iter()
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .collect(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    );
     let budget = WorkBudget::new(1_000);
 
     assert!(quotient
@@ -478,11 +449,8 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
 #[test]
 fn quotient_coordinate_closure_enforces_complete_face_degrees() {
     let singleton = |point| Arc::new(HashSet::from([point]));
-    let mut open = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: [singleton(0), singleton(1), singleton(0), singleton(2)].into(),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut open =
+        MeshQuotient::new([singleton(0), singleton(1), singleton(0), singleton(2)].into());
     let candidates = vec![Vec::new(); 2];
     let edge_faces = [[0, 0]; 2];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1])];
@@ -500,9 +468,8 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
         )
         .is_none());
 
-    let mut closed = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [
+    let mut closed = MeshQuotient::new(
+        [
             singleton(0),
             singleton(1),
             singleton(1),
@@ -511,8 +478,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             singleton(0),
         ]
         .into(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
     let candidates = vec![Vec::new(); 3];
     let edge_faces = [[0, 0]; 3];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
@@ -532,9 +498,8 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
 #[test]
 fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
     let singleton = |point| Arc::new(HashSet::from([point]));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(8),
-        domains: [
+    let mut quotient = MeshQuotient::new(
+        [
             singleton(0),
             singleton(1),
             singleton(1),
@@ -545,8 +510,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
             singleton(2),
         ]
         .into(),
-        members: (0..8).map(|node| vec![node]).collect(),
-    };
+    );
     let candidates = vec![vec![[0, 1]], vec![[0, 1]], vec![[2, 3]], vec![[2, 3]]];
     let edge_faces = [[0, 0]; 4];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
@@ -568,20 +532,20 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
 #[test]
 fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
     let singleton = |point| Arc::new(HashSet::from([point]));
-    let quotient = || MeshQuotient {
-        union: UnionFind::new(8),
-        domains: [
-            singleton(0),
-            singleton(1),
-            singleton(2),
-            singleton(3),
-            singleton(1),
-            singleton(2),
-            singleton(3),
-            singleton(0),
-        ]
-        .into(),
-        members: (0..8).map(|node| vec![node]).collect(),
+    let quotient = || {
+        MeshQuotient::new(
+            [
+                singleton(0),
+                singleton(1),
+                singleton(2),
+                singleton(3),
+                singleton(1),
+                singleton(2),
+                singleton(3),
+                singleton(0),
+            ]
+            .into(),
+        )
     };
     let candidates = vec![Vec::new(); 4];
     let edge_faces = [[0, 0]; 4];
@@ -651,16 +615,14 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
 fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     const COMPONENT_COUNT: usize = 100;
     let point_count = COMPONENT_COUNT * 3;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(COMPONENT_COUNT * 6),
-        domains: (0..COMPONENT_COUNT)
+    let mut quotient = MeshQuotient::new(
+        (0..COMPONENT_COUNT)
             .flat_map(|component| {
                 let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
                 std::iter::repeat_n(points, 6)
             })
             .collect(),
-        members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
-    };
+    );
     let mut candidates = Vec::new();
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
@@ -686,7 +648,7 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     assert_eq!(assignment.len(), point_count);
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
-        assert_eq!(quotient.union.find(node), quotient.union.find(node + 5));
+        assert_eq!(quotient.find(node), quotient.find(node + 5));
     }
 }
 
@@ -694,16 +656,14 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
 fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
     const COMPONENT_COUNT: usize = 40;
     let point_count = COMPONENT_COUNT * 3;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(COMPONENT_COUNT * 6),
-        domains: (0..COMPONENT_COUNT)
+    let mut quotient = MeshQuotient::new(
+        (0..COMPONENT_COUNT)
             .flat_map(|component| {
                 let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
                 std::iter::repeat_n(points, 6)
             })
             .collect(),
-        members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
-    };
+    );
     let mut candidates = Vec::new();
     let mut edge_faces = Vec::new();
     let mut domains = Vec::new();
@@ -754,11 +714,7 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
 #[test]
 fn quotient_closure_does_not_budget_forced_component_depth() {
     const ROOT_COUNT: usize = 10_000;
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(ROOT_COUNT),
-        domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
-        members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];
 
     let assignment = quotient
@@ -772,11 +728,7 @@ fn quotient_closure_does_not_budget_forced_component_depth() {
 #[test]
 fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
     let all = Arc::new(HashSet::from([0, 1]));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: vec![all.clone(); 4],
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(vec![all.clone(); 4]);
     quotient.merge(1, 2).expect("shared middle corner");
 
     assert!(quotient
@@ -787,11 +739,7 @@ fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
 
 #[test]
 fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(4),
-        domains: repeated_domain(HashSet::from([0]), 4),
-        members: (0..4).map(|node| vec![node]).collect(),
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
     quotient.merge(1, 2).expect("shared endpoint");
 
     assert!(quotient
@@ -802,11 +750,10 @@ fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
 
 #[test]
 fn quotient_accepts_diagonal_domain_for_closed_edge() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))],
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([2])),
+        Arc::new(HashSet::from([2])),
+    ]);
     quotient.merge(0, 1).expect("closed endpoint merge");
     assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
     assert!(!quotient.edge_domains_viable(&[vec![[1, 2]]]));
@@ -814,11 +761,7 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
 
 #[test]
 fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: repeated_domain(HashSet::from([0]), 2),
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let root = quotient.merge(0, 1).expect("closed endpoint merge");
 
     assert_eq!(
@@ -829,18 +772,14 @@ fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
 
 #[test]
 fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(2),
-        domains: vec![
-            Arc::new(HashSet::from([1, 2])),
-            Arc::new(HashSet::from([1, 2])),
-        ],
-        members: vec![vec![0], vec![1]],
-    };
+    let mut quotient = MeshQuotient::new(vec![
+        Arc::new(HashSet::from([1, 2])),
+        Arc::new(HashSet::from([1, 2])),
+    ]);
 
     assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
     assert_eq!(
-        quotient.domains,
+        quotient.domains(),
         vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
     );
     quotient.merge(0, 1).expect("closed endpoint merge");
@@ -955,9 +894,8 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 #[test]
 fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
     let singleton = |point| Arc::new(HashSet::from([point]));
-    let mut quotient = MeshQuotient {
-        union: UnionFind::new(6),
-        domains: [
+    let mut quotient = MeshQuotient::new(
+        [
             singleton(1),
             singleton(2),
             singleton(1),
@@ -966,8 +904,7 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
             singleton(2),
         ]
         .into(),
-        members: (0..6).map(|node| vec![node]).collect(),
-    };
+    );
     quotient.merge(4, 3).expect("first fixed-direction corner");
     quotient.merge(2, 0).expect("second fixed-direction corner");
     quotient.merge(1, 5).expect("third boundary corner");

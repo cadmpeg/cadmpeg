@@ -282,7 +282,7 @@ pub(crate) fn build_geometry_report(
 
     losses.extend_from_slice(dialect_losses);
     DecodeBody {
-        geometry_transferred: true,
+        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: notes.to_vec(),
@@ -304,21 +304,18 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             Err(rejection) => (None, Some(rejection.code())),
         };
     let active_features = active_features.filter(|active| {
-        active.iter().any(|id| {
-            ir.model.features.iter().any(|feature| {
-                feature.id == *id
-                    && !matches!(
-                        feature.evaluation.definition(),
-                        FeatureDefinition::BaseFeature { .. }
-                    )
-            })
+        active.values().any(|&index| {
+            !matches!(
+                ir.model.features[index].evaluation.definition(),
+                FeatureDefinition::BaseFeature { .. }
+            )
         })
     });
     let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
     let feature_in_active_scope = |feature: &Feature| {
         active_features
             .as_ref()
-            .is_none_or(|active| active.contains(&feature.id))
+            .is_none_or(|active| active.contains_key(&feature.id))
     };
     let unresolved_suppression_count = ir
         .model
@@ -328,7 +325,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             feature.suppressed.is_none()
                 && active_features
                     .as_ref()
-                    .is_none_or(|active| active.contains(&feature.id))
+                    .is_none_or(|active| active.contains_key(&feature.id))
         })
         .count();
     if unresolved_suppression_count != 0 {
@@ -539,11 +536,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Sphere { .. } if sphere_definition_is_incomplete(feature) => {
                 "sphere"
             }
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } if !distance.get().is_finite()
-                || reference.as_ref().is_none_or(|reference| match reference {
+            FeatureDefinition::DatumOffsetPlane { reference, .. }
+                if reference.as_ref().is_none_or(|reference| match reference {
                     DatumPlaneReference::Feature(reference) => {
                         ir.model
                             .features
@@ -772,8 +766,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
-                entity.geometry,
-                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+                *entity.geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
             )
         })
         .count();
@@ -784,8 +778,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
-                constraint.definition,
-                cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+                constraint.definition.kind(),
+                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
             )
         })
         .count();

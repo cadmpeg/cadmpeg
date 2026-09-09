@@ -69,11 +69,12 @@ pub(crate) fn attach_expanded_sections(
         .map(|array| CreoPrimitiveScalarArrayRecord {
             id: format!(
                 "creo:solid_primdata:scalar_array#{}:{}",
-                array.field, array.offset
+                array.field.as_str(),
+                array.offset
             ),
-            field: array.field.clone(),
+            field: array.field.as_str().to_owned(),
             expanded_offset: array.offset,
-            count: array.count,
+            count: array.values.len(),
             values: array.values.clone(),
         })
         .collect::<Vec<_>>();
@@ -187,29 +188,18 @@ pub(crate) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRec
     scan.curves
         .fc05_circles
         .iter()
-        .map(|record| {
-            let (reference_direction_row_frame, parameter_sign) = match record.angle_parameter {
-                crate::curve::Fc05AngleParameterRelation::Inconsistent => (None, None),
-                crate::curve::Fc05AngleParameterRelation::Consistent {
-                    sense,
-                    reference_direction_row_frame,
-                } => (Some(reference_direction_row_frame), Some(sense.as_i8())),
-            };
-            CreoFc05CircleRecord {
-                id: format!("creo:curve:fc05_circle#{}", record.curve_id),
-                curve_id: record.curve_id,
-                center_row_frame: record.center_row_frame,
-                radius_mm: record.radius_mm,
-                sample_direction_row_frame: record.sample_direction_row_frame,
-                reference_direction_row_frame,
-                parameter_sign,
-                cap_ordinate_row_frame: record.cap_ordinate_row_frame,
-                point_count: record.point_count,
-                max_residual: record.max_residual,
-                angle_parameter_consistent: parameter_sign.is_some(),
-                offset: record.offset,
-                source_section: source_section(scan, record.offset),
-            }
+        .map(|record| CreoFc05CircleRecord {
+            id: format!("creo:curve:fc05_circle#{}", record.curve_id),
+            curve_id: record.curve_id,
+            center_row_frame: record.center_row_frame,
+            radius_mm: record.radius_mm,
+            sample_direction_row_frame: record.sample_direction_row_frame,
+            angle_parameter: record.angle_parameter,
+            cap_ordinate_row_frame: record.cap_ordinate_row_frame,
+            point_count: record.point_count,
+            max_residual: record.max_residual,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }
@@ -223,17 +213,7 @@ pub(crate) fn fc05_cylinder_cap_pair_records(
         .map(|record| CreoFc05CylinderCapPairRecord {
             id: format!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
             surface_id: record.surface_id,
-            curve_ids: record.cap_edges.iter().map(|edge| edge.curve_id).collect(),
-            cap_plane_ids: record
-                .cap_edges
-                .iter()
-                .map(|edge| edge.cap_plane_id)
-                .collect(),
-            curve_cap_ordinates_row_frame: record
-                .cap_edges
-                .iter()
-                .map(|edge| edge.cap_ordinate_row_frame)
-                .collect(),
+            cap_edges: record.cap_edges.clone(),
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
             reference_direction_row_frame: record.reference_direction_row_frame,

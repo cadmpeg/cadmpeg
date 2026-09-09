@@ -221,7 +221,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(name, _)| name.offset);
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
-            let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+            let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
             if is_profile_feature_object(feature) {
                 NativeClassKind::ProfileFeature
             } else if kind == NativeClassKind::Unknown
@@ -367,7 +367,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
 }
 
 pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
-    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+    native_object_class(feature.input_class.as_deref().unwrap_or_default())
         == NativeClassKind::ProfileFeature
         || (feature.input_class.is_none()
             && feature.xml_tag.eq_ignore_ascii_case("Sketch")
@@ -405,13 +405,7 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     let mut object_ids = HashSet::new();
     let mut instance_count = 0usize;
     for feature in objects {
-        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-        if !matches!(
-            kind,
-            NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
-        ) {
-            return false;
-        }
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let Some(source) = feature
             .source_id
             .as_deref()
@@ -439,7 +433,7 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
                 };
                 referenced_definitions.insert(definition);
             }
-            _ => unreachable!(),
+            _ => return false,
         }
     }
     if let Some(Some(children)) = explicit_children.as_ref() {
@@ -543,7 +537,7 @@ pub(crate) fn project_dissected_sketches(
             if aliases.contains_key(&feature.id) {
                 definition = FeatureDefinition::TreeNode {
                     role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
-                    children: Default::default(),
+                    children: cadmpeg_ir::features::TreeChildren::default(),
                 };
                 break 'feature_edit;
             }

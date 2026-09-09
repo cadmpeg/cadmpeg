@@ -16,7 +16,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         feature_id,
         root_schema_class: None,
         stream_offset: 0,
-        body: Vec::new(),
+        body: vec![0; 2].try_into().expect("row body"),
         body_offset: 0,
         offset: 0,
     };
@@ -91,10 +91,10 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
                         .expect("identity grammar"),
                     "surface#7".to_string(),
                 )
-                .unwrap()],
+                .expect("valid test fixture")],
                 "creo:generated-face#7".to_string(),
             )
-            .unwrap(),
+            .expect("valid test fixture"),
             thickness: None,
             side: None,
         },
@@ -105,7 +105,8 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
-    super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new()).unwrap();
+    super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new())
+        .expect("valid test fixture");
     assert_eq!(
         *ir.model.features[0].evaluation.outputs(),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
@@ -178,10 +179,10 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
                         .expect("identity grammar"),
                     "surface#7".to_string(),
                 )
-                .unwrap()],
+                .expect("valid test fixture")],
                 "creo:generated-face#7".to_string(),
             )
-            .unwrap(),
+            .expect("valid test fixture"),
             thickness: None,
             side: None,
         },
@@ -204,7 +205,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
             Vec::new(),
             Vec::new(),
         )
-        .unwrap(),
+        .expect("valid test fixture"),
     );
     assert_eq!(
         feature_output_bodies(&scan, &duplicate_shell, 10),
@@ -337,7 +338,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
             Vec::new(),
             Vec::new(),
         )
-        .unwrap(),
+        .expect("valid test fixture"),
     );
     assert!(bodies_containing_edges(&duplicate_shell, std::slice::from_ref(&edge_id)).is_empty());
 

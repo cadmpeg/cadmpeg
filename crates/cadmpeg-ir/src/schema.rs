@@ -509,7 +509,7 @@ impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
 impl_entity_schema!(crate::topology::Point, Point, id; id, position, source_object);
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
 impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, vertices, edges, faces, symmetries, source_object);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);
 impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id; id, geometry, metadata);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
@@ -561,25 +561,25 @@ impl_entity_schema!(
     bodies, parameter_values, feature_states, native_ref
 );
 impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
-impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);
+impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;
 
     fn identity(&self) -> &str {
-        self.id().0.as_str()
+        self.id().as_str()
     }
 
     fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
         visit_typed_references(self, visitor);
     }
 }
-impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id.0; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
-impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id.0; id, name, configuration, visible, profiles, native_ref);
+impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
+impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id; id, name, configuration, visible, profiles, native_ref);
 impl EntitySchema for crate::sketches::SpatialSketchEntity {
     const KIND: EntityKind = EntityKind::SpatialSketchEntity;
 
     fn identity(&self) -> &str {
-        self.id().0.as_str()
+        self.id().as_str()
     }
 
     fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
@@ -589,7 +589,7 @@ impl EntitySchema for crate::sketches::SpatialSketchEntity {
 impl_entity_schema!(
     crate::sketches::SpatialSketchConstraint,
     SpatialSketchConstraint,
-    id.0;
+    id;
     id, sketch, definition, native_ref
 );
 impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
@@ -614,12 +614,17 @@ impl_entity_schema!(
     id, object, kind, runtime_type, order, text, references, value, format, position,
     parameters, assets, native_ref
 );
-impl_entity_schema!(
-    crate::presentation::PresentationDocument,
-    PresentationDocument,
-    id;
-    id, schema_version, active_view, states, native_ref
-);
+impl EntitySchema for crate::presentation::PresentationDocument {
+    const KIND: EntityKind = EntityKind::PresentationDocument;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(
     crate::presentation::ViewPresentation,
     ViewPresentation,

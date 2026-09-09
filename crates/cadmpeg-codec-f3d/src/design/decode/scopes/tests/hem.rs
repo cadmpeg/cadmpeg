@@ -60,9 +60,9 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             }
         );
         assert_eq!(operation.aggregate_group_record_index, 240);
-        assert_eq!(operation.aggregate_operand_record_index, 243);
+        assert_eq!(operation.aggregate_operand_record_index(), 243);
         assert_eq!(operation.edge_group_record_index, 251);
-        assert_eq!(operation.edge_operand_record_index, 254);
+        assert_eq!(operation.edge_operand_record_index(), 254);
         assert_eq!(operation.bend_radius.get(), 0.25);
         assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
     }

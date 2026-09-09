@@ -211,7 +211,7 @@ fn add_edge(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(nurbs),
-        source_object: Some(source_object(entry)),
+        source_object: Some(source_object(entry).ok()?),
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
@@ -274,7 +274,6 @@ pub(super) fn project(
                 "iges_spline_segments",
                 MAX_SPLINE_SEGMENTS as u64,
                 u64::try_from(raw_segment_count).unwrap_or(u64::MAX),
-                None,
             ));
         }
         let Some(segment_count) = usize::try_from(raw_segment_count)
@@ -635,7 +634,6 @@ pub(super) fn project(
                         "iges_spline_surface_poles",
                         MAX_SPLINE_SURFACE_POLES as u64,
                         u64::MAX,
-                        None,
                     ));
                 }
                 Some(requested) if requested > MAX_SPLINE_SURFACE_POLES as u64 => {
@@ -643,7 +641,6 @@ pub(super) fn project(
                         "iges_spline_surface_poles",
                         MAX_SPLINE_SURFACE_POLES as u64,
                         requested,
-                        None,
                     ));
                 }
                 Some(_) => {}
@@ -674,7 +671,6 @@ pub(super) fn project(
                 "iges_spline_surface_poles",
                 MAX_SPLINE_SURFACE_POLES as u64,
                 u64::MAX,
-                None,
             ));
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
@@ -682,7 +678,6 @@ pub(super) fn project(
                 "iges_spline_surface_poles",
                 MAX_SPLINE_SURFACE_POLES as u64,
                 pole_count as u64,
-                None,
             ));
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
@@ -879,7 +874,7 @@ pub(super) fn project(
             id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(nurbs),
-            source_object: Some(source_object(entry)),
+            source_object: Some(source_object(entry)?),
         });
         losses.push(
             IgesLossCode::SplineHeaderNotTransferred

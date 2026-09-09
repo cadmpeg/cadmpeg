@@ -880,27 +880,25 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
     }
 }
 
+#[derive(Default)]
+pub(in super::super) struct LegacyNumericCoverage {
+    pub(super) scalars: usize,
+    pub(super) arrays: usize,
+    pub(super) elements: usize,
+}
+
 pub(in super::super) fn legacy_numeric_coverage<T>(
     records: &[crate::legacy::NumericRecord<T>],
-) -> (usize, usize, usize) {
-    records.iter().fold(
-        (0usize, 0usize, 0usize),
-        |(scalars, arrays, elements), record| {
-            (
-                scalars
-                    + usize::from(matches!(
-                        record.payload,
-                        crate::legacy::NumericPayload::Scalar { .. }
-                    )),
-                arrays
-                    + usize::from(matches!(
-                        record.payload,
-                        crate::legacy::NumericPayload::Array { .. }
-                    )),
-                elements.saturating_add(
-                    usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX),
-                ),
-            )
-        },
-    )
+) -> LegacyNumericCoverage {
+    let mut counts = LegacyNumericCoverage::default();
+    for record in records {
+        match record.payload {
+            crate::legacy::NumericPayload::Scalar { .. } => counts.scalars += 1,
+            crate::legacy::NumericPayload::Array(_) => counts.arrays += 1,
+        }
+        counts.elements = counts
+            .elements
+            .saturating_add(usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX));
+    }
+    counts
 }

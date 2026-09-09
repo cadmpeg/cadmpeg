@@ -206,14 +206,14 @@ pub(crate) fn project_feature_model(
     })
 }
 
-pub fn project_features(
+pub(crate) fn project_features(
     histories: &[FeatureHistory],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     project_feature_model(histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
-pub fn project_semantic_notes(
+pub(crate) fn project_semantic_notes(
     histories: &[FeatureHistory],
 ) -> Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation> {
     histories
@@ -221,10 +221,7 @@ pub fn project_semantic_notes(
         .flat_map(|history| &history.features)
         .filter(|feature| is_semantic_note(feature))
         .map(|feature| {
-            let key = feature
-                .id
-                .strip_prefix("sldprt:history:feature#")
-                .unwrap_or(&feature.id);
+            let key = feature_identity_key(&feature.id);
             cadmpeg_ir::semantic_annotations::SemanticAnnotation {
                 id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(format!(
                     "sldprt:semantic-annotation:note#{key}"
@@ -789,10 +786,7 @@ pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<So
         .flat_map(|history| &history.features)
         .filter(|feature| is_custom_property(feature))
         .map(|feature| {
-            let key = feature
-                .id
-                .strip_prefix("sldprt:history:feature#")
-                .unwrap_or(&feature.id);
+            let key = feature_identity_key(&feature.id);
             SourceAttribute {
                 id: AttributeId::mint(format!("sldprt:history:custom-property#{key}"))
                     .expect("identity grammar"),
@@ -888,7 +882,7 @@ pub(crate) fn project_feature_content(
     by_native: &HashMap<&str, FeatureId>,
 ) -> Result<cadmpeg_ir::features::FeatureContent, cadmpeg_core::CodecError> {
     if feature.text.is_some() {
-        return Ok(Default::default());
+        return Ok(cadmpeg_ir::features::FeatureContent::default());
     }
     let parameters = projected_parameter_names(feature)
         .into_iter()
@@ -939,7 +933,7 @@ pub(crate) fn project_feature_dependencies(
 }
 
 /// Project native configuration records into the neutral configuration arena.
-pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
+pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
     histories
         .iter()
         .flat_map(|history| &history.configurations)
@@ -949,7 +943,12 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                 configuration
                     .id
                     .strip_prefix("sldprt:history:configuration#")
-                    .unwrap_or(&configuration.id)
+                    .map_or_else(
+                        || std::borrow::Cow::Owned(
+                            configuration.id.replace('%', "%25").replace('#', "%23")
+                        ),
+                        std::borrow::Cow::Borrowed
+                    )
             ))
             .expect("identity grammar"),
             ordinal: configuration.ordinal,
@@ -986,7 +985,7 @@ pub(crate) fn project_definition(
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
             role,
-            children: Default::default(),
+            children: cadmpeg_ir::features::TreeChildren::default(),
         };
     }
     let class = classify(feature);
@@ -1160,10 +1159,7 @@ pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
 }
 
 pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
-    let key = feature
-        .id
-        .strip_prefix("sldprt:history:feature#")
-        .unwrap_or(&feature.id);
+    let key = feature_identity_key(&feature.id);
     ParameterId::mint(format!("sldprt:model:parameter#{key}:{ordinal}")).expect("identity grammar")
 }
 
@@ -1175,8 +1171,15 @@ pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
-    let key = native_id
-        .strip_prefix("sldprt:history:feature#")
-        .unwrap_or(native_id);
+    let key = feature_identity_key(native_id);
     FeatureId::mint(format!("sldprt:model:feature#{key}")).expect("identity grammar")
+}
+
+fn feature_identity_key(native_id: &str) -> std::borrow::Cow<'_, str> {
+    native_id
+        .strip_prefix("sldprt:history:feature#")
+        .map_or_else(
+            || std::borrow::Cow::Owned(native_id.replace('%', "%25").replace('#', "%23")),
+            std::borrow::Cow::Borrowed,
+        )
 }

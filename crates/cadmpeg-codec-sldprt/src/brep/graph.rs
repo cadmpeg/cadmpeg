@@ -33,11 +33,12 @@ use cadmpeg_ir::Exactness;
 use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
+use super::index::{scan_carriers, CarrierIndex};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
 use super::typed;
-use super::{scan_carriers, CarrierIndex, CurveCarrier, LEN_TO_MM};
+use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -52,58 +53,58 @@ const EPS_POINT_DISTANCE: f64 = 1.0e-12;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
-pub struct Brep {
+pub(crate) struct Brep {
     /// Source locations for decoded entities.
-    pub annotations: Annotations,
+    pub(crate) annotations: Annotations,
     /// Top-level solid or sheet bodies.
-    pub bodies: Vec<Body>,
+    pub(crate) bodies: Vec<Body>,
     /// Solid regions / sheet regions owned by each body.
-    pub regions: Vec<Region>,
+    pub(crate) regions: Vec<Region>,
     /// Shells owned by each region.
-    pub shells: Vec<Shell>,
+    pub(crate) shells: Vec<Shell>,
     /// Faces reached through face-use bridge records.
-    pub faces: Vec<Face>,
+    pub(crate) faces: Vec<Face>,
     /// Loops reached through `00 0f` loop heads.
-    pub loops: Vec<Loop>,
+    pub(crate) loops: Vec<Loop>,
     /// Coedges in loop-ring order.
-    pub coedges: Vec<Coedge>,
+    pub(crate) coedges: Vec<Coedge>,
     /// Edges resolved from edge-use records.
-    pub edges: Vec<Edge>,
+    pub(crate) edges: Vec<Edge>,
     /// Vertices resolved from vertex-use and world-point records.
-    pub vertices: Vec<Vertex>,
+    pub(crate) vertices: Vec<Vertex>,
     /// World points converted to millimetres.
-    pub points: Vec<Point>,
+    pub(crate) points: Vec<Point>,
     /// Analytic, NURBS, or opaque support surfaces.
-    pub surfaces: Vec<Surface>,
+    pub(crate) surfaces: Vec<Surface>,
     /// Exact procedural constructions behind emitted support surfaces.
-    pub procedural_surfaces: Vec<ProceduralSurface>,
+    pub(crate) procedural_surfaces: Vec<ProceduralSurface>,
     /// Analytic, NURBS, or opaque support curves.
-    pub curves: Vec<Curve>,
+    pub(crate) curves: Vec<Curve>,
     /// Pcurves derived for supported analytic and NURBS-boundary cases.
-    pub pcurves: Vec<Pcurve>,
+    pub(crate) pcurves: Vec<Pcurve>,
     /// Records whose carrier kind this codec does not type, retained as
     /// opaque payloads.
-    pub unknowns: Vec<UnknownRecord>,
+    pub(crate) unknowns: Vec<UnknownRecord>,
     /// Per-face RGB colors resolved from native entity records.
-    pub face_colors: Vec<entity::FaceColor>,
+    pub(crate) face_colors: Vec<entity::FaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
-    pub face_atoms: Vec<attrib::FaceAtom>,
+    pub(crate) face_atoms: Vec<attrib::FaceAtom>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
-    pub face_bridge_sequences: Vec<(u32, u16)>,
+    pub(crate) face_bridge_sequences: Vec<(u32, u16)>,
     /// Source-local sequence-to-attribute links carried by edge-use records.
     /// The decode boundary retains this map only for the active source because
     /// SWIFT identifiers resolve in that source namespace.
-    pub edge_use_sequences: Vec<(u32, u16)>,
+    pub(crate) edge_use_sequences: Vec<(u32, u16)>,
     /// Source-local sequence-to-attribute links carried by vertex-use records.
     /// The decode boundary retains this map only for the active source because
     /// SWIFT identifiers resolve in that source namespace.
-    pub vertex_use_sequences: Vec<(u32, u16)>,
+    pub(crate) vertex_use_sequences: Vec<(u32, u16)>,
     /// Body-to-history ordinals resolved from Parasolid attributes.
-    pub body_modifiers: Vec<attrib::BodyModifier>,
+    pub(crate) body_modifiers: Vec<attrib::BodyModifier>,
     /// Loss accounting for this decode.
-    pub stats: Stats,
+    pub(crate) stats: Stats,
 }
 
 impl Brep {
@@ -440,28 +441,28 @@ struct ShellRecord {
 
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
-pub struct Stats {
+pub(crate) struct Stats {
     /// Framed top-level model entity records across the selected stream site.
-    pub source_entity_records: usize,
+    pub(crate) source_entity_records: usize,
     /// Face-color bindings withheld because current records conflict.
-    pub unresolved_face_colors: usize,
+    pub(crate) unresolved_face_colors: usize,
     /// Face owners with multiple non-equivalent bridge uses.
-    pub ambiguous_face_owners: usize,
+    pub(crate) ambiguous_face_owners: usize,
     /// Canonical faces that no explicit body record claims.
-    pub unclaimed_faces: usize,
+    pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
-    pub unknown_surface_faces: usize,
+    pub(crate) unknown_surface_faces: usize,
     /// Hidden procedural support surfaces whose carrier geometry remains opaque.
-    pub unknown_procedural_supports: usize,
+    pub(crate) unknown_procedural_supports: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
-    pub unknown_curve_edges: usize,
+    pub(crate) unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
-    pub ambiguous_pcurve_parameters: usize,
+    pub(crate) ambiguous_pcurve_parameters: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
-    pub off_surface_nurbs_pcurves: usize,
+    pub(crate) off_surface_nurbs_pcurves: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
-    pub synthetic_body_grouping: bool,
+    pub(crate) synthetic_body_grouping: bool,
 }
 
 fn id_face(a: u16) -> String {
@@ -516,7 +517,7 @@ fn resolve_sweep_surface(
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
-) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
+) -> Option<(SurfaceGeometry, usize, &'static str, Option<Exactness>)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
     let curve = sweep::profile_nurbs(&profile.geometry)?;
@@ -526,7 +527,7 @@ fn resolve_sweep_surface(
             SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
             construction.offset,
             "00_44",
-            profile_derived,
+            profile_derived.then_some(Exactness::Derived),
         )),
         SweepKind::Swept { direction } => {
             // Ruling extent: face vertex travel bracketed by the profile poles'
@@ -538,14 +539,14 @@ fn resolve_sweep_surface(
             let mut point_hi = f64::NEG_INFINITY;
             for (_, ring) in &face.loops {
                 for ce_attr in ring {
-                    let Some(vuse) = tables.coedges.get(ce_attr).map(|ce| ce.refs[4]) else {
+                    let Some(vuse) = tables.coedges().get(ce_attr).map(|ce| ce.refs[4]) else {
                         continue;
                     };
                     let Some(coordinates) = tables
-                        .vertex_uses
+                        .vertex_uses()
                         .get(&vuse)
                         .map(|vu| vu.refs[4])
-                        .and_then(|pa| tables.points.get(&pa))
+                        .and_then(|pa| tables.points().get(&pa))
                         .map(|p| p.xyz_m)
                     else {
                         continue;
@@ -578,7 +579,7 @@ fn resolve_sweep_surface(
                 )?),
                 construction.offset,
                 "00_43",
-                true,
+                Some(Exactness::Derived),
             ))
         }
     }
@@ -596,7 +597,7 @@ fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
 fn emit_offset_surface(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     surface: SurfaceId,
     construction: ProceduralSurfaceId,
     support: SurfaceId,
@@ -655,7 +656,7 @@ fn ensure_surface_support(
     emitted_face_surface_by_carrier: &HashMap<u16, u16>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
     resolving: &mut HashSet<u16>,
 ) -> Option<SurfaceId> {
     if !resolving.insert(attr) {
@@ -673,7 +674,7 @@ fn ensure_surface_support(
                 let mut geometry = carrier.geometry.clone();
                 if let Some((u_reference, v_reference)) = carrier.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(annotations, id.as_str(), &geometry);
+                    annotate_surface_frame(annotations, id.as_str(), &geometry).ok()?;
                 }
                 annotations
                     .note(&id, source_stream, carrier.offset as u64)
@@ -743,13 +744,13 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut loop_ref = bridge.refs[2];
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 && loop_guard.insert(loop_ref) {
-        let Some(lp) = t.loops.get(&loop_ref) else {
+        let Some(lp) = t.loops().get(&loop_ref) else {
             break;
         };
         let owner_bridge = lp.refs[2];
         let same_face_use = owner_bridge == bridge.attr
             || bridge.owner.is_some_and(|owner| {
-                t.bridges
+                t.bridges()
                     .get(&owner_bridge)
                     .and_then(|candidate| candidate.owner)
                     == Some(owner)
@@ -763,7 +764,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
         while ce_ref != 0 && ce_guard.insert(ce_ref) {
-            let Some(ce) = t.coedges.get(&ce_ref) else {
+            let Some(ce) = t.coedges().get(&ce_ref) else {
                 break;
             };
             if ce.refs[1] != loop_ref {
@@ -881,7 +882,11 @@ fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
-pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
+pub(crate) fn decode(
+    payload: &[u8],
+    header: &StreamHeader,
+    stream: &str,
+) -> Result<Brep, cadmpeg_core::CodecError> {
     decode_body(&payload[header.body_offset.min(payload.len())..], stream)
 }
 
@@ -890,7 +895,10 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 /// Partition records are the base set. Deltas records fill missing subordinate
 /// records and point updates, but do not replace a same-identity partition
 /// topology or carrier record. `stream` names the combined provenance source.
-pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
+pub(crate) fn decode_bodies(
+    bodies: &[(&[u8], &StreamHeader)],
+    stream: &str,
+) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
@@ -989,7 +997,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     decode_graph(&carriers, &tables, facts, &typed_facts, stream)
 }
 
-fn decode_body(body: &[u8], stream: &str) -> Brep {
+fn decode_body(body: &[u8], stream: &str) -> Result<Brep, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
@@ -1087,7 +1095,7 @@ fn unique_face_colors(
 }
 
 fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option<Vec<BodyRecord>> {
-    let bridge_attrs = tables.bridges.keys().copied().collect::<HashSet<_>>();
+    let bridge_attrs = tables.bridges().keys().copied().collect::<HashSet<_>>();
     let hierarchies = facts.hierarchies(&bridge_attrs)?;
     let mut records = Vec::with_capacity(hierarchies.len());
     for hierarchy in hierarchies {
@@ -1151,28 +1159,28 @@ fn decode_graph(
     entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
     stream: &str,
-) -> Brep {
+) -> Result<Brep, cadmpeg_core::CodecError> {
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
     let (face_colors, conflicting_face_colors) =
         unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
     let mut face_bridge_sequences = t
-        .bridges
+        .bridges()
         .values()
         .map(|bridge| (bridge.sequence, bridge.attr))
         .collect::<Vec<_>>();
     face_bridge_sequences.sort_unstable();
     face_bridge_sequences.dedup();
     let mut edge_use_sequences = t
-        .edge_uses
+        .edge_uses()
         .values()
         .map(|edge_use| (edge_use.sequence, edge_use.attr))
         .collect::<Vec<_>>();
     edge_use_sequences.sort_unstable();
     edge_use_sequences.dedup();
     let mut vertex_use_sequences = t
-        .vertex_uses
+        .vertex_uses()
         .values()
         .map(|vertex_use| (vertex_use.sequence, vertex_use.attr))
         .collect::<Vec<_>>();
@@ -1194,8 +1202,8 @@ fn decode_graph(
     };
     let mut annotations = AnnotationBuilder::new();
     let source_stream = annotations.stream(stream);
-    if t.bridges.is_empty() {
-        return out;
+    if t.bridges().is_empty() {
+        return Ok(out);
     }
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
@@ -1204,7 +1212,7 @@ fn decode_graph(
     // payloads have no source selector and must remain unresolved together.
     let mut faces = Vec::new();
     let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
-    for bridge in t.bridges.values() {
+    for bridge in t.bridges().values() {
         let face = walk_face(bridge, t);
         if let Some(owner) = bridge.owner {
             owned_faces.entry(owner).or_default().push((bridge, face));
@@ -1243,12 +1251,12 @@ fn decode_graph(
         for (_loop_attr, ring) in &f.loops {
             let k = ring.len();
             for (i, &ce_attr) in ring.iter().enumerate() {
-                let Some(ce) = t.coedges.get(&ce_attr) else {
+                let Some(ce) = t.coedges().get(&ce_attr) else {
                     continue;
                 };
                 let next_attr = ring[(i + 1) % k];
                 let start_vuse = ce.refs[4];
-                let next_vuse = t.coedges.get(&next_attr).map_or(0, |next| next.refs[4]);
+                let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     edge_incidence
@@ -1267,7 +1275,8 @@ fn decode_graph(
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
 
     for (edge_attr, incidences) in edge_incidence {
-        let canonical = canonical_coedge_attr(edge_attr, t.edge_uses.get(&edge_attr), &t.coedges);
+        let canonical =
+            canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
         let Some(canonical) = canonical else {
             continue;
         };
@@ -1277,9 +1286,9 @@ fn decode_graph(
         else {
             continue;
         };
-        let end_vuse = edge_end_vuse(canonical, *ring_end_vuse, &t.coedges);
+        let end_vuse = edge_end_vuse(canonical, *ring_end_vuse, t.coedges());
         let curve_attr = t
-            .edge_uses
+            .edge_uses()
             .get(&edge_attr)
             .map_or(0, |edge_use| edge_use.references.curve());
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
@@ -1287,9 +1296,9 @@ fn decode_graph(
             if vuse == 0 {
                 continue;
             }
-            if let Some(vu) = t.vertex_uses.get(&vuse) {
+            if let Some(vu) = t.vertex_uses().get(&vuse) {
                 let point_attr = vu.refs[4];
-                if t.points.contains_key(&point_attr) {
+                if t.points().contains_key(&point_attr) {
                     kept_vertices.insert(vuse);
                     kept_points.insert(point_attr);
                 }
@@ -1301,9 +1310,9 @@ fn decode_graph(
     let mut point_attrs: Vec<u16> = kept_points.iter().copied().collect();
     point_attrs.sort_unstable();
     for a in point_attrs {
-        let rec = &t.points[&a];
+        let rec = &t.points()[&a];
         annotations
-            .note(id_point(a), source_stream, rec.offset as u64)
+            .note(id_point(a), &source_stream, rec.offset as u64)
             .tag("00_1d");
         let [x, y, z] = rec.xyz_m;
         out.points.push(Point {
@@ -1317,10 +1326,10 @@ fn decode_graph(
     let mut vuse_attrs: Vec<u16> = kept_vertices.iter().copied().collect();
     vuse_attrs.sort_unstable();
     for a in vuse_attrs {
-        let rec = &t.vertex_uses[&a];
+        let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
         annotations
-            .note(id_vertex(a), source_stream, rec.offset as u64)
+            .note(id_vertex(a), &source_stream, rec.offset as u64)
             .tag("00_12");
         out.vertices.push(Vertex {
             id: VertexId::mint(id_vertex(a)).expect("identity grammar"),
@@ -1362,11 +1371,11 @@ fn decode_graph(
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations
-                .note(&point_id, source_stream, 0)
+                .note(&point_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&point_id, Exactness::Derived);
             annotations
-                .note(&vertex_id, source_stream, 0)
+                .note(&vertex_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
             out.points.push(Point {
@@ -1391,8 +1400,8 @@ fn decode_graph(
         };
         if resolved_endpoints {
             let position = |vertex_use: u16| {
-                let point_attr = &t.vertex_uses.get(&vertex_use)?.refs[4];
-                let [x, y, z] = t.points.get(point_attr)?.xyz_m;
+                let point_attr = &t.vertex_uses().get(&vertex_use)?.refs[4];
+                let [x, y, z] = t.points().get(point_attr)?.xyz_m;
                 Some(cadmpeg_ir::math::Point3::new(
                     x * LEN_TO_MM,
                     y * LEN_TO_MM,
@@ -1413,7 +1422,7 @@ fn decode_graph(
             }
             reversed_edge_orientation.insert(e);
         }
-        let eu = t.edge_uses.get(&e);
+        let eu = t.edge_uses().get(&e);
         let mut curve = None;
         if curve_attr != 0 {
             match carriers.curve(curve_attr) {
@@ -1423,7 +1432,7 @@ fn decode_graph(
                         if carriers.curve_is_derived(curve_attr) {
                             let offset = carrier.offset;
                             annotations
-                                .note(id_curve(curve_attr), source_stream, offset as u64)
+                                .note(id_curve(curve_attr), &source_stream, offset as u64)
                                 .tag("surface_intersection");
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
@@ -1434,7 +1443,7 @@ fn decode_graph(
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations
-                            .note(id_curve(curve_attr), source_stream, offset as u64)
+                            .note(id_curve(curve_attr), &source_stream, offset as u64)
                             .tag("unknown_curve");
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         out.curves.push(Curve {
@@ -1450,7 +1459,7 @@ fn decode_graph(
         }
         let off = eu.map_or(0, |r| r.offset);
         annotations
-            .note(id_edge(e), source_stream, off as u64)
+            .note(id_edge(e), &source_stream, off as u64)
             .tag("00_10");
         out.edges.push(Edge {
             id: EdgeId::mint(id_edge(e)).expect("identity grammar"),
@@ -1482,7 +1491,7 @@ fn decode_graph(
         for (loop_attr, ring) in &f.loops {
             let ok = !ring.is_empty()
                 && ring.iter().all(|c| {
-                    t.coedges
+                    t.coedges()
                         .get(c)
                         .is_some_and(|ce| edge_set.contains(&ce.refs[6]))
                 });
@@ -1506,17 +1515,17 @@ fn decode_graph(
                 continue;
             }
             for &ce_attr in ring {
-                let ce = &t.coedges[&ce_attr];
+                let ce = &t.coedges()[&ce_attr];
                 let edge_attr = ce.refs[6];
                 let twin = ce.refs[5];
                 let partner = t
-                    .coedges
+                    .coedges()
                     .get(&twin)
                     .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| CoedgeId::mint(id_coedge(twin)).expect("identity grammar"));
                 annotations
-                    .note(id_coedge(ce_attr), source_stream, ce.offset as u64)
+                    .note(id_coedge(ce_attr), &source_stream, ce.offset as u64)
                     .tag("00_11");
                 let pcurves = edge_ends
                     .get(&edge_attr)
@@ -1540,7 +1549,7 @@ fn decode_graph(
                                 .expect("identity grammar");
                         let offset = curve_carrier.offset;
                         annotations
-                            .note(&id, source_stream, offset as u64)
+                            .note(&id, &source_stream, offset as u64)
                             .tag(match source {
                                 IntersectionPcurveSource::StoredCache => "surface_intersection_uv",
                                 IntersectionPcurveSource::AnalyticInverse => {
@@ -1599,9 +1608,9 @@ fn decode_graph(
                 .iter()
                 .map(|a| CoedgeId::mint(id_coedge(*a)).expect("identity grammar"))
                 .collect();
-            let off = t.loops.get(loop_attr).map_or(0, |r| r.offset);
+            let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations
-                .note(id_loop(*loop_attr), source_stream, off as u64)
+                .note(id_loop(*loop_attr), &source_stream, off as u64)
                 .tag("00_0f");
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
                 continue;
@@ -1623,7 +1632,7 @@ fn decode_graph(
         let mut bridge_shell = HashMap::new();
         for (group, body_record) in body_records.iter().enumerate() {
             for face in faces {
-                let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
+                let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
                 if body_record.refs.contains(&face.bridge_attr)
                     || owner.is_some_and(|owner| body_record.refs.contains(&owner))
                 {
@@ -1658,7 +1667,7 @@ fn decode_graph(
             .loops
             .iter()
             .flat_map(|(_, ring)| ring)
-            .filter_map(|coedge| t.coedges.get(coedge))
+            .filter_map(|coedge| t.coedges().get(coedge))
             .map(|coedge| coedge.refs[6])
             .filter(|edge| *edge != 0)
             .collect();
@@ -1691,18 +1700,18 @@ fn decode_graph(
             continue;
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
-        let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
+        let surf_off = t.bridges().get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr) {
             Some(c) => {
                 surface_orientation_reversed = c.orientation_reversed;
                 annotations
-                    .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
+                    .note(id_surf(f.bridge_attr), &source_stream, c.offset as u64)
                     .tag("compact_surface");
                 let mut geometry = c.geometry.clone();
                 if let Some((u_reference, v_reference)) = c.frame() {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry)?;
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
@@ -1721,7 +1730,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     Some((offset, support))
@@ -1731,7 +1740,7 @@ fn decode_graph(
                         .loops
                         .iter()
                         .flat_map(|(_, ring)| ring)
-                        .filter_map(|coedge| t.coedges.get(coedge))
+                        .filter_map(|coedge| t.coedges().get(coedge))
                         .map(|coedge| coedge.refs[6])
                         .filter(|edge| *edge != 0)
                         .collect();
@@ -1770,7 +1779,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     let second = ensure_surface_support(
@@ -1779,7 +1788,7 @@ fn decode_graph(
                         &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        &source_stream,
                         &mut HashSet::new(),
                     )?;
                     Some((blend, first, second))
@@ -1793,7 +1802,7 @@ fn decode_graph(
                     emit_offset_surface(
                         &mut out,
                         &mut annotations,
-                        source_stream,
+                        &source_stream,
                         SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
                         construction,
                         support,
@@ -1804,7 +1813,7 @@ fn decode_graph(
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(&mut out, carrier);
                             annotations
-                                .note(id_curve(blend.spine), source_stream, carrier.offset as u64)
+                                .note(id_curve(blend.spine), &source_stream, carrier.offset as u64)
                                 .tag("blend_spine");
                         }
                         CurveId::mint(id_curve(blend.spine)).expect("identity grammar")
@@ -1837,7 +1846,7 @@ fn decode_graph(
                         None,
                     ));
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, blend.offset as u64)
                         .tag("00_38");
                     out.surfaces.push(Surface {
                         id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
@@ -1847,14 +1856,14 @@ fn decode_graph(
                             cache: None,
                         },
                     });
-                } else if let Some((geometry, offset, tag, derived)) =
+                } else if let Some((geometry, offset, tag, exactness)) =
                     resolve_sweep_surface(carriers, t, f)
                 {
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, offset as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, offset as u64)
                         .tag(tag);
-                    if derived {
-                        annotations.exactness(id_surf(f.bridge_attr), Exactness::Derived);
+                    if let Some(exactness) = exactness {
+                        annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     out.surfaces.push(Surface {
                         id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
@@ -1864,7 +1873,7 @@ fn decode_graph(
                 } else {
                     out.stats.unknown_surface_faces += 1;
                     annotations
-                        .note(id_surf(f.bridge_attr), source_stream, surf_off as u64)
+                        .note(id_surf(f.bridge_attr), &source_stream, surf_off as u64)
                         .tag("unknown_surface");
                     annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     out.surfaces.push(Surface {
@@ -1876,7 +1885,7 @@ fn decode_graph(
             }
         }
         annotations
-            .note(id_face(f.bridge_attr), source_stream, surf_off as u64)
+            .note(id_face(f.bridge_attr), &source_stream, surf_off as u64)
             .tag("00_0e");
         out.faces.push(Face {
             id: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
@@ -1894,7 +1903,7 @@ fn decode_graph(
             loops: loops.into(),
             name: None,
             color: t
-                .bridges
+                .bridges()
                 .get(&f.bridge_attr)
                 .and_then(|bridge| bridge.owner)
                 .and_then(|owner| {
@@ -1915,7 +1924,7 @@ fn decode_graph(
         appearance.target = faces
             .iter()
             .find(|face| {
-                t.bridges
+                t.bridges()
                     .get(&face.bridge_attr)
                     .and_then(|bridge| bridge.owner)
                     == Some(appearance.face_attr)
@@ -1928,30 +1937,31 @@ fn decode_graph(
         .face_atoms
         .into_iter()
         .filter_map(|atom| {
+            let identity = atom.identity?;
             let face = emitted_faces.get(id_face(atom.face_attr).as_str())?;
             bound_faces
                 .insert(atom.face_attr)
                 .then(|| attrib::FaceAtom {
                     face: (*face).clone(),
-                    identity: atom.identity,
+                    identity,
                 })
         })
         .collect();
     solve_face_orientation(&mut out);
-    synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
-    synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
-    derive_planar_pcurves(&mut out, &mut annotations, source_stream);
-    derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream);
-    derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream);
+    synthesize_cylinder_seams(&mut out, &mut annotations, &source_stream);
+    synthesize_sphere_seams(&mut out, &mut annotations, &source_stream);
+    derive_planar_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_cylindrical_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_revolved_circle_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_spherical_pcurves(&mut out, &mut annotations, &source_stream);
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, &source_stream);
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
-        return Brep {
+        return Ok(Brep {
             stats: out.stats,
             ..Brep::default()
-        };
+        });
     }
     out.stats.synthetic_body_grouping = body_records.is_empty();
 
@@ -1967,7 +1977,7 @@ fn decode_graph(
                 (0, "synthetic_grouping", Exactness::Derived),
                 |(offset, tag)| (offset, tag, Exactness::ByteExact),
             );
-            annotations.note(id, source_stream, offset as u64).tag(tag);
+            annotations.note(id, &source_stream, offset as u64).tag(tag);
             annotations.exactness(id, exactness);
         };
         annotate_group(
@@ -2122,7 +2132,7 @@ fn decode_graph(
         };
         if let Some(carrier) = carriers.curve(attr) {
             annotations
-                .note(&curve.id, source_stream, carrier.offset as u64)
+                .note(&curve.id, &source_stream, carrier.offset as u64)
                 .tag("compact_curve");
             if matches!(curve.geometry, CurveGeometry::Unknown { .. }) {
                 annotations.exactness(&curve.id, Exactness::Unknown);
@@ -2170,7 +2180,7 @@ fn decode_graph(
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
     annotations.retain_exactness(|id| retained_ids.contains(id));
     out.annotations = annotations.build();
-    out
+    Ok(out)
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
@@ -2294,23 +2304,29 @@ fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
     id: &str,
     mut geometry: &SurfaceGeometry,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     loop {
         match geometry {
             SurfaceGeometry::Plane { .. } => {
-                annotations.derived(id.to_owned(), "geometry.u_axis");
+                annotations
+                    .derived(id.to_owned(), "geometry.u_axis")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Cylinder { .. }
             | SurfaceGeometry::Cone { .. }
             | SurfaceGeometry::Torus { .. } => {
-                annotations.derived(id.to_owned(), "geometry.ref_direction");
+                annotations
+                    .derived(id.to_owned(), "geometry.ref_direction")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Sphere { .. } => {
                 annotations
                     .derived(id, "geometry.axis")
-                    .derived(id.to_owned(), "geometry.ref_direction");
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .derived(id.to_owned(), "geometry.ref_direction")
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
             SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
@@ -2320,12 +2336,13 @@ fn annotate_surface_frame(
             | SurfaceGeometry::Unknown { .. } => break,
         }
     }
+    Ok(())
 }
 
 fn derive_planar_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -2514,7 +2531,7 @@ fn derive_planar_pcurves(
 fn derive_cylindrical_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3065,7 +3082,7 @@ fn circle_azimuth_parameter(
 fn derive_revolved_circle_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3224,7 +3241,7 @@ fn derive_revolved_circle_pcurves(
 fn derive_spherical_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -3361,7 +3378,7 @@ fn derive_spherical_pcurves(
 fn derive_nurbs_isoparametric_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let loop_faces: HashMap<_, _> = out
         .loops
@@ -4832,7 +4849,7 @@ fn solve_face_orientation(out: &mut Brep) {
 fn synthesize_cylinder_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let surfaces: HashMap<_, _> = out
         .surfaces
@@ -5018,7 +5035,7 @@ fn synthesize_cylinder_seams(
 fn synthesize_sphere_seams(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
     let surface_geometry = out
         .surfaces
@@ -5436,10 +5453,8 @@ mod tests {
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables.loops.insert(20, loop_record(20, [0, 40, 11, 0]));
-        tables
-            .coedges
-            .insert(40, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
+        tables.insert_loop(loop_record(20, [0, 40, 11, 0]));
+        tables.insert_coedge(coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5450,10 +5465,8 @@ mod tests {
     fn face_walk_rejects_a_ring_owned_by_another_loop() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables.loops.insert(20, loop_record(20, [0, 40, 10, 0]));
-        tables
-            .coedges
-            .insert(40, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
+        tables.insert_loop(loop_record(20, [0, 40, 10, 0]));
+        tables.insert_coedge(coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5471,12 +5484,7 @@ mod tests {
             color_attr,
             face_seq,
             stream_order: 0,
-            color: Color {
-                r: rgb[0],
-                g: rgb[1],
-                b: rgb[2],
-                a: 1.0,
-            },
+            color: Color::new(rgb[0], rgb[1], rgb[2], 1.0).expect("valid color"),
             offset: usize::from(face_attr),
             target: None,
         }
@@ -5952,7 +5960,7 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(&[], "empty");
+        let decoded = super::decode_body(&[], "empty").expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
@@ -6007,17 +6015,14 @@ mod tests {
             }],
         };
         let mut tables = Tables::default();
-        tables.bridges.insert(
-            100,
-            Bridge {
-                attr: 100,
-                sequence: 0,
-                refs: [1, 1, 49, 7, 8],
-                sense: Sense::Forward,
-                owner: None,
-                offset: 11,
-            },
-        );
+        tables.insert_bridge(Bridge {
+            attr: 100,
+            sequence: 0,
+            refs: [1, 1, 49, 7, 8],
+            sense: Sense::Forward,
+            owner: None,
+            offset: 11,
+        });
 
         let records = super::typed_body_records(&facts, &tables).expect("typed body records");
         assert_eq!(records.len(), 1);
@@ -6046,10 +6051,10 @@ mod tests {
             offset,
         };
         let mut tables = super::topology::Tables::default();
-        tables.bridges.insert(10, bridge(10, 100, 20));
-        tables.bridges.insert(11, bridge(11, 200, 10));
+        tables.insert_bridge(bridge(10, 100, 20));
+        tables.insert_bridge(bridge(11, 200, 10));
         let decoded = super::decode_graph(
-            &super::CarrierIndex::default(),
+            &crate::brep::index::CarrierIndex::default(),
             &tables,
             super::entity::Facts {
                 entity_count: 1,
@@ -6057,7 +6062,8 @@ mod tests {
             },
             &super::typed::Facts::default(),
             "empty",
-        );
+        )
+        .expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
         assert_eq!(decoded.stats.ambiguous_face_owners, 1);
@@ -6622,7 +6628,7 @@ mod tests {
         };
         let mut annotations = AnnotationBuilder::new();
         let source_stream = annotations.stream("test");
-        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, source_stream);
+        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, &source_stream);
 
         assert!(brep.pcurves.is_empty());
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);

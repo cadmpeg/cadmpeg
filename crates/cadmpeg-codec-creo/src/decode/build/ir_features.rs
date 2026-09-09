@@ -105,11 +105,11 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
@@ -145,11 +145,11 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 if scan
@@ -268,7 +268,7 @@ pub(super) fn emit_model_features(
                 operation.offset >= section.offset
                     && operation.offset < section.offset.saturating_add(section.length)
             })
-            .map_or("MdlStatus", |section| section.name.as_str());
+            .map_or("MdlStatus", |section| section.name());
         let name = current_operation.and_then(|operation| {
             operation.display_name_stored().then_some(())?;
             let stored_name = operation.stored_name()?;
@@ -357,7 +357,7 @@ pub(super) fn emit_model_features(
             source_properties,
             source_tag,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -453,7 +453,7 @@ pub(super) fn emit_model_features(
             source_properties,
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,

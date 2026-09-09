@@ -205,7 +205,14 @@ pub struct InlineBodyState {
 
 /// Result of a deterministic deltas record walk.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Census {
+pub(crate) struct Census {
+    events: CensusEvents,
+    bytes_decoded: usize,
+}
+
+/// Admitted events released by a completed census.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct CensusEvents {
     /// Complete stream transmit header.
     pub transmit_header: Option<TransmitHeader>,
     /// Complete null-reference stream trailer.
@@ -234,11 +241,25 @@ pub struct Census {
     pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete schema-bound type-12 BODY states in source order.
     pub inline_body_states: Vec<InlineBodyState>,
-    /// Sum of all admitted event bytes.
-    pub bytes_decoded: usize,
+}
+
+impl std::ops::Deref for Census {
+    type Target = CensusEvents;
+
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
 }
 
 impl Census {
+    pub(crate) fn bytes_decoded(&self) -> usize {
+        self.bytes_decoded
+    }
+
+    pub(crate) fn into_events(self) -> CensusEvents {
+        self.events
+    }
+
     /// Complete-record counts keyed by Parasolid family name.
     pub fn full_counts(&self) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
@@ -515,7 +536,7 @@ const COMPOSITE_CURVE: &[Token] = &[
 
 /// Walk all accepted records, revisions, tombstones, and numeric tails in an
 /// inflated deltas stream.
-pub fn walk(stream: &[u8]) -> Census {
+pub(crate) fn walk(stream: &[u8]) -> Census {
     let transmit_header = transmit_header(stream);
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
     let terminal_null_references = TerminalNullReferences::at_end(stream);
@@ -523,10 +544,12 @@ pub fn walk(stream: &[u8]) -> Census {
         .as_ref()
         .map_or(0, |trailer| trailer.end() - trailer.offset());
     let mut census = Census {
-        transmit_header,
-        terminal_null_references,
+        events: CensusEvents {
+            transmit_header,
+            terminal_null_references,
+            ..CensusEvents::default()
+        },
         bytes_decoded: header_byte_len + trailer_byte_len,
-        ..Census::default()
     };
     let mut offset = census
         .transmit_header
@@ -542,14 +565,14 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;
-            census.schema_reference_preambles.push(preamble);
+            census.events.schema_reference_preambles.push(preamble);
             continue;
         }
         if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
-            census.inline_schema_declarations.push(declaration);
+            census.events.inline_schema_declarations.push(declaration);
             continue;
         }
         if let Some(map) =
@@ -558,7 +581,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
             value_boundary = true;
-            census.reference_type_maps.push(map);
+            census.events.reference_type_maps.push(map);
             continue;
         }
         let complete_record = consume_shared_record(
@@ -580,7 +603,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - offset;
             offset = record.end;
             value_boundary = true;
-            census.records.push(record);
+            census.events.records.push(record);
             continue;
         }
         let Some(kind) = View::u16_be_at(stream, offset) else {
@@ -596,7 +619,7 @@ pub fn walk(stream: &[u8]) -> Census {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 value_boundary = true;
-                census.body_revisions.push(revision);
+                census.events.body_revisions.push(revision);
                 continue;
             }
         }
@@ -630,7 +653,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             offset = record.end;
             value_boundary = true;
-            census.records.push(record);
+            census.events.records.push(record);
             continue;
         }
         if let Some(xmt) = (kind != 98)
@@ -638,7 +661,7 @@ pub fn walk(stream: &[u8]) -> Census {
             .flatten()
         {
             if xmt > 1 {
-                census.tombstones.push(Tombstone {
+                census.events.tombstones.push(Tombstone {
                     kind: record_kind,
                     xmt,
                     offset,
@@ -652,19 +675,20 @@ pub fn walk(stream: &[u8]) -> Census {
         offset += 1;
         value_boundary = false;
     }
-    census.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    census.events.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
     census.bytes_decoded += census
         .term_use_numeric_tails
         .iter()
         .map(|tail| tail.values().byte_len())
         .sum::<usize>();
-    populate_gap_events(stream, &mut census);
+    census.bytes_decoded += populate_gap_events(stream, &mut census);
     let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
     census.bytes_decoded += body_revision_state_bytes;
     census
 }
 
-fn populate_gap_events(stream: &[u8], census: &mut Census) {
+fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
+    let mut admitted_bytes = 0;
     loop {
         let covered_before = merged_event_spans(census, true)
             .into_iter()
@@ -672,64 +696,82 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
             .sum::<usize>();
 
         let lanes = tagged_reference_lanes(stream, census);
-        census.tagged_reference_lanes.extend(lanes);
+        census.events.tagged_reference_lanes.extend(lanes);
 
         let maps = reference_type_maps(stream, census);
-        census.reference_type_maps.extend(maps);
+        census.events.reference_type_maps.extend(maps);
 
         let state_packets = reference_state_packets(stream, census);
-        census.reference_state_packets.extend(state_packets);
+        census.events.reference_state_packets.extend(state_packets);
 
         let preambles = schema_reference_preambles(stream, census);
-        census.schema_reference_preambles.extend(preambles);
+        census.events.schema_reference_preambles.extend(preambles);
 
         let declarations = inline_schema_declarations(stream, census);
-        census.inline_schema_declarations.extend(declarations);
+        census
+            .events
+            .inline_schema_declarations
+            .extend(declarations);
 
         let body_states = inline_body_states(stream, census);
-        census.inline_body_states.extend(body_states);
+        census.events.inline_body_states.extend(body_states);
 
         let marker_packets = reference_marker_packets(stream, census);
-        census.reference_marker_packets.extend(marker_packets);
+        census
+            .events
+            .reference_marker_packets
+            .extend(marker_packets);
 
         let type_150_packets = type_150_state_packets(stream, census);
-        census.type_150_state_packets.extend(type_150_packets);
+        census
+            .events
+            .type_150_state_packets
+            .extend(type_150_packets);
 
         let covered_after = merged_event_spans(census, true)
             .into_iter()
             .map(|(start, end)| end - start)
             .sum::<usize>();
         let added_bytes = covered_after - covered_before;
-        census.bytes_decoded += added_bytes;
+        admitted_bytes += added_bytes;
         if added_bytes == 0 {
             break;
         }
     }
 
     census
+        .events
         .tagged_reference_lanes
         .sort_unstable_by_key(|lane| lane.offset);
     census
+        .events
         .reference_type_maps
         .sort_unstable_by_key(|map| map.offset);
     census
+        .events
         .reference_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
     census
+        .events
         .schema_reference_preambles
         .sort_unstable_by_key(|preamble| preamble.offset);
     census
+        .events
         .inline_schema_declarations
         .sort_unstable_by_key(|declaration| declaration.offset);
     census
+        .events
         .inline_body_states
         .sort_unstable_by_key(|state| state.offset);
     census
+        .events
         .reference_marker_packets
         .sort_unstable_by_key(|packet| packet.offset);
     census
+        .events
         .type_150_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
+    admitted_bytes
 }
 
 fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
@@ -781,7 +823,7 @@ fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usi
         .collect::<Vec<_>>();
     let mut byte_len = 0;
     for (index, start, end) in tails {
-        let revision = &mut census.body_revisions[index];
+        let revision = &mut census.events.body_revisions[index];
         revision.end = end;
         byte_len += end - start;
     }
@@ -2922,8 +2964,15 @@ fn consume_intersection_data(
         offset,
         intersection_schema_anchor_seen,
     )?;
-    let mut references = curve.header_references.to_vec();
-    references.extend(curve.references);
+    let mut references = curve
+        .header_references
+        .map(crate::framing::xmt_reference::XmtTarget::to_wire)
+        .to_vec();
+    references.extend(
+        curve
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+    );
     Some(Record {
         family: RecordFamily::IntersectionData {
             references: references.try_into().ok()?,
@@ -3892,19 +3941,22 @@ mod inline_schema_tests {
         let shared_offset = declaration_end - 33;
         stream.extend_from_slice(&[0; 3]);
         let census = Census {
-            tagged_reference_lanes: vec![
-                TaggedReferenceLane {
-                    references: vec![(79, 2)].try_into().unwrap(),
-                    offset: shared_offset,
-                    end: shared_offset + 16,
-                },
-                TaggedReferenceLane {
-                    references: vec![(79, 2)].try_into().unwrap(),
-                    offset: declaration_end,
-                    end: stream.len(),
-                },
-            ],
-            ..Census::default()
+            events: CensusEvents {
+                tagged_reference_lanes: vec![
+                    TaggedReferenceLane {
+                        references: vec![(79, 2)].try_into().unwrap(),
+                        offset: shared_offset,
+                        end: shared_offset + 16,
+                    },
+                    TaggedReferenceLane {
+                        references: vec![(79, 2)].try_into().unwrap(),
+                        offset: declaration_end,
+                        end: stream.len(),
+                    },
+                ],
+                ..CensusEvents::default()
+            },
+            bytes_decoded: 16 + stream.len() - declaration_end,
         };
         let declarations = inline_schema_declarations(&stream, &census);
 
@@ -4360,7 +4412,10 @@ mod transmit_header_tests {
         ] {
             let bytes = header(references);
             let census = walk(&bytes);
-            let parsed = census.transmit_header.expect("complete transmit header");
+            let parsed = census
+                .transmit_header
+                .as_ref()
+                .expect("complete transmit header");
             assert_eq!(parsed.state.references(), expected);
             assert_eq!(parsed.state.schema(), "SCH_3501171_35102_13006");
             assert_eq!(parsed.end, bytes.len());

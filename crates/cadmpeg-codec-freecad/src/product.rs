@@ -57,9 +57,18 @@ pub(crate) fn transfer(
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?;
         let placement = selected_placement(&owned)?;
-        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
+        let local_transform = placement
+            .map(placement_matrix)
+            .transpose()?
+            .flatten()
+            .map(crate::native::frame::FiniteFrame::try_from)
+            .transpose()
+            .map_err(malformed)?;
         let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count = integer_property(&owned, "ElementCount")?;
+        let element_count = integer_property(&owned, "ElementCount")?
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(&owned)?;
         let copy_on_change_source = linked_object(
@@ -71,7 +80,10 @@ pub(crate) fn transfer(
         let copy_on_change_group =
             linked_object(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?;
+        let scale = scale_property(&owned)?
+            .map(crate::native::frame::FiniteVec3::try_from)
+            .transpose()
+            .map_err(malformed)?;
         let element_visibility_count = bool_list_count(&owned, "VisibilityList")?;
         if let Some(count) = element_count {
             let count = usize::try_from(count).map_err(|_| {
@@ -106,10 +118,14 @@ pub(crate) fn transfer(
                 external_document: prototype_link.and_then(|link| link.document.clone()),
                 local_transform,
                 placement_property,
-                element_count,
+                array: crate::native::LinkArray::try_new(
+                    element_count,
+                    parse_placement_list(&owned, entries)?,
+                    parse_vector_list(&owned, entries)?,
+                    element_objects,
+                )
+                .map_err(malformed)?,
                 link_transform,
-                element_transforms: parse_placement_list(&owned, entries)?,
-                element_scales: parse_vector_list(&owned, entries)?,
                 linked_subelements: prototype_link
                     .map(|link| {
                         link.subelements
@@ -120,12 +136,14 @@ pub(crate) fn transfer(
                     })
                     .unwrap_or_default(),
                 claim_child,
-                copy_on_change,
-                copy_on_change_source,
-                copy_on_change_group,
-                copy_on_change_touched,
+                copy_on_change: crate::native::CopyOnChange::from_wire(
+                    copy_on_change,
+                    copy_on_change_source,
+                    copy_on_change_group,
+                    copy_on_change_touched,
+                )
+                .map_err(malformed)?,
                 scale,
-                element_objects,
             }),
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
@@ -212,7 +230,7 @@ pub(crate) fn transfer_neutral(
             .flat_map(|joint| joint.references().into_iter().cloned())
             .filter(|reference| reference.document.is_none())
             .filter_map(|reference| reference.object().map(str::to_owned))
-            .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),
+            .filter(|object| !occurrence_objects.contains(object.as_str())),
     );
     component_objects.sort();
     component_objects.dedup();
@@ -306,26 +324,12 @@ pub(crate) fn transfer_neutral(
                     .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
             });
             let scale = [x?, y?, z?];
-            let copy_on_change = match record.copy_on_change() {
-                Some(policy) => Some(CopyOnChange {
-                    policy: copy_on_change_policy(policy),
-                    source: record.copy_on_change_source().map(definition_id),
-                    group: record.copy_on_change_group().map(definition_id),
-                    touched: record.copy_on_change_touched(),
-                }),
-                None if record.copy_on_change_source().is_none()
-                    && record.copy_on_change_group().is_none()
-                    && record.copy_on_change_touched().is_none() =>
-                {
-                    None
-                }
-                None => {
-                    return Err(CodecError::malformed(format_args!(
-                        "App::Link {} has copy-on-change payload without a policy",
-                        record.object
-                    )));
-                }
-            };
+            let copy_on_change = record.copy_on_change().map(|policy| CopyOnChange {
+                policy: copy_on_change_policy(policy),
+                source: record.copy_on_change_source().map(definition_id),
+                group: record.copy_on_change_group().map(definition_id),
+                touched: record.copy_on_change_touched(),
+            });
             occurrences.push(Occurrence {
                 id: OccurrenceId::mint(crate::native::model_id(
                     "occurrence",
@@ -498,7 +502,7 @@ fn linked_prototype_transform(
     placements: &HashMap<&str, [[f64; 4]; 4]>,
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
-    let _depth = ctx.enter_nested("resolve FCStd nested link transform", None)?;
+    let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
         return Ok(identity());
     }
@@ -530,7 +534,10 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .map(usize::try_from)
         .transpose()
         .map_err(|_| {
-            CodecError::malformed(format_args!("{} has negative element count", record.id))
+            CodecError::malformed(format_args!(
+                "{} element count exceeds addressable size",
+                record.id
+            ))
         })?;
     let count = declared_count.unwrap_or_else(|| {
         [
@@ -546,19 +553,6 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
     if count > 1_000_000 || u32::try_from(count).is_err() {
         return Err(CodecError::malformed(format_args!(
             "{} link-array count limit exceeded",
-            record.id
-        )));
-    }
-    if [
-        record.element_transforms().len(),
-        record.element_scales().len(),
-        record.element_objects().len(),
-    ]
-    .into_iter()
-    .any(|length| length != 0 && length != count)
-    {
-        return Err(CodecError::malformed(format_args!(
-            "{} has inconsistent link-array counts",
             record.id
         )));
     }
@@ -873,7 +867,7 @@ fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String>
     if property.type_name != "App::PropertyString" {
         return None;
     }
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
     let root = document.root_element();
     if !root.has_tag_name("Property") {
         return None;

@@ -15,7 +15,10 @@ use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, WrapMode};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement, SpatialSketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
+    SpatialSketchGeometryDefinition,
+};
 use cadmpeg_ir::transform::{Transform, Transform2};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
@@ -60,10 +63,10 @@ pub(super) fn normalize_model_lengths(
         scale_point3(&mut point.position, length_scale_mm);
     }
     for face in &mut ir.model.faces {
-        scale_optional(&mut face.tolerance, length_scale_mm);
+        scale_tolerance(&mut face.tolerance, length_scale_mm)?;
     }
     for vertex in &mut ir.model.vertices {
-        scale_optional(&mut vertex.tolerance, length_scale_mm);
+        scale_tolerance(&mut vertex.tolerance, length_scale_mm)?;
     }
 
     let curve_parameter_scales = ir
@@ -76,7 +79,7 @@ pub(super) fn normalize_model_lengths(
         })
         .collect::<BTreeMap<_, _>>();
     for edge in &mut ir.model.edges {
-        scale_optional(&mut edge.tolerance, length_scale_mm);
+        scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
         if let (Some(range), Some(scale)) = (
             edge.param_range.as_mut(),
             edge.curve
@@ -106,10 +109,24 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for tessellation in &mut ir.model.tessellations {
-        for vertex in tessellation.vertices_mut() {
-            scale_point3(vertex, length_scale_mm);
-        }
-        scale_optional(&mut tessellation.chordal_deflection, length_scale_mm);
+        tessellation
+            .edit_vertices(|vertices| {
+                for vertex in vertices {
+                    scale_point3(vertex, length_scale_mm);
+                }
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
+            })?;
+        tessellation
+            .set_chordal_deflection(
+                tessellation
+                    .chordal_deflection()
+                    .map(|value| value * length_scale_mm),
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
+            })?;
     }
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();
@@ -136,8 +153,10 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for sketch in &mut ir.model.sketches {
-        if let SketchPlacement::Resolved { origin, .. } = &mut sketch.placement {
-            scale_point3(origin, length_scale_mm);
+        if let Some((mut origin, normal, u_axis)) = sketch.resolved_placement() {
+            scale_point3(&mut origin, length_scale_mm);
+            sketch.placement = SketchPlacement::try_resolved(origin, normal, u_axis)
+                .map_err(CodecError::malformed)?;
         }
     }
     for entity in &mut ir.model.sketch_entities {
@@ -145,25 +164,40 @@ pub(super) fn normalize_model_lengths(
     }
     for sketch in &mut ir.model.spatial_sketches {
         for profile in &mut sketch.profiles {
-            scale_point3(&mut profile.origin, length_scale_mm);
+            let mut origin = profile.origin();
+            scale_point3(&mut origin, length_scale_mm);
+            profile.set_origin(origin).map_err(CodecError::malformed)?;
         }
     }
     for entity in &mut ir.model.spatial_sketch_entities {
         scale_spatial_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
     }
     for constraint in &mut ir.model.sketch_constraints {
-        scale_sketch_constraint_definition(&mut constraint.definition, length_scale_mm)?;
+        constraint
+            .definition
+            .edit(|kind| scale_sketch_constraint_definition(kind, length_scale_mm))
+            .map_err(cadmpeg_core::CodecError::malformed)??;
     }
     for constraint in &mut ir.model.spatial_sketch_constraints {
-        scale_spatial_sketch_constraint_definition(&mut constraint.definition, length_scale_mm)?;
+        constraint
+            .definition
+            .edit(|kind| scale_spatial_sketch_constraint_definition(kind, length_scale_mm))
+            .map_err(cadmpeg_core::CodecError::malformed)??;
     }
     Ok(())
 }
 
-fn scale_optional(value: &mut Option<f64>, scale: f64) {
-    if let Some(value) = value.as_mut() {
-        *value *= scale;
+fn scale_tolerance(
+    value: &mut Option<cadmpeg_ir::units::PositiveScalar>,
+    scale: f64,
+) -> Result<(), CodecError> {
+    if let Some(current) = value {
+        *current =
+            cadmpeg_ir::units::PositiveScalar::new(current.get() * scale).ok_or_else(|| {
+                CodecError::malformed("scaled topology tolerance must be positive and finite")
+            })?;
     }
+    Ok(())
 }
 
 fn scale_pair(values: &mut [f64; 2], scale: f64) {
@@ -259,7 +293,7 @@ fn scale_optional_length(
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let Some(length) = length.as_mut() {
         scale_length(length, scale)?;
-    };
+    }
     Ok(())
 }
 
@@ -631,25 +665,26 @@ fn scale_feature_definition(
             }
         }
         FeatureDefinition::Shell { thickness, .. } => {
-            scale_optional_positive_length(thickness, scale)?
+            scale_optional_positive_length(thickness, scale)?;
         }
         FeatureDefinition::OffsetShape { distance, .. } => scale_nonzero_length(distance, scale)?,
         FeatureDefinition::Thicken { thickness, .. } => {
-            scale_optional_positive_length(thickness, scale)?
+            scale_optional_positive_length(thickness, scale)?;
         }
         FeatureDefinition::OffsetSurface { distance, .. } => {
-            scale_optional_length(distance, scale)?
+            scale_optional_length(distance, scale)?;
         }
-        FeatureDefinition::KnitSurface { gap_tolerance, .. } => {
-            if let Some(gap) = gap_tolerance {
-                scale_nonnegative_length(gap, scale)?;
-            }
+        FeatureDefinition::KnitSurface {
+            gap_tolerance: Some(gap),
+            ..
+        } => {
+            scale_nonnegative_length(gap, scale)?;
         }
         FeatureDefinition::SewBodies { gap_tolerance, .. } => {
-            scale_optional_positive_length(gap_tolerance, scale)?
+            scale_optional_positive_length(gap_tolerance, scale)?;
         }
         FeatureDefinition::ExtendSurface { distance, .. } => {
-            scale_optional_positive_length(distance, scale)?
+            scale_optional_positive_length(distance, scale)?;
         }
         FeatureDefinition::RuledSurface { mode, .. } => scale_ruled_surface_mode(mode, scale)?,
         FeatureDefinition::Draft { .. } => {}
@@ -709,7 +744,7 @@ fn scale_feature_definition(
             scale_fuzzy_tolerance(fuzzy_tolerance, scale)?;
         }
         _ => {}
-    };
+    }
     Ok(())
 }
 
@@ -800,7 +835,7 @@ fn scale_primitive_solid(
                 scale_length(length, scale)?;
             }
         }
-    };
+    }
     *solid =
         PrimitiveSolid::new(candidate).map_err(|message| CodecError::Malformed(message.into()))?;
     Ok(())
@@ -820,7 +855,7 @@ fn scale_sweep_section(
         scale_optional_positive_length(&mut wall_thickness, scale)?;
         *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
             .map_err(CodecError::malformed)?;
-    };
+    }
     Ok(())
 }
 
@@ -868,7 +903,7 @@ fn scale_coil_construction(
         | cadmpeg_ir::features::CoilSection::InternalTriangle { size: diameter } => {
             scale_positive_length(diameter, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -882,7 +917,7 @@ fn scale_extrude_start(
         ExtrudeStart::OffsetProfilePlane { offset } => scale_length(offset, scale)?,
         ExtrudeStart::FromFace { offset, .. } => scale_optional_length(offset, scale)?,
         ExtrudeStart::Unresolved | ExtrudeStart::ProfilePlane => {}
-    };
+    }
     Ok(())
 }
 
@@ -908,7 +943,7 @@ fn scale_extrude_extent(
             scale_extrude_side(first, scale)?;
             scale_extrude_side(second, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -926,7 +961,7 @@ fn scale_revolve_extent(
             scale_angular_termination(first, scale)?;
             scale_angular_termination(second, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -947,7 +982,7 @@ fn scale_linear_termination(
         | LinearTermination::ToLast
         | LinearTermination::ToVertex { .. }
         | LinearTermination::ToShape { .. } => {}
-    };
+    }
     Ok(())
 }
 
@@ -968,7 +1003,7 @@ fn scale_angular_termination(
         | AngularTermination::ToVertex { .. }
         | AngularTermination::ToShape { .. }
         | AngularTermination::Angle { .. } => {}
-    };
+    }
     Ok(())
 }
 
@@ -1004,7 +1039,7 @@ fn scale_sheet_metal_flange_width(
             }
         }
         SheetMetalFlangeWidth::FullEdge => {}
-    };
+    }
     Ok(())
 }
 
@@ -1031,7 +1066,7 @@ fn scale_sheet_metal_hem_form(
             scale_positive_length(length, scale)?;
             scale_positive_length(radius, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -1066,7 +1101,7 @@ fn scale_radius_spec(
         | RadiusSpec::UnresolvedChordal
         | RadiusSpec::UnresolvedAsymmetric
         | RadiusSpec::UnresolvedVariable => {}
-    };
+    }
     Ok(())
 }
 
@@ -1088,7 +1123,7 @@ fn scale_chamfer_spec(
         | ChamferSpec::UnresolvedDistance
         | ChamferSpec::UnresolvedTwoDistances
         | ChamferSpec::UnresolvedDistanceAngle => {}
-    };
+    }
     Ok(())
 }
 
@@ -1102,7 +1137,7 @@ fn scale_ruled_surface_mode(
         RuledSurfaceMode::Normal { distance }
         | RuledSurfaceMode::Tangent { distance }
         | RuledSurfaceMode::Direction { distance, .. } => scale_positive_length(distance, scale)?,
-    };
+    }
     Ok(())
 }
 
@@ -1118,7 +1153,7 @@ fn scale_face_motion(
         cadmpeg_ir::features::FaceMotion::Rotate { axis_origin, .. } => {
             scale_finite_point3(axis_origin, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -1132,7 +1167,7 @@ fn scale_flex_mode(
         FlexMode::Unresolved(_) => {}
         FlexMode::Stretching { distance } => scale_length(distance, scale)?,
         FlexMode::Bending { .. } | FlexMode::Twisting { .. } | FlexMode::Tapering { .. } => {}
-    };
+    }
     Ok(())
 }
 
@@ -1185,7 +1220,7 @@ fn scale_hole_kind(
             scale_positive_length(depth, scale)?;
         }
         HoleKind::Simple | HoleKind::SimpleDrilled { .. } => {}
-    };
+    }
     Ok(())
 }
 
@@ -1213,7 +1248,7 @@ fn scale_hole_construction(
             scale_positive_length(thread_depth, scale)?;
             scale_optional_positive_length(pitch, scale)?;
         }
-    };
+    }
     Ok(())
 }
 
@@ -1242,7 +1277,7 @@ fn scale_hole_specification(
     scale_optional_length(clearance, scale)?;
     if let cadmpeg_ir::features::HoleThreadDepth::Blind { depth } = depth {
         scale_positive_length(depth, scale)?;
-    };
+    }
     Ok(())
 }
 
@@ -1289,7 +1324,7 @@ fn scale_pattern_kind(
         | PatternTransform::UnresolvedScale
         | PatternTransform::UnresolvedComposite
         | PatternTransform::MirrorReference { .. } => {}
-    };
+    }
     *pattern = cadmpeg_ir::features::PatternKind::new(transform)
         .map_err(|message| CodecError::Malformed(message.into()))?;
     Ok(())
@@ -1738,28 +1773,29 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
 }
 
 fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<(), CodecError> {
-    match geometry {
-        SketchGeometry::Point { position } => scale_point2(position, scale),
-        SketchGeometry::Line { start, end } => {
+    let mut definition = geometry.definition().clone();
+    match &mut definition {
+        SketchGeometryDefinition::Point { position } => scale_point2(position, scale),
+        SketchGeometryDefinition::Line { start, end } => {
             scale_point2(start, scale);
             scale_point2(end, scale);
         }
-        SketchGeometry::ReferenceLine { origin, .. } => scale_point2(origin, scale),
-        SketchGeometry::Circle { center, radius } => {
+        SketchGeometryDefinition::ReferenceLine { origin, .. } => scale_point2(origin, scale),
+        SketchGeometryDefinition::Circle { center, radius } => {
             scale_point2(center, scale);
             scale_length(radius, scale)?;
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometryDefinition::Arc { center, radius, .. } => {
             scale_point2(center, scale);
             scale_length(radius, scale)?;
         }
-        SketchGeometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_radius,
             minor_radius,
             ..
         }
-        | SketchGeometry::Hyperbola {
+        | SketchGeometryDefinition::Hyperbola {
             center,
             major_radius,
             minor_radius,
@@ -1769,7 +1805,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             scale_length(major_radius, scale)?;
             scale_length(minor_radius, scale)?;
         }
-        SketchGeometry::Parabola {
+        SketchGeometryDefinition::Parabola {
             vertex,
             focal_length,
             ..
@@ -1777,7 +1813,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             scale_point2(vertex, scale);
             scale_length(focal_length, scale)?;
         }
-        SketchGeometry::Nurbs { curve } => {
+        SketchGeometryDefinition::Nurbs { curve } => {
             curve
                 .edit_control_points(|points| {
                     for point in points {
@@ -1790,7 +1826,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
                     ))
                 })?;
         }
-        SketchGeometry::Text {
+        SketchGeometryDefinition::Text {
             height, placement, ..
         } => {
             scale_length(height, scale)?;
@@ -1798,8 +1834,10 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
                 scale_point2(&mut placement.anchor, scale);
             }
         }
-        SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => {}
+        SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => {}
     }
+    *geometry = definition.try_into().map_err(CodecError::malformed)?;
     Ok(())
 }
 
@@ -1807,18 +1845,19 @@ fn scale_spatial_sketch_geometry(
     geometry: &mut SpatialSketchGeometry,
     scale: f64,
 ) -> Result<(), CodecError> {
-    match geometry {
-        SpatialSketchGeometry::Point { position } => scale_point3(position, scale),
-        SpatialSketchGeometry::Line { start, end } => {
+    let mut definition = geometry.definition().clone();
+    match &mut definition {
+        SpatialSketchGeometryDefinition::Point { position } => scale_point3(position, scale),
+        SpatialSketchGeometryDefinition::Line { start, end } => {
             scale_point3(start, scale);
             scale_point3(end, scale);
         }
-        SpatialSketchGeometry::Circle { center, radius, .. }
-        | SpatialSketchGeometry::Arc { center, radius, .. } => {
+        SpatialSketchGeometryDefinition::Circle { center, radius, .. }
+        | SpatialSketchGeometryDefinition::Arc { center, radius, .. } => {
             scale_point3(center, scale);
             scale_length(radius, scale)?;
         }
-        SpatialSketchGeometry::Nurbs { curve } => {
+        SpatialSketchGeometryDefinition::Nurbs { curve } => {
             curve
                 .edit_control_points(|points| {
                     for point in points {
@@ -1831,52 +1870,54 @@ fn scale_spatial_sketch_geometry(
                     ))
                 })?;
         }
-        SpatialSketchGeometry::NurbsSurface { surface } => {
+        SpatialSketchGeometryDefinition::NurbsSurface { surface } => {
             for point in surface.control_points_mut() {
                 scale_point3(point, scale);
             }
         }
-        SpatialSketchGeometry::Native { .. } => {}
+        SpatialSketchGeometryDefinition::Native { .. } => {}
     }
+    *geometry = definition.try_into().map_err(CodecError::malformed)?;
     Ok(())
 }
 
 fn scale_sketch_constraint_definition(
-    definition: &mut cadmpeg_ir::sketches::SketchConstraintDefinition,
+    definition: &mut cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
     match definition {
-        SketchConstraintDefinition::PointCoordinateValues { values, .. } => {
+        SketchConstraintDefinitionInput::PointCoordinateValues { values, .. } => {
             for value in values {
                 scale_length(value, scale)?;
             }
         }
-        SketchConstraintDefinition::MidpointCoordinate { value, .. }
-        | SketchConstraintDefinition::DistanceLociValue {
+        SketchConstraintDefinitionInput::MidpointCoordinate { value, .. }
+        | SketchConstraintDefinitionInput::DistanceLociValue {
             distance: value, ..
         }
-        | SketchConstraintDefinition::PolarDistance {
+        | SketchConstraintDefinitionInput::PolarDistance {
             distance: value, ..
         }
-        | SketchConstraintDefinition::Offset {
+        | SketchConstraintDefinitionInput::Offset {
             distance: value, ..
         } => scale_length(value, scale)?,
         _ => {}
-    };
+    }
     Ok(())
 }
 
 fn scale_spatial_sketch_constraint_definition(
-    definition: &mut cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+    definition: &mut cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Offset { distance, .. } =
-        definition
+    if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Offset {
+        distance, ..
+    } = definition
     {
         scale_length(distance, scale)?;
-    };
+    }
     Ok(())
 }
 
@@ -1896,25 +1937,27 @@ mod tests {
     fn scales_model_geometry_and_feature_dimensions() {
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("feature").expect("identity grammar"),
+            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
+                .expect("identity grammar"),
             0,
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Unresolved("profile".into()),
                 direction: ExtrudeDirection::ProfileNormal,
                 start: ExtrudeStart::OffsetProfilePlane {
-                    offset: Length::new(2.0).unwrap(),
+                    offset: Length::new(2.0).expect("finite length fixture"),
                 },
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::features::NonZeroLength::new(3.0).unwrap(),
+                            length: cadmpeg_ir::features::NonZeroLength::new(3.0)
+                                .expect("nonzero length fixture"),
                         },
                         draft: None,
                     },
                     second: ExtrudeSide {
                         termination: LinearTermination::ToFace {
                             face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
-                            offset: Some(Length::new(4.0).unwrap()),
+                            offset: Some(Length::new(4.0).expect("finite length fixture")),
                         },
                         draft: None,
                     },
@@ -1930,14 +1973,17 @@ mod tests {
         ir.model
             .parameters
             .push(cadmpeg_ir::features::DesignParameter {
-                id: cadmpeg_ir::features::ParameterId::mint("length").expect("identity grammar"),
+                id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
+                    .expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "length".into(),
                 expression: "2".into(),
                 display: None,
-                value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-                dependencies: Default::default(),
+                value: Some(ParameterValue::Length(
+                    Length::new(5.0).expect("finite length fixture"),
+                )),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: None,
@@ -2007,10 +2053,10 @@ mod tests {
             direction: cadmpeg_ir::features::FeatureDirection3::new(
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
-            distance: Length::new(2.0).unwrap(),
+            .expect("valid direction fixture"),
+            distance: Length::new(2.0).expect("finite length fixture"),
         };
-        scale_face_motion(&mut translate, 25.4).unwrap();
+        scale_face_motion(&mut translate, 25.4).expect("valid test fixture");
         let FaceMotion::Translate {
             direction,
             distance,
@@ -2023,14 +2069,14 @@ mod tests {
 
         let mut rotate = FaceMotion::Rotate {
             axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                .unwrap(),
+                .expect("finite point fixture"),
             axis_dir: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
                 0.0, 0.0, 1.0,
             ))
-            .unwrap(),
-            angle: cadmpeg_ir::features::Angle::new(0.5).unwrap(),
+            .expect("valid direction fixture"),
+            angle: cadmpeg_ir::features::Angle::new(0.5).expect("finite angle fixture"),
         };
-        scale_face_motion(&mut rotate, 25.4).unwrap();
+        scale_face_motion(&mut rotate, 25.4).expect("valid test fixture");
         let FaceMotion::Rotate {
             axis_origin,
             axis_dir,
@@ -2051,8 +2097,8 @@ mod tests {
             final_factor: 2.0,
             count: 3,
         })
-        .unwrap();
-        scale_pattern_kind(&mut pattern, 25.4).unwrap();
+        .expect("valid test fixture");
+        scale_pattern_kind(&mut pattern, 25.4).expect("valid test fixture");
         let PatternTransform::Scale {
             center,
             final_factor,
@@ -2077,14 +2123,14 @@ mod tests {
                 parameters: BTreeMap::new(),
             }
             .try_into()
-            .unwrap(),
+            .expect("valid test fixture"),
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(
-                cadmpeg_ir::features::PositiveLength::new(2.0).unwrap(),
+                cadmpeg_ir::features::PositiveLength::new(2.0).expect("positive length fixture"),
             ),
         };
 
-        scale_feature_definition(&mut definition, 25.4).unwrap();
+        scale_feature_definition(&mut definition, 25.4).expect("valid test fixture");
 
         let FeatureDefinition::PostProcess {
             fuzzy_tolerance, ..

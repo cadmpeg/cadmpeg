@@ -22,17 +22,17 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
-        "complete-helix",
+        "synthetic:test:id#complete-helix",
         0,
         FeatureDefinition::Helix {
             axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -53,7 +53,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         },
     ));
     ir.model.features.push(feature(
-        "incomplete-dome",
+        "synthetic:test:id#incomplete-dome",
         1,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native("face".into()),
@@ -63,14 +63,14 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         },
     ));
     ir.model.features.push(feature(
-        "unresolved-plane",
+        "synthetic:test:id#unresolved-plane",
         2,
         FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         },
     ));
     ir.model.features.push(feature(
-        "unaudited-stored-geometry",
+        "synthetic:test:id#unaudited-stored-geometry",
         3,
         FeatureDefinition::StoredGeometry,
     ));
@@ -89,7 +89,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let other_body = BodyId::mint("test:model:entity#other-body").expect("identity grammar");
-    let source = FeatureId::mint("base").expect("identity grammar");
+    let source = FeatureId::mint("synthetic:test:id#base").expect("identity grammar");
     let mut push = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs, definition| {
         ir.model.features.push(Feature {
             id: FeatureId::mint(id).expect("identity grammar"),
@@ -100,14 +100,14 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs).unwrap(),
             native_ref: None,
         });
     };
     push(
-        "base",
+        "synthetic:test:id#base",
         0,
         Vec::new(),
         Vec::new(),
@@ -116,21 +116,21 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "stored",
+        "synthetic:test:id#stored",
         1,
         Vec::new(),
         vec![body.clone()],
         FeatureDefinition::StoredGeometry,
     );
     push(
-        "derived",
+        "synthetic:test:id#derived",
         2,
         vec![source.clone()],
         Vec::new(),
         FeatureDefinition::DerivedGeometry { source },
     );
     push(
-        "mirror",
+        "synthetic:test:id#mirror",
         3,
         Vec::new(),
         Vec::new(),
@@ -144,7 +144,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "sew",
+        "synthetic:test:id#sew",
         4,
         Vec::new(),
         Vec::new(),
@@ -156,7 +156,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "trim",
+        "synthetic:test:id#trim",
         5,
         Vec::new(),
         Vec::new(),
@@ -171,7 +171,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "import",
+        "synthetic:test:id#import",
         6,
         Vec::new(),
         Vec::new(),
@@ -181,7 +181,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         },
     );
     push(
-        "section",
+        "synthetic:test:id#section",
         7,
         Vec::new(),
         Vec::new(),
@@ -209,7 +209,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
 fn design_completeness_audits_typed_construction_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face",
     )
@@ -296,15 +296,16 @@ fn design_completeness_audits_typed_construction_families() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("construction-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#construction-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -323,7 +324,7 @@ fn design_completeness_audits_typed_construction_families() {
 #[test]
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut ir = CadIr::empty();
-    let source = FeatureId::mint("source").expect("identity grammar");
+    let source = FeatureId::mint("synthetic:test:id#source").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies: Vec<FeatureId>, definition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
@@ -333,18 +334,18 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
-        "source",
+        "synthetic:test:id#source",
         0,
         Vec::new(),
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: Default::default(),
+            children: cadmpeg_ir::features::TreeChildren::default(),
         },
     ));
     let shape = |sources| FeatureDefinition::Binder {
@@ -354,7 +355,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         },
     };
     ir.model.features.push(feature(
-        "complete",
+        "synthetic:test:id#complete",
         1,
         vec![source.clone()],
         shape(vec![cadmpeg_ir::features::BinderSource {
@@ -365,7 +366,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         }]),
     ));
     ir.model.features.push(feature(
-        "native",
+        "synthetic:test:id#native",
         2,
         Vec::new(),
         shape(vec![cadmpeg_ir::features::BinderSource {
@@ -376,7 +377,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         }]),
     ));
     ir.model.features.push(feature(
-        "multiple-shape-sources",
+        "synthetic:test:id#multiple-shape-sources",
         3,
         Vec::new(),
         shape(vec![
@@ -440,15 +441,16 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("post-process-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#post-process-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -468,7 +470,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 fn design_completeness_recurses_through_pattern_operands() {
     let mut ir = CadIr::empty();
     let seed = cadmpeg_ir::features::PatternSeed::Feature(
-        FeatureId::mint("seed").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
     );
     for (ordinal, pattern) in [
         (
@@ -526,15 +528,16 @@ fn design_completeness_recurses_through_pattern_operands() {
         ),
     ] {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("pattern-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#pattern-{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Pattern {
@@ -558,7 +561,7 @@ fn design_completeness_recurses_through_pattern_operands() {
 #[test]
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut ir = CadIr::empty();
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| FeatureDefinition::Sweep {
@@ -620,15 +623,16 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("path-feature-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#path-feature-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -647,7 +651,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 #[test]
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut ir = CadIr::empty();
-    let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
     let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
     let path = PathRef::Sketch(sketch);
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
@@ -738,15 +742,16 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("operation-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#operation-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -766,15 +771,16 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 fn empty_required_operands_are_incomplete_design_semantics() {
     let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
-        id: FeatureId::mint(format!("feature-{ordinal}")).expect("identity grammar"),
+        id: FeatureId::mint(format!("synthetic:test:id#feature-{ordinal}"))
+            .expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
@@ -926,15 +932,16 @@ fn hole_completeness_checks_optional_operands_when_present() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("hole-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:id#hole-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
@@ -953,28 +960,28 @@ fn hole_completeness_checks_optional_operands_when_present() {
 #[test]
 fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
-    let owner = FeatureId::mint("owner").expect("identity grammar");
+    let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         ),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("base-parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#base-parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 0,
         name: "D0".into(),
@@ -983,26 +990,26 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
             Length::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("parameter").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 1,
         name: "D1".into(),
         expression: "\"D0@Boss-Extrude1\" + Missing@Sketch1".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("bare-reference").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#bare-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 2,
         name: "D2".into(),
@@ -1011,13 +1018,13 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("malformed-reference").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#malformed-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 3,
         name: "D3".into(),
@@ -1026,14 +1033,14 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
-    let future = ParameterId::mint("future").expect("identity grammar");
+    let future = ParameterId::mint("synthetic:test:id#future").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("forward-reference").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#forward-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 4,
         name: "D4".into(),
@@ -1057,13 +1064,13 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("omitted-dependency").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#omitted-dependency").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 6,
         name: "D6".into(),
@@ -1072,13 +1079,14 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Length(
             Length::new(2.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId::mint("cached-unsupported-expression").expect("identity grammar"),
+        id: ParameterId::mint("synthetic:test:id#cached-unsupported-expression")
+            .expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 7,
         name: "D7".into(),
@@ -1087,7 +1095,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         value: Some(cadmpeg_ir::features::ParameterValue::Real(
             cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1099,7 +1107,8 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ("ordinal", 10, "Unique"),
     ] {
         ir.model.parameters.push(DesignParameter {
-            id: ParameterId::mint(format!("identity:{id}")).expect("identity grammar"),
+            id: ParameterId::mint(format!("synthetic:test:id#identity:{id}"))
+                .expect("identity grammar"),
             owner: Some(owner.clone()),
             ordinal,
             name: name.into(),
@@ -1108,7 +1117,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
             value: Some(cadmpeg_ir::features::ParameterValue::Real(
                 cadmpeg_ir::features::FiniteReal::new(1.0).unwrap(),
             )),
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -1131,9 +1140,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 #[test]
 fn incoherent_feature_graph_is_reported_as_design_loss() {
     let mut ir = CadIr::empty();
-    let first = FeatureId::mint("first").expect("identity grammar");
-    let second = FeatureId::mint("second").expect("identity grammar");
-    let missing = FeatureId::mint("missing").expect("identity grammar");
+    let first = FeatureId::mint("synthetic:test:id#first").expect("identity grammar");
+    let second = FeatureId::mint("synthetic:test:id#second").expect("identity grammar");
+    let missing = FeatureId::mint("synthetic:test:id#missing").expect("identity grammar");
     let feature = |id, ordinal, dependencies: Vec<FeatureId>| Feature {
         id,
         ordinal,
@@ -1143,12 +1152,12 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
         ),
         native_ref: None,
@@ -1158,22 +1167,22 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         .push(feature(first.clone(), 0, vec![second.clone()]));
     ir.model.features.push(feature(second, 1, vec![first]));
     ir.model.features.push(feature(
-        FeatureId::mint("third").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#third").expect("identity grammar"),
         1,
         vec![missing],
     ));
     ir.model.features[0].source_content = (vec![FeatureSourceContent::Feature(
-        FeatureId::mint("second").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#second").expect("identity grammar"),
     )])
     .try_into()
     .unwrap();
     ir.model.features[1].source_content = (vec![FeatureSourceContent::Feature(
-        FeatureId::mint("third").expect("identity grammar"),
+        FeatureId::mint("synthetic:test:id#third").expect("identity grammar"),
     )])
     .try_into()
     .unwrap();
     ir.model.features[2].source_content = (vec![FeatureSourceContent::Parameter(
-        ParameterId::mint("missing-parameter").expect("identity grammar"),
+        ParameterId::mint("synthetic:test:id#missing-parameter").expect("identity grammar"),
     )])
     .try_into()
     .unwrap();
@@ -1202,27 +1211,29 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: Default::default(),
+                children: cadmpeg_ir::features::TreeChildren::default(),
             },
             outputs,
         )
         .unwrap(),
         native_ref: None,
     };
-    ir.model
-        .features
-        .push(feature("duplicate", 0, vec![body.clone(), body]));
     ir.model.features.push(feature(
-        "missing",
+        "synthetic:test:id#duplicate",
+        0,
+        vec![body.clone(), body],
+    ));
+    ir.model.features.push(feature(
+        "synthetic:test:id#missing",
         1,
         vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")],
     ));

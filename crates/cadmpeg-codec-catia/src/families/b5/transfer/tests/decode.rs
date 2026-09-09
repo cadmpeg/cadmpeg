@@ -44,13 +44,13 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(result.ir().model.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
-                && source.object_id.starts_with("cgm-surface:")
+                && source.object_id.as_str().starts_with("cgm-surface:")
         })
     }));
     assert!(result.ir().model.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
-                && source.object_id.starts_with("cgm-edge:")
+                && source.object_id.as_str().starts_with("cgm-edge:")
         })
     }));
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
@@ -141,7 +141,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert_eq!(graph.edge_parameter_incidences.len(), 3);
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.object_id)
             .collect::<Vec<_>>(),
@@ -149,7 +150,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     );
     assert_eq!(
         graph
-            .logical_vertices
+            .vertices
+            .logical_vertices()
             .iter()
             .map(|vertex| vertex.point)
             .collect::<Vec<_>>(),

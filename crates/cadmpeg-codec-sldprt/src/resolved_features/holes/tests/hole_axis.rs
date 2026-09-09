@@ -214,7 +214,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[0].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -222,7 +222,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[1].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -230,7 +230,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[2].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 3,
                 trailing_fields: Vec::new(),
             },
@@ -238,7 +238,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         (
             faces[3].id.clone(),
             crate::brep::PersistentFaceIdentity {
-                feature_source_id: 7,
+                feature_source_id: 7_u32.try_into().unwrap(),
                 local_id: 2,
                 trailing_fields: Vec::new(),
             },
@@ -324,7 +324,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut placed = model_hole();
-    placed.id = FeatureId::mint("placed").expect("identity grammar");
+    placed.id = FeatureId::mint("synthetic:test:id#placed").expect("identity grammar");
     let updated_placed_evaluation = &mut placed.evaluation;
     let mut updated_placed_definition = updated_placed_evaluation.definition().clone();
     let FeatureDefinition::Hole {
@@ -351,7 +351,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         });
     *shape = cadmpeg_ir::features::HoleShape::new(
         edited_construction,
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         shape.diameter(),
     )
     .unwrap();
@@ -359,7 +359,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         .set_definition(updated_placed_definition)
         .unwrap();
     let mut unplaced = model_hole();
-    unplaced.id = FeatureId::mint("unplaced").expect("identity grammar");
+    unplaced.id = FeatureId::mint("synthetic:test:id#unplaced").expect("identity grammar");
     let updated_unplaced_evaluation = &mut unplaced.evaluation;
     let mut updated_unplaced_definition = updated_unplaced_evaluation.definition().clone();
     let FeatureDefinition::Hole { shape, .. } = &mut updated_unplaced_definition else {
@@ -377,7 +377,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         edited_construction,
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         shape.diameter(),
     )
     .unwrap();
@@ -417,7 +417,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     );
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
-    ambiguous[2].id = FeatureId::mint("also-unplaced").expect("identity grammar");
+    ambiguous[2].id = FeatureId::mint("synthetic:test:id#also-unplaced").expect("identity grammar");
     project_hole_topology_axes(&mut ambiguous, &topology).unwrap();
     let FeatureDefinition::Hole { placements, .. } = ambiguous[1].evaluation.definition() else {
         unreachable!();
@@ -594,7 +594,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut ambiguous = [unplaced.clone(), unplaced.clone()];
-    ambiguous[1].id = FeatureId::mint("second-hole").expect("identity grammar");
+    ambiguous[1].id = FeatureId::mint("synthetic:test:id#second-hole").expect("identity grammar");
     project_hole_topology_axes(&mut ambiguous, &topology).unwrap();
     let FeatureDefinition::Hole { placements, .. } = ambiguous[0].evaluation.definition() else {
         unreachable!();
@@ -648,7 +648,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         edited_construction,
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         shape.diameter(),
     )
     .unwrap();
@@ -712,7 +712,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         shape.construction().clone(),
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         edited_diameter,
     )
     .unwrap();
@@ -745,7 +745,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
     let updated_horizontal_evaluation = &mut horizontal.evaluation;
     let mut updated_horizontal_definition = updated_horizontal_evaluation.definition().clone();
     let FeatureDefinition::Hole {
@@ -779,7 +779,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
 
     *shape = cadmpeg_ir::features::HoleShape::new(
         edited_construction,
-        shape.exit_kind().clone(),
+        *shape.exit_kind(),
         shape.diameter(),
     )
     .unwrap();
@@ -787,7 +787,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         .set_definition(updated_horizontal_definition)
         .unwrap();
     let mut vertical = horizontal.clone();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
     vertical
         .evaluation
         .try_edit(|definition, _| {
@@ -909,7 +909,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
     };
     let mut horizontal = model_hole();
-    horizontal.id = FeatureId::mint("horizontal").expect("identity grammar");
+    horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
     let updated_horizontal_evaluation = &mut horizontal.evaluation;
     let mut updated_horizontal_definition = updated_horizontal_evaluation.definition().clone();
     let FeatureDefinition::Hole { placements, .. } = &mut updated_horizontal_definition else {
@@ -919,7 +919,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .get_or_insert_default()
         .push(placement(axes[0].0, axes[0].1));
     let mut vertical = model_hole();
-    vertical.id = FeatureId::mint("vertical").expect("identity grammar");
+    vertical.id = FeatureId::mint("synthetic:test:id#vertical").expect("identity grammar");
     let updated_vertical_evaluation = &mut vertical.evaluation;
     let mut updated_vertical_definition = updated_vertical_evaluation.definition().clone();
     let FeatureDefinition::Hole { placements, .. } = &mut updated_vertical_definition else {
@@ -929,7 +929,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .get_or_insert_default()
         .push(placement(axes[2].0, axes[2].1));
     let mut other = model_hole();
-    other.id = FeatureId::mint("other").expect("identity grammar");
+    other.id = FeatureId::mint("synthetic:test:id#other").expect("identity grammar");
     let updated_other_evaluation = &mut other.evaluation;
     let mut updated_other_definition = updated_other_evaluation.definition().clone();
     let FeatureDefinition::Hole { placements, .. } = &mut updated_other_definition else {

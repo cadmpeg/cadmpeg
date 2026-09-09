@@ -11,11 +11,11 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
     bytes.extend_from_slice(&second);
 
     let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
-    assert_eq!(records[0].handles, [0, 1, 2]);
-    assert_eq!(records[1].handles, [3, 4, 5]);
-    assert_eq!(records[0].independent_count, 1);
-    assert!(records[0].strip_lengths.is_empty());
-    assert!(records[0].fan_lengths.is_empty());
+    assert_eq!(records[0].packet.handles(), [0, 1, 2]);
+    assert_eq!(records[1].packet.handles(), [3, 4, 5]);
+    assert_eq!(records[0].packet.independent_count(), 1);
+    assert!(records[0].packet.strip_lengths().is_empty());
+    assert!(records[0].packet.fan_lengths().is_empty());
     assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
 }
 
@@ -53,7 +53,7 @@ fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     assert_eq!(layout.end, bytes.len());
 
     let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
-    assert_eq!(record.triangles, [[10, 11, 12]]);
+    assert_eq!(record.packet.triangles(), [[10, 11, 12]]);
 }
 
 #[test]
@@ -124,7 +124,9 @@ fn forced_trim_chain_has_no_recursive_depth_limit() {
         parse_trim_chain(&bytes, bytes.len(), RECORD_COUNT, 2).expect("forced trim packet chain");
 
     assert_eq!(records.len(), RECORD_COUNT);
-    assert!(records.iter().all(|record| record.handles == [0, 0, 0]));
+    assert!(records
+        .iter()
+        .all(|record| record.packet.handles() == [0, 0, 0]));
 }
 
 #[test]
@@ -139,9 +141,9 @@ fn trim_packet_retains_primitive_partition_lengths() {
         .expect("mixed primitive packet")
         .try_into()
         .expect("one packet");
-    assert_eq!(record.independent_count, 1);
-    assert_eq!(record.strip_lengths, [3]);
-    assert_eq!(record.fan_lengths, [4]);
+    assert_eq!(record.packet.independent_count(), 1);
+    assert_eq!(record.packet.strip_lengths(), [3]);
+    assert_eq!(record.packet.fan_lengths(), [4]);
 }
 
 #[test]
@@ -160,9 +162,9 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         .expect("width-matched primitive packet")
         .try_into()
         .expect("one packet");
-    assert_eq!(record.independent_count, 1);
-    assert_eq!(record.strip_lengths, [3]);
-    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.packet.independent_count(), 1);
+    assert_eq!(record.packet.strip_lengths(), [3]);
+    assert!(record.packet.fan_lengths().is_empty());
     assert_eq!(record.frame_vector, Some([1.0, 0.0, 0.0]));
 
     let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
@@ -512,9 +514,14 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let groups = standard_fbb_groups(&bytes);
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        group.face_count == 1
-            && group.topology.face_count() == 1
-            && group.topology.edge_rows().len() == 4
+        let layout = fbb_population_layouts(&bytes)
+            .into_iter()
+            .find(|layout| layout.face_run == *group)
+            .expect("matching population layout");
+        let spine = population_spine(&bytes, &layout).expect("complete population spine");
+        let topology =
+            crate::families::standard::fbb::parse_standard(spine).expect("complete group topology");
+        group.face_count == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
     assert_eq!(standard_face_count(&bytes), None);
     assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
@@ -529,7 +536,7 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
     let layouts = fbb_population_layouts(&bytes);
     assert_eq!(layouts.len(), 2);
     assert!(layouts.iter().all(|layout| {
-        layout.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
+        layout.face_run.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
     }));
 }
 
@@ -546,10 +553,10 @@ fn fbb_population_spine_retains_the_preceding_trim_chain() {
     let [isolated] = isolated_layouts.as_slice() else {
         panic!("isolated spine remains source-closed");
     };
-    assert_eq!(isolated.face_count, layout.face_count);
+    assert_eq!(isolated.face_run.face_count, layout.face_run.face_count);
     assert_eq!(isolated.edge_count, layout.edge_count);
     assert_eq!(isolated.vertex_count, layout.vertex_count);
-    assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);
+    assert_eq!(isolated.edge_table_form, layout.edge_table_form);
 }
 
 #[test]
@@ -576,12 +583,14 @@ fn standard_helpers_share_the_source_closed_face_population() {
 
 fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
     TrimRecord {
-        triangles: Vec::new(),
+        packet: crate::families::standard::trim_packet::TrimPacket::try_from((
+            0,
+            vec![handles.len()],
+            Vec::new(),
+            handles.to_vec(),
+        ))
+        .expect("complete trim handle partition"),
         frame_vector: None,
-        handles: handles.to_vec(),
-        independent_count: 0,
-        strip_lengths: vec![handles.len()],
-        fan_lengths: Vec::new(),
         kind,
     }
 }

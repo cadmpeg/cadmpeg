@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
+use std::num::NonZeroU16;
 
 pub(crate) mod target;
 
@@ -1341,41 +1342,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    let expected_offsets = lane
-        .native_payload
-        .windows(MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset))
-        .collect::<Vec<_>>();
-    if expected_offsets.len() != lane.sketch_entities.len() {
-        return Err(CodecError::malformed(format_args!(
-            "feature-input lane {} has {} markers but {} native records",
-            lane.id,
-            expected_offsets.len(),
-            lane.sketch_entities.len()
-        )));
-    }
-    for (ordinal, ((entity, expected_entity), expected_offset)) in lane
+    for (entity, expected_entity) in lane
         .sketch_entities
         .iter()
         .zip(&expected_lane.sketch_entities)
-        .zip(&expected_offsets)
-        .enumerate()
     {
-        if entity.ordinal != ordinal as u32
-            || usize::try_from(entity.offset) != Ok(*expected_offset)
-            || entity.feature_ref != expected_entity.feature_ref
+        if entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
-            || entity.object_index
-                != crate::resolved_features::markers::marker_object_index(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
-            || entity.local_id
-                != crate::resolved_features::markers::marker_local_id(
-                    &lane.native_payload,
-                    *expected_offset,
-                )
         {
             return Err(CodecError::malformed(format_args!(
                 "feature-input lane {} has inconsistent marker order",
@@ -1385,7 +1358,7 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
-        let offset = usize::try_from(entity.offset).map_err(|_| {
+        let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::Malformed("feature-input offset exceeds address space".into())
         })?;
         let marker_end = offset
@@ -1964,6 +1937,7 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]);
     let meshes = ir
         .model
         .tessellations
@@ -2046,19 +2020,19 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        for index in auxiliary_count..3 {
-            match index {
-                0 => descriptor(&mut out, 4, 8, 2, 0, &[]),
-                1 => {
-                    let data = list_c
-                        .iter()
-                        .flat_map(|value| value.to_le_bytes())
-                        .collect::<Vec<_>>();
-                    descriptor(&mut out, 4, 8, 2, list_c.len(), &data);
-                }
-                2 => descriptor(&mut out, 1, 8, 2, 0, &[]),
-                _ => unreachable!("three auxiliary descriptors"),
-            }
+        let append: [AuxiliaryWriter; 3] = [
+            |out, _| descriptor(out, 4, 8, 2, 0, &[]),
+            |out, list_c| {
+                let data = list_c
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect::<Vec<_>>();
+                descriptor(out, 4, 8, 2, list_c.len(), &data);
+            },
+            |out, _| descriptor(out, 1, 8, 2, 0, &[]),
+        ];
+        for append in append.iter().skip(auxiliary_count) {
+            append(&mut out, &list_c);
         }
     }
     Ok(out)
@@ -2171,7 +2145,7 @@ pub(super) fn sequential_tessellation(
     )?;
     let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
-        mesh.id.clone(),
+        mesh.id.to_string(),
         vertices,
         triangles,
         strip_lengths,
@@ -2182,7 +2156,10 @@ pub(super) fn sequential_tessellation(
     .map_err(|err| CodecError::Malformed(err.to_string()))?
     .with_body(mesh.body.clone())
     .with_faces(mesh.faces.clone())
-    .with_chordal_deflection(mesh.chordal_deflection)
+    .with_chordal_deflection(mesh.chordal_deflection())
+    .map_err(|error| {
+        CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
+    })?
     .with_source_object(mesh.source_object.clone()))
 }
 
@@ -2322,9 +2299,9 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     out.extend_from_slice(
         &u32::from_le_bytes([
-            component(color.r),
-            component(color.g),
-            component(color.b),
+            component(color.r()),
+            component(color.g()),
+            component(color.b()),
             0,
         ])
         .to_le_bytes(),
@@ -2980,7 +2957,7 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     tag(out, 0x53);
     be32(out, 3);
     be16(out, attr);
-    for value in [color.r, color.g, color.b] {
+    for value in [color.r(), color.g(), color.b()] {
         bef64(out, f64::from(value));
     }
 }
@@ -3219,10 +3196,21 @@ fn write_nurbs_curve(
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    let (unique, mult) = unique_knots(nurbs.knots(), entity)?;
-    u16_array(out, multiplicity, &mult, entity)?;
-    f64_array(out, 0x80, knots, &unique, entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    u16_array(
+        out,
+        multiplicity,
+        unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        knots,
+        unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3254,8 +3242,8 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
-    let (u_unique, u_mult) = unique_knots(nurbs.u_knots(), entity)?;
-    let (v_unique, v_mult) = unique_knots(nurbs.v_knots(), entity)?;
+    let u_unique = unique_knots(nurbs.u_knots(), entity)?;
+    let v_unique = unique_knots(nurbs.v_knots(), entity)?;
     if !nurbs
         .u_knots()
         .iter()
@@ -3310,11 +3298,33 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    f64_array(out, 0x2d, control, &poles, entity)?;
-    u16_array(out, u_multiplicity, &u_mult, entity)?;
-    u16_array(out, v_multiplicity, &v_mult, entity)?;
-    f64_array(out, 0x80, u_knots, &u_unique, entity)?;
-    f64_array(out, 0x80, v_knots, &v_unique, entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    u16_array(
+        out,
+        u_multiplicity,
+        u_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    u16_array(
+        out,
+        v_multiplicity,
+        v_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        u_knots,
+        u_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
+    f64_array(
+        out,
+        0x80,
+        v_knots,
+        v_unique.iter().map(|(knot, _)| *knot),
+        entity,
+    )?;
     Ok(())
 }
 
@@ -3349,30 +3359,29 @@ fn homogeneous_poles(
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64], entity: &str) -> Result<(Vec<f64>, Vec<u16>), CodecError> {
-    let mut unique = Vec::new();
-    let mut multiplicities: Vec<u16> = Vec::new();
+fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, CodecError> {
+    let mut out: Vec<(f64, NonZeroU16)> = Vec::new();
     for &knot in knots {
-        if unique.last() == Some(&knot) {
-            let multiplicity = multiplicities.last_mut().expect("matching unique knot");
-            *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
-                ))
-            })?;
-        } else {
-            unique.push(knot);
-            multiplicities.push(1);
+        if let Some((previous, multiplicity)) = out.last_mut() {
+            if *previous == knot {
+                *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
+                    ))
+                })?;
+                continue;
+            }
         }
+        out.push((knot, NonZeroU16::MIN));
     }
-    Ok((unique, multiplicities))
+    Ok(out)
 }
 
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
     attr: u16,
-    values: &[f64],
+    values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
@@ -3385,12 +3394,17 @@ fn f64_array(
     be32(out, count);
     be16(out, attr);
     for value in values {
-        bef64(out, *value);
+        bef64(out, value);
     }
     Ok(())
 }
 
-fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Result<(), CodecError> {
+fn u16_array(
+    out: &mut Vec<u8>,
+    attr: u16,
+    values: impl ExactSizeIterator<Item = u16>,
+    entity: &str,
+) -> Result<(), CodecError> {
     let count = u32::try_from(values.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
@@ -3401,7 +3415,7 @@ fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Resu
     be32(out, count);
     be16(out, attr);
     for value in values {
-        be16(out, *value);
+        be16(out, value);
     }
     Ok(())
 }
@@ -3634,7 +3648,8 @@ mod nurbs_write_tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
-                source_id: "F1".into(),
+                source_id: cadmpeg_ir::products::NonEmptyString::new("F1")
+                    .expect("nonempty source identity"),
             }],
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),

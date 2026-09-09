@@ -31,8 +31,8 @@ ENDSEC;END-ISO-10303-21;",
     let ColorResolution::Candidate(color) = color else {
         panic!("expected one surface color");
     };
-    assert_eq!(color.color.r, 1.0);
-    assert_eq!(color.color.b, 0.0);
+    assert_eq!(color.color.r(), 1.0);
+    assert_eq!(color.color.b(), 0.0);
 }
 
 use std::io::Cursor;
@@ -514,7 +514,7 @@ fn overriding_style_suppresses_the_base_binding() {
         .find(|appearance| appearance.id == binding.appearance)
         .expect("overriding appearance");
     let color = appearance.base_color.expect("override color");
-    assert_eq!((color.r, color.g, color.b), (1.0, 0.0, 0.0));
+    assert_eq!((color.r(), color.g(), color.b()), (1.0, 0.0, 0.0));
 }
 
 #[test]
@@ -597,9 +597,9 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
         assert_eq!(bindings.len(), 2);
         for (red, green, blue) in [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0)] {
             assert!(result.ir().model.appearances.iter().any(|appearance| {
-                appearance
-                    .base_color
-                    .is_some_and(|color| color.r == red && color.g == green && color.b == blue)
+                appearance.base_color.is_some_and(|color| {
+                    color.r() == red && color.g() == green && color.b() == blue
+                })
             }));
         }
         assert!(result.report().losses.iter().any(|loss| {
@@ -648,7 +648,7 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .find(|face| face.id.as_str() == "step:data:face#29")
         .expect("styled face");
     let color = face.color.expect("same-RGB scalar face color");
-    assert!((color.a - 0.25).abs() < EPS_ALPHA);
+    assert!((color.a() - 0.25).abs() < EPS_ALPHA);
     assert!(!result
         .report()
         .losses
@@ -928,7 +928,7 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .model
         .appearances
         .iter()
-        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
         .collect::<Vec<_>>();
     assert_eq!(alphas.len(), 2);
     assert!(alphas.iter().any(|alpha| (*alpha - 0.75).abs() < EPS_ALPHA));
@@ -958,10 +958,10 @@ fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
             .find(|appearance| {
                 appearance
                     .base_color
-                    .is_some_and(|color| color.r == 1.0 && color.g == 0.0 && color.b == 0.0)
+                    .is_some_and(|color| color.r() == 1.0 && color.g() == 0.0 && color.b() == 0.0)
             })
             .expect("red appearance");
-        assert_eq!(appearance.base_color.expect("appearance color").a, 1.0);
+        assert_eq!(appearance.base_color.expect("appearance color").a(), 1.0);
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::SurfaceTransparencyConflict.kind()
                 && loss.message.contains("rendering #12")
@@ -1180,7 +1180,7 @@ fn complex_colour_rgb_inherits_name_and_components() {
         .first()
         .expect("complex RGB appearance");
     assert_eq!(appearance.name.as_deref(), Some("red"));
-    assert_eq!(appearance.base_color.unwrap().r, 1.0);
+    assert_eq!(appearance.base_color.unwrap().r(), 1.0);
 }
 
 #[test]
@@ -1197,12 +1197,7 @@ fn complex_surface_targets_use_surface_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 1.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1224,12 +1219,7 @@ fn surface_style_usage_prefers_positive_side_over_set_order() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1245,12 +1235,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
         assert_eq!(result.ir().model.appearances.len(), 1);
         assert_eq!(
             result.ir().model.appearances[0].base_color,
-            Some(cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            })
+            Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         let face = result
             .ir()
@@ -1261,12 +1246,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
             .expect("styled face");
         assert_eq!(
             face.color,
-            Some(cadmpeg_ir::topology::Color {
-                r: 0.0,
-                g: 1.0,
-                b: 0.0,
-                a: 1.0,
-            })
+            Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -1288,12 +1268,7 @@ fn curve_targets_use_curve_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1311,12 +1286,7 @@ fn point_targets_use_point_style_domain() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result.ir().model.appearances[0].base_color,
-        Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 1.0,
-            b: 0.0,
-            a: 1.0,
-        })
+        Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
     );
 }
 
@@ -1444,7 +1414,7 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1 && references[0].common_group.is_none()
+            if references.as_slice().len() == 1 && references.as_slice()[0].common_group.is_none()
     )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1475,10 +1445,10 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
     assert!(matches!(
         &system.definition,
         PmiDefinition::DatumSystem { references }
-            if references.len() == 1
-                && references[0].datum.as_str() == "step:presentation:pmi#7"
-                && references[0].common_group.is_none()
-                && references[0].modifiers == ["distance:0.2"]
+            if references.as_slice().len() == 1
+                && references.as_slice()[0].datum.as_str() == "step:presentation:pmi#7"
+                && references.as_slice()[0].common_group.is_none()
+                && references.as_slice()[0].modifiers == ["distance:0.2"]
     ));
     assert!(result
         .report()
@@ -1541,12 +1511,8 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 #[test]
 pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube();
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 0.25,
-        g: 0.5,
-        b: 0.75,
-        a: 1.0,
-    });
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"));
     let face_count = ir.model.faces.len();
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
@@ -1593,12 +1559,9 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.125,
-            g: 0.125,
-            b: 0.125,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.125, 0.125, 0.125, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
@@ -1646,12 +1609,9 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.125,
-            g: 0.75,
-            b: 0.25,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.125, 0.75, 0.25, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
@@ -1867,12 +1827,8 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     let mut ir = unit_cube();
     let face_count = ir.model.faces.len();
     // White body base color.
-    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    });
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 1.0).expect("valid color"));
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
@@ -1885,12 +1841,9 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         physical_token: None,
         schema: None,
         category: None,
-        base_color: Some(cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        }),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
+        ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });

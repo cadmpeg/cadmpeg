@@ -5976,7 +5976,6 @@
               "id": "nx:segment-om-links:link#0",
               "row": "nx:segment-index:row#0",
               "schema_role": "feature_history",
-              "section_offset": 108,
               "separator_byte_len": 0,
               "slot": "type_code",
               "source_offset": 108
