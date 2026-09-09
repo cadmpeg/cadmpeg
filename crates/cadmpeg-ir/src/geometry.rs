@@ -1191,7 +1191,7 @@ impl PlaneSurface {
         let frame = OrthonormalFrame3::new(normal, u_axis)
             .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("PlaneSurface.origin must be finite")?;
-        Ok(Self { frame, origin })
+        Ok(Self { origin, frame })
     }
 
     /// Return the origin.
@@ -1274,9 +1274,9 @@ impl CylinderSurface {
         let radius = PositiveScalar::new(radius)
             .ok_or("CylinderSurface.radius must be positive and finite")?;
         Ok(Self {
-            frame,
             origin,
             radius,
+            frame,
         })
     }
 
@@ -1378,11 +1378,11 @@ impl ConeSurface {
         let half_angle =
             FiniteScalar::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
         Ok(Self {
-            frame,
             origin,
             radius,
             ratio,
             half_angle,
+            frame,
         })
     }
 
@@ -1499,9 +1499,9 @@ impl SphereSurface {
         let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
         let radius = FiniteScalar::new(radius).ok_or("SphereSurface.radius must be finite")?;
         Ok(Self {
-            frame,
             center,
             radius,
+            frame,
         })
     }
 
@@ -1601,10 +1601,10 @@ impl TorusSurface {
         let minor_radius =
             FiniteScalar::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
         Ok(Self {
-            frame,
             center,
             major_radius,
             minor_radius,
+            frame,
         })
     }
 
@@ -1772,9 +1772,9 @@ impl CircleCurve {
         let radius =
             PositiveScalar::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
         Ok(Self {
-            frame,
             center,
             radius,
+            frame,
         })
     }
 
@@ -1879,10 +1879,10 @@ impl EllipseCurve {
         let minor_radius = PositiveScalar::new(minor_radius)
             .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
         Ok(Self {
-            frame,
             center,
             major_radius,
             minor_radius,
+            frame,
         })
     }
 
@@ -1988,9 +1988,9 @@ impl ParabolaCurve {
         let focal_distance = PositiveScalar::new(focal_distance)
             .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
         Ok(Self {
-            frame,
             vertex,
             focal_distance,
+            frame,
         })
     }
 
@@ -2099,10 +2099,10 @@ impl HyperbolaCurve {
         let minor_radius = PositiveScalar::new(minor_radius)
             .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
         Ok(Self {
-            frame,
             center,
             major_radius,
             minor_radius,
+            frame,
         })
     }
 

@@ -84,6 +84,7 @@ checked_feature_geometry!(
 );
 impl FiniteVector3 {
     /// Reverse all components.
+    #[must_use]
     pub fn negated(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }

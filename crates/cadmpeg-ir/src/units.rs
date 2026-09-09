@@ -198,6 +198,7 @@ impl UnitVector3 {
         &self.0
     }
     /// Reverse the direction.
+    #[must_use]
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
@@ -305,6 +306,7 @@ impl From<NonzeroPoint2> for Point2 {
 
 impl FiniteVector<2> {
     /// Reverse coordinate order and signs.
+    #[must_use]
     pub const fn reversed_negated(self) -> Self {
         Self([-self.0[1], -self.0[0]])
     }
