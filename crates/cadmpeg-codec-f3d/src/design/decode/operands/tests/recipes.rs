@@ -431,33 +431,36 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     let next_at = header(&mut bytes, *b"306", 104);
-    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-        id: "f3d:Design/BulkStream.dat:scope#1".into(),
-        byte_offset: 1000,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 1,
-        frame_length: 200,
-        kind_offset: 1100,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#1".into(),
+            byte_offset: 1000,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 1,
+            frame_length: 200,
+            kind_offset: 1100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![100],
-            vec![1085],
-            "reference_members",
-        )
-        .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Fillet
-            .try_into()
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 1080,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100],
+                vec![1085],
+                "reference_members",
+            )
             .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 1200,
-    })
+            payload: crate::records::feature::DesignFeatureKind::Fillet
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 1200,
+        }
+        .with_fixture_layout(),
+    )
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
@@ -1853,6 +1856,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     historical_face_scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(49);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     assert!(matches!(
@@ -1905,6 +1909,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .try_into()
                 .unwrap();
             draft.previous_history_state_id = Some(49);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut split_group = group.clone();

@@ -52,34 +52,38 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| {
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
-            byte_offset,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index,
-            frame_length: 200,
-            kind_offset: byte_offset + 100,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
+                byte_offset,
+                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                record_index,
+                frame_length: 200,
+                kind_offset: byte_offset + 100,
+                feature_ordinal: std::num::NonZeroU32::MIN,
+                feature_ordinal_offset: 0,
+                history_state_id: None,
 
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: byte_offset + 80,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                vec![record_index + 1],
-                vec![byte_offset + 85],
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-                .expect("nonempty family name")
-                .try_into()
+                previous_history_state_id: None,
+                previous_history_state_id_offset: None,
+                reference_count_offset: byte_offset + 80,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![record_index + 1],
+                    vec![byte_offset + 85],
+                    "reference_members",
+                )
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            paired_byte_offset: byte_offset + 200,
-        })
+                payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
+                    .expect("nonempty family name")
+                    .try_into()
+                    .unwrap(),
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                    .unwrap(),
+                paired_byte_offset: byte_offset + 200,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap()
     };
     let mut scopes = vec![
@@ -117,6 +121,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![0, 363, 0, 370, 0, 378]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let hole_face_operand = |record_index, scope_reference_ordinal| {
@@ -600,6 +610,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     chamfer_scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(21);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let (features, _) = project_parameter_design(
@@ -653,6 +664,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             draft.previous_history_state_id = Some(7);
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![101, 111, 102, 112]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Draft(slot) = scope.payload_mut() {
@@ -976,33 +993,36 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
 
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
-    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-        id: "f3d:native/BulkStream.dat:scope#12".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 210,
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:native/BulkStream.dat:scope#12".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 210,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![100, 101],
-            vec![185, 196],
-            "reference_members",
-        )
-        .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Conge
-            .try_into()
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100, 101],
+                vec![185, 196],
+                "reference_members",
+            )
             .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    })
+            payload: crate::records::feature::DesignFeatureKind::Conge
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
     .unwrap();
     let group = |record_index, ordinal, members: Vec<u32>| {
         DesignConstructionOperandGroup::try_from(
@@ -1430,6 +1450,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.frame_length = 354;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let patch_boundary = |scope_reference_ordinal, record_index, model_reference| {
@@ -1478,6 +1503,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.frame_length = 398;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 101, 201, 301, 102]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) =
@@ -1506,6 +1536,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(8);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let edge_identity = |record_index, group_record_index, edge| {
@@ -1566,6 +1597,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
             draft.frame_length = 339;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![100, 200, 300]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) =
@@ -1595,6 +1631,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope
         .try_edit(|draft| {
             draft.frame_length = 325;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     assert!(matches!(
@@ -1611,6 +1649,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.frame_length = 340;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::SurfacePatch(slot) =
@@ -1633,6 +1676,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .try_edit(|draft| {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 300, 301, 302]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     assert!(crate::design::feature_project::project_surface_patch(
@@ -1649,6 +1698,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 202, 203, 300]);
             draft.payload = crate::records::feature::DesignScopePayload::SurfacePatch(Vec::new());
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     patch_group
@@ -1690,6 +1744,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 .unwrap();
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![100, 200, 201, 300, 301, 400]);
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut tools = group(100, 0, vec![200, 201]);

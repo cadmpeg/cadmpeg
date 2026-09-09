@@ -158,6 +158,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_scope
         .try_edit(|draft| {
             draft.frame_length = 328;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let compact = exact_combine_operation(
@@ -295,6 +297,14 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     scope
         .try_edit(|draft| {
             draft.byte_offset = 0;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
@@ -303,6 +313,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         .try_edit(|draft| {
             draft.frame_length = 363;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let records = IndexedRecordOffsets::build(&bytes);
@@ -346,6 +361,8 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     malformed_scope
         .try_edit(|draft| {
             draft.frame_length = 367;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     assert!(exact_combine_operation(&bytes, &records, &malformed_scope).is_none());

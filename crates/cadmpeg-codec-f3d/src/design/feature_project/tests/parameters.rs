@@ -206,50 +206,55 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
         owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
     }
-    let scope = DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-        id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
-        byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        record_index: 12,
-        frame_length: 200,
-        kind_offset: 210,
-        payload: DesignScopePayload::Extrude(Some(crate::records::feature::DesignExtrudeScope {
-            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-                reference: None,
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-                direction_face_extend_values: [1, 2],
-                side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [177, 190],
-                first_side_target_ordinal: None,
-                extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [132, 136],
-                direction_reversed: false,
-                direction_reversed_offset: 140,
-                solid_operation: true,
-                solid_operation_offset: 141,
-                start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 142,
-            }),
-            ..crate::records::feature::DesignExtrudeScope::default()
-        })),
-        feature_ordinal: std::num::NonZeroU32::MIN,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 210,
+            payload: DesignScopePayload::Extrude(Some(
+                crate::records::feature::DesignExtrudeScope {
+                    extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                        reference: None,
+                        operation: DesignExtrudeOperation::NewBody,
+                        operation_offset: 128,
+                        direction_face_extend_values: [1, 2],
+                        side_extent_discriminators: [1, 0],
+                        side_extent_discriminator_offsets: [177, 190],
+                        first_side_target_ordinal: None,
+                        extent: DesignExtrudeExtent::OneSidedDistance,
+                        direction_face_extend_offsets: [132, 136],
+                        direction_reversed: false,
+                        direction_reversed_offset: 140,
+                        solid_operation: true,
+                        solid_operation_offset: 141,
+                        start: DesignExtrudeStart::ProfilePlane,
+                        start_offset: 142,
+                    }),
+                    ..crate::records::feature::DesignExtrudeScope::default()
+                },
+            )),
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
 
-        previous_history_state_id: None,
-        previous_history_state_id_offset: None,
-        reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(
-            vec![44, 44],
-            vec![185, 196],
-            "reference_members",
-        )
-        .unwrap(),
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-        paired_byte_offset: 300,
-    })
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![44, 44],
+                vec![185, 196],
+                "reference_members",
+            )
+            .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
     .unwrap();
 
     let (features, parameters) =
@@ -371,33 +376,37 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         .unwrap()
     };
     let scope = |record_index| {
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
-            byte_offset: u64::from(record_index),
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index,
-            frame_length: 100,
-            kind_offset: 0,
-            feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
-            feature_ordinal_offset: 0,
-            history_state_id: None,
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
+                byte_offset: u64::from(record_index),
+                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                record_index,
+                frame_length: 200,
+                kind_offset: 0,
+                feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
+                feature_ordinal_offset: 0,
+                history_state_id: None,
 
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: 0,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                Vec::new(),
-                Vec::new(),
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::CustomFeature
-                .try_into()
+                previous_history_state_id: None,
+                previous_history_state_id_offset: None,
+                reference_count_offset: (u64::from(record_index)) + 9,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![1],
+                    vec![0],
+                    "reference_members",
+                )
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
-            paired_byte_offset: u64::from(record_index) + 100,
-        })
+                payload: crate::records::feature::DesignFeatureKind::CustomFeature
+                    .try_into()
+                    .unwrap(),
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
+                    .unwrap(),
+                paired_byte_offset: u64::from(record_index) + 100,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap()
     };
 
@@ -523,34 +532,38 @@ fn parameter_expressions_project_feature_dependencies() {
         owner
     };
     let scope = |record_index, byte_offset, kind: &str| {
-        DesignParameterScope::try_new(crate::records::feature::DesignParameterScopeDraft {
-            id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
-            byte_offset,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index,
-            frame_length: 200,
-            kind_offset: byte_offset + 100,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
+        DesignParameterScope::try_new(
+            crate::records::feature::DesignParameterScopeDraft {
+                id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
+                byte_offset,
+                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                record_index,
+                frame_length: 200,
+                kind_offset: byte_offset + 100,
+                feature_ordinal: std::num::NonZeroU32::MIN,
+                feature_ordinal_offset: 0,
+                history_state_id: None,
 
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: byte_offset + 80,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                vec![record_index + 1],
-                vec![byte_offset + 85],
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-                .expect("nonempty family name")
-                .try_into()
+                previous_history_state_id: None,
+                previous_history_state_id_offset: None,
+                reference_count_offset: byte_offset + 80,
+                reference_members: crate::records::ReferenceRun::from_columns(
+                    vec![record_index + 1],
+                    vec![byte_offset + 85],
+                    "reference_members",
+                )
                 .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            paired_byte_offset: byte_offset + 200,
-        })
+                payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
+                    .expect("nonempty family name")
+                    .try_into()
+                    .unwrap(),
+                unclosed_construction_operand_groups: Vec::new(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                    .unwrap(),
+                paired_byte_offset: byte_offset + 200,
+            }
+            .with_fixture_layout(),
+        )
         .unwrap()
     };
     let (features, parameters) = project_parameter_design(

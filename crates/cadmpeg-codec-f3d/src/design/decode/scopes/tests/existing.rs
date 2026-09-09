@@ -125,6 +125,8 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         scope
             .try_edit(|draft| {
                 draft.frame_length = 64;
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let construction = exact_path_feature_construction(
@@ -214,6 +216,11 @@ fn compact_coil_placement_fixture(
                 304,
                 305,
             ]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, transform_start)
@@ -302,6 +309,8 @@ fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usi
     scope
         .try_edit(|draft| {
             draft.frame_length = 427;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, transform_start)
@@ -403,6 +412,8 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
     scope
         .try_edit(|draft| {
             draft.frame_length = 427;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, transform_start)
@@ -418,6 +429,11 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
                 values.pop();
                 crate::records::ReferenceRun::unlocated(values)
             };
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::SpirePrimitive(slot)
@@ -494,6 +510,11 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
                 304,
                 305,
             ]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let recipes = vec![ConstructionRecipe {
@@ -530,6 +551,8 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         scope
             .try_edit(|draft| {
                 draft.frame_length = if ordinal == 0 { 432 } else { 442 };
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.layout_fixture_tail();
             })
             .unwrap();
         let records = IndexedRecordOffsets::build(&bytes);
@@ -996,6 +1019,12 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
                 values.push(55);
                 crate::records::ReferenceRun::unlocated(values)
             };
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, position_at, input_reference_at)
@@ -1141,6 +1170,12 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
                 values.push(100);
                 crate::records::ReferenceRun::unlocated(values)
             };
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let selection = exact_hole_face_selection(

@@ -328,6 +328,7 @@ fn feature_input_topology_projects_historical_vertices() {
     scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(4);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let feature = Feature {
@@ -1046,6 +1047,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                 .try_into()
                 .unwrap();
             draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut scale_group = group.clone();
@@ -1089,6 +1091,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                 .unwrap();
             draft.history_state_id = Some(42);
             draft.previous_history_state_id = Some(41);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let move_history = crate::history_records::AsmHistory {
@@ -1394,6 +1397,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
 
@@ -1882,6 +1886,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {

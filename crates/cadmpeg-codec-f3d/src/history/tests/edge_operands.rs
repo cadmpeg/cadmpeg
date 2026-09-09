@@ -21,6 +21,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
+            draft.layout_fixture_tail();
         })
         .unwrap();
     let mut operand: crate::records::topology::DesignEdgeOperand =

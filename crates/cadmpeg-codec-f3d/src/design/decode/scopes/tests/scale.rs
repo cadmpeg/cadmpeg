@@ -79,6 +79,11 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
             draft.frame_length = 317;
             draft.reference_members =
                 crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, position_at)
@@ -111,6 +116,11 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
         .try_edit(|draft| {
             draft.frame_length = frame_length as u64;
             draft.reference_members = crate::records::ReferenceRun::unlocated(reference_members);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     (bytes, scope, position_at)

@@ -114,6 +114,14 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
     scope
         .try_edit(|draft| {
             draft.byte_offset = SCOPE_AT as u64;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.class_tag = crate::records::DesignClassTag::try_from("279".to_owned()).unwrap();
@@ -121,6 +129,11 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         .try_edit(|draft| {
             draft.frame_length = scope_279::LEN as u64;
             draft.reference_members = crate::records::ReferenceRun::unlocated(vec![383]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.locate_fixture_references();
+            draft.kind_offset =
+                draft.reference_count_offset + 12 + 11 * draft.reference_members.len() as u64;
+            draft.layout_fixture_tail();
         })
         .unwrap();
     scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
