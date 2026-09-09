@@ -143,7 +143,7 @@ pub fn project_sketch_constraints(
         let scope = native_stream(&relation.id)?;
         let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
         let input_entities = relation
-            .members
+            .members()
             .iter()
             .filter_map(|member| {
                 projected
@@ -156,7 +156,7 @@ pub fn project_sketch_constraints(
         // circular-pattern decoding verifies both reference sets before using
         // the semantic order.
         let semantic_entities = relation
-            .return_members
+            .return_members()
             .iter()
             .filter_map(|member| {
                 projected
@@ -166,12 +166,12 @@ pub fn project_sketch_constraints(
             .collect::<Vec<_>>();
         let exact = relation.unknown_constraint_bits() == 0
             && relation.constraint_kinds().len() == 1
-            && semantic_entities.len() == relation.return_members.len();
+            && semantic_entities.len() == relation.return_members().len();
         let native_entities = || {
             relation
                 .member_indices()
                 .into_iter()
-                .chain(relation.auxiliary_references.values().copied())
+                .chain(relation.auxiliary_references().values().copied())
                 .chain(relation.return_member_indices())
                 .filter_map(|record_index| {
                     projected
@@ -216,7 +216,7 @@ pub fn project_sketch_constraints(
                 .map(|record_index| native_operand(scope, "member", record_index))
                 .chain(
                     relation
-                        .auxiliary_references
+                        .auxiliary_references()
                         .values()
                         .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
                 )
@@ -274,7 +274,7 @@ pub(crate) fn exact_rectangular_pattern(
 
     if relation.unknown_constraint_bits() != 0
         || relation.constraint_kinds().len() != 1
-        || entities.len() != relation.return_members.len()
+        || entities.len() != relation.return_members().len()
     {
         return None;
     }
@@ -470,12 +470,12 @@ pub(crate) fn exact_text_relation(
     match pattern {
         Some(SketchPatternDefinition::TextFrame { text_reference })
             if relation
-                .members
+                .members()
                 .first()
                 .map(|member| member.reference.record_index())
                 == Some(*text_reference)
                 && relation
-                    .auxiliary_references
+                    .auxiliary_references()
                     .values()
                     .copied()
                     .eq([*text_reference])
@@ -486,7 +486,7 @@ pub(crate) fn exact_text_relation(
                 return None;
             }
             let frame = relation
-                .return_members
+                .return_members()
                 .iter()
                 .map(|member| {
                     projected
@@ -510,17 +510,17 @@ pub(crate) fn exact_text_relation(
         Some(SketchPatternDefinition::TextPath {
             text_reference,
             glyph_transforms,
-        }) if relation.members.len() == 2
-            && relation.members[1].reference.record_index() == *text_reference
+        }) if relation.members().len() == 2
+            && relation.members()[1].reference.record_index() == *text_reference
             && relation
-                .auxiliary_references
+                .auxiliary_references()
                 .values()
                 .copied()
                 .eq([*text_reference])
             && relation.return_member_indices()
-                == [relation.members[0].reference.record_index()] =>
+                == [relation.members()[0].reference.record_index()] =>
         {
-            let path = projected.get(&(scope, relation.members[0].reference.record_index()))?;
+            let path = projected.get(&(scope, relation.members()[0].reference.record_index()))?;
             let text = projected.get(&(scope, *text_reference))?;
             if path.id() == text.id()
                 || matches!(
@@ -567,8 +567,8 @@ pub(crate) fn exact_circular_pattern(
 
     if relation.unknown_constraint_bits() != 0
         || relation.constraint_kinds().len() != 1
-        || members.len() != relation.members.len()
-        || returned.len() != relation.return_members.len()
+        || members.len() != relation.members().len()
+        || returned.len() != relation.return_members().len()
     {
         return None;
     }
@@ -988,7 +988,7 @@ mod tests {
         };
         auxiliary_references.extend([20, 21, 22, 23]);
         let members = (1..=evaluated_count).collect::<Vec<_>>();
-        SketchRelation {
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
             id: "f3d:native:sketch-relation#rectangular".into(),
             record_index: 10,
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
@@ -996,7 +996,12 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::unlocated(auxiliary_references),
+            auxiliary_references: crate::records::ReferenceRun::located(
+                auxiliary_references
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
             members: (members
                 .clone()
@@ -1040,8 +1045,9 @@ mod tests {
                 .collect::<Vec<_>>())
             .try_into()
             .expect("uniform member resolution"),
-            raw_bytes: Vec::new(),
-        }
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
     }
 
     fn rectangular_parameter(record_index: u32, value: f64) -> DesignParameter {
@@ -1230,45 +1236,53 @@ mod tests {
         let seed = circle("generated:circle#seed", 0.0);
         let middle = circle("generated:circle#middle", std::f64::consts::FRAC_PI_2);
         let last = circle("generated:circle#last", std::f64::consts::PI);
-        let relation = |angle| SketchRelation {
-            id: "f3d:native:sketch-relation#circular".into(),
-            record_index: 10,
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-            byte_offset: 0,
-            state_offset: 0,
-            owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
-            rectangular_counted_reference_count: None,
-            members: (vec![
-                SketchRelationMember::from_index(1),
-                SketchRelationMember::from_index(2),
-                SketchRelationMember::from_index(3),
-                SketchRelationMember::from_index(4),
-            ])
-            .try_into()
-            .expect("uniform member resolution"),
-            owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(
-                0x1000_0000,
-                Some(crate::records::SketchPatternDefinition::Circular {
-                    angle_parameter: 20,
-                    count_parameter: 21,
-                    evaluated_angle: angle,
-                    evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
-                }),
-            )
-            .expect("valid relation definition"),
-            entity_genesis: None,
-            return_members: (vec![
-                SketchRelationReturnMember::from_index(2),
-                SketchRelationReturnMember::from_index(3),
-                SketchRelationReturnMember::from_index(4),
-                SketchRelationReturnMember::from_index(1),
-            ])
-            .try_into()
-            .expect("uniform member resolution"),
-            raw_bytes: Vec::new(),
+        let relation = |angle| {
+            SketchRelation::try_new(crate::records::SketchRelationDraft {
+                id: "f3d:native:sketch-relation#circular".into(),
+                record_index: 10,
+                class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+                byte_offset: 0,
+                state_offset: 0,
+                owner_reference: 1,
+                owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+                auxiliary_references: crate::records::ReferenceRun::located(
+                    vec![20, 21]
+                        .into_iter()
+                        .map(|value| crate::records::Located { value, offset: 0 })
+                        .collect(),
+                ),
+                rectangular_counted_reference_count: None,
+                members: (vec![
+                    SketchRelationMember::from_index(1),
+                    SketchRelationMember::from_index(2),
+                    SketchRelationMember::from_index(3),
+                    SketchRelationMember::from_index(4),
+                ])
+                .try_into()
+                .expect("uniform member resolution"),
+                owner_reference_offset: 0,
+                definition: crate::records::SketchRelationDefinition::new(
+                    0x1000_0000,
+                    Some(crate::records::SketchPatternDefinition::Circular {
+                        angle_parameter: 20,
+                        count_parameter: 21,
+                        evaluated_angle: angle,
+                        evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
+                    }),
+                )
+                .expect("valid relation definition"),
+                entity_genesis: None,
+                return_members: (vec![
+                    SketchRelationReturnMember::from_index(2),
+                    SketchRelationReturnMember::from_index(3),
+                    SketchRelationReturnMember::from_index(4),
+                    SketchRelationReturnMember::from_index(1),
+                ])
+                .try_into()
+                .expect("uniform member resolution"),
+                raw_bytes: vec![0; 160],
+            })
+            .unwrap()
         };
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
@@ -1341,7 +1355,7 @@ mod tests {
         let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
         let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
         // Ordinals are all zero; geometry must still partition the members.
-        let relation = SketchRelation {
+        let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
             id: "f3d:native:sketch-relation#circular".into(),
             record_index: 10,
             class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
@@ -1349,7 +1363,12 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![20, 21]),
+            auxiliary_references: crate::records::ReferenceRun::located(
+                vec![20, 21]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
             rectangular_counted_reference_count: None,
             members: (vec![
                 SketchRelationMember::from_index(1),
@@ -1379,8 +1398,9 @@ mod tests {
             ])
             .try_into()
             .expect("uniform member resolution"),
-            raw_bytes: Vec::new(),
-        };
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap();
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
         let Some(SketchConstraintDefinition::CircularPattern { pattern }) =
@@ -1428,7 +1448,7 @@ mod tests {
             glyph[ordinal][ordinal] = 1.0;
         }
         glyph[0][3] = 0.5;
-        let relation = SketchRelation {
+        let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
             id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
             record_index: 3,
             class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
@@ -1436,7 +1456,12 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: None,
-            auxiliary_references: crate::records::ReferenceRun::unlocated(vec![2]),
+            auxiliary_references: crate::records::ReferenceRun::located(
+                vec![2]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
             rectangular_counted_reference_count: None,
             members: (vec![
                 SketchRelationMember::from_index(1),
@@ -1458,8 +1483,9 @@ mod tests {
             return_members: (vec![SketchRelationReturnMember::from_index(1)])
                 .try_into()
                 .expect("uniform member resolution"),
-            raw_bytes: Vec::new(),
-        };
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap();
         let projected =
             std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
         let definition =

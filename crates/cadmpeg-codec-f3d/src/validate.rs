@@ -7579,19 +7579,6 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let offsets_fit = relation
-            .members
-            .iter()
-            .map(|row| &row.offset)
-            .chain(relation.auxiliary_references.offsets())
-            .chain(std::iter::once(&relation.owner_reference_offset))
-            .chain(relation.return_members.iter().map(|row| &row.offset))
-            .all(|offset| {
-                usize::try_from(*offset)
-                    .ok()
-                    .and_then(|offset| offset.checked_add(4))
-                    .is_some_and(|end| end <= relation.raw_bytes.len())
-            });
         let owner_matches = matches!(
             (
                 sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
@@ -7599,11 +7586,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
             ),
             (Some(expected), Some(actual)) if *expected == actual
         );
-        let valid = owner_matches
-            && relation.raw_bytes.len() >= 24
-            && relation.auxiliary_references.located_rows().is_some()
-            && offsets_fit;
-        if !valid {
+        if !owner_matches {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,

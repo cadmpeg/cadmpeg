@@ -847,44 +847,47 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     assert_eq!(group.next_class_tag.as_str(), "314");
     assert_eq!(group.next_record_index, 250);
 
-    let relation_at = |stream: &str, byte_offset| SketchRelation {
-        id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
-        record_index: 249,
-        class_tag: crate::records::DesignClassTag::try_from("286".to_owned()).unwrap(),
-        byte_offset,
-        state_offset: 66,
-        owner_reference: 172,
-        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_172").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::unlocated(Vec::new()),
-        rectangular_counted_reference_count: None,
-        members: ([(175, 25), (217, 40)]
-            .into_iter()
-            .map(
-                |(record_index, offset)| crate::records::SketchRelationMember {
-                    reference: crate::records::SketchRelationReference::Index(record_index),
-                    offset,
-                    relation_ordinal: Some(0),
-                },
-            )
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution"),
-        owner_reference_offset: 56,
-        definition: crate::records::SketchRelationDefinition::new(0, None)
-            .expect("valid relation definition"),
-        entity_genesis: None,
-        return_members: ([(217, 79), (175, 90)]
-            .into_iter()
-            .map(
-                |(record_index, offset)| crate::records::SketchRelationReturnMember {
-                    reference: crate::records::SketchRelationReference::Index(record_index),
-                    offset,
-                },
-            )
-            .collect::<Vec<_>>())
-        .try_into()
-        .expect("uniform member resolution"),
-        raw_bytes: bytes[..101].to_vec(),
+    let relation_at = |stream: &str, byte_offset| {
+        SketchRelation::try_new(crate::records::SketchRelationDraft {
+            id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
+            record_index: 249,
+            class_tag: crate::records::DesignClassTag::try_from("286".to_owned()).unwrap(),
+            byte_offset,
+            state_offset: 66,
+            owner_reference: 172,
+            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_172").unwrap()),
+            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: ([(175, 25), (217, 40)]
+                .into_iter()
+                .map(
+                    |(record_index, offset)| crate::records::SketchRelationMember {
+                        reference: crate::records::SketchRelationReference::Index(record_index),
+                        offset,
+                        relation_ordinal: Some(0),
+                    },
+                )
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
+            owner_reference_offset: 56,
+            definition: crate::records::SketchRelationDefinition::new(0, None)
+                .expect("valid relation definition"),
+            entity_genesis: None,
+            return_members: ([(217, 79), (175, 90)]
+                .into_iter()
+                .map(
+                    |(record_index, offset)| crate::records::SketchRelationReturnMember {
+                        reference: crate::records::SketchRelationReference::Index(record_index),
+                        offset,
+                    },
+                )
+                .collect::<Vec<_>>())
+            .try_into()
+            .expect("uniform member resolution"),
+            raw_bytes: bytes[..101].to_vec(),
+        })
+        .unwrap()
     };
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
     let mut group = group;
