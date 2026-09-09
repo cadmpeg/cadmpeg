@@ -88,6 +88,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 fn design_completeness_audits_direct_body_and_shape_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+    let other_body = BodyId::mint("test:model:entity#other-body").expect("identity grammar");
     let source = FeatureId::mint("base").expect("identity grammar");
     let mut push = |id: &str, ordinal, dependencies: Vec<FeatureId>, outputs, definition| {
         ir.model.features.push(Feature {
@@ -148,7 +149,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::SewBodies {
-            bodies: (BodySelection::Bodies(vec![body.clone()]))
+            bodies: (BodySelection::Bodies(vec![body.clone(), other_body.clone()]))
                 .try_into()
                 .unwrap(),
             gap_tolerance: None,
@@ -162,7 +163,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         FeatureDefinition::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(vec![body.clone()]),
-                BodySelection::Bodies(vec![body.clone()]),
+                BodySelection::Bodies(vec![other_body.clone()]),
             )
             .unwrap(),
 
@@ -186,8 +187,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
-                BodySelection::Bodies(vec![body.clone()]),
                 BodySelection::Bodies(vec![body]),
+                BodySelection::Bodies(vec![other_body]),
             )
             .unwrap(),
 
@@ -277,14 +278,20 @@ fn design_completeness_audits_typed_construction_families() {
             op: BooleanOp::Unresolved,
         },
         FeatureDefinition::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(face.clone(), face.clone())
-                .unwrap(),
+            operands: cadmpeg_ir::features::FaceBlendOperands::new(
+                face.clone(),
+                FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                    "test:model:entity#other-face",
+                )
+                .expect("identity grammar")]),
+            )
+            .unwrap(),
 
             radius: RadiusSpec::UnresolvedVariable,
         },
         FeatureDefinition::BoundaryFill {
             tools: BodySelection::Bodies(vec![body]),
-            cells: Vec::new().try_into().unwrap(),
+            cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
         },
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -425,9 +432,9 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             segment_turns: None,
             construction_style: None,
         }),
-        post_process(post_process(FeatureDefinition::Unresolved {
+        post_process(FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        })),
+        }),
     ]
     .into_iter()
     .enumerate()

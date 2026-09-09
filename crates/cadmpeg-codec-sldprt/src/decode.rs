@@ -1052,7 +1052,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .iter()
         .filter(|state| {
             let mut definition = state.definition;
-            while let FeatureDefinition::PostProcess { operation, .. } = definition {
+            if let FeatureDefinition::PostProcess { operation, .. } = definition {
                 definition = operation;
             }
             match definition {
@@ -1510,7 +1510,6 @@ let tools = operands.tools();
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
                 incomplete_body_selection(tools)
-                    || cells.is_empty()
                     || cells.iter().any(incomplete_body_selection)
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {

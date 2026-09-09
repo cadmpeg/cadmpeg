@@ -475,9 +475,7 @@ pub(crate) fn bind_offset_plane_references(
             feature
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
-            continue;
-        }
-        if !feature.dependencies.contains(&reference_id) {
+        } else if !feature.dependencies.contains(&reference_id) {
             feature.dependencies.insert(reference_id);
         }
 
