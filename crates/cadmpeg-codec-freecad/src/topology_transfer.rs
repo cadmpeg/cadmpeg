@@ -340,11 +340,7 @@ impl<'a> Builder<'a> {
                 Tessellation::from_decoded(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
                     triangulation.nodes().to_vec(),
-                    triangulation
-                        .triangles
-                        .iter()
-                        .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                        .collect(),
+                    triangulation.triangles().to_vec(),
                     Vec::new(),
                     triangulation.normals().unwrap_or_default().to_vec(),
                     Vec::new(),
@@ -816,11 +812,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|point| face_transform.apply_point(*point))
                     .collect::<Vec<_>>();
-                let triangles = triangulation
-                    .triangles
-                    .iter()
-                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                    .collect::<Vec<_>>();
+                let triangles = triangulation.triangles().to_vec();
                 let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
