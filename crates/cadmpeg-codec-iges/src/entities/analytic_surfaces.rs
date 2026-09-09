@@ -359,8 +359,15 @@ pub(super) fn project(
                 SurfaceGeometry::Cone(payload)
             }
             196 => {
-                let Some(radius) = record.number(2).map(|radius| radius * factor) else {
-                    losses.push(entity_loss(entry, "sphere radius is not numeric"));
+                let Some(radius) = record
+                    .number(2)
+                    .map(|radius| radius * factor)
+                    .and_then(cadmpeg_ir::units::PositiveScalar::new)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "sphere radius is not positive and finite",
+                    ));
                     continue;
                 };
                 let axis = if entry.form == 1 {
@@ -407,7 +414,7 @@ pub(super) fn project(
                         location,
                         axis,
                         ref_direction,
-                        radius,
+                        radius.get(),
                     ),
                     entry,
                     &mut losses,
