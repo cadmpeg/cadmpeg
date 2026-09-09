@@ -671,7 +671,6 @@ fn parameter_text(entity_type: i64, values: &[BinaryValue]) -> Result<Vec<u8>, C
 #[derive(Debug, Clone, Copy)]
 enum FieldRendering {
     Plain,
-    Label,
     Status,
 }
 
@@ -687,7 +686,7 @@ fn render_field(value: &BinaryValue, rendering: FieldRendering) -> Result<[u8; 8
                 return Err(malformed("Binary Directory status is not an integer"));
             }
         },
-        FieldRendering::Plain | FieldRendering::Label => match value {
+        FieldRendering::Plain => match value {
             BinaryValue::Default => Vec::new(),
             BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
                 value.to_string().into_bytes()
@@ -1025,7 +1024,7 @@ fn normalize_directory_and_parameters(
             render_field(&values[11], FieldRendering::Plain)?,
             render_field(&values[12], FieldRendering::Plain)?,
             render_field(&values[13], FieldRendering::Plain)?,
-            render_field(&values[14], FieldRendering::Label)?,
+            render_field(&values[14], FieldRendering::Plain)?,
             render_field(&values[15], FieldRendering::Plain)?,
         ];
         let mut first_data = [b' '; CARD_DATA_WIDTH];
