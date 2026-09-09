@@ -883,17 +883,19 @@ impl CompoundState {
             return malformed("CFB range lock sector is not allocated as an end-of-chain sector");
         }
         let directory_expected = match version {
-            CompoundVersion::V3 => None,
-            CompoundVersion::V4 => NonZeroUsize::new(directory_sector_count),
+            CompoundVersion::V3 => Some(ChainLength::Unbounded),
+            CompoundVersion::V4 => {
+                NonZeroUsize::new(directory_sector_count).map(ChainLength::Declared)
+            }
         };
-        let directory_chain = Some(chain(
+        let directory_chain = chain(
             Some(ctx),
             &fat,
             sector_count,
             directory_start,
             directory_expected,
-            "directory",
-        )?);
+            ChainRole::Directory,
+        )?;
         let directory_byte_count = directory_chain
             .as_ref()
             .map_or(0, SectorChain::len)
@@ -912,21 +914,14 @@ impl CompoundState {
         let directory = parse_directory(Some(ctx), &directory_bytes, version)?;
         drop(directory_scratch);
         validate_root(&directory)?;
-        let mini_fat_chain = if mini_fat_count == 0 {
-            if mini_fat_start != END_OF_CHAIN {
-                return malformed("empty CFB mini FAT has a start sector");
-            }
-            None
-        } else {
-            Some(chain(
-                Some(ctx),
-                &fat,
-                sector_count,
-                mini_fat_start,
-                NonZeroUsize::new(mini_fat_count),
-                "mini FAT",
-            )?)
-        };
+        let mini_fat_chain = chain(
+            Some(ctx),
+            &fat,
+            sector_count,
+            mini_fat_start,
+            NonZeroUsize::new(mini_fat_count).map(ChainLength::Declared),
+            ChainRole::MiniFat,
+        )?;
         let mini_fat_byte_count = mini_fat_chain
             .as_ref()
             .map_or(0, SectorChain::len)
@@ -953,21 +948,14 @@ impl CompoundState {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(sector_size);
-        let root_mini_chain = if root.size == 0 {
-            if !matches!(root.start_sector, END_OF_CHAIN | FREE_SECTOR) {
-                return malformed("empty CFB root mini stream has an invalid start sector");
-            }
-            None
-        } else {
-            Some(chain(
-                Some(ctx),
-                &fat,
-                sector_count,
-                root.start_sector,
-                NonZeroUsize::new(root_sectors),
-                "root mini stream",
-            )?)
-        };
+        let root_mini_chain = chain(
+            Some(ctx),
+            &fat,
+            sector_count,
+            root.start_sector,
+            NonZeroUsize::new(root_sectors).map(ChainLength::Declared),
+            ChainRole::RootMiniStream,
+        )?;
         Ok(Self {
             version,
             sector_count,
@@ -1084,54 +1072,50 @@ impl CompoundState {
                     self.walk_tree(ctx, snapshot_id, entry.child, &path, reached, output)?;
                 }
                 DirectoryKind::Stream => {
-                    let data = if let Some(logical_size) = NonZeroU64::new(entry.size) {
-                        let allocation = if entry.size < MINI_STREAM_CUTOFF {
-                            CompoundAllocation::Mini
-                        } else {
-                            CompoundAllocation::Regular
-                        };
-                        let sector_size = match allocation {
-                            CompoundAllocation::Regular => self.version.sector_size(),
-                            CompoundAllocation::Mini => MINI_SECTOR_SIZE,
-                        };
-                        let expected = usize::try_from(entry.size)
-                            .map_err(|_| {
-                                CodecError::Malformed("CFB stream size does not fit memory".into())
-                            })?
-                            .div_ceil(sector_size);
-                        let sectors = match allocation {
-                            CompoundAllocation::Regular => chain(
-                                Some(ctx),
-                                &self.fat,
-                                self.sector_count,
-                                entry.start_sector,
-                                NonZeroUsize::new(expected),
-                                "stream",
-                            )?,
-                            CompoundAllocation::Mini => chain(
-                                Some(ctx),
-                                &self.mini_fat,
-                                self.mini_fat.len(),
-                                entry.start_sector,
-                                NonZeroUsize::new(expected),
-                                "mini stream",
-                            )?,
-                        };
-                        StreamData::Allocated {
-                            logical_size,
-                            chain: sectors,
-                        }
+                    let allocation = if entry.size < MINI_STREAM_CUTOFF {
+                        CompoundAllocation::Mini
                     } else {
-                        let start = match entry.start_sector {
-                            END_OF_CHAIN => EmptyStreamStart::EndOfChain,
-                            FREE_SECTOR => EmptyStreamStart::FreeSector,
-                            _ => {
-                                return malformed(format!(
-                                    "empty CFB stream {path} has an invalid start sector"
-                                ));
-                            }
-                        };
-                        StreamData::Empty(start)
+                        CompoundAllocation::Regular
+                    };
+                    let (fat, count, width, role) = match allocation {
+                        CompoundAllocation::Regular => (
+                            &self.fat,
+                            self.sector_count,
+                            self.version.sector_size(),
+                            ChainRole::Stream,
+                        ),
+                        CompoundAllocation::Mini => (
+                            &self.mini_fat,
+                            self.mini_fat.len(),
+                            MINI_SECTOR_SIZE,
+                            ChainRole::MiniStream,
+                        ),
+                    };
+                    let expected = usize::try_from(entry.size)
+                        .map_err(|_| {
+                            CodecError::Malformed("CFB stream size does not fit memory".into())
+                        })?
+                        .div_ceil(width);
+                    let sectors = chain(
+                        Some(ctx),
+                        fat,
+                        count,
+                        entry.start_sector,
+                        NonZeroUsize::new(expected).map(ChainLength::Declared),
+                        role,
+                    )?;
+                    let data = match sectors {
+                        Some(chain) => StreamData::Allocated {
+                            logical_size: NonZeroU64::new(entry.size).ok_or_else(|| {
+                                CodecError::Malformed("CFB allocated stream has zero size".into())
+                            })?,
+                            chain,
+                        },
+                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                            EmptyStreamStart::FreeSector
+                        } else {
+                            EmptyStreamStart::EndOfChain
+                        }),
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
                         id: CompoundStreamId(id),
@@ -1727,14 +1711,56 @@ fn range_lock_sector(version: CompoundVersion, file_size: u64) -> Option<u32> {
     Some((RANGE_LOCK_START / version.sector_size() as u64 - 1) as u32)
 }
 
+#[derive(Clone, Copy)]
+enum ChainLength {
+    Declared(NonZeroUsize),
+    Unbounded,
+}
+
+#[derive(Clone, Copy)]
+enum ChainRole {
+    Directory,
+    MiniFat,
+    RootMiniStream,
+    Stream,
+    MiniStream,
+}
+
+impl ChainRole {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Directory => "directory",
+            Self::MiniFat => "mini FAT",
+            Self::RootMiniStream => "root mini stream",
+            Self::Stream => "stream",
+            Self::MiniStream => "mini stream",
+        }
+    }
+}
+
 fn chain(
     ctx: Option<&DecodeContext<'_>>,
     fat: &[u32],
     sector_count: usize,
     start: u32,
-    expected: Option<NonZeroUsize>,
-    role: &str,
-) -> Result<SectorChain, CodecError> {
+    length: Option<ChainLength>,
+    role: ChainRole,
+) -> Result<Option<SectorChain>, CodecError> {
+    let accepts_free = matches!(
+        role,
+        ChainRole::RootMiniStream | ChainRole::Stream | ChainRole::MiniStream
+    );
+    let role = role.name();
+    let expected = match length {
+        None => {
+            if start == END_OF_CHAIN || (accepts_free && start == FREE_SECTOR) {
+                return Ok(None);
+            }
+            return malformed(format!("empty CFB {role} has an invalid start sector"));
+        }
+        Some(ChainLength::Declared(count)) => Some(count),
+        Some(ChainLength::Unbounded) => None,
+    };
     let limit = expected.map_or(sector_count, NonZeroUsize::get);
     if let (Some(ctx), Some(count)) = (ctx, expected) {
         ctx.charge_collection_items(count.get() as u64, "retain CFB sector chain")?;
@@ -1795,7 +1821,7 @@ fn chain(
             "CFB {role} chain length does not match its declaration"
         ));
     }
-    Ok(output)
+    Ok(Some(output))
 }
 
 fn join_sectors<'a>(
