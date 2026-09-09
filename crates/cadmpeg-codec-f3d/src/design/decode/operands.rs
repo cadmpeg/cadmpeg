@@ -533,7 +533,7 @@ pub fn bind_work_plane_constructions(
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(
                 DesignWorkPlaneConstruction::try_new(placement_record_index, Box::new(inputs))
-                    .map_err(|error| CodecError::malformed(error.to_string()))?,
+                    .map_err(CodecError::malformed)?,
             );
         }
     }
