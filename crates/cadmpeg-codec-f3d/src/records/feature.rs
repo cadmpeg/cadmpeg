@@ -2278,8 +2278,6 @@ pub enum DesignAssemblyAlignmentForm {
         frames: [DesignAssemblyOperandFrame; 2],
     },
     Qualified([DesignQualifiedAssemblyOperand; 2]),
-    /// The two locator paths are known, but their connector frames did not decode.
-    UnframedPaths([DesignAssemblyOperandPath; 2]),
 }
 
 impl DesignAssemblyAlignmentForm {
@@ -2342,8 +2340,7 @@ impl DesignAssemblyAlignment {
             } => carriers.frames(solved_frame).ok(),
             DesignAssemblyAlignmentForm::DatumEnvelope { .. }
             | DesignAssemblyAlignmentForm::LimitsOnly { .. }
-            | DesignAssemblyAlignmentForm::SolvedOnly { .. }
-            | DesignAssemblyAlignmentForm::UnframedPaths(_) => None,
+            | DesignAssemblyAlignmentForm::SolvedOnly { .. } => None,
         }
     }
 
@@ -2362,11 +2359,6 @@ impl DesignAssemblyAlignment {
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 Some(operands.each_ref().map(|operand| operand.qualifier.clone()))
             }
-            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(
-                paths
-                    .clone()
-                    .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
-            ),
             _ => None,
         }
     }
@@ -2374,7 +2366,6 @@ impl DesignAssemblyAlignment {
     /// Return both occurrence paths when every operand uses that qualifier form.
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
         match self.form.as_ref()? {
-            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone()),
             DesignAssemblyAlignmentForm::Qualified(operands) => {
                 let [Some(first), Some(second)] = operands
                     .each_ref()
@@ -2472,10 +2463,6 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, Some(frames), Some(qualifiers), None, None) => Some(
                 DesignAssemblyAlignmentForm::qualified(frames, qualifiers)
             ),
-            (None, None, None, Some([
-                DesignAssemblyOperandQualifier::OccurrencePath { path: first },
-                DesignAssemblyOperandQualifier::OccurrencePath { path: second },
-            ]), None, None) => Some(DesignAssemblyAlignmentForm::UnframedPaths([first, second])),
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
@@ -2555,14 +2542,6 @@ impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
                 None,
                 None,
                 Some([first_qualifier, second_qualifier]),
-                None,
-                None,
-            ),
-            Some(DesignAssemblyAlignmentForm::UnframedPaths(paths)) => (
-                None,
-                None,
-                None,
-                Some(paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
                 None,
                 None,
             ),
@@ -5516,12 +5495,14 @@ pub struct DesignNativeFeatureName(std::sync::Arc<str>);
 
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
+     required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(try_from = "String", into = "String")]
         pub enum DesignFeatureKind {
             $($variant,)+
+            $($required,)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
             Native(DesignNativeFeatureName),
@@ -5532,6 +5513,7 @@ macro_rules! design_feature_kinds {
             pub fn as_str(&self) -> &str {
                 match self {
                     $(Self::$variant => $lit,)+
+                    $(Self::$required => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
                 }
@@ -5546,6 +5528,7 @@ macro_rules! design_feature_kinds {
                 match name.as_str() {
                     "" => Err("Design feature kind must not be empty"),
                     $($lit => Ok(Self::$variant),)+
+                    $($required_lit => Ok(Self::$required),)+
                     $($unit_lit => Ok(Self::$unit),)+
                     _ => Ok(Self::Native(DesignNativeFeatureName(name.into()))),
                 }
@@ -5567,17 +5550,20 @@ macro_rules! design_feature_kinds {
         #[derive(Debug, Clone, PartialEq)]
         pub enum DesignScopePayload {
             $($variant($payload),)+
+            $($required($required_payload),)+
             $($unit,)+
             /// Source name without a specialized construction grammar.
             Native(DesignNativeFeatureName),
         }
 
-        impl From<DesignFeatureKind> for DesignScopePayload {
-            fn from(kind: DesignFeatureKind) -> Self {
+        impl TryFrom<DesignFeatureKind> for DesignScopePayload {
+            type Error = &'static str;
+            fn try_from(kind: DesignFeatureKind) -> Result<Self, Self::Error> {
                 match kind {
-                    $(DesignFeatureKind::$variant => Self::$variant(Default::default()),)+
-                    $(DesignFeatureKind::$unit => Self::$unit,)+
-                    DesignFeatureKind::Native(name) => Self::Native(name),
+                    $(DesignFeatureKind::$variant => Ok(Self::$variant(Default::default())),)+
+                    $(DesignFeatureKind::$required => Err(concat!($required_lit, " requires its operation")),)+
+                    $(DesignFeatureKind::$unit => Ok(Self::$unit),)+
+                    DesignFeatureKind::Native(name) => Ok(Self::Native(name)),
                 }
             }
         }
@@ -5586,6 +5572,7 @@ macro_rules! design_feature_kinds {
             fn kind(&self) -> DesignFeatureKind {
                 match self {
                     $(Self::$variant(_) => DesignFeatureKind::$variant,)+
+                    $(Self::$required(_) => DesignFeatureKind::$required,)+
                     $(Self::$unit => DesignFeatureKind::$unit,)+
                     Self::Native(name) => DesignFeatureKind::Native(name.clone()),
                 }
@@ -5594,6 +5581,7 @@ macro_rules! design_feature_kinds {
             fn kind_name(&self) -> &str {
                 match self {
                     $(Self::$variant(_) => $lit,)+
+                    $(Self::$required(_) => $required_lit,)+
                     $(Self::$unit => $unit_lit,)+
                     Self::Native(name) => &name.0,
                 }
@@ -5643,7 +5631,6 @@ design_feature_kinds! {
         SurfacePatch => "SurfacePatch": Vec<DesignSurfacePatchBoundary>,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
-        SurfaceRuled => "SurfaceRuled": Option<DesignRuledSurfaceOperation>,
         Hole => "Hole": Option<DesignHoleConstruction>,
         Scale => "Scale": Option<DesignScaleOperation>,
         Massstab => "Maßstab": Option<DesignScaleOperation>,
@@ -5658,13 +5645,16 @@ design_feature_kinds! {
         WorkAxis => "WorkAxis": Option<DesignWorkAxisConstruction>,
         WorkPoint => "WorkPoint": Option<DesignWorkPointConstruction>,
         DerivedInstance => "DerivedInstance": Option<DesignDerivedInstanceConstruction>,
-        SurfaceStitch => "SurfaceStitch": Option<DesignSurfaceStitchOperation>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
         SpherePrimitive => "SpherePrimitive": Option<DesignSpherePrimitive>,
         TorusPrimitive => "TorusPrimitive": Option<DesignTorusPrimitive>,
         BoxPrimitive => "BoxPrimitive": Option<DesignBoxPrimitive>,
         CylinderPrimitive => "CylinderPrimitive": Option<DesignCylinderPrimitive>,
+    }
+    required {
+        SurfaceStitch => "SurfaceStitch": DesignSurfaceStitchOperation,
+        SurfaceRuled => "SurfaceRuled": DesignRuledSurfaceOperation,
     }
     names {
         ReplaceFace => "ReplaceFace",
@@ -7352,9 +7342,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::SurfaceOffset => {
                 DesignScopePayload::SurfaceOffset(wire.surface_offset_operation.take())
             }
-            DesignFeatureKind::SurfaceRuled => {
-                DesignScopePayload::SurfaceRuled(wire.ruled_surface_operation.take())
-            }
+            DesignFeatureKind::SurfaceRuled => DesignScopePayload::SurfaceRuled(
+                wire.ruled_surface_operation.take().ok_or_else(|| {
+                    DesignParameterScopePayloadError("ruled_surface_operation is required".into())
+                })?,
+            ),
             DesignFeatureKind::SurfaceTrim => DesignScopePayload::SurfaceTrim,
             DesignFeatureKind::BoundaryFill => DesignScopePayload::BoundaryFill,
             DesignFeatureKind::Hole => DesignScopePayload::Hole(wire.hole_construction.take()),
@@ -7399,9 +7391,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::CustomFeature => DesignScopePayload::CustomFeature,
             DesignFeatureKind::Form => DesignScopePayload::Form,
-            DesignFeatureKind::SurfaceStitch => {
-                DesignScopePayload::SurfaceStitch(wire.surface_stitch_operation.take())
-            }
+            DesignFeatureKind::SurfaceStitch => DesignScopePayload::SurfaceStitch(
+                wire.surface_stitch_operation.take().ok_or_else(|| {
+                    DesignParameterScopePayloadError("surface_stitch_operation is required".into())
+                })?,
+            ),
             DesignFeatureKind::BaseFeature => {
                 DesignScopePayload::BaseFeature(wire.base_feature_construction.take())
             }
@@ -7666,10 +7660,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value;
             }
-            DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = value,
+            DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
-            DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = value,
+            DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = Some(value),
             DesignScopePayload::SurfacePatch(value) => wire.surface_patch_boundaries = value,
             DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
@@ -7833,7 +7827,7 @@ impl DesignParameterScope {
 
     pub(crate) fn surface_stitch_operation(&self) -> Option<&DesignSurfaceStitchOperation> {
         match &self.payload {
-            DesignScopePayload::SurfaceStitch(value) => value.as_ref(),
+            DesignScopePayload::SurfaceStitch(value) => Some(value),
             _ => None,
         }
     }
@@ -7854,7 +7848,7 @@ impl DesignParameterScope {
 
     pub(crate) fn ruled_surface_operation(&self) -> Option<&DesignRuledSurfaceOperation> {
         match &self.payload {
-            DesignScopePayload::SurfaceRuled(value) => value.as_ref(),
+            DesignScopePayload::SurfaceRuled(value) => Some(value),
             _ => None,
         }
     }
@@ -8287,7 +8281,11 @@ impl DesignParameterScope {
         }));
     }
 
-    pub(crate) fn empty(id: &str, kind: DesignFeatureKind, record_index: u32) -> Self {
+    pub(crate) fn empty<P>(id: &str, payload: P, record_index: u32) -> Self
+    where
+        P: TryInto<DesignScopePayload>,
+        P::Error: std::fmt::Debug,
+    {
         Self {
             id: id.to_string(),
             byte_offset: 0,
@@ -8302,7 +8300,7 @@ impl DesignParameterScope {
             previous_history_state_id_offset: None,
             reference_count_offset: 0,
             reference_members: ReferenceRun::unlocated(Vec::new()),
-            payload: kind.into(),
+            payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 0,

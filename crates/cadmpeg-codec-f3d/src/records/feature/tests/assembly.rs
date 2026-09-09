@@ -266,12 +266,6 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             },
         ),
         Some(
-            crate::records::feature::DesignAssemblyAlignmentForm::UnframedPaths([
-                path.clone(),
-                path,
-            ]),
-        ),
-        Some(
             crate::records::feature::DesignAssemblyAlignmentForm::qualified(
                 [frame.clone(), frame.clone()],
                 [occurrence.clone(), occurrence.clone()],
@@ -311,6 +305,15 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             serde_json::from_str(&wire).unwrap();
         assert_eq!(decoded, alignment);
         assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        if alignment.operand_paths().is_some() {
+            let mut unframed = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
+            unframed.as_object_mut().unwrap().remove("operand_frames");
+            let error = serde_json::from_value::<crate::records::feature::DesignAssemblyAlignment>(
+                unframed,
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("operand_frames"));
+        }
         let mut invalid = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
         invalid["value_offsets"] = serde_json::json!([11]);
         let error =

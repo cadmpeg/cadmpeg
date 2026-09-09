@@ -33,7 +33,9 @@ pub(super) fn continue_fixed_kind_operations(
         bytes.extend_from_slice(&scalar);
     }
     let mut draft_scope = scope.clone();
-    draft_scope.payload = crate::records::feature::DesignFeatureKind::Draft.into();
+    draft_scope.payload = crate::records::feature::DesignFeatureKind::Draft
+        .try_into()
+        .unwrap();
     draft_scope.frame_length = 361;
     draft_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
@@ -118,7 +120,9 @@ pub(super) fn continue_fixed_kind_operations(
         bytes.extend_from_slice(&scalar);
     }
     let mut fillet_scope = scope.clone();
-    fillet_scope.payload = crate::records::feature::DesignFeatureKind::Fillet.into();
+    fillet_scope.payload = crate::records::feature::DesignFeatureKind::Fillet
+        .try_into()
+        .unwrap();
     fillet_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![77, 50, 78, 79, 87, 88]);
     assert_eq!(
@@ -277,7 +281,9 @@ pub(super) fn continue_fixed_kind_operations(
     chamfer_scalar.extend_from_slice(&86u32.to_le_bytes());
     bytes.extend_from_slice(&chamfer_scalar);
     let mut chamfer_scope = scope.clone();
-    chamfer_scope.payload = crate::records::feature::DesignFeatureKind::Chamfer.into();
+    chamfer_scope.payload = crate::records::feature::DesignFeatureKind::Chamfer
+        .try_into()
+        .unwrap();
     chamfer_scope.reference_members = crate::records::ReferenceRun::unlocated(vec![86]);
     assert_eq!(
         exact_fixed_chamfer_parameters(
@@ -375,7 +381,9 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut revolve_scope = scope.clone();
     revolve_scope.byte_offset = revolve_start as u64;
-    revolve_scope.payload = crate::records::feature::DesignFeatureKind::Revolve.into();
+    revolve_scope.payload = crate::records::feature::DesignFeatureKind::Revolve
+        .try_into()
+        .unwrap();
     revolve_scope.frame_length = 386;
     revolve_scope.reference_members =
         crate::records::ReferenceRun::unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
@@ -652,7 +660,8 @@ pub(super) fn continue_fixed_kind_operations(
     revolve_scope.id = "stream:scope".into();
     {
         let value = revolve_construction;
-        revolve_scope.payload = value.map_or_else(|| revolve_scope.kind().into(), Into::into);
+        revolve_scope.payload =
+            value.map_or_else(|| revolve_scope.kind().try_into().unwrap(), Into::into);
     }
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
@@ -680,8 +689,10 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_revolve_scope.id = "stream:indexed-revolve".into();
     {
         let value = indexed_revolve_construction;
-        indexed_revolve_scope.payload =
-            value.map_or_else(|| indexed_revolve_scope.kind().into(), Into::into);
+        indexed_revolve_scope.payload = value.map_or_else(
+            || indexed_revolve_scope.kind().try_into().unwrap(),
+            Into::into,
+        );
     }
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
@@ -1041,7 +1052,9 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&loft);
     let mut loft_scope = scope.clone();
     loft_scope.byte_offset = loft_start as u64;
-    loft_scope.payload = crate::records::feature::DesignFeatureKind::Loft.into();
+    loft_scope.payload = crate::records::feature::DesignFeatureKind::Loft
+        .try_into()
+        .unwrap();
     loft_scope.frame_length = 376;
     assert_eq!(
         exact_path_feature_construction(
@@ -1065,7 +1078,8 @@ pub(super) fn continue_fixed_kind_operations(
                 operation_offset: (loft_start + 29) as u64,
             },
         ));
-        loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
+        loft_scope.payload =
+            value.map_or_else(|| loft_scope.kind().try_into().unwrap(), Into::into);
     }
     let loft_record_index = loft_scope.record_index;
     let loft_group = |ordinal: u32, role: DesignOperandRole| {
@@ -1133,7 +1147,8 @@ pub(super) fn continue_fixed_kind_operations(
                 operation_offset: (loft_start + 29) as u64,
             },
         ));
-        loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
+        loft_scope.payload =
+            value.map_or_else(|| loft_scope.kind().try_into().unwrap(), Into::into);
     }
     let cut = [
         loft_group(0, DesignOperandRole::BODIES_A),
@@ -1221,7 +1236,8 @@ pub(super) fn continue_fixed_kind_operations(
                 operation_offset: (loft_start + 29) as u64,
             },
         ));
-        loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
+        loft_scope.payload =
+            value.map_or_else(|| loft_scope.kind().try_into().unwrap(), Into::into);
     }
     let role_5 = [
         loft_group(0, DesignOperandRole::ROLE_0X5),
@@ -1356,7 +1372,9 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut sweep_scope = scope.clone();
     sweep_scope.byte_offset = sweep_start as u64;
-    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep.into();
+    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep
+        .try_into()
+        .unwrap();
     sweep_scope.frame_length = 499;
     sweep_scope.reference_members = crate::records::ReferenceRun::unlocated((80..86).collect());
     assert_eq!(
@@ -1386,7 +1404,8 @@ pub(super) fn continue_fixed_kind_operations(
             &sweep_scope,
             &[],
         );
-        sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
+        sweep_scope.payload =
+            value.map_or_else(|| sweep_scope.kind().try_into().unwrap(), Into::into);
     }
     let sweep_record_index = sweep_scope.record_index;
     let sweep_group = |ordinal: u32, role: DesignOperandRole| {
@@ -1432,7 +1451,8 @@ pub(super) fn continue_fixed_kind_operations(
                 }),
             },
         ));
-        sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
+        sweep_scope.payload =
+            value.map_or_else(|| sweep_scope.kind().try_into().unwrap(), Into::into);
     }
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
@@ -1472,7 +1492,8 @@ pub(super) fn continue_fixed_kind_operations(
                 }),
             },
         ));
-        sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
+        sweep_scope.payload =
+            value.map_or_else(|| sweep_scope.kind().try_into().unwrap(), Into::into);
     }
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
@@ -1609,7 +1630,8 @@ pub(super) fn continue_fixed_kind_operations(
                 }),
             },
         ));
-        sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
+        sweep_scope.payload =
+            value.map_or_else(|| sweep_scope.kind().try_into().unwrap(), Into::into);
     }
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
@@ -1654,7 +1676,9 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut pipe_scope = scope.clone();
     pipe_scope.byte_offset = pipe_start as u64;
-    pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
+    pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe
+        .try_into()
+        .unwrap();
     pipe_scope.frame_length = 464;
     pipe_scope.reference_members = crate::records::ReferenceRun::unlocated((170..174).collect());
     assert_eq!(
@@ -1724,7 +1748,9 @@ pub(super) fn continue_fixed_kind_operations(
         crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
     owner_pipe_scope.paired_class_tag =
         crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
-    owner_pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
+    owner_pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe
+        .try_into()
+        .unwrap();
     owner_pipe_scope.frame_length = 405;
     owner_pipe_scope.reference_members =
         crate::records::ReferenceRun::unlocated(owner_pipe_record_indexes.into());
@@ -1803,7 +1829,9 @@ pub(super) fn continue_fixed_kind_operations(
             crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         legacy_scope.paired_class_tag =
             crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
-        legacy_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
+        legacy_scope.payload = crate::records::feature::DesignFeatureKind::Pipe
+            .try_into()
+            .unwrap();
         legacy_scope.frame_length = 383;
         legacy_scope.reference_members = crate::records::ReferenceRun::unlocated(
             (first_record_index..first_record_index + 4).collect(),

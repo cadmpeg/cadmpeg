@@ -521,7 +521,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.record_index = placement
         .scope_record_index
         .expect("test placement carries a scope record index");
-    sketch_scope.payload = crate::records::feature::DesignFeatureKind::Sketch.into();
+    sketch_scope.payload = crate::records::feature::DesignFeatureKind::Sketch
+        .try_into()
+        .unwrap();
     let scopes = vec![sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),

@@ -427,7 +427,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::Fillet.into(),
+        payload: crate::records::feature::DesignFeatureKind::Fillet
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
@@ -466,7 +468,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.resolved_edge_slot, None);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
-    work_point_scope.payload = crate::records::feature::DesignFeatureKind::WorkPoint.into();
+    work_point_scope.payload = crate::records::feature::DesignFeatureKind::WorkPoint
+        .try_into()
+        .unwrap();
     let work_point_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -480,7 +484,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(work_point_operand.next_record_index, 105);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
-    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep.into();
+    sweep_scope.payload = crate::records::feature::DesignFeatureKind::Sweep
+        .try_into()
+        .unwrap();
     let sweep_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -1415,7 +1421,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     let face_next_at = header(&mut face_bytes, *b"306", 104);
     let mut face_scope = scope;
-    face_scope.payload = crate::records::feature::DesignFeatureKind::Extrude.into();
+    face_scope.payload = crate::records::feature::DesignFeatureKind::Extrude
+        .try_into()
+        .unwrap();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
     face_recipe.design = Some(crate::records::ConstructionRecipeDesign {
@@ -1833,7 +1841,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("split-face context recipe structure");
     let mut split_scope = face_scope.clone();
-    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace.into();
+    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace
+        .try_into()
+        .unwrap();
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;

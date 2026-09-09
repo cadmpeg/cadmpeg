@@ -1007,7 +1007,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
+    scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale
+        .try_into()
+        .unwrap();
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
     scale_group.operand_role =
@@ -1043,7 +1045,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     ));
 
     let mut move_scope = scope;
-    move_scope.payload = crate::records::feature::DesignFeatureKind::Move.into();
+    move_scope.payload = crate::records::feature::DesignFeatureKind::Move
+        .try_into()
+        .unwrap();
     move_scope.history_state_id = Some(42);
     move_scope.previous_history_state_id = Some(41);
     let move_history = crate::history_records::AsmHistory {

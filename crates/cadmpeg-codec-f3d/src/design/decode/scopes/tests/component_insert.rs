@@ -76,7 +76,9 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::feature::DesignFeatureKind::ComponentInsert.into(),
+        payload: crate::records::feature::DesignFeatureKind::ComponentInsert
+            .try_into()
+            .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: (scope_at + 399) as u64,
@@ -199,7 +201,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             value: 20,
             offset: (expanded_scope_at + 42) as u64,
         }]),
-        payload: scope.kind().into(),
+        payload: scope.kind().try_into().unwrap(),
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: (expanded_scope_at + 404) as u64,
         ..scope.clone()

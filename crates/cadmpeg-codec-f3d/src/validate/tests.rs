@@ -688,7 +688,9 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes[0].payload =
-            crate::records::feature::DesignFeatureKind::SurfaceTrim.into();
+            crate::records::feature::DesignFeatureKind::SurfaceTrim
+                .try_into()
+                .unwrap();
         native.design_construction_operand_groups[1].operand_role =
             crate::records::topology::DesignConstructionOperandRole::Other(
                 DesignOperandRole::ROLE_0X21,
@@ -737,7 +739,7 @@ fn validation_checks_pipe_path_group_roles() {
                 value_offsets: [0; 4],
             },
         ));
-        scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
+        scope.payload = value.map_or_else(|| scope.kind().try_into().unwrap(), Into::into);
     }
     scope.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
     let path_group = DesignConstructionOperandGroup::try_from(
