@@ -13,32 +13,41 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+use crate::records::{DesignGuidText, SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 use super::attributes::{source_less_body_key, AttributeIndex};
 use super::preconditions::DesignBindingsValidated;
 
 /// One type-table row after generated record types have been registered.
 pub(crate) struct GeneratedDesignType {
-    pub type_guid: String,
-    pub base_type_guid: Option<String>,
+    pub type_guid: DesignGuidText,
+    pub base_type_guid: Option<DesignGuidText>,
     pub version: u32,
     pub module: String,
     pub entity_ids: Vec<u64>,
 }
 
-impl From<&SegmentType> for GeneratedDesignType {
-    fn from(value: &SegmentType) -> Self {
-        Self {
-            type_guid: value.type_guid.as_str().to_owned(),
+impl TryFrom<&SegmentType> for GeneratedDesignType {
+    type Error = CodecError;
+    fn try_from(value: &SegmentType) -> Result<Self, Self::Error> {
+        Ok(Self {
+            type_guid: value
+                .type_guid
+                .as_str()
+                .to_owned()
+                .try_into()
+                .map_err(CodecError::Malformed)?,
             base_type_guid: value
                 .base_type_guid
                 .as_ref()
-                .and_then(|field| field.value.as_ref().map(|guid| guid.as_str().to_owned())),
+                .and_then(|field| field.value.as_ref())
+                .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
+                .transpose()
+                .map_err(CodecError::Malformed)?,
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
-        }
+        })
     }
 }
 
@@ -50,9 +59,23 @@ pub(crate) struct GeneratedBrowserNode {
     pub visible: bool,
 }
 
+/// A nonempty ordered map from ASM body keys to Design entity suffixes.
+pub(crate) struct GeneratedBodyMapEntries(BTreeMap<u64, u64>);
+
+impl GeneratedBodyMapEntries {
+    fn new(entries: BTreeMap<u64, u64>) -> Option<Self> {
+        (!entries.is_empty()).then_some(Self(entries))
+    }
+
+    /// The ordered body-map entries.
+    pub(crate) fn as_map(&self) -> &BTreeMap<u64, u64> {
+        &self.0
+    }
+}
+
 /// A generated body map and its registered identity.
 pub(crate) struct GeneratedBodyMap {
-    pub entries: BTreeMap<u64, u64>,
+    pub entries: GeneratedBodyMapEntries,
     pub record_index: u32,
     pub class_tag: crate::records::DesignClassTag,
 }
@@ -147,8 +170,12 @@ impl GeneratedDesignRegistry {
                 })?
         };
 
-        let body_map_record_index = (!body_map.is_empty())
-            .then(|| allocate_record_index(&mut used_record_indices, &mut next_record_index))
+        let body_map = GeneratedBodyMapEntries::new(body_map)
+            .map(|entries| {
+                let record_index =
+                    allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
+                Ok::<_, CodecError>((entries, record_index))
+            })
             .transpose()?;
         pending.sort_by_key(|(entity_suffix, _, _)| *entity_suffix);
         let mut browser_nodes = Vec::with_capacity(pending.len());
@@ -166,10 +193,10 @@ impl GeneratedDesignRegistry {
         let mut types = native
             .design_types
             .iter()
-            .map(GeneratedDesignType::from)
-            .collect::<Vec<_>>();
-        let body_map = body_map_record_index
-            .map(|record_index| {
+            .map(GeneratedDesignType::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let body_map = body_map
+            .map(|(entries, record_index)| {
                 let type_index = register_generated_type(
                     &mut types,
                     BODY_MAP_CARRIER_TYPE_GUID,
@@ -179,7 +206,7 @@ impl GeneratedDesignRegistry {
                     vec![u64::from(record_index)],
                 )?;
                 Ok::<_, CodecError>(GeneratedBodyMap {
-                    entries: body_map,
+                    entries,
                     record_index,
                     class_tag: dynamic_class_tag(type_index)?,
                 })
@@ -238,14 +265,27 @@ fn register_generated_type(
     let matches = types
         .iter()
         .enumerate()
-        .filter(|(_, design_type)| design_type.type_guid.eq_ignore_ascii_case(type_guid))
+        .filter(|(_, design_type)| {
+            design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(type_guid)
+        })
         .map(|(ordinal, _)| ordinal)
         .collect::<Vec<_>>();
     let ordinal = match matches.as_slice() {
         [] => {
             types.push(GeneratedDesignType {
-                type_guid: type_guid.to_owned(),
-                base_type_guid: Some(base_type_guid.to_owned()),
+                type_guid: type_guid
+                    .to_owned()
+                    .try_into()
+                    .map_err(CodecError::Malformed)?,
+                base_type_guid: Some(
+                    base_type_guid
+                        .to_owned()
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
+                ),
                 version,
                 module: module.to_owned(),
                 entity_ids: Vec::new(),
@@ -264,8 +304,8 @@ fn register_generated_type(
         || design_type.module != module
         || design_type
             .base_type_guid
-            .as_deref()
-            .is_none_or(|base| !base.eq_ignore_ascii_case(base_type_guid))
+            .as_ref()
+            .is_none_or(|base| !base.as_str().eq_ignore_ascii_case(base_type_guid))
     {
         return Err(CodecError::malformed(format_args!(
             "F3D Design type {type_guid} conflicts with its built-in registration"
@@ -329,6 +369,24 @@ fn deterministic_guid(domain: &str, identity: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{deterministic_guid, GeneratedDesignRegistry};
+
+    #[test]
+    fn generated_type_rejects_relaxed_noncanonical_guid() {
+        let mut source = body_map_type(vec![1]);
+        source.type_guid = "____________________________________"
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert!(super::GeneratedDesignType::try_from(&source).is_err());
+        source = body_map_type(vec![1]);
+        source.base_type_guid.as_mut().unwrap().value = Some(
+            "____________________________________"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+        );
+        assert!(super::GeneratedDesignType::try_from(&source).is_err());
+    }
 
     fn body_map_type(entity_ids: Vec<u64>) -> crate::records::SegmentType {
         crate::records::SegmentType {
@@ -537,6 +595,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
             })
             .expect("body-map type registration");
@@ -570,6 +629,7 @@ mod tests {
             .find(|design_type| {
                 design_type
                     .type_guid
+                    .as_str()
                     .eq_ignore_ascii_case(crate::design::presentation::BROWSER_NODE_TYPE_GUID)
             })
             .expect("browser-node type registration");

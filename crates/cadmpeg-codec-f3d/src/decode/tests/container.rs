@@ -316,3 +316,50 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
         ContainerRole::BrepSmbh
     );
 }
+
+#[test]
+fn docstruct_metadata_distinguishes_absent_and_empty_subtype() {
+    for (properties, expected_subtype) in [
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","attributes":{}}}"#,
+            None,
+        ),
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","subtype":"","attributes":{}}}"#,
+            Some(""),
+        ),
+        (
+            r#"{"docstruct":{"version":"1.0.0","type":"part-design","subtype":"part-standard","attributes":{}}}"#,
+            Some("part-standard"),
+        ),
+    ] {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("Properties.dat", stored).unwrap();
+        zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())
+            .unwrap();
+        zip.write_all(properties.as_bytes()).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        for container_only in [false, true] {
+            let decoded = F3dCodec
+                .decode(
+                    &mut Cursor::new(&archive),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap();
+            let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
+            assert_eq!(
+                attributes.get("docstruct_type").map(String::as_str),
+                Some("part-design")
+            );
+            assert_eq!(
+                attributes.get("docstruct_subtype").map(String::as_str),
+                expected_subtype
+            );
+        }
+    }
+}
