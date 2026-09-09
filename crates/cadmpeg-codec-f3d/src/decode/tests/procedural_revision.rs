@@ -182,7 +182,10 @@ fn generated_revision_rot_surface_round_trips() {
 fn generated_revision_t_spline_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("t_spl_sur", |surface| {
         push_revision_surface_tail(surface);
-        push_optional_value_quartet(surface);
+        for value in [0.0, 1.0, 0.0, 1.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
         push_tagged_i64(surface, 0x15, 0);
         surface.push(0x0f);
         t_ident(surface, "t_spl_subtrans_object");
