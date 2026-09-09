@@ -668,7 +668,9 @@ impl DialectMatch {
         }
     }
 
-    fn grammar_id(&self, grammar: &Grammar) -> DialectId {
+    /// Return the full grammar identity in this match’s format namespace.
+    #[must_use]
+    pub fn grammar_id(&self, grammar: &Grammar) -> DialectId {
         DialectId(Cow::Owned(format!(
             "{}:{}",
             self.format(),
