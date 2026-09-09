@@ -426,26 +426,25 @@ impl<'a> Builder<'a> {
         self.edges.clear();
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind();
-        if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
-            let TextTShapeGeometry::Edge {
-                degenerated,
-                representations,
-                ..
-            } = &root_shape.geometry
-            else {
-                unreachable!("edge kind and geometry must agree")
-            };
-            if !degenerated
-                && !representations.iter().any(|representation| {
-                    matches!(representation, TextEdgeRepresentation::Curve3d { .. })
-                })
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "unbounded edge TShape {} has no exact curve",
-                    root.shape
-                )));
+        if let TextTShapeGeometry::Edge {
+            degenerated,
+            representations,
+            ..
+        } = &root_shape.geometry
+        {
+            if root_shape.children.is_empty() {
+                if !degenerated
+                    && !representations.iter().any(|representation| {
+                        matches!(representation, TextEdgeRepresentation::Curve3d { .. })
+                    })
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "unbounded edge TShape {} has no exact curve",
+                        root.shape
+                    )));
+                }
+                return Ok(());
             }
-            return Ok(());
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
         let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
