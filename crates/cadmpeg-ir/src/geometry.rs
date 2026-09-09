@@ -3873,76 +3873,32 @@ impl CompoundCurveConstruction {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
     /// Exact native NURBS surface with retained parameter fields.
-    Exact {
-        /// Complete legacy or revision-gated exact-spline layout.
-        #[serde(flatten)]
-        #[cfg_attr(feature = "schema", schemars(with = "ExactSplineSchemaWire"))]
-        spline: ExactSpline,
-    },
+    Exact(surface_payloads::ExactSurfacePayload),
     /// Ordered native compound of a solved surface and component surfaces.
-    Compound {
-        /// Ordered surfaces paired with their native construction scalars.
-        #[serde(flatten, with = "compound_surface_components_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfaceComponentsWire"))]
-        components: Vec<CompoundComponent<SurfaceId>>,
-    },
+    Compound(surface_payloads::CompoundSurfacePayload),
     /// Exact rectangular restriction of an embedded support surface.
     SubSurface(surface_payloads::SubSurfaceConstruction),
     /// Taper of a support surface around a reference curve.
     Taper(surface_payloads::TaperSurfaceConstruction),
     /// Native loft defined by two section graphs and closure contracts.
-    Loft {
-        /// Two ordered loft sections.
-        sections: [LoftSection; 2],
-        /// Legacy ordered ranges or revision-native scalar values.
-        parameters: SplineSurfaceParameters,
-        /// Two ordered native closure enums.
-        closures: [i64; 2],
-        /// Two ordered native singularity enums.
-        singularities: [i64; 2],
-        /// Native loft mode integer.
-        mode: i64,
-        /// Variable native tokens between the mode and solved cache.
-        bridge: Vec<LoftBridgeToken>,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<LoftRevisionForm>,
-    },
+    Loft(surface_payloads::LoftSurfacePayload),
     /// Native compound-loft construction.
-    CompoundLoft {
-        /// Complete native compound-loft graph.
-        construction: Box<CompoundLoftConstruction>,
-    },
+    CompoundLoft(surface_payloads::CompoundLoftSurfacePayload),
     /// Revision-gated compound-loft construction.
     RevisionCompoundLoft {
         /// Complete native revision-gated compound-loft graph.
         construction: Box<RevisionCompoundLoftConstruction>,
     },
     /// Native scaled compound-loft construction.
-    ScaledCompoundLoft {
-        /// Complete native scaled compound-loft graph.
-        construction: Box<ScaledCompoundLoftConstruction>,
-    },
+    ScaledCompoundLoft(surface_payloads::ScaledCompoundLoftSurfacePayload),
     /// Native skinned spline surface.
-    Skin {
-        /// Complete native skin construction graph.
-        construction: Box<SkinSurfaceConstruction>,
-    },
+    Skin(surface_payloads::SkinSurfacePayload),
     /// Native surface defined by recursive law formulas.
-    Law {
-        /// Complete native law-surface construction graph.
-        construction: Box<LawSurfaceConstruction>,
-    },
+    Law(surface_payloads::LawSurfacePayload),
     /// Native curve-network spline surface.
-    Net {
-        /// Complete native net construction graph.
-        construction: Box<NetSurfaceConstruction>,
-    },
+    Net(surface_payloads::NetSurfacePayload),
     /// Native curvature-continuous two-sided blend.
-    G2Blend {
-        /// Complete native G2 construction graph.
-        construction: Box<G2BlendConstruction>,
-    },
+    G2Blend(surface_payloads::G2BlendSurfacePayload),
     /// Revision-gated curvature-continuous blend in the variable-blend side
     /// layout.
     RevisionG2Blend {
@@ -3950,15 +3906,9 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<RevisionG2BlendConstruction>,
     },
     /// Native variable-radius two-sided blend.
-    VariableBlend {
-        /// Complete native variable-blend construction graph.
-        construction: Box<VariableBlendConstruction>,
-    },
+    VariableBlend(surface_payloads::VariableBlendSurfacePayload),
     /// Native vertex-blend patch.
-    VertexBlend {
-        /// Complete native vertex-blend construction graph.
-        construction: Box<VertexBlendConstruction>,
-    },
+    VertexBlend(surface_payloads::VertexBlendSurfacePayload),
     /// Translation of a directrix along a direction.
     Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     /// Unbounded linear sweep of a directrix.
@@ -3970,15 +3920,7 @@ pub enum ProceduralSurfaceDefinition {
     /// Sum of two ordered curves from a base point.
     Sum(surface_payloads::SumSurfaceConstruction),
     /// Sweep of a profile along a spine.
-    Sweep {
-        /// Cross-section curve carried along `spine`.
-        profile: CurveId,
-        /// Path curve the profile is swept along.
-        spine: CurveId,
-        /// Complete native sweep graph when retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<SweepSurfaceConstruction>>,
-    },
+    Sweep(surface_payloads::SweepSurfacePayload),
     /// T-spline face with its shared subtransform program.
     TSpline {
         /// Complete native T-spline wrapper construction.
@@ -3990,10 +3932,7 @@ pub enum ProceduralSurfaceDefinition {
         construction: Box<HelixSurfaceConstruction>,
     },
     /// Native deformable spline surface.
-    Deformable {
-        /// Complete decoded deformable construction.
-        construction: Box<DeformableSurfaceConstruction>,
-    },
+    Deformable(surface_payloads::DeformableSurfacePayload),
     /// Offset from a support surface.
     Offset(surface_payloads::OffsetSurfaceConstruction),
     /// Rectangular parameter sub-range of a support surface.
@@ -4036,21 +3975,7 @@ pub enum ProceduralSurfaceDefinition {
         second: CurveId,
     },
     /// Rolling-ball or law-driven blend between two support surfaces.
-    Blend {
-        /// The two blend support sides, in side order; `None` when a side was
-        /// not resolved.
-        supports: [Option<BlendSupport>; 2],
-        /// Stored center/spine curve, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        spine: Option<CurveId>,
-        /// Signed offset-radius law along the spine.
-        radius: BlendRadiusLaw,
-        /// Cross-section family of the blend.
-        cross_section: BlendCrossSection,
-        /// Complete byte-backed rolling-ball context when available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<RollingBallConstruction>>,
-    },
+    Blend(surface_payloads::BlendSurfacePayload),
     /// Rolling-ball surface defined by aligned quintic value/derivative jets.
     RollingBallJet(RollingBallJetStations),
     /// Preserved construction without a neutral interpretation.
@@ -4068,76 +3993,38 @@ pub enum ProceduralSurfaceDefinition {
     rename_all = "snake_case"
 )]
 enum ProceduralSurfaceDefinitionWire {
-    Exact {
-        #[serde(flatten)]
-        spline: ExactSpline,
-    },
-    Compound {
-        #[serde(flatten, with = "compound_surface_components_wire")]
-        components: Vec<CompoundComponent<SurfaceId>>,
-    },
+    Exact(surface_payloads::ExactSurfacePayload),
+    Compound(surface_payloads::CompoundSurfacePayload),
     SubSurface(surface_payloads::SubSurfaceConstruction),
     Taper(surface_payloads::TaperSurfaceConstruction),
-    Loft {
-        sections: [LoftSection; 2],
-        parameters: SplineSurfaceParameters,
-        closures: [i64; 2],
-        singularities: [i64; 2],
-        mode: i64,
-        bridge: Vec<LoftBridgeToken>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<LoftRevisionForm>,
-    },
-    CompoundLoft {
-        construction: Box<CompoundLoftConstruction>,
-    },
+    Loft(surface_payloads::LoftSurfacePayload),
+    CompoundLoft(surface_payloads::CompoundLoftSurfacePayload),
     RevisionCompoundLoft {
         construction: Box<RevisionCompoundLoftConstruction>,
     },
-    ScaledCompoundLoft {
-        construction: Box<ScaledCompoundLoftConstruction>,
-    },
-    Skin {
-        construction: Box<SkinSurfaceConstruction>,
-    },
-    Law {
-        construction: Box<LawSurfaceConstruction>,
-    },
-    Net {
-        construction: Box<NetSurfaceConstruction>,
-    },
-    G2Blend {
-        construction: Box<G2BlendConstruction>,
-    },
+    ScaledCompoundLoft(surface_payloads::ScaledCompoundLoftSurfacePayload),
+    Skin(surface_payloads::SkinSurfacePayload),
+    Law(surface_payloads::LawSurfacePayload),
+    Net(surface_payloads::NetSurfacePayload),
+    G2Blend(surface_payloads::G2BlendSurfacePayload),
     RevisionG2Blend {
         construction: Box<RevisionG2BlendConstruction>,
     },
-    VariableBlend {
-        construction: Box<VariableBlendConstruction>,
-    },
-    VertexBlend {
-        construction: Box<VertexBlendConstruction>,
-    },
+    VariableBlend(surface_payloads::VariableBlendSurfacePayload),
+    VertexBlend(surface_payloads::VertexBlendSurfacePayload),
     Extrusion(surface_payloads::ExtrusionSurfaceConstruction),
     LinearSweep(surface_payloads::LinearSweepSurfaceConstruction),
     Revolution(surface_payloads::RevolutionSurfaceConstruction),
     AxisRevolution(surface_payloads::AxisRevolutionSurfaceConstruction),
     Sum(surface_payloads::SumSurfaceConstruction),
-    Sweep {
-        profile: CurveId,
-        spine: CurveId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<SweepSurfaceConstruction>>,
-    },
+    Sweep(surface_payloads::SweepSurfacePayload),
     TSpline {
         construction: Box<TSplineSurfaceConstruction>,
     },
     Helix {
         construction: Box<HelixSurfaceConstruction>,
     },
-    Deformable {
-        construction: Box<DeformableSurfaceConstruction>,
-    },
+    Deformable(surface_payloads::DeformableSurfacePayload),
     Offset(surface_payloads::OffsetSurfaceConstruction),
     Subset(surface_payloads::SubsetSurfaceConstruction),
     Replica {
@@ -4159,15 +4046,7 @@ enum ProceduralSurfaceDefinitionWire {
         first: CurveId,
         second: CurveId,
     },
-    Blend {
-        supports: [Option<BlendSupport>; 2],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        spine: Option<CurveId>,
-        radius: BlendRadiusLaw,
-        cross_section: BlendCrossSection,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        native: Option<Box<RollingBallConstruction>>,
-    },
+    Blend(surface_payloads::BlendSurfacePayload),
     RollingBallJet(RollingBallJetStations),
     Unknown {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4177,773 +4056,14 @@ enum ProceduralSurfaceDefinitionWire {
 
 impl<'de> Deserialize<'de> for ProceduralSurfaceDefinition {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let definition = ProceduralSurfaceDefinitionWire::deserialize(deserializer)?;
-        definition
-            .validate_payload()
-            .map_err(serde::de::Error::custom)?;
-        Ok(definition)
+        ProceduralSurfaceDefinitionWire::deserialize(deserializer)
     }
 }
 
 impl ProceduralSurfaceDefinition {
-    fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
-        match self {
-            Self::Revolution(..) => Ok(()),
-            Self::AxisRevolution(..) => Ok(()),
-            Self::Sum(..) => Ok(()),
-            Self::Extrusion(..) => Ok(()),
-            Self::LinearSweep(..) => Ok(()),
-            Self::ParallelOffset(..) => Ok(()),
-            Self::Exact { spline } => {
-                let valid = match spline {
-                    crate::geometry::ExactSpline::Legacy { ranges, .. } => {
-                        ranges.iter().all(|range| {
-                            range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                        })
-                    }
-                    crate::geometry::ExactSpline::Revision { intervals, .. } => intervals
-                        .iter()
-                        .flatten()
-                        .flatten()
-                        .all(|value| value.is_finite()),
-                };
-                if !valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "exact spline surface parameter fields are invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Compound { components } => {
-                if components.iter().any(|item| !item.parameter.is_finite()) {
-                    return Err(ProceduralGeometryError::Payload(
-                        "compound surface parameters and components are inconsistent",
-                    ));
-                }
-                Ok(())
-            }
-            Self::SubSurface(..) => Ok(()),
-            Self::Taper(..) => Ok(()),
-            Self::Loft {
-                sections,
-                parameters,
-                bridge,
-                ..
-            } => {
-                let parameters_valid = match parameters {
-                    crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
-                        ranges.iter().all(|range| {
-                            range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
-                        })
-                    }
-                    crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => {
-                        intervals
-                            .iter()
-                            .flatten()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                    }
-                };
-                let sections_valid =
-                    sections
-                        .iter()
-                        .flat_map(|section| &section.entries)
-                        .all(|entry| {
-                            entry.parameter.is_finite()
-                                && entry.profile.iter().all(|member| {
-                                    let table = member.form.subdata();
-                                    table.row_values_are_finite()
-                                })
-                        });
-                let bridge_valid = bridge.iter().all(|token| match token {
-                    crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-                    crate::geometry::LoftBridgeToken::Boolean(_)
-                    | crate::geometry::LoftBridgeToken::Integer(_)
-                    | crate::geometry::LoftBridgeToken::Text(_)
-                    | crate::geometry::LoftBridgeToken::Enum(_) => true,
-                });
-                if !parameters_valid || !sections_valid || !bridge_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "loft construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::CompoundLoft { construction } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-                let tail_valid = match &construction.tail {
-                    crate::geometry::CompoundLoftTail::Six {
-                        scale,
-                        direction,
-                        parameter_range,
-                        ..
-                    } => {
-                        scales.push(scale.as_ref());
-                        vector_finite(direction)
-                            && parameter_range.iter().all(|value| value.is_finite())
-                            && parameter_range[0] <= parameter_range[1]
-                    }
-                    crate::geometry::CompoundLoftTail::Seven {
-                        first_scale,
-                        second_scale,
-                        direction,
-                        ..
-                    } => {
-                        scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.push(second_scale.as_ref());
-                        vector_finite(direction)
-                    }
-                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
-                        crate::geometry::CompoundLoftDirection::Vector { value } => {
-                            vector_finite(value)
-                        }
-                        crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-                    },
-                };
-                let scales_valid = scales.iter().all(|scale| {
-                    scale.members.iter().all(|member| {
-                        let data = &member.data;
-                        let table = &data.subdata;
-                        table.row_values_are_finite()
-                            && data.direction.as_ref().is_none_or(&vector_finite)
-                    })
-                });
-                if !tail_valid || !scales_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "compound loft construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::ScaledCompoundLoft { construction } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let shape_valid = match &construction.shape {
-                    crate::geometry::ScaledCompoundLoftShape::Full => true,
-                    crate::geometry::ScaledCompoundLoftShape::None {
-                        parameter_ranges,
-                        parameters,
-                    } => {
-                        parameter_ranges
-                            .iter()
-                            .flatten()
-                            .chain(parameters.iter().flatten())
-                            .all(|value| value.is_finite())
-                            && parameter_ranges.iter().all(|range| range[0] <= range[1])
-                    }
-                };
-                let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-                let branch_valid = match &construction.branch {
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
-                        first_scale,
-                        second_scale,
-                        direction,
-                        ..
-                    } => {
-                        scales.extend(first_scale.iter().map(Box::as_ref));
-                        scales.push(second_scale.as_ref());
-                        vector_finite(direction)
-                    }
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve { scale, .. } => {
-                        scales.extend(scale.iter().map(Box::as_ref));
-                        true
-                    }
-                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        match direction {
-                            crate::geometry::CompoundLoftDirection::Vector { value } => {
-                                vector_finite(value)
-                            }
-                            crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-                        }
-                    }
-                };
-                let scales_valid = scales.iter().all(|scale| {
-                    scale.members.iter().all(|member| {
-                        let data = &member.data;
-                        let table = &data.subdata;
-                        table.row_values_are_finite()
-                            && data.direction.as_ref().is_none_or(&vector_finite)
-                    })
-                });
-                let scalars_valid = construction
-                    .discontinuities
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite())
-                    && construction.tail_directions.iter().all(vector_finite);
-                if !shape_valid || !branch_valid || !scales_valid || !scalars_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "scaled compound loft construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Law { construction } => {
-                let formula_valid = |formula: &crate::geometry::LawFormula| {
-                    formula.variables().iter().all(|value| law_valid(value, 0))
-                };
-                let tail_valid = match &construction.tail {
-                    crate::geometry::LawSurfaceTail::Summary { parameters, .. } => {
-                        parameters.iter().flatten().all(|value| value.is_finite())
-                    }
-                    crate::geometry::LawSurfaceTail::None {
-                        parameter_ranges, ..
-                    } => parameter_ranges
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite()),
-                    crate::geometry::LawSurfaceTail::Full
-                    | crate::geometry::LawSurfaceTail::Historical
-                    | crate::geometry::LawSurfaceTail::Optimal => true,
-                };
-                let valid = construction
-                    .parameter_ranges
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .chain(construction.discontinuities.iter().flatten())
-                    .all(|value| value.is_finite())
-                    && tail_valid
-                    && formula_valid(&construction.primary)
-                    && construction.additional.iter().all(formula_valid);
-                if !valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "law surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Skin { construction } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let layout_valid = match &construction.layout {
-                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
-                        profiles.iter().all(|profile| {
-                            let table = &profile.data.subdata;
-                            table.row_values_are_finite()
-                                && profile.data.direction.as_ref().is_none_or(&vector_finite)
-                        })
-                    }
-                    crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
-                        subdata.row_values_are_finite()
-                    }
-                };
-                let formula_valid = construction
-                    .formula
-                    .variables()
-                    .iter()
-                    .all(|variable| law_valid(variable, 0));
-                let scalars_valid = construction.parameter.is_finite()
-                    && construction.trailing_parameter.is_finite()
-                    && vector_finite(&construction.direction)
-                    && construction
-                        .discontinuities
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite());
-                if !layout_valid || !formula_valid || !scalars_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "skin surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Net { construction } => {
-                let sections_valid = construction.sections.iter().all(|section| {
-                    section.entries.iter().all(|entry| {
-                        entry.parameter.is_finite()
-                            && entry.profile.iter().all(|member| {
-                                let table = member.form.subdata();
-                                table.row_values_are_finite()
-                            })
-                    })
-                });
-                let formulas_valid = construction.formulas.iter().all(|formula| {
-                    formula
-                        .variables()
-                        .iter()
-                        .all(|variable| law_valid(variable, 0))
-                });
-                let scalars_valid = construction
-                    .frame_parameters
-                    .iter()
-                    .chain(construction.discontinuities.iter().flatten())
-                    .all(|value| value.is_finite())
-                    && construction.directions.iter().all(|direction| {
-                        direction.x.is_finite()
-                            && direction.y.is_finite()
-                            && direction.z.is_finite()
-                    });
-                if !sections_valid || !formulas_valid || !scalars_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "net surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Sweep {
-                native: Some(construction),
-                ..
-            } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let point_finite = |point: &crate::math::Point3| {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-                };
-                let formula_valid = |formula: &crate::geometry::LawFormula| {
-                    formula
-                        .variables()
-                        .iter()
-                        .all(|variable| law_valid(variable, 0))
-                };
-                let layout_valid = match &construction.layout {
-                    crate::geometry::SweepSurfaceLayout::ProfileFirst {
-                        directions,
-                        origin,
-                        parameters,
-                        formulas,
-                        ..
-                    } => {
-                        directions.iter().all(vector_finite)
-                            && point_finite(origin)
-                            && parameters.iter().all(|value| value.is_finite())
-                            && formulas.iter().all(formula_valid)
-                    }
-                    crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
-                        path_range,
-                        path_parameter,
-                        formula,
-                        ..
-                    } => {
-                        profile_range
-                            .iter()
-                            .chain(path_range)
-                            .all(|value| value.is_finite())
-                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                                point_finite(point) && vector_finite(vector)
-                            })
-                            && point_finite(origin)
-                            && directions.iter().all(vector_finite)
-                            && path_parameter.is_finite()
-                            && formula_valid(formula)
-                    }
-                    crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
-                        path_range,
-                        path_parameter,
-                        guide_range,
-                        guide_parameters,
-                        ..
-                    } => {
-                        profile_range
-                            .iter()
-                            .chain(path_range)
-                            .chain(guide_range)
-                            .chain(guide_parameters)
-                            .all(|value| value.is_finite())
-                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                                point_finite(point) && vector_finite(vector)
-                            })
-                            && point_finite(origin)
-                            && directions.iter().all(vector_finite)
-                            && path_parameter.is_finite()
-                    }
-                    crate::geometry::SweepSurfaceLayout::ExplicitSurface {
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
-                        path_range,
-                        path_parameter,
-                        ..
-                    } => {
-                        profile_range
-                            .iter()
-                            .chain(path_range)
-                            .all(|value| value.is_finite())
-                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                                point_finite(point) && vector_finite(vector)
-                            })
-                            && point_finite(origin)
-                            && directions.iter().all(vector_finite)
-                            && path_parameter.is_finite()
-                    }
-                    crate::geometry::SweepSurfaceLayout::LawDriven {
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
-                        first_law,
-                        first_range,
-                        law_direction,
-                        path_range,
-                        path_parameter,
-                        second_law,
-                        formula,
-                        ..
-                    } => {
-                        profile_range
-                            .iter()
-                            .chain(first_range)
-                            .chain(path_range)
-                            .all(|value| value.is_finite())
-                            && profile_frame.as_ref().is_none_or(|(point, vector)| {
-                                point_finite(point) && vector_finite(vector)
-                            })
-                            && point_finite(origin)
-                            && directions.iter().all(vector_finite)
-                            && vector_finite(law_direction)
-                            && path_parameter.is_finite()
-                            && law_valid(first_law, 0)
-                            && law_valid(second_law, 0)
-                            && formula_valid(formula)
-                    }
-                };
-                let scalars_valid = layout_valid
-                    && construction
-                        .discontinuities
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite());
-                if !scalars_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "sweep surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Sweep { native: None, .. } => Ok(()),
-            Self::TSpline { .. } => Ok(()),
-            Self::Deformable { construction } => {
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
-                    frame.leading_vectors.iter().all(vector_finite)
-                        && frame.secondary_vectors.iter().all(vector_finite)
-                        && frame.leading_parameter.is_finite()
-                        && frame.secondary_parameter.is_finite()
-                        && frame.point.x.is_finite()
-                        && frame.point.y.is_finite()
-                        && frame.point.z.is_finite()
-                };
-                let data_valid = match &construction.data {
-                    crate::geometry::DeformableSurfaceData::Full {
-                        leading_vectors,
-                        leading_parameter,
-                        first_parameter,
-                        second_parameter,
-                        frames,
-                        ..
-                    } => {
-                        leading_vectors.iter().all(vector_finite)
-                            && leading_parameter.is_finite()
-                            && first_parameter.is_finite()
-                            && second_parameter.is_finite()
-                            && frames.iter().all(|frame| {
-                                frame.vectors.iter().all(vector_finite)
-                                    && frame.parameter.is_finite()
-                            })
-                    }
-                    crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                        first_parameter,
-                        second_parameter,
-                        vectors,
-                        frame_parameter,
-                        parameter_triples,
-                        ..
-                    } => {
-                        first_parameter.is_finite()
-                            && second_parameter.is_finite()
-                            && vectors.iter().all(vector_finite)
-                            && frame_parameter.is_finite()
-                            && parameter_triples
-                                .iter()
-                                .flatten()
-                                .all(|value| value.is_finite())
-                    }
-                    crate::geometry::DeformableSurfaceData::Plain {
-                        frame,
-                        parameter_triples,
-                    } => {
-                        frame_valid(frame)
-                            && parameter_triples
-                                .iter()
-                                .flatten()
-                                .all(|value| value.is_finite())
-                    }
-                    crate::geometry::DeformableSurfaceData::Guided {
-                        frame,
-                        guide_parameter,
-                        ..
-                    } => frame_valid(frame) && guide_parameter.is_finite(),
-                    crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
-                        vectors.iter().all(vector_finite)
-                    }
-                    crate::geometry::DeformableSurfaceData::RevisionMode3 {
-                        leading_vectors,
-                        leading_parameter,
-                        trailing_point,
-                        trailing_vectors,
-                        frame_parameter,
-                        parameters,
-                        trailing_parameter,
-                        ..
-                    } => {
-                        leading_vectors.iter().all(vector_finite)
-                            && leading_parameter.is_finite()
-                            && trailing_point.x.is_finite()
-                            && trailing_point.y.is_finite()
-                            && trailing_point.z.is_finite()
-                            && trailing_vectors.iter().all(vector_finite)
-                            && frame_parameter.is_finite()
-                            && parameters.iter().all(|value| value.is_finite())
-                            && trailing_parameter.is_finite()
-                    }
-                };
-                if !data_valid
-                    || !construction
-                        .discontinuities
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "deformable surface construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::G2Blend { construction } => {
-                let direction_finite = |direction: &Vector3| {
-                    direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
-                };
-                let first_shape_valid = match &construction.first_shape {
-                    crate::geometry::G2BlendFirstShape::Full { .. } => true,
-                    crate::geometry::G2BlendFirstShape::None {
-                        coefficients,
-                        extension,
-                        ..
-                    } => {
-                        coefficients.iter().all(|value| value.is_finite())
-                            && extension.as_ref().is_none_or(|token| match token {
-                                crate::geometry::LoftBridgeToken::Double(value) => {
-                                    value.is_finite()
-                                }
-                                crate::geometry::LoftBridgeToken::Boolean(_)
-                                | crate::geometry::LoftBridgeToken::Integer(_)
-                                | crate::geometry::LoftBridgeToken::Text(_)
-                                | crate::geometry::LoftBridgeToken::Enum(_) => true,
-                            })
-                    }
-                };
-                let ranges_valid = construction.parameter_ranges.iter().all(|range| {
-                    range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
-                });
-                let scalars_valid = construction
-                    .center_parameters
-                    .iter()
-                    .chain(construction.trailing_parameters.iter())
-                    .chain(construction.discontinuities.iter().flatten())
-                    .all(|value| value.is_finite());
-                if !direction_finite(&construction.first.direction)
-                    || !direction_finite(&construction.second.direction)
-                    || !first_shape_valid
-                    || !ranges_valid
-                    || !scalars_valid
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "G2 blend construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::VariableBlend { construction } => {
-                let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
-                    && construction.u_range[0] <= construction.u_range[1]
-                    && construction.v_lower.is_none_or(f64::is_finite)
-                    && [&construction.post_range, &construction.slice_range]
-                        .into_iter()
-                        .chain(
-                            construction
-                                .secondary_curve
-                                .as_ref()
-                                .map(|curve| &curve.parameter_range),
-                        )
-                        .all(|range| {
-                            range.iter().flatten().all(|value| value.is_finite())
-                                && match (range[0], range[1]) {
-                                    (Some(lower), Some(upper)) => lower <= upper,
-                                    (None | Some(_), None) | (None, Some(_)) => true,
-                                }
-                        });
-                let sides_valid = construction.sides.iter().all(|side| {
-                    side.location.x.is_finite()
-                        && side.location.y.is_finite()
-                        && side.location.z.is_finite()
-                });
-                let values_valid = match &construction.radii {
-                    crate::geometry::VariableBlendRadii::Single { value } => {
-                        variable_blend_value_valid(value)
-                    }
-                    crate::geometry::VariableBlendRadii::Two { first, second } => {
-                        variable_blend_value_valid(first) && variable_blend_value_valid(second)
-                    }
-                } && construction.cross_section.as_ref().is_none_or(
-                    |cross_section| match cross_section {
-                        crate::geometry::VariableBlendCrossSection::Circular => true,
-                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
-                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
-                            parameters.iter().all(|value| value.is_finite())
-                        }
-                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
-                            radius.as_deref().is_none_or(variable_blend_value_valid)
-                        }
-                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
-                    },
-                );
-                let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
-                    && construction.shape_parameter.is_finite()
-                    && construction.shape_length.is_finite();
-                if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "variable blend construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::VertexBlend { construction } => {
-                let point_finite = |point: &crate::math::Point3| {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-                };
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-                    vector_finite(&boundary.magic)
-                        && boundary.fullness.is_finite()
-                        && match &boundary.geometry {
-                            crate::geometry::VertexBlendBoundaryGeometry::Circle {
-                                twists,
-                                parameters,
-                                ..
-                            } => {
-                                twists.entries().iter().all(&point_finite)
-                                    && parameters.iter().all(|value| value.is_finite())
-                            }
-                            crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
-                                location,
-                                normals,
-                            } => {
-                                point_finite(location)
-                                    && normals.iter().all(|normal| {
-                                        vector_finite(normal) && (normal.norm() > f64::EPSILON)
-                                    })
-                            }
-                            crate::geometry::VertexBlendBoundaryGeometry::Pcurve { .. } => true,
-                            crate::geometry::VertexBlendBoundaryGeometry::Plane {
-                                normal,
-                                parameters,
-                                ..
-                            } => {
-                                vector_finite(normal)
-                                    && (normal.norm() > f64::EPSILON)
-                                    && parameters.iter().all(|value| value.is_finite())
-                            }
-                        }
-                });
-                if !boundaries_valid {
-                    return Err(ProceduralGeometryError::Payload(
-                        "vertex blend construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Blend {
-                native: Some(construction),
-                ..
-            } => {
-                let point_finite = |point: &crate::math::Point3| {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-                };
-                let vector_finite = |vector: &Vector3| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                };
-                let ranges_valid =
-                    [&construction.u_range, &construction.v_range]
-                        .iter()
-                        .all(|range| {
-                            range.iter().flatten().all(|value| value.is_finite())
-                                && match range {
-                                    [Some(lower), Some(upper)] => lower <= upper,
-                                    [None | Some(_), None] | [None, Some(_)] => true,
-                                }
-                        });
-                let selector_valid = match construction.radius_selector {
-                    crate::geometry::RollingBallRadiusSelector::None => true,
-                    crate::geometry::RollingBallRadiusSelector::Value { value } => {
-                        value.is_finite()
-                    }
-                };
-                let scalars_valid = construction
-                    .offsets
-                    .iter()
-                    .chain(construction.parameters.iter())
-                    .chain(construction.discontinuities.iter().flatten())
-                    .all(|value| value.is_finite());
-                let sides_valid = construction
-                    .sides
-                    .iter()
-                    .all(|side| point_finite(&side.location));
-                let third_valid = construction
-                    .third
-                    .as_ref()
-                    .is_none_or(|side| vector_finite(&side.direction));
-                if !ranges_valid
-                    || !selector_valid
-                    || !scalars_valid
-                    || !sides_valid
-                    || !third_valid
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "rolling-ball blend construction payload is invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Blend { native: None, .. } => Ok(()),
-            Self::Offset(..) => Ok(()),
-            Self::Subset(..) => Ok(()),
-            Self::RevisionCompoundLoft { .. } => Ok(()),
-            Self::RevisionG2Blend { .. } => Ok(()),
-            Self::Helix { .. } => Ok(()),
-            Self::Replica { .. } => Ok(()),
-            Self::DegenerateTorus { .. } => Ok(()),
-            Self::CurveBounded { .. } => Ok(()),
-            Self::Ruled { .. } => Ok(()),
-            Self::RollingBallJet(..) => Ok(()),
-            Self::Unknown { .. } => Ok(()),
-        }
-    }
-
     fn revision_cache(&self) -> Option<&RevisionCacheForm> {
         match self {
-            Self::Exact {
-                spline: ExactSpline::Revision { form, .. },
-            } => Some(&form.cache),
+            Self::Exact(payload) => payload.revision_cache(),
             Self::Taper(definition_payload) => {
                 let revision_form = definition_payload.revision_form();
                 revision_form.as_ref().map(|form| &form.cache)
@@ -4961,71 +4081,51 @@ impl ProceduralSurfaceDefinition {
                 OffsetExtension::Revision(form) => Some(&form.cache),
                 OffsetExtension::Legacy(_) => None,
             },
-            Self::Loft { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
+            Self::Loft(payload) => payload.revision_cache(),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
             Self::RevisionG2Blend { construction } => Some(&construction.cache),
-            Self::Sweep {
-                native: Some(construction),
-                ..
-            } => construction.revision_form.as_ref().map(|form| &form.cache),
+            Self::Sweep(payload) => payload.revision_cache(),
             Self::TSpline { construction } => {
                 construction.revision_form.as_ref().map(|form| &form.cache)
             }
-            Self::Deformable { construction } => {
-                construction.revision_form.as_ref().map(|form| &form.cache)
-            }
-            Self::Blend {
-                native: Some(construction),
-                ..
-            } => Some(&construction.cache),
+            Self::Deformable(payload) => payload.revision_cache(),
+            Self::Blend(payload) => payload.revision_cache(),
             _ => None,
         }
     }
 
     fn revision_cache_mut(&mut self) -> Option<&mut RevisionCacheForm> {
         match self {
-            Self::Exact {
-                spline: ExactSpline::Revision { form, .. },
-            } => Some(&mut form.cache),
+            Self::Exact(payload) => payload.revision_cache_mut(),
             Self::Taper(payload) => payload.revision_cache_mut(),
             Self::Extrusion(payload) => payload.revision_cache_mut(),
             Self::Revolution(payload) => payload.revision_cache_mut(),
             Self::Sum(payload) => payload.revision_cache_mut(),
             Self::Offset(payload) => payload.revision_cache_mut(),
-            Self::Loft { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),
+            Self::Loft(payload) => payload.revision_cache_mut(),
             Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
             Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
-            Self::Sweep {
-                native: Some(construction),
-                ..
-            } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
+            Self::Sweep(payload) => payload.revision_cache_mut(),
             Self::TSpline { construction } => construction
                 .revision_form
                 .as_mut()
                 .map(|form| &mut form.cache),
-            Self::Deformable { construction } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
-            Self::Blend {
-                native: Some(construction),
-                ..
-            } => Some(&mut construction.cache),
+            Self::Deformable(payload) => payload.revision_cache_mut(),
+            Self::Blend(payload) => payload.revision_cache_mut(),
             _ => None,
         }
     }
 
     fn owns_revision_cache(&self) -> bool {
-        self.revision_cache().is_some() || matches!(self, Self::VariableBlend { .. })
+        self.revision_cache().is_some() || matches!(self, Self::VariableBlend(..))
     }
 
     // Outer absence means no revision layout; inner absence means no cache tolerance.
     #[allow(clippy::option_option)]
     fn revision_cache_fit_tolerance(&self) -> Option<Option<f64>> {
-        if let Self::VariableBlend { construction } = self {
+        if let Self::VariableBlend(definition_payload) = self {
+            let construction = definition_payload.construction();
+
             return Some(construction.cache.fit_tolerance());
         }
         self.revision_cache().map(RevisionCacheForm::fit_tolerance)
@@ -5117,107 +4217,6 @@ pub enum ProceduralGeometryError {
     Cache(#[from] CacheFitToleranceError),
 }
 
-fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
-    use crate::geometry::VariableBlendValuePayload;
-    let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
-    match &value.payload {
-        VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
-        } => finite(parameters) && finite(radii),
-        VariableBlendValuePayload::FixedWidth {
-            parameters, width, ..
-        } => finite(parameters) && width.is_finite(),
-        VariableBlendValuePayload::EdgeOffset {
-            scalars, lengths, ..
-        } => finite(scalars) && finite(lengths),
-        VariableBlendValuePayload::Functional {
-            parameter,
-            radius,
-            terminal,
-            ..
-        } => {
-            parameter.is_finite()
-                && radius.is_finite()
-                && !matches!(terminal, crate::geometry::VariableBlendTerminal::Double(v) if !v.is_finite())
-        }
-        VariableBlendValuePayload::Constant {
-            parameters,
-            radius,
-            nested,
-            ..
-        } => finite(parameters) && radius.is_finite() && variable_blend_value_valid(nested),
-        VariableBlendValuePayload::Interpolated {
-            parameter,
-            radius,
-            points,
-            ..
-        } => {
-            parameter.is_finite()
-                && radius.is_finite()
-                && points.iter().all(|point| {
-                    point.parameter.is_finite()
-                        && point.radius.is_finite()
-                        && point
-                            .tangents
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                        && point.location.x.is_finite()
-                        && point.location.y.is_finite()
-                        && point.location.z.is_finite()
-                        && point.normal.x.is_finite()
-                        && point.normal.y.is_finite()
-                        && point.normal.z.is_finite()
-                })
-        }
-    }
-}
-
-fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
-    if depth > 64 {
-        return false;
-    }
-    match expression {
-        crate::geometry::LawExpression::Null | crate::geometry::LawExpression::Integer { .. } => {
-            true
-        }
-        crate::geometry::LawExpression::Text { value } => !value.is_empty(),
-        crate::geometry::LawExpression::Double { value } => value.is_finite(),
-        crate::geometry::LawExpression::Point { value } => {
-            value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
-        }
-        crate::geometry::LawExpression::Vector { value } => {
-            value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
-        }
-        crate::geometry::LawExpression::Transform { scalars, .. } => {
-            scalars.iter().all(|value| value.is_finite())
-        }
-        crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
-            scale.is_finite()
-                && vectors
-                    .iter()
-                    .all(|value| value.x.is_finite() && value.y.is_finite() && value.z.is_finite())
-        }
-        crate::geometry::LawExpression::Edge { parameters, .. } => {
-            parameters.iter().all(|value| value.is_finite())
-        }
-        crate::geometry::LawExpression::Spline {
-            knots,
-            controls,
-            point,
-            ..
-        } => {
-            knots.iter().chain(controls).all(|value| value.is_finite())
-                && point.x.is_finite()
-                && point.y.is_finite()
-                && point.z.is_finite()
-        }
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-            operands.iter().all(|operand| law_valid(operand, depth + 1))
-        }
-    }
-}
-
 impl ProceduralSurface {
     /// Build a procedural surface without a legacy top-level cache.
     pub fn new(
@@ -5236,7 +4235,6 @@ impl ProceduralSurface {
         cache_fit_tolerance: Option<f64>,
         record_bounds: Option<[Option<f64>; 4]>,
     ) -> Result<Self, ProceduralGeometryError> {
-        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         Ok(Self {
@@ -5273,7 +4271,6 @@ impl ProceduralSurface {
         definition: ProceduralSurfaceDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<(), ProceduralGeometryError> {
-        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         self.definition = definition;
@@ -5309,8 +4306,9 @@ impl ProceduralSurface {
     ) -> Result<(), CacheFitToleranceError> {
         let value = value.map(FitTolerance::try_new).transpose()?;
         validate_law_cache_fit_tolerance(&self.definition, value)?;
-        if let ProceduralSurfaceDefinition::VariableBlend { construction } = &mut self.definition {
-            return set_variable_blend_cache_fit_tolerance(&mut construction.cache, value);
+        if let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = &mut self.definition
+        {
+            return set_variable_blend_cache_fit_tolerance(definition_payload.cache_mut(), value);
         }
         set_cache_fit_tolerance(
             self.definition.revision_cache_mut(),
@@ -5334,9 +4332,11 @@ fn reconcile_surface_cache_fit_tolerance(
 ) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
     let checked = supplied.map(FitTolerance::try_new).transpose()?;
     validate_law_cache_fit_tolerance(definition, checked)?;
-    let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
+    let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
         return reconcile_cache_fit_tolerance(definition.revision_cache(), supplied);
     };
+    let construction = definition_payload.construction();
+
     match (&construction.cache, supplied) {
         (VariableBlendCache::Parameterization { .. }, Some(_)) => {
             Err(CacheFitToleranceError::Parameterized)
@@ -5426,7 +4426,9 @@ fn validate_law_cache_fit_tolerance(
     definition: &ProceduralSurfaceDefinition,
     value: Option<FitTolerance>,
 ) -> Result<(), CacheFitToleranceError> {
-    if let ProceduralSurfaceDefinition::Law { construction } = definition {
+    if let ProceduralSurfaceDefinition::Law(definition_payload) = definition {
+        let construction = definition_payload.construction();
+
         match (&construction.tail, value) {
             (LawSurfaceTail::Full, None) => return Err(CacheFitToleranceError::MissingLawFull),
             (LawSurfaceTail::Full, Some(_)) | (_, None) => {}
@@ -12017,14 +11019,7 @@ pub enum ProceduralCurveDefinition {
         parameterization: Option<TolerantIntersectionParameterization>,
     },
     /// Intersection constrained by a third ordered support surface.
-    ThreeSurfaceIntersection {
-        /// Shared first two surfaces, UV curves, interval, and discontinuities.
-        context: IntcurveSupportContext,
-        /// Native selector preceding the third support pair.
-        selector: i64,
-        /// Third `(surface, pcurve)` support pair.
-        third: IntcurveSupportSide,
-    },
+    ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
     /// Surface-related curve whose native subtype has no tail beyond the shared prefix.
     SurfaceCurve {
         /// Native family, support context, and optional cache-first tail.
@@ -12037,27 +11032,11 @@ pub enum ProceduralCurveDefinition {
     /// Curve offset relative to a surface parameterization.
     SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
     /// Blend spring guide between two support sides.
-    Spring {
-        /// Structurally selected context-first or cache-first representation.
-        #[serde(flatten, with = "spring_layout_wire")]
-        #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
-        layout: SpringLayout,
-        /// Native `CURV_DIR` enum value.
-        direction: i64,
-    },
+    Spring(curve_payloads::SpringCurvePayload),
     /// Deformation of an embedded source curve.
     Deformable(curve_payloads::DeformableCurveConstruction),
     /// Projection of a source curve onto a support surface.
-    Projection {
-        /// Shared surfaces, UV curves, interval, and discontinuity metadata.
-        context: IntcurveSupportContext,
-        /// Native boolean following the discontinuity arrays.
-        discontinuity_flag: bool,
-        /// Curve being projected.
-        source: CurveId,
-        /// Native post-source tail form.
-        tail: ProjectionTail,
-    },
+    Projection(curve_payloads::ProjectionCurvePayload),
     /// Offset from a source curve.
     Offset(curve_payloads::OffsetCurveConstruction),
     /// Free-space 3D offset using a reference direction.
@@ -12121,29 +11100,16 @@ enum ProceduralCurveDefinitionWire {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,
     },
-    ThreeSurfaceIntersection {
-        context: IntcurveSupportContext,
-        selector: i64,
-        third: IntcurveSupportSide,
-    },
+    ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
     SurfaceCurve {
         #[serde(flatten)]
         family: SurfaceCurveFamily,
     },
     Silhouette(curve_payloads::SilhouetteCurveConstruction),
     SurfaceOffset(curve_payloads::SurfaceOffsetCurveConstruction),
-    Spring {
-        #[serde(flatten, with = "spring_layout_wire")]
-        layout: SpringLayout,
-        direction: i64,
-    },
+    Spring(curve_payloads::SpringCurvePayload),
     Deformable(curve_payloads::DeformableCurveConstruction),
-    Projection {
-        context: IntcurveSupportContext,
-        discontinuity_flag: bool,
-        source: CurveId,
-        tail: ProjectionTail,
-    },
+    Projection(curve_payloads::ProjectionCurvePayload),
     Offset(curve_payloads::OffsetCurveConstruction),
     SpatialOffset(curve_payloads::SpatialOffsetCurveConstruction),
     TwoSidedOffset(curve_payloads::TwoSidedOffsetCurveConstruction),
@@ -12167,11 +11133,7 @@ enum ProceduralCurveDefinitionWire {
 
 impl<'de> Deserialize<'de> for ProceduralCurveDefinition {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let definition = ProceduralCurveDefinitionWire::deserialize(deserializer)?;
-        definition
-            .validate_payload()
-            .map_err(serde::de::Error::custom)?;
-        Ok(definition)
+        ProceduralCurveDefinitionWire::deserialize(deserializer)
     }
 }
 
@@ -12224,96 +11186,14 @@ mod vector_offset_roles_wire {
 }
 
 impl ProceduralCurveDefinition {
-    fn validate_payload(&self) -> Result<(), ProceduralGeometryError> {
-        match self {
-            Self::Offset(..) => Ok(()),
-            Self::SpatialOffset(..) => Ok(()),
-            Self::Deformable(..) => Ok(()),
-            Self::Spring { layout, .. } => {
-                let context = layout.support_context();
-                let inline_ranges_finite = match layout {
-                    crate::geometry::SpringLayout::ContextFirst {
-                        supports,
-                        first_pcurve,
-                        ..
-                    } => {
-                        supports.iter().all(|support| match support {
-                            crate::geometry::SpringSupport::Surface(_) => true,
-                            crate::geometry::SpringSupport::Ranges(ranges) => {
-                                ranges.iter().all(|range| {
-                                    range.iter().all(|value| value.is_finite())
-                                        && range[0] <= range[1]
-                                })
-                            }
-                        }) && match first_pcurve {
-                            crate::geometry::SpringPcurve::Pcurve(_) => true,
-                            crate::geometry::SpringPcurve::Range(range) => {
-                                range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                            }
-                        }
-                    }
-                    crate::geometry::SpringLayout::CacheFirst { .. } => true,
-                };
-                if context.is_err() || !inline_ranges_finite {
-                    return Err(ProceduralGeometryError::Payload(
-                        "spring context or null-support ranges are invalid",
-                    ));
-                }
-                Ok(())
-            }
-            Self::SurfaceOffset(..) => Ok(()),
-            Self::Silhouette(..) => Ok(()),
-            Self::ThreeSurfaceIntersection { context, third, .. } => {
-                if third
-                    .pcurve
-                    .as_ref()
-                    .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-                    && context.parameter_range()[0] == context.parameter_range()[1]
-                {
-                    return Err(ProceduralGeometryError::Payload(
-                        "three-surface intersection context is not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
-            Self::Projection { tail, .. } => {
-                let tail_finite = match tail {
-                    crate::geometry::ProjectionTail::EarlyClose { .. } => true,
-                    crate::geometry::ProjectionTail::Ranged {
-                        parameter_range, ..
-                    } => {
-                        parameter_range.iter().all(|value| value.is_finite())
-                            && parameter_range[0] <= parameter_range[1]
-                    }
-                };
-                if !tail_finite {
-                    return Err(ProceduralGeometryError::Payload(
-                        "projection fields are not finite and ordered",
-                    ));
-                }
-                Ok(())
-            }
-            Self::TwoSidedOffset(..) => Ok(()),
-            Self::Subset(..) => Ok(()),
-            Self::VectorOffset(..) => Ok(()),
-            Self::Exact => Ok(()),
-            Self::Law { .. } => Ok(()),
-            Self::Compound(..) => Ok(()),
-            Self::Helix(..) => Ok(()),
-            Self::Intersection { .. } => Ok(()),
-            Self::TolerantIntersection { .. } => Ok(()),
-            Self::SurfaceCurve { .. } => Ok(()),
-            Self::Replica { .. } => Ok(()),
-            Self::BlendSpine { .. } => Ok(()),
-            Self::Unknown { .. } => Ok(()),
-        }
-    }
-
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache(),
             Self::SurfaceOffset(payload) => payload.cache_first().as_ref().map(|form| &form.cache),
-            Self::Spring { layout, .. } => layout.cache_first().map(|form| &form.cache),
+            Self::Spring(definition_payload) => {
+                let layout = definition_payload.layout();
+                layout.cache_first().map(|form| &form.cache)
+            }
             Self::Deformable(definition_payload) => {
                 let cache_first = definition_payload.cache_first();
                 Some(&cache_first.cache)
@@ -12328,7 +11208,7 @@ impl ProceduralCurveDefinition {
         match self {
             Self::SurfaceCurve { family } => family.revision_cache_mut(),
             Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
-            Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
+            Self::Spring(payload) => payload.revision_cache_mut(),
             Self::Deformable(payload) => Some(payload.revision_cache_mut()),
             _ => None,
         }
@@ -12351,7 +11231,6 @@ impl ProceduralCurve {
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<Self, ProceduralGeometryError> {
-        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
         Ok(Self {
@@ -12387,7 +11266,6 @@ impl ProceduralCurve {
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<(), ProceduralGeometryError> {
-        definition.validate_payload()?;
         let legacy_cache_fit_tolerance =
             reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
         self.definition = definition;

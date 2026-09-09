@@ -1387,10 +1387,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
-        definition: ProceduralSurfaceDefinition::Sweep {
-            profile: profile_id,
-            spine: spine_id,
-            native: Some(Box::new(SweepSurfaceConstruction {
+        definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
                 revision_form: Some(SweepRevisionForm {
                     revision: 23100,
@@ -1431,8 +1428,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                 },
                 discontinuities: std::array::from_fn(|_| Vec::new()),
                 discontinuity_flag: false,
-            })),
-        },
+            }))).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });

@@ -270,11 +270,13 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
         )
         .unwrap();
 
-    let ProceduralSurfaceDefinition::Blend { radius, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("blend surface");
     };
+    let radius = definition_payload.radius();
+
     assert_eq!(
         *radius,
         BlendRadiusLaw::Constant {

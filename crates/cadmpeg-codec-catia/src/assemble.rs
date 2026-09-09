@@ -113,7 +113,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         let mut changed = false;
         for procedural in &ir.model.procedural_surfaces {
             let resolved = match procedural.definition() {
-                ProceduralSurfaceDefinition::Exact { .. }
+                ProceduralSurfaceDefinition::Exact(..)
                 | ProceduralSurfaceDefinition::Helix { .. }
                 | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
@@ -1174,12 +1174,15 @@ mod route_tests {
             .replace_definition(ProceduralCurveDefinition::Exact)
             .expect("valid replacement fixture definition");
         ir.model.procedural_surfaces[0]
-            .replace_definition(ProceduralSurfaceDefinition::Exact {
-                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
-                    ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    extension: 0,
-                },
-            })
+            .replace_definition(ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                    },
+                )
+                .unwrap(),
+            ))
             .expect("valid replacement fixture definition");
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }

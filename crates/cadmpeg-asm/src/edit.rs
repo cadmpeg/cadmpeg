@@ -633,22 +633,24 @@ impl AsmEditSet {
                     },
                 )
             }
-            ProceduralCurveDefinition::Spring {
-                layout, direction, ..
-            } => patch_spring_definition(bytes, self.ref_width, record, layout, *direction),
-            ProceduralCurveDefinition::Projection {
-                context,
-                discontinuity_flag,
-                tail,
-                ..
-            } => patch_projection_definition(
-                bytes,
-                self.ref_width,
-                record,
-                context,
-                *discontinuity_flag,
-                tail,
-            ),
+            ProceduralCurveDefinition::Spring(definition_payload) => {
+                let layout = definition_payload.layout();
+                let direction = definition_payload.direction();
+                patch_spring_definition(bytes, self.ref_width, record, layout, *direction)
+            }
+            ProceduralCurveDefinition::Projection(definition_payload) => {
+                let context = definition_payload.context();
+                let discontinuity_flag = definition_payload.discontinuity_flag();
+                let tail = definition_payload.tail();
+                patch_projection_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    context,
+                    *discontinuity_flag,
+                    tail,
+                )
+            }
             ProceduralCurveDefinition::Intersection {
                 context,
                 discontinuity_flag,
@@ -660,15 +662,17 @@ impl AsmEditSet {
                 context,
                 *discontinuity_flag,
             ),
-            ProceduralCurveDefinition::ThreeSurfaceIntersection {
-                context, selector, ..
-            } => patch_three_surface_intersection_definition(
-                bytes,
-                self.ref_width,
-                record,
-                context,
-                *selector,
-            ),
+            ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) => {
+                let context = definition_payload.context();
+                let selector = definition_payload.selector();
+                patch_three_surface_intersection_definition(
+                    bytes,
+                    self.ref_width,
+                    record,
+                    context,
+                    *selector,
+                )
+            }
             ProceduralCurveDefinition::SurfaceCurve { family, .. } => {
                 patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }

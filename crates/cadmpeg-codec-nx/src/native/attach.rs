@@ -5278,15 +5278,13 @@ fn blend_feature_definition(
         if !body_surfaces.contains(owner) {
             continue;
         }
-        let ProceduralSurfaceDefinition::Blend {
-            supports,
-            radius,
-            cross_section,
-            ..
-        } = procedural.definition()
-        else {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
             continue;
         };
+        let supports = definition_payload.supports();
+        let radius = definition_payload.radius();
+        let cross_section = definition_payload.cross_section();
+
         if *cross_section != BlendCrossSection::Circular {
             return None;
         }

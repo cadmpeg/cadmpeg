@@ -161,12 +161,14 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("spring decode");
-    let ProceduralCurveDefinition::Spring {
-        layout, direction, ..
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Spring(definition_payload) =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
+    let layout = definition_payload.layout();
+    let direction = definition_payload.direction();
+
     assert_eq!(*direction, -3);
     assert!(layout
         .support_context()
@@ -178,12 +180,14 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     let mut edited = result.ir().clone();
     let expected_flag = edited.model.procedural_curves[0]
         .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Spring {
-                layout, direction, ..
-            } = definition
-            else {
+            let ProceduralCurveDefinition::Spring(definition_payload) = definition else {
                 unreachable!()
             };
+            let mut edited_layout = definition_payload.layout().clone();
+            let mut edited_direction = *definition_payload.direction();
+            let layout = &mut edited_layout;
+            let direction = &mut edited_direction;
+
             let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
                 parameter_range,
                 discontinuity_flag,
@@ -196,6 +200,12 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
             let expected_flag = !*discontinuity_flag;
             *discontinuity_flag = expected_flag;
             *direction = 4;
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::SpringCurvePayload::try_new(
+                    edited_layout,
+                    edited_direction,
+                )
+                .unwrap();
             expected_flag
         })
         .unwrap();
@@ -206,17 +216,11 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated spring decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Spring {
-            layout: cadmpeg_ir::geometry::SpringLayout::ContextFirst {
-                ref parameter_range,
+        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Spring(definition_payload) if matches!((definition_payload.layout(), definition_payload.direction(),), (cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                parameter_range,
                 discontinuity_flag,
                 ..
-            },
-            direction: 4,
-            ..
-        } if *discontinuity_flag == expected_flag && *parameter_range == [-2.0, 3.0]
-    ));
+            }, 4,) if *discontinuity_flag == expected_flag && *parameter_range == [-2.0, 3.0])));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -230,9 +234,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less spring round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_curves[0].definition(),
-        ProceduralCurveDefinition::Spring { direction: -3, .. }
-    ));
+        round_trip.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Spring(definition_payload) if matches!((definition_payload.direction(),), (-3,))));
 }
 
 #[test]
@@ -247,11 +249,14 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("null-support spring decode");
-    let ProceduralCurveDefinition::Spring { layout, direction } =
+    let ProceduralCurveDefinition::Spring(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
+    let layout = definition_payload.layout();
+    let direction = definition_payload.direction();
+
     assert_eq!(*direction, 4);
     let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
         supports,

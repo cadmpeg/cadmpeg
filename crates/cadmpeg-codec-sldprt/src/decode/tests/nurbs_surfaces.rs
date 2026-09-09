@@ -170,11 +170,13 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(result.ir().model.surfaces.len(), 3);
-    let ProceduralSurfaceDefinition::Blend { supports, .. } =
+    let ProceduralSurfaceDefinition::Blend(definition_payload) =
         result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };
+    let supports = definition_payload.supports();
+
     let support_surfaces: Vec<_> = supports
         .iter()
         .flatten()

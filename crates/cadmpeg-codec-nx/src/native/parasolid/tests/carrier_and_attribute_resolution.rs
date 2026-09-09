@@ -221,16 +221,15 @@ fn decode_emits_rolling_ball_blend_surface() {
         .procedural_surfaces
         .first()
         .expect("blend surface");
-    let ProceduralSurfaceDefinition::Blend {
-        supports,
-        radius,
-        cross_section,
-        spine,
-        native,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
         panic!("blend definition");
     };
+    let supports = definition_payload.supports();
+    let radius = definition_payload.radius();
+    let cross_section = definition_payload.cross_section();
+    let spine = definition_payload.spine();
+    let native = definition_payload.native();
+
     assert_eq!(*cross_section, BlendCrossSection::Circular);
     assert_eq!(
         *radius,

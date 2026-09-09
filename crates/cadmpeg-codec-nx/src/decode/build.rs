@@ -501,15 +501,18 @@ pub(crate) fn try_decode_geometry(
                 surface_id.clone(),
                 ProceduralSurface::new(
                     procedural_id,
-                    ProceduralSurfaceDefinition::Blend {
-                        supports: [None, None],
-                        spine: None,
-                        radius: BlendRadiusLaw::Constant {
-                            signed_radius: blend.state.offsets()[0],
-                        },
-                        cross_section: BlendCrossSection::Circular,
-                        native: None,
-                    },
+                    ProceduralSurfaceDefinition::Blend(
+                        cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                            [None, None],
+                            None,
+                            BlendRadiusLaw::Constant {
+                                signed_radius: blend.state.offsets()[0],
+                            },
+                            BlendCrossSection::Circular,
+                            None,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                     None,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -542,11 +545,8 @@ pub(crate) fn try_decode_geometry(
             };
             procedural
                 .edit_definition(|definition| {
-                    if let ProceduralSurfaceDefinition::Blend {
-                        supports: slots, ..
-                    } = definition
-                    {
-                        *slots = supports;
+                    if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
+                        definition_payload.set_supports(supports);
                     }
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -840,8 +840,8 @@ pub(crate) fn try_decode_geometry(
             };
             procedural
                 .edit_definition(|definition| {
-                    if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
-                        *slot = Some(spine);
+                    if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
+                        definition_payload.set_spine(Some(spine));
                     }
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1253,9 +1253,10 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
                         used_surfaces.insert(support.clone());
                     }
                 }
-                ProceduralSurfaceDefinition::Blend {
-                    supports, spine, ..
-                } => {
+                ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                    let supports = definition_payload.supports();
+                    let spine = definition_payload.spine();
+
                     used_surfaces.extend(
                         supports
                             .iter()
@@ -1720,9 +1721,10 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
                         surfaces.insert(support.clone());
                     }
                 }
-                ProceduralSurfaceDefinition::Blend {
-                    supports, spine, ..
-                } => {
+                ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                    let supports = definition_payload.supports();
+                    let spine = definition_payload.spine();
+
                     surfaces.extend(
                         supports
                             .iter()

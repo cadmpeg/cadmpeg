@@ -1057,13 +1057,16 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         let procedural = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("nx:s4:blend-construction#{ordinal}"))
                 .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Blend {
-                supports: [None, None],
-                spine: None,
-                radius,
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [None, None],
+                    None,
+                    radius,
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap();
@@ -1114,9 +1117,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
         procedural
             .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
                     unreachable!()
                 };
+                let mut edited_supports = definition_payload.supports().clone();
+                let supports = &mut edited_supports;
+
                 *supports = [
                     Some(BlendSupport {
                         surface: first_support.clone(),
@@ -1127,6 +1133,15 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                         reversed: true,
                     }),
                 ];
+                *definition_payload =
+                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                        edited_supports,
+                        definition_payload.spine().clone(),
+                        definition_payload.radius().clone(),
+                        definition_payload.cross_section().clone(),
+                        definition_payload.native().clone(),
+                    )
+                    .unwrap();
             })
             .unwrap();
     }
@@ -1207,13 +1222,16 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
     let conic = ProceduralSurface::new(
         ProceduralSurfaceId::mint("nx:s4:blend-construction#3").expect("identity grammar"),
-        ProceduralSurfaceDefinition::Blend {
-            supports: [None, None],
-            spine: None,
-            radius: BlendRadiusLaw::Constant { signed_radius: 7.0 },
-            cross_section: BlendCrossSection::Conic,
-            native: None,
-        },
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [None, None],
+                None,
+                BlendRadiusLaw::Constant { signed_radius: 7.0 },
+                BlendCrossSection::Conic,
+                None,
+            )
+            .unwrap(),
+        ),
         None,
     )
     .unwrap();

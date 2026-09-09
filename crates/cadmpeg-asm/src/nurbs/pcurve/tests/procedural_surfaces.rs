@@ -1374,8 +1374,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                             1.0,
                         );
                         let definition =
-                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
-                                context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                                     std::array::from_fn(|_| {
                                         cadmpeg_ir::geometry::IntcurveSupportSide {
                                             surface: None,
@@ -1385,16 +1384,12 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                                     [-2.0, 3.0],
                                     [vec![0.25], vec![], vec![0.5, 0.75]],
                                 )
-                                .expect("valid projection support fixture"),
-                                discontinuity_flag: true,
-                                source: cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
-                                    .unwrap(),
-                                tail: cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                                .expect("valid projection support fixture"), true, cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
+                                    .unwrap(), cadmpeg_ir::geometry::ProjectionTail::Ranged {
                                     flag: false,
                                     parameter_range: [-1.0, 1.0],
                                     role: cadmpeg_ir::geometry::ProjectionRole::Surf1,
-                                },
-                            };
+                                }).unwrap());
                         let before = malformed.clone();
                         assert!(matches!(
                             edits.patch_procedural_curve_definition(

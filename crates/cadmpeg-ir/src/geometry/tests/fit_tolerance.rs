@@ -12,15 +12,18 @@ fn surface_id() -> ProceduralSurfaceId {
 }
 
 fn law(tail: LawSurfaceTail) -> ProceduralSurfaceDefinition {
-    ProceduralSurfaceDefinition::Law {
-        construction: Box::new(LawSurfaceConstruction {
-            parameter_ranges: None,
-            primary: LawFormula::Null,
-            additional: Vec::new(),
-            tail,
-            discontinuities: std::array::from_fn(|_| Vec::new()),
-        }),
-    }
+    ProceduralSurfaceDefinition::Law(
+        crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
+            LawSurfaceConstruction {
+                parameter_ranges: None,
+                primary: LawFormula::Null,
+                additional: Vec::new(),
+                tail,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+        ))
+        .unwrap(),
+    )
 }
 
 #[test]

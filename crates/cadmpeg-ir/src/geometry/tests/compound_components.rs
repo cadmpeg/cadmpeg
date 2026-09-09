@@ -5,8 +5,8 @@ use crate::geometry::{CompoundComponent, ProceduralSurfaceDefinition};
 
 #[test]
 fn compound_surface_wire_pairs_each_scalar_with_its_surface() {
-    let definition = ProceduralSurfaceDefinition::Compound {
-        components: vec![
+    let definition = ProceduralSurfaceDefinition::Compound(
+        crate::geometry::surface_payloads::CompoundSurfacePayload::try_new(vec![
             CompoundComponent {
                 parameter: -0.5,
                 component: "test:model:surface#0".try_into().expect("valid identity"),
@@ -15,8 +15,9 @@ fn compound_surface_wire_pairs_each_scalar_with_its_surface() {
                 parameter: 1.5,
                 component: "test:model:surface#1".try_into().expect("valid identity"),
             },
-        ],
-    };
+        ])
+        .unwrap(),
+    );
     let wire = serde_json::json!({
         "kind": "compound",
         "parameters": [-0.5, 1.5],

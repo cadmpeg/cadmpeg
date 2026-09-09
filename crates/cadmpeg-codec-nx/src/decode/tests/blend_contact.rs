@@ -839,20 +839,23 @@ fn blend_contact_matches_concentric_blend_carriers() {
         ir.model.procedural_surfaces.push(
             ProceduralSurface::new(
                 construction,
-                ProceduralSurfaceDefinition::Blend {
-                    supports: supports.map(|surface| {
-                        Some(BlendSupport {
-                            surface,
-                            reversed: false,
-                        })
-                    }),
-                    spine: Some(spine.clone()),
-                    radius: BlendRadiusLaw::Constant {
-                        signed_radius: radius,
-                    },
-                    cross_section: BlendCrossSection::Circular,
-                    native: None,
-                },
+                ProceduralSurfaceDefinition::Blend(
+                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                        supports.map(|surface| {
+                            Some(BlendSupport {
+                                surface,
+                                reversed: false,
+                            })
+                        }),
+                        Some(spine.clone()),
+                        BlendRadiusLaw::Constant {
+                            signed_radius: radius,
+                        },
+                        BlendCrossSection::Circular,
+                        None,
+                    )
+                    .unwrap(),
+                ),
                 None,
             )
             .unwrap(),
@@ -875,10 +878,22 @@ fn blend_contact_matches_concentric_blend_carriers() {
         .unwrap();
     outer_definition
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
                 unreachable!()
             };
+            let mut edited_supports = definition_payload.supports().clone();
+            let supports = &mut edited_supports;
+
             supports[0].as_mut().unwrap().reversed = true;
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    edited_supports,
+                    definition_payload.spine().clone(),
+                    definition_payload.radius().clone(),
+                    definition_payload.cross_section().clone(),
+                    definition_payload.native().clone(),
+                )
+                .unwrap();
         })
         .unwrap();
     assert!(constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
@@ -978,22 +993,25 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             blend_construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface: support.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: other.clone(),
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(spine.clone()),
-                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [
+                        Some(BlendSupport {
+                            surface: support.clone(),
+                            reversed: false,
+                        }),
+                        Some(BlendSupport {
+                            surface: other.clone(),
+                            reversed: false,
+                        }),
+                    ],
+                    Some(spine.clone()),
+                    BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -1232,22 +1250,25 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface: first.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: second.clone(),
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(spine.clone()),
-                radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [
+                        Some(BlendSupport {
+                            surface: first.clone(),
+                            reversed: false,
+                        }),
+                        Some(BlendSupport {
+                            surface: second.clone(),
+                            reversed: false,
+                        }),
+                    ],
+                    Some(spine.clone()),
+                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -1696,22 +1717,25 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.procedural_surfaces.push(
         ProceduralSurface::new(
             outer_construction,
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface,
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: third,
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(outer_spine),
-                radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [
+                        Some(BlendSupport {
+                            surface,
+                            reversed: false,
+                        }),
+                        Some(BlendSupport {
+                            surface: third,
+                            reversed: false,
+                        }),
+                    ],
+                    Some(outer_spine),
+                    BlendRadiusLaw::Constant { signed_radius: 1.5 },
+                    BlendCrossSection::Circular,
+                    None,
+                )
+                .unwrap(),
+            ),
             None,
         )
         .unwrap(),
@@ -1756,10 +1780,22 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .unwrap();
     outer_definition
         .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
                 panic!("blend definition");
             };
+            let mut edited_supports = definition_payload.supports().clone();
+            let supports = &mut edited_supports;
+
             supports[0].as_mut().unwrap().surface = outer.clone();
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    edited_supports,
+                    definition_payload.spine().clone(),
+                    definition_payload.radius().clone(),
+                    definition_payload.cross_section().clone(),
+                    definition_payload.native().clone(),
+                )
+                .unwrap();
         })
         .unwrap();
     assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
