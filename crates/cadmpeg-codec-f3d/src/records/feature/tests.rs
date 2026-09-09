@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-mod assembly;
-
 use super::{DesignFeatureKind, DesignParameterScope};
 
 fn empty_scope(kind: DesignFeatureKind) -> serde_json::Value {
