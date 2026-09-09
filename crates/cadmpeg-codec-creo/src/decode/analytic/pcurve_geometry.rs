@@ -96,9 +96,9 @@ pub fn surface_of_revolution_parallel_pcurve(
                 *axis,
                 *ref_direction,
                 RevolutionRadii::Cone {
-                    radius: radius,
-                    ratio: ratio,
-                    half_angle: half_angle,
+                    radius,
+                    ratio,
+                    half_angle,
                 },
             )
         }
@@ -127,8 +127,8 @@ pub fn surface_of_revolution_parallel_pcurve(
                 *axis,
                 *ref_direction,
                 RevolutionRadii::Torus {
-                    major_radius: major_radius,
-                    minor_radius: minor_radius,
+                    major_radius,
+                    minor_radius,
                 },
             )
         }

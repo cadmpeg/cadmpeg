@@ -7431,7 +7431,7 @@ fn cylindrical_face_witnesses(
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
-            radius: radius,
+            radius,
             stations: [*first, *second],
             loop_ids: [first_loop.clone(), second_loop.clone()],
         });
