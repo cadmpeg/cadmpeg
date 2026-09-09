@@ -245,7 +245,7 @@ pub fn unit_cube() -> CadIr {
             Vec::new(),
             Vec::new(),
         )
-        .unwrap(),
+        .expect("unit cube shell owns six faces"),
     );
     ir.model.regions.push(Region {
         id: "synthetic:cube:region#0"
