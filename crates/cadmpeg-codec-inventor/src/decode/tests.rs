@@ -140,6 +140,71 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
 }
 
 #[test]
+fn database_record_projects_schema_and_creation_and_save_versions() {
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(primary_envelope_fixture()),
+            &DecodeOptions::default(),
+        )
+        .expect("primary envelope decodes");
+    let native = decoded.ir().native.namespace("inventor").unwrap();
+    let records = native.arena_as::<DatabaseRecord>("databases").unwrap();
+    let [record] = records.as_slice() else {
+        panic!("one DatabaseRecord")
+    };
+    assert_eq!(record.schema, 31);
+    assert_eq!(
+        record.created_by,
+        VersionTupleRecord {
+            revision: 1,
+            minor: 2,
+            major: 24,
+            state: "0405060708".into(),
+        }
+    );
+    assert_eq!(
+        record.saved_by,
+        VersionTupleRecord {
+            revision: 1,
+            minor: 2,
+            major: 25,
+            state: "0405060708".into(),
+        }
+    );
+    assert_eq!(record.created_filetime, 17);
+    assert_eq!(record.saved_filetime, 18);
+    assert_eq!(record.note, "synthetic primary document");
+    assert!(native
+        .arena_as::<DatabaseIssueRecord>("database_issues")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn database_issues_preserve_the_unframed_database_instead_of_a_database_record() {
+    let source = crate::test_support::primary_envelope_fixture_with_broken_database();
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .expect("broken database does not prevent envelope decode");
+    let native = decoded.ir().native.namespace("inventor").unwrap();
+    assert!(native
+        .arena_as::<DatabaseRecord>("databases")
+        .unwrap()
+        .is_empty());
+    let issues = native
+        .arena_as::<DatabaseIssueRecord>("database_issues")
+        .unwrap();
+    let [issue] = issues.as_slice() else {
+        panic!("one database issue")
+    };
+    assert_eq!(issue.id, "inventor:rse:database-issue#v1");
+    assert_eq!(issue.band, 1);
+    assert!(issue.detail.contains("RSe database schema 31"));
+    assert!(issue.detail.contains("did not frame it"));
+    assert!(issue.detail.contains("creation version"));
+}
+
+#[test]
 fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
     let source = primary_envelope_fixture();
     assert_eq!(InventorCodec.detect(&source), Confidence::High);
