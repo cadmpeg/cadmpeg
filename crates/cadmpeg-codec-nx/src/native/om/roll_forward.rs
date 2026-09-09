@@ -131,17 +131,16 @@ impl OmRollForwardStateTable {
         table_footer: GroupTableFooter,
         table_end_offset: u64,
         frames: Vec<OperationStateGroup<u64>>,
-    ) -> Self {
-        Self {
-            groups: frames.into_iter().enumerate().filter_map(|(ordinal, frame)| {
+    ) -> Result<Self, &'static str> {
+        let groups: Vec<_> = frames.into_iter().enumerate().filter_map(|(ordinal, frame)| {
                 let ordinal = u32::try_from(ordinal).ok()?;
                 Some(OmRollForwardStateGroup {
                     id: format!("nx:feature-history:roll-forward-state-group#{section_ordinal:010}-{ordinal:010}"),
                     section_link: section_link.to_owned(), ordinal, frame, table_footer,
                     source_entry: source_entry.to_owned(), table_end_offset,
                 })
-            }).collect(),
-        }
+            }).collect();
+        Self::try_from(groups)
     }
 
     pub(crate) fn groups(&self) -> &[OmRollForwardStateGroup] {

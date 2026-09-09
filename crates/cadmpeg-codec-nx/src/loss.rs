@@ -52,6 +52,8 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A roll-forward table failed native admission.
+    RollForwardTableRejected => ("history.roll-forward-table-rejected", Blocking, DecodeDiagnostic),
     /// An embedded kernel dialect had no declared grammar and was recovered as residual.
     KernelDialectUnverified => ("source.kernel-dialect-unverified", Warning, SourceDialectUnverified),
     /// Two embedded kernel carriers resolved to one dialect-layer identity.

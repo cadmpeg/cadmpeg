@@ -190,7 +190,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
     )]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    let tables = operation_state_groups(&container);
+    let tables = operation_state_groups(&container).unwrap();
     let groups = tables
         .iter()
         .flat_map(OmRollForwardStateTable::groups)
