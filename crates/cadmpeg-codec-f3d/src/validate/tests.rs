@@ -763,7 +763,7 @@ fn validation_checks_pipe_path_group_roles() {
         ));
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }

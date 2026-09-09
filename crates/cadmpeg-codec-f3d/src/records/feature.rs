@@ -6395,12 +6395,6 @@ pub struct DesignParameterScopeDraft {
     pub paired_byte_offset: u64,
 }
 
-impl DesignParameterScopeDraft {
-    pub(crate) fn kind(&self) -> DesignFeatureKind {
-        self.payload.kind()
-    }
-}
-
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignParameterScopeSerde {

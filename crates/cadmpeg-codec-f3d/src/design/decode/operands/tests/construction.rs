@@ -1876,7 +1876,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         );
         scope
             .try_edit(|draft| {
-                draft.payload = value.map_or_else(|| draft.kind().try_into().unwrap(), Into::into);
+                draft.payload = value.map_or_else(|| draft.payload.kind().try_into().unwrap(), Into::into);
             })
             .unwrap();
     }

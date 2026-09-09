@@ -264,9 +264,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let mut hole_scope = scope.clone();
     hole_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Hole
-                .try_into()
-                .unwrap();
+            draft.payload = crate::records::feature::DesignScopePayload::Hole(None);
         })
         .ok()?;
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
