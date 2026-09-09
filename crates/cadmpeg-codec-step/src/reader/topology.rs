@@ -894,9 +894,6 @@ fn build_wire_set(
     let set = exchange.records.get(&set_id)?;
     let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
     let used_edges = connected_set_members(set, set_type)?;
-    if used_edges.is_empty() {
-        return None;
-    }
     let suffix = if scoped {
         format!("-set-{set_id}")
     } else {
@@ -956,14 +953,19 @@ fn build_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell::new(
+        vec![match Shell::new(
             shell.clone(),
             region.clone(),
             Vec::new(),
             wire_edges,
             Vec::new(),
-        )
-        .ok()?],
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                warnings.push(format!("CONNECTED_EDGE_SET #{set_id}: {error}"));
+                return None;
+            }
+        }],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1086,9 +1088,6 @@ fn build_shell_wire_set(
     } else {
         return None;
     }
-    if edge_uses.is_empty() && used_vertices.is_empty() {
-        return None;
-    }
     let suffix = if scoped {
         format!("-shell-{shell_id}")
     } else {
@@ -1147,14 +1146,19 @@ fn build_shell_wire_set(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![Shell::new(
+        vec![match Shell::new(
             shell.clone(),
             region.clone(),
             Vec::new(),
             wire_edges,
             free_vertices,
-        )
-        .ok()?],
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                warnings.push(format!("wire shell #{shell_id}: {error}"));
+                return None;
+            }
+        }],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -1248,9 +1252,6 @@ fn build_geometric_set(
             }
         }
     }
-    if surfaces.is_empty() {
-        return None;
-    }
     let body = BodyId::from(ids::data("body", id));
     let region = RegionId::from(ids::data("region", id));
     let shell = ShellId::from(ids::data("shell", format!("geometric-set-{id}")));
@@ -1279,14 +1280,19 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![Shell::new(
+        vec![match Shell::new(
             shell.clone(),
             region.clone(),
             face_ids,
             Vec::new(),
             Vec::new(),
-        )
-        .ok()?],
+        ) {
+            Ok(shell) => shell,
+            Err(error) => {
+                warnings.push(format!("geometric set #{id}: {error}"));
+                return None;
+            }
+        }],
         Region {
             id: region.clone(),
             body: body.clone(),
@@ -2680,14 +2686,19 @@ fn build_one(
                 })
                 .collect();
             shells.push(
-                Shell::new(
+                match Shell::new(
                     component_shell.clone(),
                     rid.clone(),
                     component_faces,
                     vec![],
                     vec![],
-                )
-                .ok()?,
+                ) {
+                    Ok(shell) => shell,
+                    Err(error) => {
+                        warnings.push(format!("{shell_type} #{shell_step}: {error}"));
+                        return None;
+                    }
+                },
             );
             region.shells.push(component_shell);
         }
