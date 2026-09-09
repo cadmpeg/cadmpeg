@@ -1792,6 +1792,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
+            malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
         let Ok((definition_sequence, local)) = placement_affine(
@@ -1807,6 +1808,7 @@ impl OccurrenceExpansion<'_, '_> {
             return Ok(None);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
+            malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
         let Some(definition_world) = parent
@@ -1865,6 +1867,7 @@ impl OccurrenceExpansion<'_, '_> {
                 continue;
             }
             let Some(member_entry) = self.entries.get(member).copied() else {
+                malformed_placement_sequences.insert(instance_sequence);
                 continue;
             };
             let Ok(member_local) = member_affine(
@@ -5226,6 +5229,7 @@ pub(crate) fn store(
                 && structure_admitted.is_some_and(|admitted| !admitted.contains(&entry.sequence))
         }) {
             let Some(record) = by_directory.get(&entry.sequence).copied() else {
+                malformed_placement_sequences.insert(entry.sequence);
                 continue;
             };
             if placement_affine(
@@ -5237,8 +5241,9 @@ pub(crate) fn store(
                 global.real_precision(),
                 ctx,
             )
-            .is_err()
-            {
+            .map_or(true, |(definition, _)| {
+                !occurrence_definitions.contains_key(&definition)
+            }) {
                 malformed_placement_sequences.insert(entry.sequence);
             }
         }
