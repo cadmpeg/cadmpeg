@@ -349,7 +349,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
                 "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                     "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
             }))
-            .unwrap();
+            .expect("Protein asset wire fixture");
             crate::decode::admit_protein_asset(wire, &mut issues)
         })
         .collect::<Vec<_>>();
