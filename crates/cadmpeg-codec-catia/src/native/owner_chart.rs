@@ -337,6 +337,9 @@ impl CatiaOwnerChartBridgeWire {
                         "owner-chart bridge framing controls do not match carrier".to_owned()
                     );
                 }
+                if !construction_radius.is_finite() || construction_radius <= 0.0 {
+                    return Err("construction_radius must be finite and positive".to_owned());
+                }
                 let middle_controls = [
                     CatiaOwnerChartMiddleControl::from_byte(controls[2])
                         .ok_or("invalid first owner-chart middle control")?,
@@ -475,6 +478,29 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn bridge_wire_rejects_invalid_construction_radius() {
+        let native =
+            crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
+        let relation = native.consolidated_owner_packets[0].owner_chart().unwrap();
+        for radius in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut wire =
+                CatiaOwnerChartBridgeWire::from_bridge(relation.bridge.clone(), relation.carrier);
+            let CatiaOwnerChartBridgeWire::SupportedSurface {
+                construction_radius,
+                ..
+            } = &mut wire
+            else {
+                panic!("supported surface");
+            };
+            *construction_radius = radius;
+            assert_eq!(
+                wire.into_bridge(relation.carrier).unwrap_err(),
+                "construction_radius must be finite and positive"
+            );
         }
     }
 
