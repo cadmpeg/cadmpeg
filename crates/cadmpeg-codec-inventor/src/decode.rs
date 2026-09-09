@@ -349,7 +349,7 @@ fn decode_container<'a>(
             schema: *schema,
             section_versions: section_versions.clone(),
             tail_len: source.window().len() as u64,
-            tail_sha256: sha256_hex(source.window()),
+            tail_sha256: crate::native::digest::Sha256Hex::digest(source.window()),
             detail: detail.clone(),
         },
         UfrxState::Parsed(document) => {
@@ -498,7 +498,9 @@ fn decode_container<'a>(
                 embedded_references: embedded,
                 occurrences,
                 tail_len: document.unparsed_tail.window().len() as u64,
-                tail_sha256: sha256_hex(document.unparsed_tail.window()),
+                tail_sha256: crate::native::digest::Sha256Hex::digest(
+                    document.unparsed_tail.window(),
+                ),
             }
         }
     };

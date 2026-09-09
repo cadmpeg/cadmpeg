@@ -28,7 +28,7 @@ pub(crate) enum UfrxRecord {
         embedded_references: Vec<EmbeddedReferenceRecord>,
         occurrences: Vec<UfrxOccurrenceRecord>,
         tail_len: u64,
-        tail_sha256: String,
+        tail_sha256: Sha256Hex,
     },
     Unsupported {
         id: String,
@@ -36,7 +36,7 @@ pub(crate) enum UfrxRecord {
         schema: u16,
         section_versions: Vec<u16>,
         tail_len: u64,
-        tail_sha256: String,
+        tail_sha256: Sha256Hex,
         detail: String,
     },
     Malformed {
@@ -268,7 +268,7 @@ impl From<&UfrxRecord> for UfrxRecordWire {
                 embedded_reference_count: embedded_references.len() as u64,
                 occurrence_count: occurrences.len() as u64,
                 tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256.clone()),
+                tail_sha256: Some(tail_sha256.clone().into()),
                 detail: None,
             },
             UfrxRecord::Unsupported {
@@ -293,7 +293,7 @@ impl From<&UfrxRecord> for UfrxRecordWire {
                 embedded_reference_count: 0,
                 occurrence_count: 0,
                 tail_len: *tail_len,
-                tail_sha256: Some(tail_sha256.clone()),
+                tail_sha256: Some(tail_sha256.clone().into()),
                 detail: Some(detail.clone()),
             },
             UfrxRecord::Malformed {
@@ -395,9 +395,11 @@ impl UfrxRecordWire {
                 embedded_references,
                 occurrences,
                 tail_len: wire.tail_len,
-                tail_sha256: wire
-                    .tail_sha256
-                    .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                tail_sha256: Sha256Hex::try_from(
+                    wire.tail_sha256
+                        .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+                )
+                .map_err(|detail| format!("tail_sha256: {detail}"))?,
             }),
             UfrxRecordState::Unsupported => Ok(UfrxRecord::Unsupported {
                 id: wire.id,
@@ -409,9 +411,11 @@ impl UfrxRecordWire {
                     .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
                 section_versions: wire.section_versions,
                 tail_len: wire.tail_len,
-                tail_sha256: wire
-                    .tail_sha256
-                    .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
+                tail_sha256: Sha256Hex::try_from(
+                    wire.tail_sha256
+                        .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
+                )
+                .map_err(|detail| format!("tail_sha256: {detail}"))?,
                 detail: wire
                     .detail
                     .ok_or_else(|| "unsupported UFRxDoc requires detail".to_owned())?,
@@ -963,7 +967,7 @@ mod tests {
             embedded_references: vec![],
             occurrences: vec![],
             tail_len: 0,
-            tail_sha256: "0".repeat(64),
+            tail_sha256: Sha256Hex::try_from("0".repeat(64)).unwrap(),
         };
         let mut namespace = NativeNamespace::default();
         record.install(&mut namespace).expect("valid test fixture");
@@ -1009,7 +1013,7 @@ mod tests {
                 schema: 1,
                 section_versions: vec![1],
                 tail_len: 0,
-                tail_sha256: "0".repeat(64),
+                tail_sha256: Sha256Hex::try_from("0".repeat(64)).unwrap(),
                 detail: "schema".into(),
             },
         ] {
