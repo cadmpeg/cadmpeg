@@ -184,7 +184,7 @@ fn unique_property<'a>(
 
 fn placement_matrix(
     property: Option<&PropertyRecord>,
-) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
     let Some(property) = property else {
         return Ok(None);
     };

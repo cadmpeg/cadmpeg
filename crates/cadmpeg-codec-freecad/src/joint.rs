@@ -62,15 +62,14 @@ pub(crate) fn transfer(
         }
         let joint_type = joint_type_property.map(enumeration_value).transpose()?;
         let body = if grounded_property.is_some() {
-            let placement =
-                placement(&owned, "Placement")?.unwrap_or_else(crate::product::identity);
+            let placement = placement(&owned, "Placement")?.unwrap_or_default();
             let reference = links(&owned, "ObjectToGround")
                 .into_iter()
                 .next()
                 .and_then(optional_reference);
             JointBody::Grounded {
                 reference,
-                placement: placement.try_into().map_err(CodecError::Malformed)?,
+                placement,
             }
         } else if let Some(joint_type) = joint_type {
             let connector_record = |owned: &[&PropertyRecord],
@@ -83,14 +82,8 @@ pub(crate) fn transfer(
                         .into_iter()
                         .next()
                         .and_then(optional_reference),
-                    placement: placement(owned, placement_name)?
-                        .unwrap_or_else(crate::product::identity)
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
-                    offset: placement(owned, offset_name)?
-                        .unwrap_or_else(crate::product::identity)
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
+                    placement: placement(owned, placement_name)?.unwrap_or_default(),
+                    offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
             };
             JointBody::Pair {
@@ -615,7 +608,7 @@ fn connector(
 fn placement(
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
         return Ok(None);
     };

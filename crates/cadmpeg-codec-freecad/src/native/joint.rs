@@ -255,13 +255,13 @@ mod tests {
                         kind: kind.into(),
                         references: vec![],
                         placements: vec![
-                            crate::product::identity();
+                            cadmpeg_ir::transform::Transform::identity().rows();
                             if kind == "grounded" { 1 } else { 2 }
                         ],
                         offsets: if kind == "grounded" {
                             vec![]
                         } else {
-                            vec![crate::product::identity(); 2]
+                            vec![cadmpeg_ir::transform::Transform::identity().rows(); 2]
                         },
                         parameters: BTreeMap::new(),
                     };
@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn missing_first_reference_keeps_second_wire_position() {
-        let identity = crate::product::identity();
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
         let wire = serde_json::json!({"id":"joint", "object":"object", "kind":"Fixed",
             "references":[{"document":null,"document_attribute":null,"object":"","subelements":[]}, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
@@ -303,8 +303,14 @@ mod tests {
         }
         let connector = JointConnectorRecord {
             reference: None,
-            placement: crate::product::identity().try_into().unwrap(),
-            offset: crate::product::identity().try_into().unwrap(),
+            placement: cadmpeg_ir::transform::Transform::identity()
+                .rows()
+                .try_into()
+                .unwrap(),
+            offset: cadmpeg_ir::transform::Transform::identity()
+                .rows()
+                .try_into()
+                .unwrap(),
         };
         let record = JointRecord {
             id: "joint".into(),

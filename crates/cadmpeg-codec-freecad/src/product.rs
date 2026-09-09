@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
+use crate::native::frame::FiniteFrame;
 use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -57,13 +58,7 @@ pub(crate) fn transfer(
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?;
         let placement = selected_placement(&owned)?;
-        let local_transform = placement
-            .map(placement_matrix)
-            .transpose()?
-            .flatten()
-            .map(crate::native::frame::FiniteFrame::try_from)
-            .transpose()
-            .map_err(malformed)?;
+        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
         let element_count = integer_property(&owned, "ElementCount")?
             .map(u64::try_from)
@@ -248,11 +243,7 @@ pub(crate) fn transfer_neutral(
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(owned)? {
             if let Some(placement) = placement_matrix(property)? {
-                placements_by_object.insert(
-                    owner,
-                    Transform::from_rows(placement)
-                        .ok_or_else(|| malformed("placement must be finite and affine"))?,
-                );
+                placements_by_object.insert(owner, placement.transform());
             }
         }
     }
@@ -595,15 +586,6 @@ pub(crate) fn external_document_reference(
     }
 }
 
-pub(crate) fn identity() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
 pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
     std::array::from_fn(|row| {
         std::array::from_fn(|column| {
@@ -617,7 +599,7 @@ pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 
 fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
-) -> Result<Vec<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Vec<FiniteFrame>, CodecError> {
     let Some(property) = unique_property(properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
@@ -1060,7 +1042,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 
 pub(crate) fn placement_matrix(
     property: &PropertyRecord,
-) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+) -> Result<Option<FiniteFrame>, CodecError> {
     if property.type_name != "App::PropertyPlacement" {
         return Err(CodecError::malformed(format_args!(
             "placement property {} has a non-placement runtime type",
@@ -1157,7 +1139,7 @@ pub(crate) fn placement_matrix(
     Ok(Some(matrix))
 }
 
-fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
+fn placement_components(values: &[f64]) -> Option<FiniteFrame> {
     let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -1167,7 +1149,7 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         return None;
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
-    Some([
+    FiniteFrame::try_from([
         [
             1.0 - 2.0 * (y * y + z * z),
             2.0 * (x * y - z * w),
@@ -1188,6 +1170,7 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         ],
         [0.0, 0.0, 0.0, 1.0],
     ])
+    .ok()
 }
 
 pub(crate) fn product_cycle_nodes<'a>(
