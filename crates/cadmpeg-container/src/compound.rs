@@ -1499,6 +1499,19 @@ pub fn read_detection_prefix(
     }
 }
 
+const DIRECTORY_NAME_LENGTH: usize = 64;
+const DIRECTORY_LEFT: usize = 68;
+const DIRECTORY_RIGHT: usize = 72;
+const DIRECTORY_CHILD: usize = 76;
+const DIRECTORY_START_SECTOR: usize = 116;
+const DIRECTORY_SIZE: usize = 120;
+const _: () = assert!(DIRECTORY_NAME_LENGTH % 2 == 0);
+const _: () = assert!(DIRECTORY_LEFT % 4 == 0);
+const _: () = assert!(DIRECTORY_RIGHT % 4 == 0);
+const _: () = assert!(DIRECTORY_CHILD % 4 == 0);
+const _: () = assert!(DIRECTORY_START_SECTOR % 4 == 0);
+const _: () = assert!(DIRECTORY_SIZE % 8 == 0);
+
 fn parse_directory(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
@@ -1530,7 +1543,9 @@ fn parse_directory(
             5 => DirectoryKind::Root,
             _ => return malformed("invalid CFB directory object type"),
         };
-        let name_len = usize::from(le_u16_array(raw.as_chunks::<2>().0[64 / 2]));
+        let name_len = usize::from(le_u16_array(
+            raw.as_chunks::<2>().0[DIRECTORY_NAME_LENGTH / 2],
+        ));
         let name = {
             if !(2..=64).contains(&name_len)
                 || !name_len.is_multiple_of(2)
@@ -1553,7 +1568,7 @@ fn parse_directory(
             1 => DirectoryColor::Black,
             _ => return malformed("invalid CFB directory node color"),
         };
-        let mut size = le_u64_array(raw.as_chunks::<8>().0[120 / 8]);
+        let mut size = le_u64_array(raw.as_chunks::<8>().0[DIRECTORY_SIZE / 8]);
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
@@ -1561,10 +1576,10 @@ fn parse_directory(
             name,
             kind,
             color,
-            left: le_u32_array(raw.as_chunks::<4>().0[68 / 4]),
-            right: le_u32_array(raw.as_chunks::<4>().0[72 / 4]),
-            child: le_u32_array(raw.as_chunks::<4>().0[76 / 4]),
-            start_sector: le_u32_array(raw.as_chunks::<4>().0[116 / 4]),
+            left: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_LEFT / 4]),
+            right: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_RIGHT / 4]),
+            child: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_CHILD / 4]),
+            start_sector: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_START_SECTOR / 4]),
             size,
         }));
     }
