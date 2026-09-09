@@ -1195,7 +1195,7 @@ fn admit_pcurve<'a>(
         )));
     }
     let domain = edge.domain;
-    let (payload, hull) = match &pcurve.geometry {
+    let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::PcurveGeometry::Line(line) => {
             let (origin, direction) = line.parts();
             if !origin.u.is_finite()
@@ -1267,7 +1267,7 @@ fn admit_pcurve<'a>(
     Ok(WritablePcurve {
         source: pcurve,
         payload,
-        hull,
+        domain_extent_points,
     })
 }
 
@@ -1305,11 +1305,11 @@ fn validate_nurbs_trim(
             && v >= v_domain[0] - uv_epsilon
             && v <= v_domain[1] + uv_epsilon
     };
-    let control_hull_inside = explicit
-        .hull
+    let domain_extent_inside = explicit
+        .domain_extent_points
         .iter()
         .all(|point| inside_domain(point.u, point.v));
-    if !control_hull_inside {
+    if !domain_extent_inside {
         return Err(CodecError::malformed(format_args!(
             "pcurve {} leaves its NURBS surface parameter domain",
             pcurve.id.as_str()
