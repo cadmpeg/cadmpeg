@@ -9,7 +9,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    LimitsAndFits, PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    LimitsAndFits, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -23,14 +23,9 @@ use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct AnnotationIndex(usize);
+mod annotations;
 
-impl AnnotationIndex {
-    fn get(self) -> usize {
-        self.0
-    }
-}
+use annotations::{AnnotationIndex, Annotations};
 
 struct MeasureContext<'a> {
     length_scale: f64,
@@ -66,7 +61,7 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
-    let mut annotations = BTreeMap::<u64, AnnotationIndex>::new();
+    let mut annotations = Annotations::default();
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
@@ -85,9 +80,8 @@ pub(super) fn decode(
                 )
             })
             .unwrap_or_else(|| format!("#{id}"));
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
@@ -134,9 +128,8 @@ pub(super) fn decode(
                 )
             })
             .unwrap_or_else(|| format!("#{id}"));
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
@@ -194,9 +187,8 @@ pub(super) fn decode(
                 continue;
             }
         };
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
@@ -279,9 +271,8 @@ pub(super) fn decode(
             .flat_map(|partial| &partial.parameters)
             .flat_map(references)
             .filter(|reference| shape_aspects.contains(reference));
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             name,
             targets(aspect_ids),
@@ -301,9 +292,7 @@ pub(super) fn decode(
             .iter()
             .flat_map(references)
             .collect::<Vec<_>>();
-        let dimension = refs
-            .iter()
-            .find_map(|reference| annotations.get(reference).copied());
+        let dimension = refs.iter().find_map(|reference| annotations.get(reference));
         let limits = refs.iter().find_map(|reference| {
             exchange
                 .records
@@ -519,9 +508,8 @@ pub(super) fn decode(
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then(|| annotation.id.clone())
             });
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
                 .or_else(|| record.parameter(0))
@@ -575,7 +563,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if annotations.contains_key(&definition) {
+        if annotations.get(&definition).is_some() {
             for item in named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
                 .into_iter()
                 .flat_map(references)
@@ -635,7 +623,7 @@ pub(super) fn decode(
         let mut semantics = parameters
             .iter()
             .flat_map(|value| references(value))
-            .filter(|reference| annotations.contains_key(reference))
+            .filter(|reference| annotations.get(reference).is_some())
             .map(pmi_id)
             .collect::<Vec<_>>();
         semantics.extend(
@@ -646,9 +634,8 @@ pub(super) fn decode(
                 .copied()
                 .map(pmi_id),
         );
-        push_annotation(
+        annotations.push(
             ir,
-            &mut annotations,
             id,
             named_parameter(record, name, 0)
                 .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
@@ -743,7 +730,7 @@ fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionToler
 
 fn mark_characteristic_representations(
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, AnnotationIndex>,
+    annotations: &Annotations,
     typed: &mut HashSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
@@ -758,7 +745,7 @@ fn mark_characteristic_representations(
             .collect::<Vec<_>>();
         if !record_references
             .iter()
-            .any(|reference| annotations.contains_key(reference))
+            .any(|reference| annotations.get(reference).is_some())
         {
             continue;
         }
@@ -794,7 +781,7 @@ fn mark_characteristic_representations(
 
 fn resolve_feature_for_datum_target_relationships(
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, AnnotationIndex>,
+    annotations: &Annotations,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
 ) {
@@ -802,7 +789,7 @@ fn resolve_feature_for_datum_target_relationships(
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
-        let Some(&annotation_index) = annotations.get(&related) else {
+        let Some(annotation_index) = annotations.get(&related) else {
             continue;
         };
         let annotation = &mut ir.model.pmi[annotation_index.get()];
@@ -824,21 +811,21 @@ fn resolve_geometric_item_usages(
     topology: &TopologyData,
     geometry_sources: GeometrySources<'_>,
     shape_aspects: &BTreeSet<u64>,
-    annotations: &BTreeMap<u64, AnnotationIndex>,
+    annotations: &Annotations,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
 ) {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
-    for (&annotation_id, &annotation_index) in annotations {
+    for (&annotation_id, record) in &exchange.records {
+        let Some(annotation_index) = annotations.get(&annotation_id) else {
+            continue;
+        };
         if shape_aspects.contains(&annotation_id) {
             aspect_annotations
                 .entry(annotation_id)
                 .or_default()
                 .insert(annotation_index);
         }
-        let Some(record) = exchange.records.get(&annotation_id) else {
-            continue;
-        };
         for reference in all_parameters(record).flat_map(references) {
             if shape_aspects.contains(&reference) {
                 aspect_annotations
@@ -1022,7 +1009,7 @@ fn datum_references(
     value: &Value,
     precedence: NonZeroU32,
     exchange: &Exchange,
-    annotations: &BTreeMap<u64, AnnotationIndex>,
+    annotations: &Annotations,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Vec<DatumReference> {
@@ -1064,7 +1051,7 @@ fn datum_references(
                     return None;
                 }
                 let datum = datum_base(element).and_then(ValueExt::reference)?;
-                if !annotations.contains_key(&datum) {
+                if annotations.get(&datum).is_none() {
                     return None;
                 }
                 let mut modifiers = compartment_modifiers.clone();
@@ -1089,7 +1076,7 @@ fn datum_references(
     }
     datum_ids(base)
         .into_iter()
-        .filter(|datum| annotations.contains_key(datum))
+        .filter(|datum| annotations.get(datum).is_some())
         .map(|datum| {
             typed.insert(datum);
             DatumReference {
@@ -1354,25 +1341,6 @@ fn collect_placement_candidates(
             depth + 1,
         );
     }
-}
-
-fn push_annotation(
-    ir: &mut CadIr,
-    annotations: &mut BTreeMap<u64, AnnotationIndex>,
-    id: u64,
-    name: Option<String>,
-    targets: Vec<PmiTarget>,
-    visible: Option<bool>,
-    definition: PmiDefinition,
-) {
-    annotations.insert(id, AnnotationIndex(ir.model.pmi.len()));
-    ir.model.pmi.push(PmiAnnotation {
-        id: pmi_id(id),
-        name: name.filter(|value| !value.is_empty()),
-        visible,
-        targets,
-        definition,
-    });
 }
 
 fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
